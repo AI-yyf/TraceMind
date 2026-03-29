@@ -327,16 +327,6 @@ arxiv-chronicle/
 
 ---
 
-## 🙏 致谢 | Acknowledgments
-
-- [ArXiv](https://arxiv.org/) - 开放的学术论文库
-- [OpenAI](https://openai.com/) - GPT-4V 模型
-- [Anthropic](https://anthropic.com/) - Claude 模型
-- [Google](https://ai.google.dev/) - Gemini 模型
-- 所有开源贡献者
-
----
-
 <div align="center">
 
 **如果你觉得这个项目有帮助，请给我们一个 ⭐！**
