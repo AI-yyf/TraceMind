@@ -18,6 +18,8 @@ pnpm-debug.log*
 .vscode/
 *.swp
 *.swo
+.trae/
+.workbuddy/
 
 # OS
 .DS_Store
@@ -42,3 +44,6 @@ frontend/node_modules/
 # Temp files
 *.tmp
 *.temp
+
+# PDF file in root
+*.pdf
