@@ -1,0 +1,51 @@
+{
+  "id": "embodied-vla",
+  "nameZh": "具身 VLA",
+  "nameEn": "Embodied Vision-Language-Action",
+  "focusLabel": "机器人基础模型 / 视觉-语言-动作 / 具身落地",
+  "origin": {
+    "originPaperId": "2204.01691",
+    "originConfirmedAt": "2026-03-24",
+    "originConfirmationMode": "earliest-representative",
+    "originQuestionDefinition": "如何把语言模型的高层语义能力与机器人可执行动作空间对齐，形成稳定的端到端具身决策？",
+    "originWhyThisCounts": "SayCan 明确提出语言语义与机器人可供性的统一接口问题，是当前 VLA 主线的代表性起点之一，后续 RT-1、PaLM-E、RT-2 与 OpenVLA 都在继续扩展它。",
+    "earlierRejectedCandidates": [
+      {
+        "title": "CLIPort: What and Where Pathways for Robotic Manipulation",
+        "paperId": "2109.12098",
+        "published": "2021-09-24",
+        "reason": "是重要前作，但未形成如今 VLA 统一接口的问题设定。"
+      },
+      {
+        "title": "Grounded Language Learning for Robotics",
+        "paperId": null,
+        "published": "2018",
+        "reason": "更偏早期 grounding 工作，不等同于当前 VLA 主线。"
+      }
+    ]
+  },
+  "queryTags": ["vision language action", "VLA", "robot foundation model", "embodied AI", "robotic manipulation", "grounding"],
+  "problemPreference": ["具身可供性对齐", "统一策略学习", "动作序列化", "多模态 grounding", "数据效率", "开源 VLA"],
+  "seedPapers": [],
+  "capabilityRefs": ["grounded-affordance", "unified-policy-learning", "action-tokenization"],
+  "defaults": {
+    "bootstrapWindowDays": 30,
+    "maxPaperIntervalDays": 61,
+    "maxCandidates": 8,
+    "storageMode": "canonical-only",
+    "preferredModels": {
+      "openai-compatible": "gpt-4.1",
+      "anthropic": "claude-3-7-sonnet-latest",
+      "agent-skill": "agent-native"
+    }
+  },
+  "frontendSummary": {
+    "cardSummary": "从语言驱动机器人规划，走到统一的 Vision-Language-Action 模型主线。",
+    "timelineGuide": "主线围绕 grounding、统一策略和动作序列化不断扩展。",
+    "researchBlurb": "观察大模型语义如何真正落到动作空间，而不是只停在文本层面的“会说”。"
+  },
+  "expansionNote": "源头之后的早期工作逐步汇入统一策略、多模态 grounding 和开源 VLA 方向。",
+  "papers": [
+    { "id": "2204.01691", "version": "v2", "status": "published", "role": "origin" }
+  ]
+}

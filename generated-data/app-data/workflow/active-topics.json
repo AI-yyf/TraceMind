@@ -1,0 +1,37 @@
+[
+  {
+    "topicId": "agent",
+    "status": "active",
+    "displayOrder": 0,
+    "activatedAt": "2026-03-24",
+    "archivedAt": null
+  },
+  {
+    "topicId": "autonomous-driving",
+    "status": "active",
+    "displayOrder": 1,
+    "activatedAt": "2026-03-24",
+    "archivedAt": null
+  },
+  {
+    "topicId": "bio-inspired-ml",
+    "status": "active",
+    "displayOrder": 2,
+    "activatedAt": "2026-03-24",
+    "archivedAt": null
+  },
+  {
+    "topicId": "embodied-vla",
+    "status": "active",
+    "displayOrder": 3,
+    "activatedAt": "2026-03-24",
+    "archivedAt": null
+  },
+  {
+    "topicId": "transformer-innovation",
+    "status": "active",
+    "displayOrder": 4,
+    "activatedAt": "2026-03-24",
+    "archivedAt": null
+  }
+]

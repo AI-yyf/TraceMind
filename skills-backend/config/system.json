@@ -1,0 +1,52 @@
+{
+  "version": "2.0.0",
+  "defaults": {
+    "discovery": {
+      "defaultWindowMonths": [4, 5, 6, 7, 8, 9, 10, 11, 12],
+      "maxCandidatesPerRound": 50,
+      "maxRounds": 2,
+      "enableRound2": true,
+      "minConfidenceThreshold": 0.6,
+      "minCandidatesThreshold": 5
+    },
+    "nodeMerge": {
+      "maxPapersPerNode": 10,
+      "maxTimeSpanMonths": 12,
+      "enableCrossBranchMerge": true,
+      "enableSameBranchMerge": true,
+      "confidenceThreshold": 0.7
+    },
+    "contentGen": {
+      "minWordCount": 2000,
+      "maxWordCount": 3000,
+      "enableMultimodal": true,
+      "coverageThreshold": 0.8,
+      "maxRetryAttempts": 3
+    },
+    "display": {
+      "maxNodesPerStage": 20,
+      "maxPapersPerNode": 10,
+      "enableLazyLoad": true,
+      "cacheExpiryMinutes": 60
+    }
+  },
+  "topicOverrides": {
+    "agent": {
+      "discovery": {
+        "defaultWindowMonths": [3, 4, 5, 6, 7, 8],
+        "minCandidatesThreshold": 8
+      }
+    },
+    "autonomous-driving": {
+      "nodeMerge": {
+        "maxPapersPerNode": 15,
+        "maxTimeSpanMonths": 18
+      }
+    },
+    "transformer-innovation": {
+      "discovery": {
+        "defaultWindowMonths": [3, 4, 5, 6, 7, 8, 9, 10]
+      }
+    }
+  }
+}

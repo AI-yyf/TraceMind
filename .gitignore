@@ -1,0 +1,44 @@
+node_modules/
+dist/
+tmp/
+generated-data/tmp/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Prisma
+*.db
+*.db-journal
+
+# Build artifacts
+*.tgz
+
+# Model runtime
+model-runtime/node_modules/
+skills-backend/node_modules/
+frontend/node_modules/
+
+# Temp files
+*.tmp
+*.temp

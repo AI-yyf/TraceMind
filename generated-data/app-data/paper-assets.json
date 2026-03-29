@@ -1,0 +1,68 @@
+{
+  "2210.03629": {
+    "coverPath": "/papers/2210.03629/teaser-new.png",
+    "figurePaths": [
+      "/papers/2210.03629/teaser-new.png",
+      "/papers/2210.03629/teaser-new.png",
+      "/papers/2210.03629/cots_scale.png",
+      "/papers/2210.03629/cots_scale.png",
+      "/papers/2210.03629/date.png",
+      "/papers/2210.03629/date.png"
+    ],
+    "coverSource": "source-pdf-figure",
+    "extractedAt": "2026-03-24T03:05:57.298Z",
+    "figureCount": 12
+  },
+  "1604.07316": {
+    "coverPath": "/papers/1604.07316/cnn-architecture.png",
+    "figurePaths": [
+      "/papers/1604.07316/cnn-architecture.png",
+      "/papers/1604.07316/data-collection-system.png",
+      "/papers/1604.07316/inference.png",
+      "/papers/1604.07316/simulator.png",
+      "/papers/1604.07316/training.png",
+      "/papers/1604.07316/feature-maps-road.png"
+    ],
+    "coverSource": "source-pdf-figure",
+    "extractedAt": "2026-03-24T02:58:08.242Z",
+    "figureCount": 8
+  },
+  "1803.08554": {
+    "coverPath": "/papers/1803.08554/body.png",
+    "figurePaths": [
+      "/papers/1803.08554/body.png",
+      "/papers/1803.08554/pdf-fallback-cover.png"
+    ],
+    "coverSource": "source-pdf-figure",
+    "extractedAt": "2026-03-24T03:03:08.658Z",
+    "figureCount": 2
+  },
+  "2204.01691": {
+    "coverPath": "/papers/2204.01691/bc_architecture.png",
+    "figurePaths": [
+      "/papers/2204.01691/bc_architecture.png",
+      "/papers/2204.01691/rl_architecture.png",
+      "/papers/2204.01691/intro.png",
+      "/papers/2204.01691/bring_me_a_fruit_mk.png",
+      "/papers/2204.01691/bring_two_different_soda.png",
+      "/papers/2204.01691/embodiment_example.png"
+    ],
+    "coverSource": "source-raster",
+    "extractedAt": "2026-03-24T03:04:01.195Z",
+    "figureCount": 25
+  },
+  "1706.03762": {
+    "coverPath": "/papers/1706.03762/pdf-fallback-cover.png",
+    "figurePaths": [
+      "/papers/1706.03762/pdf-fallback-cover.png",
+      "/papers/1706.03762/anaphora_resolution_new.png",
+      "/papers/1706.03762/anaphora_resolution2_new.png",
+      "/papers/1706.03762/attending_to_head_new.png",
+      "/papers/1706.03762/attending_to_head2_new.png",
+      "/papers/1706.03762/making_more_difficult_new.png"
+    ],
+    "coverSource": "paper-pdf-embedded",
+    "extractedAt": "2026-03-24T03:01:25.210Z",
+    "figureCount": 13
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "coverPath": "/papers/2212.06817/rt1_teaser_model.png",
+  "figurePaths": [
+    "/papers/2212.06817/rt1_teaser_model.png",
+    "/papers/2212.06817/rt1_full_model.png",
+    "/papers/2212.06817/model_card_quant.png",
+    "/papers/2212.06817/backgrounds_trajectories.png",
+    "/papers/2212.06817/distractors_trajectories.png",
+    "/papers/2212.06817/generalization_trajectories.png"
+  ],
+  "coverSource": "source-pdf-figure",
+  "extractedAt": "2026-03-24T03:04:26.070Z",
+  "figureCount": 20
+}

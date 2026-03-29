@@ -1,0 +1,14 @@
+{
+  "coverPath": "/papers/2402.12289/overview-2.png",
+  "figurePaths": [
+    "/papers/2402.12289/overview-2.png",
+    "/papers/2402.12289/pipeline.png",
+    "/papers/2402.12289/teaser-crop.png",
+    "/papers/2402.12289/overview.png",
+    "/papers/2402.12289/dataset-pipeline.png",
+    "/papers/2402.12289/anno.png"
+  ],
+  "coverSource": "source-raster",
+  "extractedAt": "2026-03-24T03:01:11.041Z",
+  "figureCount": 24
+}

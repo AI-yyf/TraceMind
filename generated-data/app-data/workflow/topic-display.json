@@ -1,0 +1,165 @@
+{
+  "schemaVersion": 1,
+  "topics": [
+    {
+      "topicId": "agent",
+      "hero": {
+        "topicId": "agent",
+        "title": "Agent 系统",
+        "subtitle": "推理-行动 / 工具使用 / 多智能体 / 记忆",
+        "summary": "重点观察 Agent 何时从 prompt 技巧走向真正稳定、可组合、可执行的系统能力。",
+        "originPaperId": "2210.03629",
+        "originPaperTitleZh": "ReAct: Synergizing Reasoning and Acting in Language Models",
+        "originPaperTitleEn": "ReAct: Synergizing Reasoning and Acting in Language Models",
+        "stageCount": 0,
+        "activeBranchCount": 1,
+        "mergeCount": 0,
+        "lastBuiltAt": "2026-03-29T02:05:43.719Z"
+      },
+      "stageColumns": [],
+      "branchPalette": [
+        {
+          "branchId": "branch:agent:origin",
+          "branchLabel": "主线",
+          "color": "#D94F3D",
+          "status": "活跃"
+        }
+      ],
+      "mergeMarkers": [],
+      "timelineLegend": {
+        "stageLabel": "纵向代表研究阶段，表示同一轮研究推进的舞台层级。",
+        "branchLabel": "横向不同颜色代表不同分支，同一分支在各页面颜色保持一致。",
+        "mergeLabel": "当一篇论文同时承接多条分支时，会以汇流节点的方式出现。",
+        "dormantLabel": "若某条分支本阶段没有新候选，会显示为“本阶段未推进”，而不是拉长整条寿命线。"
+      }
+    },
+    {
+      "topicId": "autonomous-driving",
+      "hero": {
+        "topicId": "autonomous-driving",
+        "title": "自动驾驶端到端主线",
+        "subtitle": "世界模型 / 端到端驾驶 / 驾驶 VLM",
+        "summary": "重点观察这条主线如何在安全、长尾场景和多模态理解上不断补齐自身短板。",
+        "originPaperId": "1604.07316",
+        "originPaperTitleZh": "End to End Learning for Self-Driving Cars",
+        "originPaperTitleEn": "End to End Learning for Self-Driving Cars",
+        "stageCount": 0,
+        "activeBranchCount": 1,
+        "mergeCount": 0,
+        "lastBuiltAt": "2026-03-29T02:05:43.719Z"
+      },
+      "stageColumns": [],
+      "branchPalette": [
+        {
+          "branchId": "branch:autonomous-driving:origin",
+          "branchLabel": "主线",
+          "color": "#D94F3D",
+          "status": "活跃"
+        }
+      ],
+      "mergeMarkers": [],
+      "timelineLegend": {
+        "stageLabel": "纵向代表研究阶段，表示同一轮研究推进的舞台层级。",
+        "branchLabel": "横向不同颜色代表不同分支，同一分支在各页面颜色保持一致。",
+        "mergeLabel": "当一篇论文同时承接多条分支时，会以汇流节点的方式出现。",
+        "dormantLabel": "若某条分支本阶段没有新候选，会显示为“本阶段未推进”，而不是拉长整条寿命线。"
+      }
+    },
+    {
+      "topicId": "bio-inspired-ml",
+      "hero": {
+        "topicId": "bio-inspired-ml",
+        "title": "生物启发机器学习",
+        "subtitle": "神经回路 / 液态网络 / 连续时间模型",
+        "summary": "重点关注生物启发何时真正转化成算法收益，而不是停留在比喻层面。",
+        "originPaperId": "1803.08554",
+        "originPaperTitleZh": "Neuronal Circuit Policies",
+        "originPaperTitleEn": "Neuronal Circuit Policies",
+        "stageCount": 0,
+        "activeBranchCount": 1,
+        "mergeCount": 0,
+        "lastBuiltAt": "2026-03-29T02:05:43.719Z"
+      },
+      "stageColumns": [],
+      "branchPalette": [
+        {
+          "branchId": "branch:bio-inspired-ml:origin",
+          "branchLabel": "主线",
+          "color": "#D94F3D",
+          "status": "活跃"
+        }
+      ],
+      "mergeMarkers": [],
+      "timelineLegend": {
+        "stageLabel": "纵向代表研究阶段，表示同一轮研究推进的舞台层级。",
+        "branchLabel": "横向不同颜色代表不同分支，同一分支在各页面颜色保持一致。",
+        "mergeLabel": "当一篇论文同时承接多条分支时，会以汇流节点的方式出现。",
+        "dormantLabel": "若某条分支本阶段没有新候选，会显示为“本阶段未推进”，而不是拉长整条寿命线。"
+      }
+    },
+    {
+      "topicId": "embodied-vla",
+      "hero": {
+        "topicId": "embodied-vla",
+        "title": "具身 VLA",
+        "subtitle": "机器人基础模型 / 视觉-语言-动作 / 具身落地",
+        "summary": "观察大模型语义如何真正落到动作空间，而不是只停在文本层面的“会说”。",
+        "originPaperId": "2204.01691",
+        "originPaperTitleZh": "Do As I Can, Not As I Say: Grounding Language in Robotic Affordances",
+        "originPaperTitleEn": "Do As I Can, Not As I Say: Grounding Language in Robotic Affordances",
+        "stageCount": 0,
+        "activeBranchCount": 1,
+        "mergeCount": 0,
+        "lastBuiltAt": "2026-03-29T02:05:43.719Z"
+      },
+      "stageColumns": [],
+      "branchPalette": [
+        {
+          "branchId": "branch:embodied-vla:origin",
+          "branchLabel": "主线",
+          "color": "#D94F3D",
+          "status": "活跃"
+        }
+      ],
+      "mergeMarkers": [],
+      "timelineLegend": {
+        "stageLabel": "纵向代表研究阶段，表示同一轮研究推进的舞台层级。",
+        "branchLabel": "横向不同颜色代表不同分支，同一分支在各页面颜色保持一致。",
+        "mergeLabel": "当一篇论文同时承接多条分支时，会以汇流节点的方式出现。",
+        "dormantLabel": "若某条分支本阶段没有新候选，会显示为“本阶段未推进”，而不是拉长整条寿命线。"
+      }
+    },
+    {
+      "topicId": "transformer-innovation",
+      "hero": {
+        "topicId": "transformer-innovation",
+        "title": "Transformer 架构演进",
+        "subtitle": "注意力 / 状态空间模型 / Mamba / 长上下文",
+        "summary": "这个主题更像结构问题的演化史，重点看不同架构如何取舍表达力、效率和可扩展性。",
+        "originPaperId": "1706.03762",
+        "originPaperTitleZh": "Attention Is All You Need",
+        "originPaperTitleEn": "Attention Is All You Need",
+        "stageCount": 0,
+        "activeBranchCount": 1,
+        "mergeCount": 0,
+        "lastBuiltAt": "2026-03-29T02:05:43.719Z"
+      },
+      "stageColumns": [],
+      "branchPalette": [
+        {
+          "branchId": "branch:transformer-innovation:origin",
+          "branchLabel": "主线",
+          "color": "#D94F3D",
+          "status": "活跃"
+        }
+      ],
+      "mergeMarkers": [],
+      "timelineLegend": {
+        "stageLabel": "纵向代表研究阶段，表示同一轮研究推进的舞台层级。",
+        "branchLabel": "横向不同颜色代表不同分支，同一分支在各页面颜色保持一致。",
+        "mergeLabel": "当一篇论文同时承接多条分支时，会以汇流节点的方式出现。",
+        "dormantLabel": "若某条分支本阶段没有新候选，会显示为“本阶段未推进”，而不是拉长整条寿命线。"
+      }
+    }
+  ]
+}

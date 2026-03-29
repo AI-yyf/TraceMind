@@ -1,0 +1,1143 @@
+{
+  "agent": {
+    "schemaVersion": 3,
+    "topicId": "agent",
+    "timelineContext": {
+      "schemaVersion": 1,
+      "topicId": "agent",
+      "originPaperId": "2210.03629",
+      "problemSpace": {
+        "nodes": [
+          {
+            "id": "agent:origin-problem",
+            "label": "起源问题",
+            "question": "如何把语言模型的推理能力、工具调用和环境反馈整合成可持续执行的闭环系统？",
+            "status": "origin",
+            "tags": [
+              "LLM agent",
+              "tool use",
+              "reasoning and acting",
+              "multi-agent",
+              "工具调用学习",
+              "反思记忆",
+              "多智能体协作",
+              "消息拓扑"
+            ],
+            "sourcePaperIds": [
+              "2210.03629"
+            ],
+            "branchIds": [
+              "branch:agent:origin"
+            ],
+            "notes": "ReAct 给现代 Agent 设定了“推理-行动-观察”闭环骨架，之后 Toolformer、Reflexion、CAMEL、AutoGen 分别在工具学习、记忆和多智能体协作上继续补齐。",
+            "lastUpdatedAt": "2026-03-29T02:05:43.719Z",
+            "priorityScore": 0.95
+          }
+        ]
+      },
+      "methodSpace": {
+        "nodes": []
+      },
+      "branchSpace": {
+        "branches": [
+          {
+            "branchId": "branch:agent:origin",
+            "label": "起源主线",
+            "status": "origin",
+            "anchorPaperId": "2210.03629",
+            "stageIndex": 1,
+            "linkedProblemIds": [
+              "agent:origin-problem"
+            ],
+            "notes": "从起源论文出发，等待下一个 stage 的动态发现。",
+            "lastUpdatedAt": "2026-03-29T02:05:43.719Z"
+          }
+        ]
+      },
+      "qualitySpace": {
+        "signals": [
+          {
+            "id": "agent:origin-audit",
+            "label": "起源确认",
+            "assessment": "ReAct 给现代 Agent 设定了“推理-行动-观察”闭环骨架，之后 Toolformer、Reflexion、CAMEL、AutoGen 分别在工具学习、记忆和多智能体协作上继续补齐。",
+            "score": 0.92,
+            "sourcePaperIds": [
+              "2210.03629"
+            ],
+            "lastUpdatedAt": "2026-03-29T02:05:43.719Z"
+          }
+        ]
+      },
+      "lastUpdatedAt": "2026-03-29T02:05:43.719Z"
+    },
+    "originAudit": {
+      "passed": true,
+      "originPaperId": "2210.03629",
+      "originConfirmedAt": "2026-03-24",
+      "originConfirmationMode": "earliest-representative",
+      "originQuestionDefinition": "如何把语言模型的推理能力、工具调用和环境反馈整合成可持续执行的闭环系统？",
+      "originWhyThisCounts": "ReAct 给现代 Agent 设定了“推理-行动-观察”闭环骨架，之后 Toolformer、Reflexion、CAMEL、AutoGen 分别在工具学习、记忆和多智能体协作上继续补齐。",
+      "earlierRejectedCandidates": [
+        {
+          "title": "WebGPT: Browser-assisted Question-Answering with Human Feedback",
+          "paperId": "2112.09332",
+          "published": "2021-12-18",
+          "reason": "是重要前作，但任务和系统边界更特定，不是后续通用 Agent 主线的最小公共骨架。"
+        },
+        {
+          "title": "SayCan: Do As I Can, Not As I Say",
+          "paperId": "2204.01691",
+          "published": "2022-04-05",
+          "reason": "主要面向具身智能，不是通用 LLM Agent 骨架的公共起点。"
+        }
+      ]
+    },
+    "publishedMainlinePaperIds": [
+      "2210.03629"
+    ],
+    "publishedBranchPaperIds": [],
+    "candidatePaperIds": [],
+    "seedPaperIds": [],
+    "queryTags": [
+      "LLM agent",
+      "tool use",
+      "reasoning and acting",
+      "multi-agent",
+      "reflection",
+      "function calling"
+    ],
+    "capabilityRefs": [
+      "tool-use-learning",
+      "reflective-memory",
+      "multi-agent-coordination"
+    ],
+    "bootstrapWindowDays": 30,
+    "windowPolicy": "auto",
+    "minStageWindowMonths": 2,
+    "maxStageWindowMonths": 8,
+    "maxActiveBranches": 10,
+    "branchModel": "problem-node-driven",
+    "allowBranchMerge": true,
+    "expansionHistory": [
+      {
+        "fromPaperId": "2210.03629",
+        "windowDays": 30,
+        "reason": "起源论文已被确认为主题源头，后续阶段将从这里开始动态发现。"
+      }
+    ],
+    "problemNodes": [
+      {
+        "id": "agent:origin-problem",
+        "stageTitle": "起源问题",
+        "stageDigest": "ReAct 给现代 Agent 设定了“推理-行动-观察”闭环骨架，之后 Toolformer、Reflexion、CAMEL、AutoGen 分别在工具学习、记忆和多智能体协作上继续补齐。",
+        "question": "如何把语言模型的推理能力、工具调用和环境反馈整合成可持续执行的闭环系统？",
+        "problemConstraints": [],
+        "requiredCapabilities": [
+          "LLM agent",
+          "tool use",
+          "reasoning and acting",
+          "multi-agent",
+          "工具调用学习",
+          "反思记忆",
+          "多智能体协作",
+          "消息拓扑"
+        ],
+        "parentPaperId": "2210.03629",
+        "parentProblemNodeId": null,
+        "directCandidates": [],
+        "transferCandidates": [],
+        "rejectedTransferCandidates": [],
+        "activeBranchIds": [
+          "branch:agent:origin"
+        ],
+        "resolutionStatus": "open",
+        "confidence": 0.95
+      }
+    ],
+    "branchTree": [
+      {
+        "id": "branch:agent:origin",
+        "rootProblemNodeId": "agent:origin-problem",
+        "label": "起源主线",
+        "branchType": "direct",
+        "paperPath": [
+          "2210.03629"
+        ],
+        "status": "branch_active",
+        "summary": "系统只保留起源论文，等待下一阶段动态发现。",
+        "promotionPolicy": "当分支论文已经成为最清晰的主线下一跳时，再提升进入主线。",
+        "mergeBackPolicy": "当分支论文同时解决多个开放问题时，再考虑汇回主线。",
+        "supersededBy": null,
+        "rewriteImpact": "会同步更新 canonical 分支关系以及下游主题展示视图。",
+        "parentBranchId": null
+      }
+    ],
+    "branchRegistry": [
+      {
+        "branchId": "branch:agent:origin",
+        "rootProblemNodeId": "agent:origin-problem",
+        "parentBranchId": null,
+        "anchorPaperId": "2210.03629",
+        "anchorPaperPublishedAt": "2022-10-06T01:00:32.000Z",
+        "lastTrackedPaperId": "2210.03629",
+        "lastTrackedPublishedAt": "2022-10-06T01:00:32.000Z",
+        "stageIndex": 1,
+        "activeWindowMonths": 5,
+        "status": "active",
+        "priorityScore": 0.9,
+        "linkedProblemNodeIds": [
+          "agent:origin-problem"
+        ],
+        "mergedIntoBranchId": null,
+        "branchType": "direct",
+        "label": "起源主线",
+        "summary": "系统只保留起源论文，等待下一阶段动态发现。"
+      }
+    ],
+    "stageLedger": [],
+    "paperRelations": [
+      {
+        "paperId": "2210.03629",
+        "problemNodeIds": [],
+        "branchIds": [
+          "branch:agent:origin"
+        ],
+        "primaryBranchId": "branch:agent:origin",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      }
+    ],
+    "recommendationQueue": [],
+    "decisionLog": [
+      {
+        "id": "agent-origin-reset",
+        "timestamp": "2026-03-29T02:05:43.719Z",
+        "action": "reset-origin-only",
+        "summary": "Canonical 数据已重置为起源论文真源态，等待下一阶段动态发现。",
+        "affectedProblemIds": [
+          "agent:origin-problem"
+        ],
+        "affectedPaperIds": [
+          "2210.03629"
+        ],
+        "rationale": "移除历史预置候选和旧生成内容，保证后续 stage 只从外部搜索动态进入。"
+      }
+    ],
+    "lastBuiltAt": "2026-03-29T02:05:43.719Z",
+    "lastRewrittenAt": "2026-03-29T02:05:43.719Z"
+  },
+  "autonomous-driving": {
+    "schemaVersion": 3,
+    "topicId": "autonomous-driving",
+    "timelineContext": {
+      "schemaVersion": 1,
+      "topicId": "autonomous-driving",
+      "originPaperId": "1604.07316",
+      "problemSpace": {
+        "nodes": [
+          {
+            "id": "autonomous-driving:origin-problem",
+            "label": "起源问题",
+            "question": "如何从原始传感器输入直接学习驾驶策略，而不是依赖手工拆分的感知、规划与控制模块？",
+            "status": "origin",
+            "tags": [
+              "autonomous driving",
+              "end-to-end driving",
+              "world model",
+              "vision language action",
+              "监督稀疏",
+              "恢复策略",
+              "世界模型",
+              "分布外泛化"
+            ],
+            "sourcePaperIds": [
+              "1604.07316"
+            ],
+            "branchIds": [
+              "branch:autonomous-driving:origin"
+            ],
+            "notes": "End to End Learning for Self-Driving Cars 为现代端到端自动驾驶研究提供了代表性起点，后续工作不断围绕监督稀疏、恢复能力、世界建模和驾驶 VLM 展开。",
+            "lastUpdatedAt": "2026-03-29T02:05:43.719Z",
+            "priorityScore": 0.95
+          }
+        ]
+      },
+      "methodSpace": {
+        "nodes": []
+      },
+      "branchSpace": {
+        "branches": [
+          {
+            "branchId": "branch:autonomous-driving:origin",
+            "label": "起源主线",
+            "status": "origin",
+            "anchorPaperId": "1604.07316",
+            "stageIndex": 1,
+            "linkedProblemIds": [
+              "autonomous-driving:origin-problem"
+            ],
+            "notes": "从起源论文出发，等待下一个 stage 的动态发现。",
+            "lastUpdatedAt": "2026-03-29T02:05:43.719Z"
+          }
+        ]
+      },
+      "qualitySpace": {
+        "signals": [
+          {
+            "id": "autonomous-driving:origin-audit",
+            "label": "起源确认",
+            "assessment": "End to End Learning for Self-Driving Cars 为现代端到端自动驾驶研究提供了代表性起点，后续工作不断围绕监督稀疏、恢复能力、世界建模和驾驶 VLM 展开。",
+            "score": 0.92,
+            "sourcePaperIds": [
+              "1604.07316"
+            ],
+            "lastUpdatedAt": "2026-03-29T02:05:43.719Z"
+          }
+        ]
+      },
+      "lastUpdatedAt": "2026-03-29T02:05:43.719Z"
+    },
+    "originAudit": {
+      "passed": true,
+      "originPaperId": "1604.07316",
+      "originConfirmedAt": "2026-03-24",
+      "originConfirmationMode": "earliest-representative",
+      "originQuestionDefinition": "如何从原始传感器输入直接学习驾驶策略，而不是依赖手工拆分的感知、规划与控制模块？",
+      "originWhyThisCounts": "End to End Learning for Self-Driving Cars 为现代端到端自动驾驶研究提供了代表性起点，后续工作不断围绕监督稀疏、恢复能力、世界建模和驾驶 VLM 展开。",
+      "earlierRejectedCandidates": [
+        {
+          "title": "ALVINN: An Autonomous Land Vehicle in a Neural Network",
+          "paperId": null,
+          "published": "1989-12",
+          "reason": "属于更早期的神经网络驾驶原型，不构成当前现代深度学习主线的共同起点。"
+        },
+        {
+          "title": "DeepDriving: Learning Affordance for Direct Perception in Autonomous Driving",
+          "paperId": "1511.03791",
+          "published": "2015-11-11",
+          "reason": "仍依赖人工定义的 affordance 中间变量，不是严格意义上的端到端驾驶主线。"
+        }
+      ]
+    },
+    "publishedMainlinePaperIds": [
+      "1604.07316"
+    ],
+    "publishedBranchPaperIds": [],
+    "candidatePaperIds": [],
+    "seedPaperIds": [],
+    "queryTags": [
+      "autonomous driving",
+      "end-to-end driving",
+      "world model",
+      "vision language action",
+      "motion planning"
+    ],
+    "capabilityRefs": [
+      "privileged-supervision",
+      "policy-recovery",
+      "world-modeling",
+      "structured-planning"
+    ],
+    "bootstrapWindowDays": 30,
+    "windowPolicy": "auto",
+    "minStageWindowMonths": 2,
+    "maxStageWindowMonths": 8,
+    "maxActiveBranches": 10,
+    "branchModel": "problem-node-driven",
+    "allowBranchMerge": true,
+    "expansionHistory": [
+      {
+        "fromPaperId": "1604.07316",
+        "windowDays": 30,
+        "reason": "起源论文已被确认为主题源头，后续阶段将从这里开始动态发现。"
+      }
+    ],
+    "problemNodes": [
+      {
+        "id": "autonomous-driving:origin-problem",
+        "stageTitle": "起源问题",
+        "stageDigest": "End to End Learning for Self-Driving Cars 为现代端到端自动驾驶研究提供了代表性起点，后续工作不断围绕监督稀疏、恢复能力、世界建模和驾驶 VLM 展开。",
+        "question": "如何从原始传感器输入直接学习驾驶策略，而不是依赖手工拆分的感知、规划与控制模块？",
+        "problemConstraints": [],
+        "requiredCapabilities": [
+          "autonomous driving",
+          "end-to-end driving",
+          "world model",
+          "vision language action",
+          "监督稀疏",
+          "恢复策略",
+          "世界模型",
+          "分布外泛化"
+        ],
+        "parentPaperId": "1604.07316",
+        "parentProblemNodeId": null,
+        "directCandidates": [],
+        "transferCandidates": [],
+        "rejectedTransferCandidates": [],
+        "activeBranchIds": [
+          "branch:autonomous-driving:origin"
+        ],
+        "resolutionStatus": "open",
+        "confidence": 0.95
+      }
+    ],
+    "branchTree": [
+      {
+        "id": "branch:autonomous-driving:origin",
+        "rootProblemNodeId": "autonomous-driving:origin-problem",
+        "label": "起源主线",
+        "branchType": "direct",
+        "paperPath": [
+          "1604.07316"
+        ],
+        "status": "branch_active",
+        "summary": "系统只保留起源论文，等待下一阶段动态发现。",
+        "promotionPolicy": "当分支论文已经成为最清晰的主线下一跳时，再提升进入主线。",
+        "mergeBackPolicy": "当分支论文同时解决多个开放问题时，再考虑汇回主线。",
+        "supersededBy": null,
+        "rewriteImpact": "会同步更新 canonical 分支关系以及下游主题展示视图。",
+        "parentBranchId": null
+      }
+    ],
+    "branchRegistry": [
+      {
+        "branchId": "branch:autonomous-driving:origin",
+        "rootProblemNodeId": "autonomous-driving:origin-problem",
+        "parentBranchId": null,
+        "anchorPaperId": "1604.07316",
+        "anchorPaperPublishedAt": "2016-04-25T16:03:56.000Z",
+        "lastTrackedPaperId": "1604.07316",
+        "lastTrackedPublishedAt": "2016-04-25T16:03:56.000Z",
+        "stageIndex": 1,
+        "activeWindowMonths": 5,
+        "status": "active",
+        "priorityScore": 0.9,
+        "linkedProblemNodeIds": [
+          "autonomous-driving:origin-problem"
+        ],
+        "mergedIntoBranchId": null,
+        "branchType": "direct",
+        "label": "起源主线",
+        "summary": "系统只保留起源论文，等待下一阶段动态发现。"
+      }
+    ],
+    "stageLedger": [],
+    "paperRelations": [
+      {
+        "paperId": "1604.07316",
+        "problemNodeIds": [],
+        "branchIds": [
+          "branch:autonomous-driving:origin"
+        ],
+        "primaryBranchId": "branch:autonomous-driving:origin",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      }
+    ],
+    "recommendationQueue": [],
+    "decisionLog": [
+      {
+        "id": "autonomous-driving-origin-reset",
+        "timestamp": "2026-03-29T02:05:43.719Z",
+        "action": "reset-origin-only",
+        "summary": "Canonical 数据已重置为起源论文真源态，等待下一阶段动态发现。",
+        "affectedProblemIds": [
+          "autonomous-driving:origin-problem"
+        ],
+        "affectedPaperIds": [
+          "1604.07316"
+        ],
+        "rationale": "移除历史预置候选和旧生成内容，保证后续 stage 只从外部搜索动态进入。"
+      }
+    ],
+    "lastBuiltAt": "2026-03-29T02:05:43.719Z",
+    "lastRewrittenAt": "2026-03-29T02:05:43.719Z"
+  },
+  "bio-inspired-ml": {
+    "schemaVersion": 3,
+    "topicId": "bio-inspired-ml",
+    "timelineContext": {
+      "schemaVersion": 1,
+      "topicId": "bio-inspired-ml",
+      "originPaperId": "1803.08554",
+      "problemSpace": {
+        "nodes": [
+          {
+            "id": "bio-inspired-ml:origin-problem",
+            "label": "起源问题",
+            "question": "如何把生物神经回路与连续时间动力学中的结构约束转化成可训练的现代机器学习组件？",
+            "status": "origin",
+            "tags": [
+              "bio-inspired machine learning",
+              "neural circuit",
+              "liquid neural network",
+              "continuous-time",
+              "结构可解释性",
+              "连续时间建模",
+              "液态时间常数",
+              "闭式更新"
+            ],
+            "sourcePaperIds": [
+              "1803.08554"
+            ],
+            "branchIds": [
+              "branch:bio-inspired-ml:origin"
+            ],
+            "notes": "Neuronal Circuit Policies 是这条主线中把生物结构重新转化为可训练控制模型的早期代表，后续液态网络与连续时间模型持续在推进这一路线。",
+            "lastUpdatedAt": "2026-03-29T02:05:43.719Z",
+            "priorityScore": 0.95
+          }
+        ]
+      },
+      "methodSpace": {
+        "nodes": []
+      },
+      "branchSpace": {
+        "branches": [
+          {
+            "branchId": "branch:bio-inspired-ml:origin",
+            "label": "起源主线",
+            "status": "origin",
+            "anchorPaperId": "1803.08554",
+            "stageIndex": 1,
+            "linkedProblemIds": [
+              "bio-inspired-ml:origin-problem"
+            ],
+            "notes": "从起源论文出发，等待下一个 stage 的动态发现。",
+            "lastUpdatedAt": "2026-03-29T02:05:43.719Z"
+          }
+        ]
+      },
+      "qualitySpace": {
+        "signals": [
+          {
+            "id": "bio-inspired-ml:origin-audit",
+            "label": "起源确认",
+            "assessment": "Neuronal Circuit Policies 是这条主线中把生物结构重新转化为可训练控制模型的早期代表，后续液态网络与连续时间模型持续在推进这一路线。",
+            "score": 0.92,
+            "sourcePaperIds": [
+              "1803.08554"
+            ],
+            "lastUpdatedAt": "2026-03-29T02:05:43.719Z"
+          }
+        ]
+      },
+      "lastUpdatedAt": "2026-03-29T02:05:43.719Z"
+    },
+    "originAudit": {
+      "passed": true,
+      "originPaperId": "1803.08554",
+      "originConfirmedAt": "2026-03-24",
+      "originConfirmationMode": "earliest-representative",
+      "originQuestionDefinition": "如何把生物神经回路与连续时间动力学中的结构约束转化成可训练的现代机器学习组件？",
+      "originWhyThisCounts": "Neuronal Circuit Policies 是这条主线中把生物结构重新转化为可训练控制模型的早期代表，后续液态网络与连续时间模型持续在推进这一路线。",
+      "earlierRejectedCandidates": [
+        {
+          "title": "Liquid State Machines: Motivation, Theory, and Applications",
+          "paperId": null,
+          "published": "2002-11",
+          "reason": "更偏向早期概念源头，与当前可训练深度模型主线距离较远。"
+        },
+        {
+          "title": "A Neural Circuit Basis for C. elegans Locomotion",
+          "paperId": null,
+          "published": "2011",
+          "reason": "主要面向神经科学解释，而不是把生物回路转为现代学习方法。"
+        }
+      ]
+    },
+    "publishedMainlinePaperIds": [
+      "1803.08554"
+    ],
+    "publishedBranchPaperIds": [],
+    "candidatePaperIds": [],
+    "seedPaperIds": [],
+    "queryTags": [
+      "bio-inspired machine learning",
+      "neural circuit",
+      "liquid neural network",
+      "continuous-time",
+      "neuromorphic"
+    ],
+    "capabilityRefs": [
+      "continuous-time-dynamics",
+      "closed-form-updates",
+      "state-space-memory",
+      "sequence-efficiency"
+    ],
+    "bootstrapWindowDays": 30,
+    "windowPolicy": "auto",
+    "minStageWindowMonths": 2,
+    "maxStageWindowMonths": 8,
+    "maxActiveBranches": 10,
+    "branchModel": "problem-node-driven",
+    "allowBranchMerge": true,
+    "expansionHistory": [
+      {
+        "fromPaperId": "1803.08554",
+        "windowDays": 30,
+        "reason": "起源论文已被确认为主题源头，后续阶段将从这里开始动态发现。"
+      }
+    ],
+    "problemNodes": [
+      {
+        "id": "bio-inspired-ml:origin-problem",
+        "stageTitle": "起源问题",
+        "stageDigest": "Neuronal Circuit Policies 是这条主线中把生物结构重新转化为可训练控制模型的早期代表，后续液态网络与连续时间模型持续在推进这一路线。",
+        "question": "如何把生物神经回路与连续时间动力学中的结构约束转化成可训练的现代机器学习组件？",
+        "problemConstraints": [],
+        "requiredCapabilities": [
+          "bio-inspired machine learning",
+          "neural circuit",
+          "liquid neural network",
+          "continuous-time",
+          "结构可解释性",
+          "连续时间建模",
+          "液态时间常数",
+          "闭式更新"
+        ],
+        "parentPaperId": "1803.08554",
+        "parentProblemNodeId": null,
+        "directCandidates": [],
+        "transferCandidates": [],
+        "rejectedTransferCandidates": [],
+        "activeBranchIds": [
+          "branch:bio-inspired-ml:origin"
+        ],
+        "resolutionStatus": "open",
+        "confidence": 0.95
+      }
+    ],
+    "branchTree": [
+      {
+        "id": "branch:bio-inspired-ml:origin",
+        "rootProblemNodeId": "bio-inspired-ml:origin-problem",
+        "label": "起源主线",
+        "branchType": "direct",
+        "paperPath": [
+          "1803.08554"
+        ],
+        "status": "branch_active",
+        "summary": "系统只保留起源论文，等待下一阶段动态发现。",
+        "promotionPolicy": "当分支论文已经成为最清晰的主线下一跳时，再提升进入主线。",
+        "mergeBackPolicy": "当分支论文同时解决多个开放问题时，再考虑汇回主线。",
+        "supersededBy": null,
+        "rewriteImpact": "会同步更新 canonical 分支关系以及下游主题展示视图。",
+        "parentBranchId": null
+      }
+    ],
+    "branchRegistry": [
+      {
+        "branchId": "branch:bio-inspired-ml:origin",
+        "rootProblemNodeId": "bio-inspired-ml:origin-problem",
+        "parentBranchId": null,
+        "anchorPaperId": "1803.08554",
+        "anchorPaperPublishedAt": "2018-03-22T19:23:32.000Z",
+        "lastTrackedPaperId": "1803.08554",
+        "lastTrackedPublishedAt": "2018-03-22T19:23:32.000Z",
+        "stageIndex": 1,
+        "activeWindowMonths": 5,
+        "status": "active",
+        "priorityScore": 0.9,
+        "linkedProblemNodeIds": [
+          "bio-inspired-ml:origin-problem"
+        ],
+        "mergedIntoBranchId": null,
+        "branchType": "direct",
+        "label": "起源主线",
+        "summary": "系统只保留起源论文，等待下一阶段动态发现。"
+      }
+    ],
+    "stageLedger": [],
+    "paperRelations": [
+      {
+        "paperId": "1803.08554",
+        "problemNodeIds": [],
+        "branchIds": [
+          "branch:bio-inspired-ml:origin"
+        ],
+        "primaryBranchId": "branch:bio-inspired-ml:origin",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      }
+    ],
+    "recommendationQueue": [],
+    "decisionLog": [
+      {
+        "id": "bio-inspired-ml-origin-reset",
+        "timestamp": "2026-03-29T02:05:43.719Z",
+        "action": "reset-origin-only",
+        "summary": "Canonical 数据已重置为起源论文真源态，等待下一阶段动态发现。",
+        "affectedProblemIds": [
+          "bio-inspired-ml:origin-problem"
+        ],
+        "affectedPaperIds": [
+          "1803.08554"
+        ],
+        "rationale": "移除历史预置候选和旧生成内容，保证后续 stage 只从外部搜索动态进入。"
+      }
+    ],
+    "lastBuiltAt": "2026-03-29T02:05:43.719Z",
+    "lastRewrittenAt": "2026-03-29T02:05:43.719Z"
+  },
+  "embodied-vla": {
+    "schemaVersion": 3,
+    "topicId": "embodied-vla",
+    "timelineContext": {
+      "schemaVersion": 1,
+      "topicId": "embodied-vla",
+      "originPaperId": "2204.01691",
+      "problemSpace": {
+        "nodes": [
+          {
+            "id": "embodied-vla:origin-problem",
+            "label": "起源问题",
+            "question": "如何把语言模型的高层语义能力与机器人可执行动作空间对齐，形成稳定的端到端具身决策？",
+            "status": "origin",
+            "tags": [
+              "vision language action",
+              "VLA",
+              "robot foundation model",
+              "embodied AI",
+              "具身可供性对齐",
+              "统一策略学习",
+              "动作序列化",
+              "多模态 grounding"
+            ],
+            "sourcePaperIds": [
+              "2204.01691"
+            ],
+            "branchIds": [
+              "branch:embodied-vla:origin"
+            ],
+            "notes": "SayCan 明确提出语言语义与机器人可供性的统一接口问题，是当前 VLA 主线的代表性起点之一，后续 RT-1、PaLM-E、RT-2 与 OpenVLA 都在继续扩展它。",
+            "lastUpdatedAt": "2026-03-29T02:05:43.719Z",
+            "priorityScore": 0.95
+          }
+        ]
+      },
+      "methodSpace": {
+        "nodes": []
+      },
+      "branchSpace": {
+        "branches": [
+          {
+            "branchId": "branch:embodied-vla:origin",
+            "label": "起源主线",
+            "status": "origin",
+            "anchorPaperId": "2204.01691",
+            "stageIndex": 1,
+            "linkedProblemIds": [
+              "embodied-vla:origin-problem"
+            ],
+            "notes": "从起源论文出发，等待下一个 stage 的动态发现。",
+            "lastUpdatedAt": "2026-03-29T02:05:43.719Z"
+          }
+        ]
+      },
+      "qualitySpace": {
+        "signals": [
+          {
+            "id": "embodied-vla:origin-audit",
+            "label": "起源确认",
+            "assessment": "SayCan 明确提出语言语义与机器人可供性的统一接口问题，是当前 VLA 主线的代表性起点之一，后续 RT-1、PaLM-E、RT-2 与 OpenVLA 都在继续扩展它。",
+            "score": 0.92,
+            "sourcePaperIds": [
+              "2204.01691"
+            ],
+            "lastUpdatedAt": "2026-03-29T02:05:43.719Z"
+          }
+        ]
+      },
+      "lastUpdatedAt": "2026-03-29T02:05:43.719Z"
+    },
+    "originAudit": {
+      "passed": true,
+      "originPaperId": "2204.01691",
+      "originConfirmedAt": "2026-03-24",
+      "originConfirmationMode": "earliest-representative",
+      "originQuestionDefinition": "如何把语言模型的高层语义能力与机器人可执行动作空间对齐，形成稳定的端到端具身决策？",
+      "originWhyThisCounts": "SayCan 明确提出语言语义与机器人可供性的统一接口问题，是当前 VLA 主线的代表性起点之一，后续 RT-1、PaLM-E、RT-2 与 OpenVLA 都在继续扩展它。",
+      "earlierRejectedCandidates": [
+        {
+          "title": "CLIPort: What and Where Pathways for Robotic Manipulation",
+          "paperId": "2109.12098",
+          "published": "2021-09-24",
+          "reason": "是重要前作，但未形成如今 VLA 统一接口的问题设定。"
+        },
+        {
+          "title": "Grounded Language Learning for Robotics",
+          "paperId": null,
+          "published": "2018",
+          "reason": "更偏早期 grounding 工作，不等同于当前 VLA 主线。"
+        }
+      ]
+    },
+    "publishedMainlinePaperIds": [
+      "2204.01691"
+    ],
+    "publishedBranchPaperIds": [],
+    "candidatePaperIds": [],
+    "seedPaperIds": [],
+    "queryTags": [
+      "vision language action",
+      "VLA",
+      "robot foundation model",
+      "embodied AI",
+      "robotic manipulation",
+      "grounding"
+    ],
+    "capabilityRefs": [
+      "grounded-affordance",
+      "unified-policy-learning",
+      "action-tokenization"
+    ],
+    "bootstrapWindowDays": 30,
+    "windowPolicy": "auto",
+    "minStageWindowMonths": 2,
+    "maxStageWindowMonths": 8,
+    "maxActiveBranches": 10,
+    "branchModel": "problem-node-driven",
+    "allowBranchMerge": true,
+    "expansionHistory": [
+      {
+        "fromPaperId": "2204.01691",
+        "windowDays": 30,
+        "reason": "起源论文已被确认为主题源头，后续阶段将从这里开始动态发现。"
+      }
+    ],
+    "problemNodes": [
+      {
+        "id": "embodied-vla:origin-problem",
+        "stageTitle": "起源问题",
+        "stageDigest": "SayCan 明确提出语言语义与机器人可供性的统一接口问题，是当前 VLA 主线的代表性起点之一，后续 RT-1、PaLM-E、RT-2 与 OpenVLA 都在继续扩展它。",
+        "question": "如何把语言模型的高层语义能力与机器人可执行动作空间对齐，形成稳定的端到端具身决策？",
+        "problemConstraints": [],
+        "requiredCapabilities": [
+          "vision language action",
+          "VLA",
+          "robot foundation model",
+          "embodied AI",
+          "具身可供性对齐",
+          "统一策略学习",
+          "动作序列化",
+          "多模态 grounding"
+        ],
+        "parentPaperId": "2204.01691",
+        "parentProblemNodeId": null,
+        "directCandidates": [],
+        "transferCandidates": [],
+        "rejectedTransferCandidates": [],
+        "activeBranchIds": [
+          "branch:embodied-vla:origin"
+        ],
+        "resolutionStatus": "open",
+        "confidence": 0.95
+      }
+    ],
+    "branchTree": [
+      {
+        "id": "branch:embodied-vla:origin",
+        "rootProblemNodeId": "embodied-vla:origin-problem",
+        "label": "起源主线",
+        "branchType": "direct",
+        "paperPath": [
+          "2204.01691"
+        ],
+        "status": "branch_active",
+        "summary": "系统只保留起源论文，等待下一阶段动态发现。",
+        "promotionPolicy": "当分支论文已经成为最清晰的主线下一跳时，再提升进入主线。",
+        "mergeBackPolicy": "当分支论文同时解决多个开放问题时，再考虑汇回主线。",
+        "supersededBy": null,
+        "rewriteImpact": "会同步更新 canonical 分支关系以及下游主题展示视图。",
+        "parentBranchId": null
+      }
+    ],
+    "branchRegistry": [
+      {
+        "branchId": "branch:embodied-vla:origin",
+        "rootProblemNodeId": "embodied-vla:origin-problem",
+        "parentBranchId": null,
+        "anchorPaperId": "2204.01691",
+        "anchorPaperPublishedAt": "2022-04-04T17:57:11.000Z",
+        "lastTrackedPaperId": "2204.01691",
+        "lastTrackedPublishedAt": "2022-04-04T17:57:11.000Z",
+        "stageIndex": 1,
+        "activeWindowMonths": 5,
+        "status": "active",
+        "priorityScore": 0.9,
+        "linkedProblemNodeIds": [
+          "embodied-vla:origin-problem"
+        ],
+        "mergedIntoBranchId": null,
+        "branchType": "direct",
+        "label": "起源主线",
+        "summary": "系统只保留起源论文，等待下一阶段动态发现。"
+      }
+    ],
+    "stageLedger": [],
+    "paperRelations": [
+      {
+        "paperId": "2204.01691",
+        "problemNodeIds": [],
+        "branchIds": [
+          "branch:embodied-vla:origin"
+        ],
+        "primaryBranchId": "branch:embodied-vla:origin",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      }
+    ],
+    "recommendationQueue": [],
+    "decisionLog": [
+      {
+        "id": "embodied-vla-origin-reset",
+        "timestamp": "2026-03-29T02:05:43.719Z",
+        "action": "reset-origin-only",
+        "summary": "Canonical 数据已重置为起源论文真源态，等待下一阶段动态发现。",
+        "affectedProblemIds": [
+          "embodied-vla:origin-problem"
+        ],
+        "affectedPaperIds": [
+          "2204.01691"
+        ],
+        "rationale": "移除历史预置候选和旧生成内容，保证后续 stage 只从外部搜索动态进入。"
+      }
+    ],
+    "lastBuiltAt": "2026-03-29T02:05:43.719Z",
+    "lastRewrittenAt": "2026-03-29T02:05:43.719Z"
+  },
+  "transformer-innovation": {
+    "schemaVersion": 3,
+    "topicId": "transformer-innovation",
+    "timelineContext": {
+      "schemaVersion": 1,
+      "topicId": "transformer-innovation",
+      "originPaperId": "1706.03762",
+      "problemSpace": {
+        "nodes": [
+          {
+            "id": "transformer-innovation:origin-problem",
+            "label": "起源问题",
+            "question": "能否完全基于注意力机制构建高效的序列建模架构，摆脱递归和卷积的限制？",
+            "status": "origin",
+            "tags": [
+              "transformer",
+              "attention mechanism",
+              "state space model",
+              "SSM",
+              "二次复杂度",
+              "长上下文限制",
+              "状态空间记忆",
+              "连续时间动力学"
+            ],
+            "sourcePaperIds": [
+              "1706.03762"
+            ],
+            "branchIds": [
+              "branch:transformer-innovation:origin"
+            ],
+            "notes": "Attention Is All You Need 重新定义了序列建模的公共起点，后续所有关于长上下文、线性复杂度和状态空间模型的讨论都在回应它留下的问题。",
+            "lastUpdatedAt": "2026-03-29T02:05:43.719Z",
+            "priorityScore": 0.95
+          }
+        ]
+      },
+      "methodSpace": {
+        "nodes": []
+      },
+      "branchSpace": {
+        "branches": [
+          {
+            "branchId": "branch:transformer-innovation:origin",
+            "label": "起源主线",
+            "status": "origin",
+            "anchorPaperId": "1706.03762",
+            "stageIndex": 1,
+            "linkedProblemIds": [
+              "transformer-innovation:origin-problem"
+            ],
+            "notes": "从起源论文出发，等待下一个 stage 的动态发现。",
+            "lastUpdatedAt": "2026-03-29T02:05:43.719Z"
+          }
+        ]
+      },
+      "qualitySpace": {
+        "signals": [
+          {
+            "id": "transformer-innovation:origin-audit",
+            "label": "起源确认",
+            "assessment": "Attention Is All You Need 重新定义了序列建模的公共起点，后续所有关于长上下文、线性复杂度和状态空间模型的讨论都在回应它留下的问题。",
+            "score": 0.92,
+            "sourcePaperIds": [
+              "1706.03762"
+            ],
+            "lastUpdatedAt": "2026-03-29T02:05:43.719Z"
+          }
+        ]
+      },
+      "lastUpdatedAt": "2026-03-29T02:05:43.719Z"
+    },
+    "originAudit": {
+      "passed": true,
+      "originPaperId": "1706.03762",
+      "originConfirmedAt": "2026-03-24",
+      "originConfirmationMode": "earliest-representative",
+      "originQuestionDefinition": "能否完全基于注意力机制构建高效的序列建模架构，摆脱递归和卷积的限制？",
+      "originWhyThisCounts": "Attention Is All You Need 重新定义了序列建模的公共起点，后续所有关于长上下文、线性复杂度和状态空间模型的讨论都在回应它留下的问题。",
+      "earlierRejectedCandidates": [
+        {
+          "title": "Neural Machine Translation by Jointly Learning to Align and Translate",
+          "paperId": "1409.0473",
+          "published": "2014-09-01",
+          "reason": "这是在 RNN 框架内引入注意力，而不是纯注意力骨架。"
+        },
+        {
+          "title": "Convolutional Sequence to Sequence Learning",
+          "paperId": "1705.03122",
+          "published": "2017-05-08",
+          "reason": "仍然以卷积为主线，不是 Transformer 到 SSM 这条演进线的共同起点。"
+        }
+      ]
+    },
+    "publishedMainlinePaperIds": [
+      "1706.03762"
+    ],
+    "publishedBranchPaperIds": [],
+    "candidatePaperIds": [],
+    "seedPaperIds": [],
+    "queryTags": [
+      "transformer",
+      "attention mechanism",
+      "state space model",
+      "SSM",
+      "mamba",
+      "long context"
+    ],
+    "capabilityRefs": [
+      "sequence-efficiency",
+      "state-space-memory",
+      "continuous-time-dynamics",
+      "closed-form-updates"
+    ],
+    "bootstrapWindowDays": 30,
+    "windowPolicy": "auto",
+    "minStageWindowMonths": 2,
+    "maxStageWindowMonths": 8,
+    "maxActiveBranches": 10,
+    "branchModel": "problem-node-driven",
+    "allowBranchMerge": true,
+    "expansionHistory": [
+      {
+        "fromPaperId": "1706.03762",
+        "windowDays": 30,
+        "reason": "起源论文已被确认为主题源头，后续阶段将从这里开始动态发现。"
+      }
+    ],
+    "problemNodes": [
+      {
+        "id": "transformer-innovation:origin-problem",
+        "stageTitle": "起源问题",
+        "stageDigest": "Attention Is All You Need 重新定义了序列建模的公共起点，后续所有关于长上下文、线性复杂度和状态空间模型的讨论都在回应它留下的问题。",
+        "question": "能否完全基于注意力机制构建高效的序列建模架构，摆脱递归和卷积的限制？",
+        "problemConstraints": [],
+        "requiredCapabilities": [
+          "transformer",
+          "attention mechanism",
+          "state space model",
+          "SSM",
+          "二次复杂度",
+          "长上下文限制",
+          "状态空间记忆",
+          "连续时间动力学"
+        ],
+        "parentPaperId": "1706.03762",
+        "parentProblemNodeId": null,
+        "directCandidates": [],
+        "transferCandidates": [],
+        "rejectedTransferCandidates": [],
+        "activeBranchIds": [
+          "branch:transformer-innovation:origin"
+        ],
+        "resolutionStatus": "open",
+        "confidence": 0.95
+      }
+    ],
+    "branchTree": [
+      {
+        "id": "branch:transformer-innovation:origin",
+        "rootProblemNodeId": "transformer-innovation:origin-problem",
+        "label": "起源主线",
+        "branchType": "direct",
+        "paperPath": [
+          "1706.03762"
+        ],
+        "status": "branch_active",
+        "summary": "系统只保留起源论文，等待下一阶段动态发现。",
+        "promotionPolicy": "当分支论文已经成为最清晰的主线下一跳时，再提升进入主线。",
+        "mergeBackPolicy": "当分支论文同时解决多个开放问题时，再考虑汇回主线。",
+        "supersededBy": null,
+        "rewriteImpact": "会同步更新 canonical 分支关系以及下游主题展示视图。",
+        "parentBranchId": null
+      }
+    ],
+    "branchRegistry": [
+      {
+        "branchId": "branch:transformer-innovation:origin",
+        "rootProblemNodeId": "transformer-innovation:origin-problem",
+        "parentBranchId": null,
+        "anchorPaperId": "1706.03762",
+        "anchorPaperPublishedAt": "2017-06-12T17:57:34.000Z",
+        "lastTrackedPaperId": "1706.03762",
+        "lastTrackedPublishedAt": "2017-06-12T17:57:34.000Z",
+        "stageIndex": 1,
+        "activeWindowMonths": 5,
+        "status": "active",
+        "priorityScore": 0.9,
+        "linkedProblemNodeIds": [
+          "transformer-innovation:origin-problem"
+        ],
+        "mergedIntoBranchId": null,
+        "branchType": "direct",
+        "label": "起源主线",
+        "summary": "系统只保留起源论文，等待下一阶段动态发现。"
+      }
+    ],
+    "stageLedger": [],
+    "paperRelations": [
+      {
+        "paperId": "1706.03762",
+        "problemNodeIds": [],
+        "branchIds": [
+          "branch:transformer-innovation:origin"
+        ],
+        "primaryBranchId": "branch:transformer-innovation:origin",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      }
+    ],
+    "recommendationQueue": [],
+    "decisionLog": [
+      {
+        "id": "transformer-innovation-origin-reset",
+        "timestamp": "2026-03-29T02:05:43.719Z",
+        "action": "reset-origin-only",
+        "summary": "Canonical 数据已重置为起源论文真源态，等待下一阶段动态发现。",
+        "affectedProblemIds": [
+          "transformer-innovation:origin-problem"
+        ],
+        "affectedPaperIds": [
+          "1706.03762"
+        ],
+        "rationale": "移除历史预置候选和旧生成内容，保证后续 stage 只从外部搜索动态进入。"
+      }
+    ],
+    "lastBuiltAt": "2026-03-29T02:05:43.719Z",
+    "lastRewrittenAt": "2026-03-29T02:05:43.719Z"
+  }
+}

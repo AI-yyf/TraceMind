@@ -1,0 +1,13 @@
+{
+  "coverPath": "/papers/2302.04761/approach.png",
+  "figurePaths": [
+    "/papers/2302.04761/approach.png",
+    "/papers/2302.04761/example.png",
+    "/papers/2302.04761/prompt.png",
+    "/papers/2302.04761/scaling_laws.png",
+    "/papers/2302.04761/pdf-fallback-cover.png"
+  ],
+  "coverSource": "source-pdf-figure",
+  "extractedAt": "2026-03-24T03:06:05.066Z",
+  "figureCount": 5
+}

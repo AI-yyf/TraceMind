@@ -1,0 +1,14 @@
+{
+  "coverPath": "/papers/2312.00752/architecture.png",
+  "figurePaths": [
+    "/papers/2312.00752/architecture.png",
+    "/papers/2312.00752/algorithm.png",
+    "/papers/2312.00752/copying.png",
+    "/papers/2312.00752/dna_length.png",
+    "/papers/2312.00752/dna_scaling.png",
+    "/papers/2312.00752/induction.png"
+  ],
+  "coverSource": "source-pdf-figure",
+  "extractedAt": "2026-03-24T03:02:59.837Z",
+  "figureCount": 18
+}

@@ -1,0 +1,14 @@
+{
+  "coverPath": "/papers/2303.11366/alfworld_success.png",
+  "figurePaths": [
+    "/papers/2303.11366/alfworld_success.png",
+    "/papers/2303.11366/decisionmaking.png",
+    "/papers/2303.11366/hotpotqa_cot_gt.png",
+    "/papers/2303.11366/hotpotqa_success.png",
+    "/papers/2303.11366/programming.png",
+    "/papers/2303.11366/reasoning.png"
+  ],
+  "coverSource": "source-pdf-figure",
+  "extractedAt": "2026-03-24T03:06:25.580Z",
+  "figureCount": 12
+}

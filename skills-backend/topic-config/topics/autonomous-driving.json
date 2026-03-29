@@ -1,0 +1,51 @@
+{
+  "id": "autonomous-driving",
+  "nameZh": "自动驾驶端到端主线",
+  "nameEn": "End-to-End Autonomous Driving",
+  "focusLabel": "世界模型 / 端到端驾驶 / 驾驶 VLM",
+  "origin": {
+    "originPaperId": "1604.07316",
+    "originConfirmedAt": "2026-03-24",
+    "originConfirmationMode": "earliest-representative",
+    "originQuestionDefinition": "如何从原始传感器输入直接学习驾驶策略，而不是依赖手工拆分的感知、规划与控制模块？",
+    "originWhyThisCounts": "End to End Learning for Self-Driving Cars 为现代端到端自动驾驶研究提供了代表性起点，后续工作不断围绕监督稀疏、恢复能力、世界建模和驾驶 VLM 展开。",
+    "earlierRejectedCandidates": [
+      {
+        "title": "ALVINN: An Autonomous Land Vehicle in a Neural Network",
+        "paperId": null,
+        "published": "1989-12",
+        "reason": "属于更早期的神经网络驾驶原型，不构成当前现代深度学习主线的共同起点。"
+      },
+      {
+        "title": "DeepDriving: Learning Affordance for Direct Perception in Autonomous Driving",
+        "paperId": "1511.03791",
+        "published": "2015-11-11",
+        "reason": "仍依赖人工定义的 affordance 中间变量，不是严格意义上的端到端驾驶主线。"
+      }
+    ]
+  },
+  "queryTags": ["autonomous driving", "end-to-end driving", "world model", "vision language action", "motion planning"],
+  "problemPreference": ["监督稀疏", "恢复策略", "世界模型", "分布外泛化", "长尾场景", "驾驶 VLM"],
+  "seedPapers": [],
+  "capabilityRefs": ["privileged-supervision", "policy-recovery", "world-modeling", "structured-planning"],
+  "defaults": {
+    "bootstrapWindowDays": 30,
+    "maxPaperIntervalDays": 61,
+    "maxCandidates": 8,
+    "storageMode": "canonical-only",
+    "preferredModels": {
+      "openai-compatible": "gpt-4.1",
+      "anthropic": "claude-3-7-sonnet-latest",
+      "agent-skill": "agent-native"
+    }
+  },
+  "frontendSummary": {
+    "cardSummary": "从像素到方向盘，端到端自动驾驶如何一路走向世界模型与驾驶 VLM。",
+    "timelineGuide": "主线从端到端驾驶起点出发，向特权监督、恢复策略与世界模型扩展。",
+    "researchBlurb": "重点观察这条主线如何在安全、长尾场景和多模态理解上不断补齐自身短板。"
+  },
+  "expansionNote": "源头论文之后的早期延续并不密集，因此这条主线沿着监督稀疏、恢复驾驶和世界模型继续展开。",
+  "papers": [
+    { "id": "1604.07316", "version": "v1", "status": "published", "role": "origin" }
+  ]
+}

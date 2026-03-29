@@ -1,0 +1,394 @@
+{
+  "topics": [
+    {
+      "id": "agent",
+      "nameZh": "Agent 系统",
+      "nameEn": "Agent Systems",
+      "focusLabel": "推理-行动 / 工具使用 / 多智能体 / 记忆",
+      "queryTags": [
+        "LLM agent",
+        "tool use",
+        "reasoning and acting",
+        "multi-agent",
+        "reflection",
+        "function calling"
+      ],
+      "problemPreference": [
+        "工具调用学习",
+        "反思记忆",
+        "多智能体协作",
+        "消息拓扑",
+        "系统鲁棒性",
+        "安全对齐"
+      ],
+      "bootstrapWindowDays": 30,
+      "expansionNote": "源头之后的主线继续沿着工具学习、反思记忆和多智能体协作展开。",
+      "originPaperId": "2210.03629",
+      "originConfirmedAt": "2026-03-24",
+      "originConfirmationMode": "earliest-representative",
+      "originQuestionDefinition": "如何把语言模型的推理能力、工具调用和环境反馈整合成可持续执行的闭环系统？",
+      "originWhyThisCounts": "ReAct 给现代 Agent 设定了“推理-行动-观察”闭环骨架，之后 Toolformer、Reflexion、CAMEL、AutoGen 分别在工具学习、记忆和多智能体协作上继续补齐。",
+      "earlierRejectedCandidates": [
+        {
+          "title": "WebGPT: Browser-assisted Question-Answering with Human Feedback",
+          "paperId": "2112.09332",
+          "published": "2021-12-18",
+          "reason": "是重要前作，但任务和系统边界更特定，不是后续通用 Agent 主线的最小公共骨架。"
+        },
+        {
+          "title": "SayCan: Do As I Can, Not As I Say",
+          "paperId": "2204.01691",
+          "published": "2022-04-05",
+          "reason": "主要面向具身智能，不是通用 LLM Agent 骨架的公共起点。"
+        }
+      ],
+      "papers": [
+        {
+          "id": "2210.03629",
+          "version": "v3",
+          "status": "published",
+          "role": "origin"
+        }
+      ],
+      "frontendSummary": {
+        "cardSummary": "从 ReAct 的最小闭环出发，追踪 Agent 如何补足工具学习、记忆与协作。",
+        "timelineGuide": "主线沿着工具使用、反思记忆和多智能体组织不断扩展。",
+        "researchBlurb": "重点观察 Agent 何时从 prompt 技巧走向真正稳定、可组合、可执行的系统能力。"
+      },
+      "capabilityRefs": [
+        "tool-use-learning",
+        "reflective-memory",
+        "multi-agent-coordination"
+      ],
+      "defaults": {
+        "bootstrapWindowDays": 30,
+        "maxPaperIntervalDays": 61,
+        "maxCandidates": 8,
+        "windowPolicy": "auto",
+        "minStageWindowMonths": 2,
+        "maxStageWindowMonths": 8,
+        "maxActiveBranches": 10,
+        "branchModel": "problem-node-driven",
+        "allowBranchMerge": true,
+        "storageMode": "canonical-only",
+        "preferredModels": {
+          "openai-compatible": "gpt-4.1",
+          "anthropic": "claude-3-7-sonnet-latest",
+          "agent-skill": "agent-native"
+        }
+      }
+    },
+    {
+      "id": "autonomous-driving",
+      "nameZh": "自动驾驶端到端主线",
+      "nameEn": "End-to-End Autonomous Driving",
+      "focusLabel": "世界模型 / 端到端驾驶 / 驾驶 VLM",
+      "queryTags": [
+        "autonomous driving",
+        "end-to-end driving",
+        "world model",
+        "vision language action",
+        "motion planning"
+      ],
+      "problemPreference": [
+        "监督稀疏",
+        "恢复策略",
+        "世界模型",
+        "分布外泛化",
+        "长尾场景",
+        "驾驶 VLM"
+      ],
+      "bootstrapWindowDays": 30,
+      "expansionNote": "源头论文之后的早期延续并不密集，因此这条主线沿着监督稀疏、恢复驾驶和世界模型继续展开。",
+      "originPaperId": "1604.07316",
+      "originConfirmedAt": "2026-03-24",
+      "originConfirmationMode": "earliest-representative",
+      "originQuestionDefinition": "如何从原始传感器输入直接学习驾驶策略，而不是依赖手工拆分的感知、规划与控制模块？",
+      "originWhyThisCounts": "End to End Learning for Self-Driving Cars 为现代端到端自动驾驶研究提供了代表性起点，后续工作不断围绕监督稀疏、恢复能力、世界建模和驾驶 VLM 展开。",
+      "earlierRejectedCandidates": [
+        {
+          "title": "ALVINN: An Autonomous Land Vehicle in a Neural Network",
+          "paperId": null,
+          "published": "1989-12",
+          "reason": "属于更早期的神经网络驾驶原型，不构成当前现代深度学习主线的共同起点。"
+        },
+        {
+          "title": "DeepDriving: Learning Affordance for Direct Perception in Autonomous Driving",
+          "paperId": "1511.03791",
+          "published": "2015-11-11",
+          "reason": "仍依赖人工定义的 affordance 中间变量，不是严格意义上的端到端驾驶主线。"
+        }
+      ],
+      "papers": [
+        {
+          "id": "1604.07316",
+          "version": "v1",
+          "status": "published",
+          "role": "origin"
+        }
+      ],
+      "frontendSummary": {
+        "cardSummary": "从像素到方向盘，端到端自动驾驶如何一路走向世界模型与驾驶 VLM。",
+        "timelineGuide": "主线从端到端驾驶起点出发，向特权监督、恢复策略与世界模型扩展。",
+        "researchBlurb": "重点观察这条主线如何在安全、长尾场景和多模态理解上不断补齐自身短板。"
+      },
+      "capabilityRefs": [
+        "privileged-supervision",
+        "policy-recovery",
+        "world-modeling",
+        "structured-planning"
+      ],
+      "defaults": {
+        "bootstrapWindowDays": 30,
+        "maxPaperIntervalDays": 61,
+        "maxCandidates": 8,
+        "windowPolicy": "auto",
+        "minStageWindowMonths": 2,
+        "maxStageWindowMonths": 8,
+        "maxActiveBranches": 10,
+        "branchModel": "problem-node-driven",
+        "allowBranchMerge": true,
+        "storageMode": "canonical-only",
+        "preferredModels": {
+          "openai-compatible": "gpt-4.1",
+          "anthropic": "claude-3-7-sonnet-latest",
+          "agent-skill": "agent-native"
+        }
+      }
+    },
+    {
+      "id": "bio-inspired-ml",
+      "nameZh": "生物启发机器学习",
+      "nameEn": "Bio-inspired Machine Learning",
+      "focusLabel": "神经回路 / 液态网络 / 连续时间模型",
+      "queryTags": [
+        "bio-inspired machine learning",
+        "neural circuit",
+        "liquid neural network",
+        "continuous-time",
+        "neuromorphic"
+      ],
+      "problemPreference": [
+        "结构可解释性",
+        "连续时间建模",
+        "液态时间常数",
+        "闭式更新",
+        "参数效率",
+        "长序列效率"
+      ],
+      "bootstrapWindowDays": 30,
+      "expansionNote": "源头之后的早期延续较少，因此主线按结构约束、连续时间和液态动力学继续推进。",
+      "originPaperId": "1803.08554",
+      "originConfirmedAt": "2026-03-24",
+      "originConfirmationMode": "earliest-representative",
+      "originQuestionDefinition": "如何把生物神经回路与连续时间动力学中的结构约束转化成可训练的现代机器学习组件？",
+      "originWhyThisCounts": "Neuronal Circuit Policies 是这条主线中把生物结构重新转化为可训练控制模型的早期代表，后续液态网络与连续时间模型持续在推进这一路线。",
+      "earlierRejectedCandidates": [
+        {
+          "title": "Liquid State Machines: Motivation, Theory, and Applications",
+          "paperId": null,
+          "published": "2002-11",
+          "reason": "更偏向早期概念源头，与当前可训练深度模型主线距离较远。"
+        },
+        {
+          "title": "A Neural Circuit Basis for C. elegans Locomotion",
+          "paperId": null,
+          "published": "2011",
+          "reason": "主要面向神经科学解释，而不是把生物回路转为现代学习方法。"
+        }
+      ],
+      "papers": [
+        {
+          "id": "1803.08554",
+          "version": "v1",
+          "status": "published",
+          "role": "origin"
+        }
+      ],
+      "frontendSummary": {
+        "cardSummary": "从神经回路启发出发，观察连续时间与液态网络如何进入现代机器学习主线。",
+        "timelineGuide": "这条线强调结构约束、动力学表达和工程可训练性之间的平衡。",
+        "researchBlurb": "重点关注生物启发何时真正转化成算法收益，而不是停留在比喻层面。"
+      },
+      "capabilityRefs": [
+        "continuous-time-dynamics",
+        "closed-form-updates",
+        "state-space-memory",
+        "sequence-efficiency"
+      ],
+      "defaults": {
+        "bootstrapWindowDays": 30,
+        "maxPaperIntervalDays": 61,
+        "maxCandidates": 8,
+        "windowPolicy": "auto",
+        "minStageWindowMonths": 2,
+        "maxStageWindowMonths": 8,
+        "maxActiveBranches": 10,
+        "branchModel": "problem-node-driven",
+        "allowBranchMerge": true,
+        "storageMode": "canonical-only",
+        "preferredModels": {
+          "openai-compatible": "gpt-4.1",
+          "anthropic": "claude-3-7-sonnet-latest",
+          "agent-skill": "agent-native"
+        }
+      }
+    },
+    {
+      "id": "embodied-vla",
+      "nameZh": "具身 VLA",
+      "nameEn": "Embodied Vision-Language-Action",
+      "focusLabel": "机器人基础模型 / 视觉-语言-动作 / 具身落地",
+      "queryTags": [
+        "vision language action",
+        "VLA",
+        "robot foundation model",
+        "embodied AI",
+        "robotic manipulation",
+        "grounding"
+      ],
+      "problemPreference": [
+        "具身可供性对齐",
+        "统一策略学习",
+        "动作序列化",
+        "多模态 grounding",
+        "数据效率",
+        "开源 VLA"
+      ],
+      "bootstrapWindowDays": 30,
+      "expansionNote": "源头之后的早期工作逐步汇入统一策略、多模态 grounding 和开源 VLA 方向。",
+      "originPaperId": "2204.01691",
+      "originConfirmedAt": "2026-03-24",
+      "originConfirmationMode": "earliest-representative",
+      "originQuestionDefinition": "如何把语言模型的高层语义能力与机器人可执行动作空间对齐，形成稳定的端到端具身决策？",
+      "originWhyThisCounts": "SayCan 明确提出语言语义与机器人可供性的统一接口问题，是当前 VLA 主线的代表性起点之一，后续 RT-1、PaLM-E、RT-2 与 OpenVLA 都在继续扩展它。",
+      "earlierRejectedCandidates": [
+        {
+          "title": "CLIPort: What and Where Pathways for Robotic Manipulation",
+          "paperId": "2109.12098",
+          "published": "2021-09-24",
+          "reason": "是重要前作，但未形成如今 VLA 统一接口的问题设定。"
+        },
+        {
+          "title": "Grounded Language Learning for Robotics",
+          "paperId": null,
+          "published": "2018",
+          "reason": "更偏早期 grounding 工作，不等同于当前 VLA 主线。"
+        }
+      ],
+      "papers": [
+        {
+          "id": "2204.01691",
+          "version": "v2",
+          "status": "published",
+          "role": "origin"
+        }
+      ],
+      "frontendSummary": {
+        "cardSummary": "从语言驱动机器人规划，走到统一的 Vision-Language-Action 模型主线。",
+        "timelineGuide": "主线围绕 grounding、统一策略和动作序列化不断扩展。",
+        "researchBlurb": "观察大模型语义如何真正落到动作空间，而不是只停在文本层面的“会说”。"
+      },
+      "capabilityRefs": [
+        "grounded-affordance",
+        "unified-policy-learning",
+        "action-tokenization"
+      ],
+      "defaults": {
+        "bootstrapWindowDays": 30,
+        "maxPaperIntervalDays": 61,
+        "maxCandidates": 8,
+        "windowPolicy": "auto",
+        "minStageWindowMonths": 2,
+        "maxStageWindowMonths": 8,
+        "maxActiveBranches": 10,
+        "branchModel": "problem-node-driven",
+        "allowBranchMerge": true,
+        "storageMode": "canonical-only",
+        "preferredModels": {
+          "openai-compatible": "gpt-4.1",
+          "anthropic": "claude-3-7-sonnet-latest",
+          "agent-skill": "agent-native"
+        }
+      }
+    },
+    {
+      "id": "transformer-innovation",
+      "nameZh": "Transformer 架构演进",
+      "nameEn": "Transformer Architecture Evolution",
+      "focusLabel": "注意力 / 状态空间模型 / Mamba / 长上下文",
+      "queryTags": [
+        "transformer",
+        "attention mechanism",
+        "state space model",
+        "SSM",
+        "mamba",
+        "long context"
+      ],
+      "problemPreference": [
+        "二次复杂度",
+        "长上下文限制",
+        "状态空间记忆",
+        "连续时间动力学",
+        "选择性更新"
+      ],
+      "bootstrapWindowDays": 30,
+      "expansionNote": "Transformer 出现后并没有立刻形成同等体量的后继工作，因此主线延伸到长序列效率、连续时间和状态空间模型。",
+      "originPaperId": "1706.03762",
+      "originConfirmedAt": "2026-03-24",
+      "originConfirmationMode": "earliest-representative",
+      "originQuestionDefinition": "能否完全基于注意力机制构建高效的序列建模架构，摆脱递归和卷积的限制？",
+      "originWhyThisCounts": "Attention Is All You Need 重新定义了序列建模的公共起点，后续所有关于长上下文、线性复杂度和状态空间模型的讨论都在回应它留下的问题。",
+      "earlierRejectedCandidates": [
+        {
+          "title": "Neural Machine Translation by Jointly Learning to Align and Translate",
+          "paperId": "1409.0473",
+          "published": "2014-09-01",
+          "reason": "这是在 RNN 框架内引入注意力，而不是纯注意力骨架。"
+        },
+        {
+          "title": "Convolutional Sequence to Sequence Learning",
+          "paperId": "1705.03122",
+          "published": "2017-05-08",
+          "reason": "仍然以卷积为主线，不是 Transformer 到 SSM 这条演进线的共同起点。"
+        }
+      ],
+      "papers": [
+        {
+          "id": "1706.03762",
+          "version": "v7",
+          "status": "published",
+          "role": "origin"
+        }
+      ],
+      "frontendSummary": {
+        "cardSummary": "从纯注意力骨架出发，追踪长序列效率与状态空间模型如何反过来挑战 Transformer。",
+        "timelineGuide": "主线围绕复杂度、记忆与长上下文展开，后期逐步过渡到 S4 与 Mamba。",
+        "researchBlurb": "这个主题更像结构问题的演化史，重点看不同架构如何取舍表达力、效率和可扩展性。"
+      },
+      "capabilityRefs": [
+        "sequence-efficiency",
+        "state-space-memory",
+        "continuous-time-dynamics",
+        "closed-form-updates"
+      ],
+      "defaults": {
+        "bootstrapWindowDays": 30,
+        "maxPaperIntervalDays": 61,
+        "maxCandidates": 8,
+        "windowPolicy": "auto",
+        "minStageWindowMonths": 2,
+        "maxStageWindowMonths": 8,
+        "maxActiveBranches": 10,
+        "branchModel": "problem-node-driven",
+        "allowBranchMerge": true,
+        "storageMode": "canonical-only",
+        "preferredModels": {
+          "openai-compatible": "gpt-4.1",
+          "anthropic": "claude-3-7-sonnet-latest",
+          "agent-skill": "agent-native"
+        }
+      }
+    }
+  ]
+}

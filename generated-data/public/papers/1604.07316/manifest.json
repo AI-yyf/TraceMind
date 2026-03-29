@@ -1,0 +1,14 @@
+{
+  "coverPath": "/papers/1604.07316/cnn-architecture.png",
+  "figurePaths": [
+    "/papers/1604.07316/cnn-architecture.png",
+    "/papers/1604.07316/data-collection-system.png",
+    "/papers/1604.07316/inference.png",
+    "/papers/1604.07316/simulator.png",
+    "/papers/1604.07316/training.png",
+    "/papers/1604.07316/feature-maps-road.png"
+  ],
+  "coverSource": "source-pdf-figure",
+  "extractedAt": "2026-03-24T02:58:08.242Z",
+  "figureCount": 8
+}

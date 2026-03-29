@@ -1,0 +1,17 @@
+{
+  "bootstrapWindowDays": 30,
+  "maxPaperIntervalDays": 61,
+  "maxCandidates": 8,
+  "windowPolicy": "auto",
+  "minStageWindowMonths": 2,
+  "maxStageWindowMonths": 8,
+  "maxActiveBranches": 10,
+  "branchModel": "problem-node-driven",
+  "allowBranchMerge": true,
+  "storageMode": "canonical-only",
+  "preferredModels": {
+    "openai-compatible": "gpt-4.1",
+    "anthropic": "claude-3-7-sonnet-latest",
+    "agent-skill": "agent-native"
+  }
+}

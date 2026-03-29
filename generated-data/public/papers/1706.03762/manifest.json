@@ -1,0 +1,14 @@
+{
+  "coverPath": "/papers/1706.03762/pdf-fallback-cover.png",
+  "figurePaths": [
+    "/papers/1706.03762/pdf-fallback-cover.png",
+    "/papers/1706.03762/anaphora_resolution_new.png",
+    "/papers/1706.03762/anaphora_resolution2_new.png",
+    "/papers/1706.03762/attending_to_head_new.png",
+    "/papers/1706.03762/attending_to_head2_new.png",
+    "/papers/1706.03762/making_more_difficult_new.png"
+  ],
+  "coverSource": "paper-pdf-embedded",
+  "extractedAt": "2026-03-24T03:01:25.210Z",
+  "figureCount": 13
+}

@@ -1,0 +1,14 @@
+{
+  "coverPath": "/papers/2204.01691/bc_architecture.png",
+  "figurePaths": [
+    "/papers/2204.01691/bc_architecture.png",
+    "/papers/2204.01691/rl_architecture.png",
+    "/papers/2204.01691/intro.png",
+    "/papers/2204.01691/bring_me_a_fruit_mk.png",
+    "/papers/2204.01691/bring_two_different_soda.png",
+    "/papers/2204.01691/embodiment_example.png"
+  ],
+  "coverSource": "source-raster",
+  "extractedAt": "2026-03-24T03:04:01.195Z",
+  "figureCount": 25
+}

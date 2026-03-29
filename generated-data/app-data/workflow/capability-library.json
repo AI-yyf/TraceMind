@@ -1,0 +1,329 @@
+[
+  {
+    "id": "privileged-supervision",
+    "name": "特权监督",
+    "definition": "在训练阶段引入部署时不可得的高质量状态、规划或专家信号，缓解监督过稀的问题。",
+    "mechanism": "通过 teacher-student、蒸馏或 privileged feature 学习提升策略鲁棒性。",
+    "applicabilitySignals": [
+      "特权监督",
+      "蒸馏",
+      "监督稀疏",
+      "模仿学习",
+      "恢复驾驶"
+    ],
+    "antiSignals": [
+      "纯无监督",
+      "只做后验分析"
+    ],
+    "typicalTradeoffs": [
+      "部署时不能依赖教师信号",
+      "训练链路更复杂"
+    ],
+    "relatedCapabilities": [
+      "policy-recovery",
+      "world-modeling"
+    ]
+  },
+  {
+    "id": "policy-recovery",
+    "name": "恢复策略",
+    "definition": "让策略在偏离轨迹或局部失败后仍能回到可行状态，而不是只在示范分布内稳定工作。",
+    "mechanism": "通过闭环校正、价值估计或恢复样本提升策略回正能力。",
+    "applicabilitySignals": [
+      "恢复驾驶",
+      "闭环",
+      "鲁棒控制",
+      "偏差恢复"
+    ],
+    "antiSignals": [
+      "离线单步打分"
+    ],
+    "typicalTradeoffs": [
+      "更依赖环境交互",
+      "需要更好的异常覆盖"
+    ],
+    "relatedCapabilities": [
+      "privileged-supervision",
+      "world-modeling"
+    ]
+  },
+  {
+    "id": "world-modeling",
+    "name": "世界模型",
+    "definition": "显式建模环境状态、未来演化与潜在轨迹价值，让策略不只看当前观测。",
+    "mechanism": "通过 latent state、未来预测或结构化场景建模支撑规划与多步决策。",
+    "applicabilitySignals": [
+      "世界模型",
+      "未来建模",
+      "未来预测",
+      "latent",
+      "规划"
+    ],
+    "antiSignals": [
+      "纯静态特征提取"
+    ],
+    "typicalTradeoffs": [
+      "训练成本更高",
+      "模型偏差会随时间累积"
+    ],
+    "relatedCapabilities": [
+      "structured-planning",
+      "grounded-affordance"
+    ]
+  },
+  {
+    "id": "structured-planning",
+    "name": "结构化规划",
+    "definition": "把环境状态、价值或可行动作显式组织成便于推演的结构，而不是只依赖黑箱映射。",
+    "mechanism": "通过场景图、轨迹价值或 affordance scoring 做中间推理。",
+    "applicabilitySignals": [
+      "规划",
+      "价值",
+      "结构化世界",
+      "affordance"
+    ],
+    "antiSignals": [
+      "纯端到端单步输出"
+    ],
+    "typicalTradeoffs": [
+      "中间接口更复杂",
+      "可能牺牲部分端到端简洁性"
+    ],
+    "relatedCapabilities": [
+      "world-modeling",
+      "tool-use-learning"
+    ]
+  },
+  {
+    "id": "sequence-efficiency",
+    "name": "长序列效率",
+    "definition": "在保持内容感知能力的同时，降低长上下文下的时间和显存复杂度。",
+    "mechanism": "通过稀疏化、状态压缩或选择性更新避免全局二次开销。",
+    "applicabilitySignals": [
+      "长上下文",
+      "线性时间",
+      "复杂度",
+      "并行",
+      "选择性更新"
+    ],
+    "antiSignals": [
+      "短序列静态任务"
+    ],
+    "typicalTradeoffs": [
+      "表达能力与效率需要平衡",
+      "硬件友好性不自动保证"
+    ],
+    "relatedCapabilities": [
+      "state-space-memory",
+      "continuous-time-dynamics"
+    ]
+  },
+  {
+    "id": "state-space-memory",
+    "name": "状态空间记忆",
+    "definition": "把长历史压缩进可递推的隐状态表示，保留远距离依赖而不强依赖显式注意力。",
+    "mechanism": "通过 SSM、递推核或可压缩状态实现长期信息保留。",
+    "applicabilitySignals": [
+      "状态空间",
+      "状态记忆",
+      "SSM",
+      "长序列",
+      "结构化状态空间"
+    ],
+    "antiSignals": [
+      "只做局部卷积"
+    ],
+    "typicalTradeoffs": [
+      "调参更敏感",
+      "解释性依赖状态设计"
+    ],
+    "relatedCapabilities": [
+      "sequence-efficiency",
+      "continuous-time-dynamics"
+    ]
+  },
+  {
+    "id": "continuous-time-dynamics",
+    "name": "连续时间动力学",
+    "definition": "把层或状态更新看成连续动力系统，从离散深度过渡到连续时间建模。",
+    "mechanism": "通过微分方程、液态状态或时间常数建模非均匀演化过程。",
+    "applicabilitySignals": [
+      "连续时间",
+      "神经微分方程",
+      "液态网络",
+      "动力系统"
+    ],
+    "antiSignals": [
+      "固定步长浅层前馈"
+    ],
+    "typicalTradeoffs": [
+      "更依赖数值稳定性",
+      "推理延迟可能增加"
+    ],
+    "relatedCapabilities": [
+      "state-space-memory",
+      "closed-form-updates"
+    ]
+  },
+  {
+    "id": "closed-form-updates",
+    "name": "闭式更新",
+    "definition": "用解析或近似解析更新规律提升连续时间模型的稳定性与部署效率。",
+    "mechanism": "通过闭式状态更新减少数值积分误差并提升推理可控性。",
+    "applicabilitySignals": [
+      "闭式更新",
+      "工程化",
+      "稳定性",
+      "液态时间常数"
+    ],
+    "antiSignals": [
+      "完全依赖显式求解器"
+    ],
+    "typicalTradeoffs": [
+      "模型假设更强",
+      "灵活性可能受限"
+    ],
+    "relatedCapabilities": [
+      "continuous-time-dynamics"
+    ]
+  },
+  {
+    "id": "grounded-affordance",
+    "name": "具身可供性对齐",
+    "definition": "把语言或高层语义与真实可执行动作对齐，避免高层计划脱离身体约束。",
+    "mechanism": "通过 affordance scoring、环境反馈或 grounded token 把语义压回动作空间。",
+    "applicabilitySignals": [
+      "grounding",
+      "可供性",
+      "具身决策",
+      "语言执行",
+      "技能选择"
+    ],
+    "antiSignals": [
+      "只做离线文本推理"
+    ],
+    "typicalTradeoffs": [
+      "更依赖环境反馈与机器人数据",
+      "评估成本更高"
+    ],
+    "relatedCapabilities": [
+      "unified-policy-learning",
+      "action-tokenization"
+    ]
+  },
+  {
+    "id": "unified-policy-learning",
+    "name": "统一策略学习",
+    "definition": "把大量行为和任务压进统一策略框架，而不是依赖手工拆分的技能库。",
+    "mechanism": "通过大规模多任务行为数据训练可泛化的策略模型。",
+    "applicabilitySignals": [
+      "统一策略",
+      "机器人数据",
+      "policy",
+      "大规模行为"
+    ],
+    "antiSignals": [
+      "只在单技能或固定脚本上工作"
+    ],
+    "typicalTradeoffs": [
+      "数据需求更大",
+      "调度与泛化更难"
+    ],
+    "relatedCapabilities": [
+      "grounded-affordance",
+      "action-tokenization"
+    ]
+  },
+  {
+    "id": "action-tokenization",
+    "name": "动作序列化",
+    "definition": "把视觉、语言和动作映射到统一序列接口，支撑同一骨架内的多模态决策。",
+    "mechanism": "通过 token 化动作或多模态上下文让决策过程共享语言模型式接口。",
+    "applicabilitySignals": [
+      "动作 token",
+      "VLA",
+      "多模态大模型",
+      "统一接口"
+    ],
+    "antiSignals": [
+      "外部模块硬拼接"
+    ],
+    "typicalTradeoffs": [
+      "动作离散化会损失精度",
+      "训练稳定性更难保证"
+    ],
+    "relatedCapabilities": [
+      "unified-policy-learning",
+      "grounded-affordance"
+    ]
+  },
+  {
+    "id": "tool-use-learning",
+    "name": "工具调用学习",
+    "definition": "让模型学会何时调用外部工具、调用什么工具以及如何消化返回结果。",
+    "mechanism": "通过自监督轨迹、函数调用示例或策略优化，把工具使用从 prompt 技巧变成学习对象。",
+    "applicabilitySignals": [
+      "工具使用",
+      "函数调用",
+      "自监督",
+      "reasoning and acting"
+    ],
+    "antiSignals": [
+      "只能静态回答"
+    ],
+    "typicalTradeoffs": [
+      "动作空间管理更复杂",
+      "需要更严格的工具约束"
+    ],
+    "relatedCapabilities": [
+      "reflective-memory",
+      "multi-agent-coordination"
+    ]
+  },
+  {
+    "id": "reflective-memory",
+    "name": "反思记忆",
+    "definition": "把失败和局部经验写成可复用的长期记忆，而不是每轮都从头试错。",
+    "mechanism": "通过显式回顾、检索式记忆或经验摘要提升长期任务表现。",
+    "applicabilitySignals": [
+      "反思",
+      "记忆",
+      "长期任务",
+      "反馈"
+    ],
+    "antiSignals": [
+      "无状态单轮推理"
+    ],
+    "typicalTradeoffs": [
+      "记忆污染风险更高",
+      "检索成本增加"
+    ],
+    "relatedCapabilities": [
+      "tool-use-learning",
+      "multi-agent-coordination"
+    ]
+  },
+  {
+    "id": "multi-agent-coordination",
+    "name": "多智能体协作",
+    "definition": "把复杂任务拆成多角色、多消息流和多工具的协作网络，而不是单一循环。",
+    "mechanism": "通过角色分工、消息拓扑和任务分解提升系统处理复杂度。",
+    "applicabilitySignals": [
+      "多智能体",
+      "角色协作",
+      "消息拓扑",
+      "society"
+    ],
+    "antiSignals": [
+      "单代理固定流程"
+    ],
+    "typicalTradeoffs": [
+      "系统编排更脆弱",
+      "调试成本更高"
+    ],
+    "relatedCapabilities": [
+      "reflective-memory",
+      "tool-use-learning"
+    ]
+  }
+]

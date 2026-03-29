@@ -1,0 +1,14 @@
+{
+  "coverPath": "/papers/2006.04439/pdf-fallback-cover.png",
+  "figurePaths": [
+    "/papers/2006.04439/pdf-fallback-cover.png",
+    "/papers/2006.04439/fig_1_NEW.png",
+    "/papers/2006.04439/half_cheetah.png",
+    "/papers/2006.04439/perfromance_vs_sparsity_and_size.png",
+    "/papers/2006.04439/supplements_traj_resutls.png",
+    "/papers/2006.04439/traj_ffn.png"
+  ],
+  "coverSource": "paper-pdf-embedded",
+  "extractedAt": "2026-03-24T03:02:18.103Z",
+  "figureCount": 8
+}

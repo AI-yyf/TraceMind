@@ -1,0 +1,51 @@
+{
+  "id": "bio-inspired-ml",
+  "nameZh": "生物启发机器学习",
+  "nameEn": "Bio-inspired Machine Learning",
+  "focusLabel": "神经回路 / 液态网络 / 连续时间模型",
+  "origin": {
+    "originPaperId": "1803.08554",
+    "originConfirmedAt": "2026-03-24",
+    "originConfirmationMode": "earliest-representative",
+    "originQuestionDefinition": "如何把生物神经回路与连续时间动力学中的结构约束转化成可训练的现代机器学习组件？",
+    "originWhyThisCounts": "Neuronal Circuit Policies 是这条主线中把生物结构重新转化为可训练控制模型的早期代表，后续液态网络与连续时间模型持续在推进这一路线。",
+    "earlierRejectedCandidates": [
+      {
+        "title": "Liquid State Machines: Motivation, Theory, and Applications",
+        "paperId": null,
+        "published": "2002-11",
+        "reason": "更偏向早期概念源头，与当前可训练深度模型主线距离较远。"
+      },
+      {
+        "title": "A Neural Circuit Basis for C. elegans Locomotion",
+        "paperId": null,
+        "published": "2011",
+        "reason": "主要面向神经科学解释，而不是把生物回路转为现代学习方法。"
+      }
+    ]
+  },
+  "queryTags": ["bio-inspired machine learning", "neural circuit", "liquid neural network", "continuous-time", "neuromorphic"],
+  "problemPreference": ["结构可解释性", "连续时间建模", "液态时间常数", "闭式更新", "参数效率", "长序列效率"],
+  "seedPapers": [],
+  "capabilityRefs": ["continuous-time-dynamics", "closed-form-updates", "state-space-memory", "sequence-efficiency"],
+  "defaults": {
+    "bootstrapWindowDays": 30,
+    "maxPaperIntervalDays": 61,
+    "maxCandidates": 8,
+    "storageMode": "canonical-only",
+    "preferredModels": {
+      "openai-compatible": "gpt-4.1",
+      "anthropic": "claude-3-7-sonnet-latest",
+      "agent-skill": "agent-native"
+    }
+  },
+  "frontendSummary": {
+    "cardSummary": "从神经回路启发出发，观察连续时间与液态网络如何进入现代机器学习主线。",
+    "timelineGuide": "这条线强调结构约束、动力学表达和工程可训练性之间的平衡。",
+    "researchBlurb": "重点关注生物启发何时真正转化成算法收益，而不是停留在比喻层面。"
+  },
+  "expansionNote": "源头之后的早期延续较少，因此主线按结构约束、连续时间和液态动力学继续推进。",
+  "papers": [
+    { "id": "1803.08554", "version": "v1", "status": "published", "role": "origin" }
+  ]
+}

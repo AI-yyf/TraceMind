@@ -1,0 +1,238 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// 研究主题
+model Topic {
+  id          String   @id @default(uuid())
+  nameZh      String
+  nameEn      String?
+  focusLabel  String?
+  summary     String?
+  description String?
+  status      String   @default("active") // active, archived
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // 关联
+  papers Paper[]
+  nodes  ResearchNode[]
+  stages TopicStage[]
+
+  @@map("topics")
+}
+
+// 研究阶段定义
+model TopicStage {
+  id          String @id @default(uuid())
+  topicId     String
+  order       Int
+  name        String
+  description String?
+
+  topic Topic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@map("topic_stages")
+}
+
+// 论文
+model Paper {
+  id              String    @id @default(uuid())
+  topicId         String
+  title           String
+  titleZh         String
+  titleEn         String?
+  authors         String // JSON array
+  published       DateTime
+  summary         String
+  explanation     String?
+  arxivUrl        String?
+  pdfUrl          String?
+  pdfPath         String? // 本地存储路径
+  citationCount   Int?
+  coverPath       String?
+  figurePaths     String // JSON array
+  tablePaths      String // JSON array
+  status          String @default("candidate") // published, seeded, candidate
+  tags            String // JSON array
+  contentMode     String @default("editorial") // editorial, seed
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // 关联
+  topic       Topic          @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  primaryFor  ResearchNode[] @relation("PrimaryPaper")
+  figures     Figure[]
+  tables      Table[]
+  formulas    Formula[]
+  sections    PaperSection[]
+
+  @@map("papers")
+}
+
+// 论文章节
+model PaperSection {
+  id                String @id @default(uuid())
+  paperId           String
+  sourceSectionTitle String
+  editorialTitle    String
+  paragraphs        String // JSON array
+  order             Int
+
+  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  @@map("paper_sections")
+}
+
+// 研究节点（节点中心架构）
+model ResearchNode {
+  id                String   @id @default(uuid())
+  topicId           String
+  stageIndex        Int
+  nodeLabel         String
+  nodeSubtitle      String?
+  nodeSummary       String
+  nodeExplanation   String?
+  nodeCoverImage    String?
+  status            String   @default("provisional") // provisional, canonical, archived
+  isMergeNode       Boolean  @default(false)
+  provisional       Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // 关联
+  topic          Topic  @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  primaryPaperId String
+  primaryPaper   Paper  @relation("PrimaryPaper", fields: [primaryPaperId], references: [id])
+
+  // 多对多关系
+  papers NodePaper[]
+
+  // 完整内容（JSON字符串存储）
+  fullContent String?
+
+  @@map("research_nodes")
+}
+
+// 节点-论文关联表
+model NodePaper {
+  id     String @id @default(uuid())
+  nodeId String
+  paperId String
+  order  Int
+
+  node  ResearchNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@unique([nodeId, paperId])
+  @@map("node_papers")
+}
+
+// 图表资源
+model Figure {
+  id          String @id @default(uuid())
+  paperId     String
+  number      Int
+  caption     String
+  page        Int
+  imagePath   String
+  analysis    String? // JSON - 深度分析结果
+  createdAt   DateTime @default(now())
+
+  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  @@map("figures")
+}
+
+// 表格资源
+model Table {
+  id          String @id @default(uuid())
+  paperId     String
+  number      Int
+  caption     String
+  page        Int
+  headers     String // JSON array
+  rows        String // JSON array
+  rawText     String
+  createdAt   DateTime @default(now())
+
+  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  @@map("tables")
+}
+
+// 公式资源
+model Formula {
+  id          String @id @default(uuid())
+  paperId     String
+  number      String
+  latex       String
+  rawText     String
+  page        Int
+  createdAt   DateTime @default(now())
+
+  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  @@map("formulas")
+}
+
+// 研究会话
+model ResearchSession {
+  id              String   @id @default(uuid())
+  topicIds        String // JSON array
+  mode            String   @default("full")
+  status          String   @default("running") // running, completed, failed, paused
+  currentStage    String?
+  progress        Float    @default(0)
+  logs            String // JSON array
+  createdAt       DateTime @default(now())
+  completedAt     DateTime?
+  error           String?
+
+  @@map("research_sessions")
+}
+
+// 系统配置
+model SystemConfig {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     String // JSON
+  updatedAt DateTime @updatedAt
+
+  @@map("system_configs")
+}
+
+// 多模态模型配置
+model ModelConfig {
+  id             String   @id @default(uuid())
+  modelId        String   @unique
+  name           String
+  provider       String
+  model          String
+  apiKey         String
+  baseUrl        String?
+  parameters     String // JSON
+  capabilities   String // JSON array
+  enabled        Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("model_configs")
+}
+
+// 任务-模型映射
+model TaskMapping {
+  id              String @id @default(uuid())
+  taskName        String @unique
+  modelId         String
+  fallbackModelId String?
+
+  @@map("task_mappings")
+}

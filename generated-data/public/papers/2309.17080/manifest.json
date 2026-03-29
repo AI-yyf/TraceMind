@@ -1,0 +1,14 @@
+{
+  "coverPath": "/papers/2309.17080/pdf-fallback-cover.png",
+  "figurePaths": [
+    "/papers/2309.17080/pdf-fallback-cover.png",
+    "/papers/2309.17080/actions.png",
+    "/papers/2309.17080/cfg_example.png",
+    "/papers/2309.17080/cfg_schedule.png",
+    "/papers/2309.17080/compute.png",
+    "/papers/2309.17080/data_balancing_latitude.png"
+  ],
+  "coverSource": "paper-pdf-embedded",
+  "extractedAt": "2026-03-24T03:00:28.618Z",
+  "figureCount": 29
+}

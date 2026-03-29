@@ -1,0 +1,63 @@
+[
+  {
+    "originId": "1604.07316",
+    "originPublished": "2016-04-25",
+    "topicId": "autonomous-driving",
+    "candidateCount": 0,
+    "candidates": []
+  },
+  {
+    "originId": "1706.03762",
+    "originPublished": "2017-06-12",
+    "topicId": "transformer-innovation",
+    "candidateCount": 0,
+    "candidates": []
+  },
+  {
+    "originId": "1803.08554",
+    "originPublished": "2018-03-22",
+    "topicId": "bio-inspired-ml",
+    "candidateCount": 1,
+    "candidates": [
+      {
+        "id": "1806.07366",
+        "title": "Neural Ordinary Differential Equations",
+        "published": "2018-06-19",
+        "daysAfter": 89
+      }
+    ]
+  },
+  {
+    "originId": "2204.01691",
+    "originPublished": "2022-04-04",
+    "topicId": "embodied-vla",
+    "candidateCount": 0,
+    "candidates": []
+  },
+  {
+    "originId": "2210.03629",
+    "originPublished": "2022-10-07",
+    "topicId": "agent",
+    "candidateCount": 3,
+    "candidates": [
+      {
+        "id": "2212.06817",
+        "title": "RT-1: Robotics Transformer for Real-World Control at Scale",
+        "published": "2022-12-13",
+        "daysAfter": 67
+      },
+      {
+        "id": "2302.04761",
+        "title": "Toolformer: Language Models Can Teach Themselves to Use Tools",
+        "published": "2023-02-09",
+        "daysAfter": 125
+      },
+      {
+        "id": "2303.03378",
+        "title": "PaLM-E: An Embodied Multimodal Language Model",
+        "published": "2023-03-06",
+        "daysAfter": 150
+      }
+    ]
+  }
+]
