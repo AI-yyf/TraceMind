@@ -25,6 +25,9 @@ export interface SearchResult {
   relevanceScore: number
   matchedQueryIds: string[]
   source: 'arxiv' | 'openalex' | 'semantic-scholar'
+  pdfUrl?: string
+  categories?: string[]
+  citationCount?: number
 }
 
 /** 候选论文 */

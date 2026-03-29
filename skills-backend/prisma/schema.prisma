@@ -1,5 +1,5 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// Prisma schema for 溯知集 ArXiv Chronicle
+// Supports both SQLite (development) and PostgreSQL (production)
 
 generator client {
   provider = "prisma-client-js"
@@ -10,6 +10,12 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// 生产环境配置示例：
+// datasource db {
+//   provider = "postgresql"
+//   url      = env("DATABASE_URL") // postgresql://user:password@host:5432/arxiv_chronicle
+// }
+
 // 研究主题
 model Topic {
   id          String   @id @default(uuid())
@@ -18,15 +24,15 @@ model Topic {
   focusLabel  String?
   summary     String?
   description String?
-  status      String   @default("active") // active, archived
+  status      String   @default("active")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  // 关联
   papers Paper[]
   nodes  ResearchNode[]
   stages TopicStage[]
 
+  @@index([status])
   @@map("topics")
 }
 
@@ -40,6 +46,7 @@ model TopicStage {
 
   topic Topic @relation(fields: [topicId], references: [id], onDelete: Cascade)
 
+  @@index([topicId])
   @@map("topic_stages")
 }
 
@@ -50,45 +57,49 @@ model Paper {
   title           String
   titleZh         String
   titleEn         String?
-  authors         String // JSON array
+  authors         String
   published       DateTime
   summary         String
   explanation     String?
   arxivUrl        String?
   pdfUrl          String?
-  pdfPath         String? // 本地存储路径
+  pdfPath         String?
   citationCount   Int?
   coverPath       String?
-  figurePaths     String // JSON array
-  tablePaths      String // JSON array
-  status          String @default("candidate") // published, seeded, candidate
-  tags            String // JSON array
-  contentMode     String @default("editorial") // editorial, seed
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  figurePaths     String
+  tablePaths      String
+  status          String    @default("candidate")
+  tags            String
+  contentMode     String    @default("editorial")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  // 关联
   topic       Topic          @relation(fields: [topicId], references: [id], onDelete: Cascade)
   primaryFor  ResearchNode[] @relation("PrimaryPaper")
   figures     Figure[]
   tables      Table[]
   formulas    Formula[]
   sections    PaperSection[]
+  nodePapers  NodePaper[]
 
+  @@index([topicId])
+  @@index([status])
+  @@index([published])
   @@map("papers")
 }
 
 // 论文章节
 model PaperSection {
-  id                String @id @default(uuid())
-  paperId           String
+  id                 String @id @default(uuid())
+  paperId            String
   sourceSectionTitle String
-  editorialTitle    String
-  paragraphs        String // JSON array
-  order             Int
+  editorialTitle     String
+  paragraphs         String
+  order              Int
 
   paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
 
+  @@index([paperId])
   @@map("paper_sections")
 }
 
@@ -102,100 +113,105 @@ model ResearchNode {
   nodeSummary       String
   nodeExplanation   String?
   nodeCoverImage    String?
-  status            String   @default("provisional") // provisional, canonical, archived
+  status            String   @default("provisional")
   isMergeNode       Boolean  @default(false)
   provisional       Boolean  @default(true)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  // 关联
   topic          Topic  @relation(fields: [topicId], references: [id], onDelete: Cascade)
   primaryPaperId String
   primaryPaper   Paper  @relation("PrimaryPaper", fields: [primaryPaperId], references: [id])
 
-  // 多对多关系
-  papers NodePaper[]
-
-  // 完整内容（JSON字符串存储）
+  papers     NodePaper[]
   fullContent String?
 
+  @@index([topicId])
+  @@index([stageIndex])
   @@map("research_nodes")
 }
 
 // 节点-论文关联表
 model NodePaper {
-  id     String @id @default(uuid())
-  nodeId String
-  paperId String
-  order  Int
+  id       String @id @default(uuid())
+  nodeId   String
+  paperId  String
+  order    Int
 
   node  ResearchNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  paper Paper        @relation(fields: [paperId], references: [id], onDelete: Cascade)
 
   @@unique([nodeId, paperId])
+  @@index([nodeId])
+  @@index([paperId])
   @@map("node_papers")
 }
 
 // 图表资源
 model Figure {
-  id          String @id @default(uuid())
+  id          String  @id @default(uuid())
   paperId     String
   number      Int
   caption     String
   page        Int
   imagePath   String
-  analysis    String? // JSON - 深度分析结果
+  analysis    String?
   createdAt   DateTime @default(now())
 
   paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
 
+  @@index([paperId])
   @@map("figures")
 }
 
 // 表格资源
 model Table {
-  id          String @id @default(uuid())
+  id          String  @id @default(uuid())
   paperId     String
   number      Int
   caption     String
   page        Int
-  headers     String // JSON array
-  rows        String // JSON array
+  headers     String
+  rows        String
   rawText     String
   createdAt   DateTime @default(now())
 
   paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
 
+  @@index([paperId])
   @@map("tables")
 }
 
 // 公式资源
 model Formula {
-  id          String @id @default(uuid())
-  paperId     String
-  number      String
-  latex       String
-  rawText     String
-  page        Int
-  createdAt   DateTime @default(now())
+  id        String  @id @default(uuid())
+  paperId   String
+  number    String
+  latex     String
+  rawText   String
+  page      Int
+  createdAt DateTime @default(now())
 
   paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
 
+  @@index([paperId])
   @@map("formulas")
 }
 
 // 研究会话
 model ResearchSession {
-  id              String   @id @default(uuid())
-  topicIds        String // JSON array
-  mode            String   @default("full")
-  status          String   @default("running") // running, completed, failed, paused
+  id              String    @id @default(uuid())
+  topicIds        String
+  mode            String    @default("full")
+  status          String    @default("running")
   currentStage    String?
-  progress        Float    @default(0)
-  logs            String // JSON array
-  createdAt       DateTime @default(now())
+  progress        Float     @default(0)
+  logs            String
+  createdAt       DateTime  @default(now())
   completedAt     DateTime?
   error           String?
 
+  @@index([status])
   @@map("research_sessions")
 }
 
@@ -203,7 +219,7 @@ model ResearchSession {
 model SystemConfig {
   id        String   @id @default(uuid())
   key       String   @unique
-  value     String // JSON
+  value     String
   updatedAt DateTime @updatedAt
 
   @@map("system_configs")
@@ -211,28 +227,33 @@ model SystemConfig {
 
 // 多模态模型配置
 model ModelConfig {
-  id             String   @id @default(uuid())
-  modelId        String   @unique
-  name           String
-  provider       String
-  model          String
-  apiKey         String
-  baseUrl        String?
-  parameters     String // JSON
-  capabilities   String // JSON array
-  enabled        Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id           String   @id @default(uuid())
+  modelId      String   @unique
+  name         String
+  provider     String
+  model        String
+  apiKey       String
+  baseUrl      String?
+  parameters   String
+  capabilities String
+  enabled      Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
+  taskMappings TaskMapping[]
+
+  @@index([provider])
   @@map("model_configs")
 }
 
 // 任务-模型映射
 model TaskMapping {
-  id              String @id @default(uuid())
-  taskName        String @unique
-  modelId         String
-  fallbackModelId String?
+  id               String @id @default(uuid())
+  taskName         String @unique
+  modelId          String
+  fallbackModelId  String?
+
+  config ModelConfig @relation(fields: [modelId], references: [modelId])
 
   @@map("task_mappings")
 }
