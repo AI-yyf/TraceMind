@@ -24,6 +24,7 @@ model Topic {
   focusLabel  String?
   summary     String?
   description String?
+  language    String   @default("zh")  // 界面语言: zh, en, ja, ko
   status      String   @default("active")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -33,6 +34,7 @@ model Topic {
   stages TopicStage[]
 
   @@index([status])
+  @@index([language])
   @@map("topics")
 }
 

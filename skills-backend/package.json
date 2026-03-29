@@ -11,6 +11,8 @@
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
     "db:seed": "tsx src/scripts/seed.ts",
+    "scheduler:start": "tsx src/scripts/scheduler-cli.ts",
+    "topic:generate": "tsx src/scripts/topic-generate.ts",
     "lint": "eslint src --ext .ts",
     "type-check": "tsc --noEmit"
   },
@@ -36,6 +38,7 @@
     "p-timeout": "^6.1.2",
     "pdf-lib": "^1.17.1",
     "sharp": "^0.33.1",
+    "node-cron": "^3.0.3",
     "zod": "^3.22.4",
     "winston": "^3.11.0",
     "winston-daily-rotate-file": "^4.7.1"
@@ -48,6 +51,7 @@
     "@types/node": "^20.10.5",
     "@types/uuid": "^9.0.7",
     "@types/ws": "^8.5.10",
+    "@types/node-cron": "^3.0.11",
     "@typescript-eslint/eslint-plugin": "^6.15.0",
     "@typescript-eslint/parser": "^6.15.0",
     "eslint": "^8.56.0",

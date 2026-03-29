@@ -19,6 +19,7 @@ const ResearchPage = lazy(() =>
 const PaperPage = lazy(() => import('@/pages/PaperPage').then((module) => ({ default: module.PaperPage })))
 const TodayPage = lazy(() => import('@/pages/TodayPage').then((module) => ({ default: module.default })))
 const NodeDetailPage = lazy(() => import('@/pages/NodeDetailPage').then((module) => ({ default: module.NodeDetailPage })))
+const CreateTopicPage = lazy(() => import('@/pages/CreateTopicPage').then((module) => ({ default: module.CreateTopicPage })))
 
 export default function App() {
   return (
@@ -35,6 +36,7 @@ export default function App() {
               <Route path="/topic/:topicId/research" element={withPageFallback(<ResearchPage />)} />
               <Route path="/paper/:paperId" element={withPageFallback(<PaperPage />)} />
               <Route path="/node/:nodeId" element={withPageFallback(<NodeDetailPage />)} />
+              <Route path="/topic/create" element={withPageFallback(<CreateTopicPage />)} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Layout>
