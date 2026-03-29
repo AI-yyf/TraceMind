@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { X, Save, RotateCcw, Key, Server, Sliders, MessageSquare, FlaskConical, Eye, Image, Layers } from 'lucide-react'
+import { X, Save, RotateCcw, Key, Server, Sliders, MessageSquare, FlaskConical, Eye, Image, Layers, Clock } from 'lucide-react'
 import { useConfig } from '@/hooks/useConfig'
+import { TaskScheduler } from './TaskScheduler'
 import type { AppConfig, ApiProvider } from '@/types/config'
 
 interface SettingsPanelProps {
@@ -76,6 +77,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
     { id: 'research', label: '研究流程', icon: FlaskConical },
     { id: 'batch', label: '批量研究', icon: Layers },
     { id: 'prompts', label: '提示词', icon: MessageSquare },
+    { id: 'scheduler', label: '定时任务', icon: Clock },
   ] as const
 
   const providers: { id: ApiProvider; name: string; defaultUrl: string }[] = [
@@ -673,9 +675,9 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                       </div>
                       <textarea
                         value={localConfig.prompts[key as keyof typeof localConfig.prompts]}
-                        onChange={(e) => setLocalConfig(prev => ({ 
-                          ...prev, 
-                          prompts: { ...prev.prompts, [key]: e.target.value } 
+                        onChange={(e) => setLocalConfig(prev => ({
+                          ...prev,
+                          prompts: { ...prev.prompts, [key]: e.target.value }
                         }))}
                         rows={5}
                         className="w-full rounded-lg border border-black/10 px-3 py-2 text-[13px] font-mono outline-none transition focus:border-black"
@@ -683,6 +685,18 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* 定时任务 */}
+            {activeTab === 'scheduler' && (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-[16px] font-medium text-black">定时任务管理</h3>
+                  <p className="mt-1 text-[13px] text-black/50">自动执行论文发现和数据同步</p>
+                </div>
+
+                <TaskScheduler />
               </div>
             )}
           </div>
