@@ -21,6 +21,8 @@ import researchRoutes from './routes/research'
 import configRoutes from './routes/config'
 import modelRoutes from './routes/models'
 import pdfRoutes from './routes/pdf'
+import tasksRoutes from './routes/tasks'
+import topicGenRoutes from './routes/topic-gen'
 
 // 加载环境变量
 dotenv.config()
@@ -83,6 +85,8 @@ app.use('/api/research', researchRoutes)
 app.use('/api/config', configRoutes)
 app.use('/api/models', modelRoutes)
 app.use('/api/pdf', pdfRoutes)
+app.use('/api/tasks', tasksRoutes)
+app.use('/api/topic-gen', topicGenRoutes)
 
 // 错误处理
 app.use(errorHandler)
