@@ -36,26 +36,56 @@ import {
   localizeFocusLabel,
 } from '@/utils/researchCopy'
 
-type CatalogEntry = (typeof paperCatalog)[keyof typeof paperCatalog]
+type CatalogEntry = {
+  title: string
+  summary: string
+  published: string
+  authors: string[]
+  arxivUrl?: string
+  pdfUrl?: string
+}
 type MetricsEntry = { citationCount: number | null; source: string; retrievedAt: string }
 type AssetsEntry = {
   coverPath: string | null
   coverSource?: string | null
   figurePaths: string[]
 }
+type PaperCatalogCollection = { version: string; papers: Record<string, CatalogEntry> }
+type PaperAssetsCollection = { version: string; papers: Record<string, AssetsEntry> }
+type PaperMetricsCollection = { version: string; metrics: Record<string, MetricsEntry> }
+type CapabilityLibraryCollection = {
+  version: string
+  capabilities: Array<{ id: string; name: string; description?: string }>
+}
 type TopicCatalogSeed = Omit<CatalogTopic, 'focusLabel'> & { focusLabel?: string }
 type TopicCatalogCollection = { topics: TopicCatalogSeed[] }
 type RawTopicMemory = Record<string, Record<string, unknown>>
+type EditorialCollection<T> = { version: string; editorials: Record<string, T> }
 
-const catalogRecord = paperCatalog as Record<string, CatalogEntry>
-const metricsRecord = paperMetrics as Record<string, MetricsEntry>
-const assetsRecord = paperAssets as Record<string, AssetsEntry>
-const capabilityLibrary = capabilityLibraryJson as CapabilityRef[]
+const catalogRecord = ((paperCatalog as unknown as PaperCatalogCollection).papers ?? {}) as Record<string, CatalogEntry>
+const metricsRecord = ((paperMetrics as unknown as PaperMetricsCollection).metrics ?? {}) as Record<string, MetricsEntry>
+const assetsRecord = ((paperAssets as unknown as PaperAssetsCollection).papers ?? {}) as Record<string, AssetsEntry>
+const capabilityLibrary = (
+  (capabilityLibraryJson as unknown as CapabilityLibraryCollection).capabilities ?? []
+).map((capability) => ({
+  id: capability.id,
+  name: capability.name,
+  definition: capability.description ?? capability.name,
+  mechanism: capability.description ?? capability.name,
+  applicabilitySignals: [],
+  antiSignals: [],
+  typicalTradeoffs: [],
+  relatedCapabilities: [],
+})) as CapabilityRef[]
 const capabilityMap = Object.fromEntries(capabilityLibrary.map((item) => [item.id, item])) as Record<string, CapabilityRef>
 const topicCatalogSeeds = (topicCatalogJson as TopicCatalogCollection).topics
-const rawTopicMemory = topicMemoryJson as RawTopicMemory
-const runtimePaperEditorial = runtimePaperEditorialJson as PaperEditorialMap
-const runtimeTopicEditorial = runtimeTopicEditorialJson as TopicEditorialSeed[]
+const rawTopicMemory = ((topicMemoryJson as unknown as { version: string; topics: RawTopicMemory }).topics ?? {}) as RawTopicMemory
+const runtimePaperEditorial = (
+  (runtimePaperEditorialJson as unknown as EditorialCollection<PaperEditorialSeed>).editorials ?? {}
+) as PaperEditorialMap
+const runtimeTopicEditorial = Object.values(
+  (runtimeTopicEditorialJson as unknown as EditorialCollection<TopicEditorialSeed>).editorials ?? {},
+) as TopicEditorialSeed[]
 
 const mergedPaperEditorial: PaperEditorialMap = runtimePaperEditorial
 
@@ -135,8 +165,8 @@ const papersById: Record<string, TrackerPaper> = Object.fromEntries(
         published: catalog.published,
         authors: catalog.authors,
         summary,
-        arxivUrl: catalog.arxivUrl,
-        pdfUrl: catalog.pdfUrl,
+        arxivUrl: catalog.arxivUrl ?? '',
+        pdfUrl: catalog.pdfUrl ?? '',
         citationCount: metrics?.citationCount ?? null,
         citationSource: metrics?.source ?? 'OpenAlex',
         citationRetrievedAt: metrics?.retrievedAt ?? '',
@@ -161,7 +191,7 @@ const papersById: Record<string, TrackerPaper> = Object.fromEntries(
         problemTags: editorial?.problemTags ?? [],
         branchContext: asBranchContext(editorial?.branchContext),
         contentMode: editorial ? 'editorial' : 'seed',
-        role: memberships[0]?.role,
+        role: memberships[0]?.role ?? '',
       } satisfies TrackerPaper,
     ]
   }),

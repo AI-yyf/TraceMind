@@ -1,17 +1,18 @@
 import { Router } from 'express'
+
 import { prisma } from '../lib/prisma'
 import { asyncHandler, AppError } from '../middleware/errorHandler'
+import { getNodeViewModel } from '../services/topics/alpha-reader'
 import { logger } from '../utils/logger'
 
 const router = Router()
 
-// 获取所有节点
 router.get('/', asyncHandler(async (req, res) => {
   const { topicId, stageIndex } = req.query
+  const where: Record<string, unknown> = {}
 
-  const where: any = {}
   if (topicId) where.topicId = topicId as string
-  if (stageIndex) where.stageIndex = parseInt(stageIndex as string)
+  if (stageIndex) where.stageIndex = parseInt(stageIndex as string, 10)
 
   const nodes = await prisma.researchNode.findMany({
     where,
@@ -49,7 +50,14 @@ router.get('/', asyncHandler(async (req, res) => {
   })
 }))
 
-// 获取单个节点详情（包含完整内容）
+router.get('/:nodeId/view-model', asyncHandler(async (req, res) => {
+  const viewModel = await getNodeViewModel(req.params.nodeId)
+  res.json({
+    success: true,
+    data: viewModel
+  })
+}))
+
 router.get('/:id', asyncHandler(async (req, res) => {
   const { id } = req.params
 
@@ -74,18 +82,17 @@ router.get('/:id', asyncHandler(async (req, res) => {
   })
 
   if (!node) {
-    throw new AppError(404, '节点不存在')
+    throw new AppError(404, 'Node not found.')
   }
 
-  // 构建响应数据
   const response = {
     ...node,
-    papers: node.papers.map(np => np.paper),
-    fullContent: node.fullContent as any,
+    papers: node.papers.map((item) => item.paper),
+    fullContent: node.fullContent as unknown,
     assets: {
-      figures: node.papers.flatMap(np => np.paper.figures),
-      tables: node.papers.flatMap(np => np.paper.tables),
-      formulas: node.papers.flatMap(np => np.paper.formulas)
+      figures: node.papers.flatMap((item) => item.paper.figures),
+      tables: node.papers.flatMap((item) => item.paper.tables),
+      formulas: node.papers.flatMap((item) => item.paper.formulas)
     }
   }
 
@@ -95,7 +102,6 @@ router.get('/:id', asyncHandler(async (req, res) => {
   })
 }))
 
-// 创建节点
 router.post('/', asyncHandler(async (req, res) => {
   const {
     topicId,
@@ -111,25 +117,24 @@ router.post('/', asyncHandler(async (req, res) => {
     fullContent
   } = req.body
 
-  // 验证主题存在
   const topic = await prisma.topic.findUnique({
     where: { id: topicId }
   })
+
   if (!topic) {
-    throw new AppError(404, '主题不存在')
+    throw new AppError(404, 'Topic not found.')
   }
 
-  // 验证论文存在
   if (paperIds && paperIds.length > 0) {
     const papers = await prisma.paper.findMany({
       where: { id: { in: paperIds } }
     })
+
     if (papers.length !== paperIds.length) {
-      throw new AppError(400, '部分论文不存在')
+      throw new AppError(400, 'Some papers do not exist.')
     }
   }
 
-  // 创建节点
   const node = await prisma.researchNode.create({
     data: {
       topicId,
@@ -160,7 +165,7 @@ router.post('/', asyncHandler(async (req, res) => {
     }
   })
 
-  logger.info('创建节点', { nodeId: node.id, topicId, paperCount: paperIds.length })
+  logger.info('Created node', { nodeId: node.id, topicId, paperCount: paperIds.length })
 
   res.status(201).json({
     success: true,
@@ -168,7 +173,6 @@ router.post('/', asyncHandler(async (req, res) => {
   })
 }))
 
-// 更新节点
 router.patch('/:id', asyncHandler(async (req, res) => {
   const { id } = req.params
   const {
@@ -203,7 +207,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
     }
   })
 
-  logger.info('更新节点', { nodeId: id })
+  logger.info('Updated node', { nodeId: id })
 
   res.json({
     success: true,
@@ -211,7 +215,6 @@ router.patch('/:id', asyncHandler(async (req, res) => {
   })
 }))
 
-// 删除节点
 router.delete('/:id', asyncHandler(async (req, res) => {
   const { id } = req.params
 
@@ -219,25 +222,22 @@ router.delete('/:id', asyncHandler(async (req, res) => {
     where: { id }
   })
 
-  logger.info('删除节点', { nodeId: id })
+  logger.info('Deleted node', { nodeId: id })
 
   res.json({
     success: true,
-    message: '节点已删除'
+    message: 'Node deleted.'
   })
 }))
 
-// 更新节点论文关联
 router.post('/:id/papers', asyncHandler(async (req, res) => {
   const { id } = req.params
   const { paperIds } = req.body
 
-  // 删除现有关联
   await prisma.nodePaper.deleteMany({
     where: { nodeId: id }
   })
 
-  // 创建新关联
   await prisma.nodePaper.createMany({
     data: paperIds.map((paperId: string, index: number) => ({
       nodeId: id,
@@ -255,7 +255,7 @@ router.post('/:id/papers', asyncHandler(async (req, res) => {
     }
   })
 
-  logger.info('更新节点论文', { nodeId: id, paperCount: paperIds.length })
+  logger.info('Updated node papers', { nodeId: id, paperCount: paperIds.length })
 
   res.json({
     success: true,

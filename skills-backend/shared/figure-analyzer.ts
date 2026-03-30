@@ -1,371 +1,575 @@
 /**
- * 图片深度分析模块
- * 使用多模态模型对论文图表进行深度分析
+ * 图表深度分析模块
+ * 使用多模态模型分析论文中的图表
  */
 
-import type { MultiModalClient } from './multimodal-client'
-import type { ExtractedFigure } from './pdf-extractor'
+import { prisma } from './db'
+import { multimodalClient } from './multimodal-client'
 
-// 图片深度分析结果
-export interface FigureDeepAnalysis {
-  // 第一层：图片描述（看到了什么）
+export interface FigureAnalysisResult {
+  figureId: string
   description: {
-    type: 'architecture' | 'result' | 'comparison' | 'flow' | 'example' | 'other'
-    overall: string           // 整体描述（100字）
-    elements: string[]        // 关键元素列表
-    structure: string         // 结构/布局描述
+    type: string
+    overall: string
+    elements: string[]
+    structure: string
   }
-
-  // 第二层：内容解读（说明了什么）
   interpretation: {
-    mainFinding: string       // 主要发现（150字）
-    keyData: DataPoint[]      // 关键数据点
-    trends: string[]          // 趋势分析
-    comparisons: string[]     // 对比分析（如果是对比图）
-    anomalies: string[]       // 异常/值得注意的点
+    mainFinding: string
+    keyData: Array<{
+      location: string
+      value: string
+      meaning: string
+    }>
+    trends: string[]
+    comparisons: string[]
+    anomalies: string[]
   }
-
-  // 第三层：研究意义（为什么重要）
   significance: {
-    supports: string          // 支撑了什么论点（100字）
-    proves: string            // 证明了什么（100字）
-    limitations: string       // 暗示了什么局限（100字）
-    relationToText: string    // 与正文的关系（100字）
+    supports: string
+    proves: string
+    limitations: string
+    relationToText: string
   }
-
-  // 第四层：跨论文关联（多论文节点特有）
   crossPaperRelation?: {
-    relationToPrevious: string  // 与前文工作的关系
-    evolutionSignificance: string // 在演进脉络中的意义
-    uniqueContribution: string  // 独特贡献
-  }
-
-  // 分析质量评估
-  quality: {
-    confidence: number          // 置信度 0-1
-    needsReview: boolean        // 是否需要人工复核
-    unclearParts: string[]      // 不清晰的部分
+    relationToPrevious: string
+    evolutionSignificance: string
+    uniqueContribution: string
   }
 }
 
-// 数据点
-export interface DataPoint {
-  location: string
-  value: string
-  meaning: string
-}
-
-// 完整图信息（包含深度分析）
-export interface CompleteFigure extends ExtractedFigure {
-  deepAnalysis?: FigureDeepAnalysis
-  analysisTimestamp?: string
-}
-
-// 图片深度解读 LLM 提示词
-const FIGURE_DEEP_ANALYSIS_PROMPT = `
-你是一位学术论文图表分析专家。请对这张图表进行**深度、全面的分析**，用完整篇幅讲解清楚。
-
-【分析要求】（每个部分都要写完整，不要简略）
-
-**一、图片描述（200字）**
-- 这是什么类型的图？（架构图/实验结果/流程图/对比图/示例图）
-- 整体展示了什么内容？
-- 包含哪些关键元素？（模块、曲线、数据点、标注等）
-- 图的布局和结构是怎样的？
-
-**二、内容解读（300字）**
-- 这张图的核心发现是什么？
-- 关键数据点有哪些？具体数值是多少？
-- 呈现了什么趋势或模式？
-- 如果是对比图，对比了哪些方面？差异是什么？
-- 有什么异常或值得特别注意的地方？
-
-**三、研究意义（200字）**
-- 这张图支撑了论文的什么核心论点？
-- 证明了什么结论？
-- 暗示了什么局限性或未解决的问题？
-- 在论文论证体系中起什么作用？
-
-**四、跨论文关联（如果是多论文分析，200字）**
-- 这张图与前人工作有什么关系？
-- 在研究演进脉络中处于什么位置？
-- 有什么独特的贡献或创新？
-
-【输出格式】
-请以JSON格式输出，不要包含任何其他文字：
-{
-  "description": {
-    "type": "图表类型",
-    "overall": "整体描述...",
-    "elements": ["元素1", "元素2", "元素3"],
-    "structure": "结构描述..."
-  },
-  "interpretation": {
-    "mainFinding": "主要发现...",
-    "keyData": [
-      {"location": "位置描述", "value": "数值", "meaning": "含义"}
-    ],
-    "trends": ["趋势1", "趋势2"],
-    "comparisons": ["对比1", "对比2"],
-    "anomalies": ["异常1"]
-  },
-  "significance": {
-    "supports": "支撑论点...",
-    "proves": "证明结论...",
-    "limitations": "暗示局限...",
-    "relationToText": "与正文关系..."
-  },
-  "crossPaperRelation": {
-    "relationToPrevious": "与前文关系...",
-    "evolutionSignificance": "演进意义...",
-    "uniqueContribution": "独特贡献..."
-  },
-  "quality": {
-    "confidence": 0.95,
-    "needsReview": false,
-    "unclearParts": []
+export interface TableAnalysisResult {
+  tableId: string
+  description: {
+    structure: string
+    headers: string[]
+    dataTypes: string[]
+  }
+  interpretation: {
+    keyFindings: string[]
+    patterns: string[]
+    outliers: string[]
+  }
+  significance: {
+    supports: string
+    relationToText: string
   }
 }
-`
+
+export interface FormulaAnalysisResult {
+  formulaId: string
+  description: {
+    components: string[]
+    meaning: string
+    variables: Array<{
+      symbol: string
+      meaning: string
+    }>
+  }
+  interpretation: {
+    application: string
+    derivation: string
+    significance: string
+  }
+}
 
 /**
- * 图片分析器类
+ * 图表分析器类
  */
 export class FigureAnalyzer {
-  private client: MultiModalClient
+  private language: 'zh' | 'en'
 
-  constructor(client: MultiModalClient) {
-    this.client = client
+  constructor(language: 'zh' | 'en' = 'zh') {
+    this.language = language
   }
 
   /**
-   * 分析单张图片
+   * 分析图表
    */
-  async analyzeFigure(figure: ExtractedFigure): Promise<CompleteFigure> {
+  async analyzeFigure(
+    figureId: string,
+    imagePath: string,
+    caption: string,
+    paperContext: string
+  ): Promise<FigureAnalysisResult> {
+    // 读取图片
+    const fs = require('fs')
+    const path = require('path')
+    
+    let imageBase64: string | null = null
     try {
-      // 将图片 Buffer 转换为 base64
-      const imageBase64 = figure.imageData.toString('base64')
-      const imageUrl = `data:image/${figure.imageFormat};base64,${imageBase64}`
-
-      // 调用多模态模型进行分析
-      const response = await this.client.analyzeFigure({
-        image: imageUrl,
-        prompt: FIGURE_DEEP_ANALYSIS_PROMPT,
-        maxTokens: 2000
-      })
-
-      // 解析 JSON 响应
-      const analysis = this.parseAnalysisResponse(response.content)
-
-      return {
-        ...figure,
-        deepAnalysis: analysis,
-        analysisTimestamp: new Date().toISOString()
+      const fullPath = path.join(process.cwd(), 'public', imagePath)
+      if (fs.existsSync(fullPath)) {
+        const imageBuffer = fs.readFileSync(fullPath)
+        imageBase64 = imageBuffer.toString('base64')
       }
-    } catch (error) {
-      console.error(`Failed to analyze figure ${figure.id}:`, error)
-      
-      // 返回带有错误信息的分析结果
-      return {
-        ...figure,
-        deepAnalysis: {
-          description: {
-            type: 'other',
-            overall: '分析失败',
-            elements: [],
-            structure: ''
-          },
-          interpretation: {
-            mainFinding: '无法分析此图片',
-            keyData: [],
-            trends: [],
-            comparisons: [],
-            anomalies: []
-          },
-          significance: {
-            supports: '',
-            proves: '',
-            limitations: '',
-            relationToText: ''
-          },
-          quality: {
-            confidence: 0,
-            needsReview: true,
-            unclearParts: [error instanceof Error ? error.message : 'Unknown error']
-          }
-        },
-        analysisTimestamp: new Date().toISOString()
-      }
+    } catch (e) {
+      console.warn(`Failed to read image: ${imagePath}`)
+    }
+
+    // 构建提示词
+    const prompt = this.buildFigureAnalysisPrompt(caption, paperContext)
+
+    // 调用多模态模型
+    const response = await multimodalClient.complete({
+      taskType: 'figure-analysis',
+      prompt,
+      attachments: imageBase64 ? [{
+        type: 'image',
+        data: imageBase64,
+        mimeType: 'image/png'
+      }] : undefined,
+      temperature: 0.3,
+      maxTokens: 2000,
+    })
+
+    // 解析结果
+    const analysis = this.parseFigureAnalysis(response.text)
+
+    // 保存到数据库
+    await this.saveFigureAnalysis(figureId, analysis)
+
+    return {
+      figureId,
+      ...analysis
     }
   }
 
   /**
-   * 批量分析多张图片
+   * 分析表格
    */
-  async analyzeFigures(figures: ExtractedFigure[]): Promise<CompleteFigure[]> {
-    const results: CompleteFigure[] = []
-    
-    for (const figure of figures) {
-      const analyzed = await this.analyzeFigure(figure)
-      results.push(analyzed)
+  async analyzeTable(
+    tableId: string,
+    tableData: any,
+    caption: string,
+    paperContext: string
+  ): Promise<TableAnalysisResult> {
+    const prompt = this.buildTableAnalysisPrompt(tableData, caption, paperContext)
+
+    const response = await multimodalClient.complete({
+      taskType: 'table-analysis',
+      prompt,
+      temperature: 0.3,
+      maxTokens: 1500,
+    })
+
+    const analysis = this.parseTableAnalysis(response.text)
+
+    await this.saveTableAnalysis(tableId, analysis)
+
+    return {
+      tableId,
+      ...analysis
+    }
+  }
+
+  /**
+   * 分析公式
+   */
+  async analyzeFormula(
+    formulaId: string,
+    latex: string,
+    rawText: string,
+    paperContext: string
+  ): Promise<FormulaAnalysisResult> {
+    const prompt = this.buildFormulaAnalysisPrompt(latex, rawText, paperContext)
+
+    const response = await multimodalClient.complete({
+      taskType: 'formula-analysis',
+      prompt,
+      temperature: 0.3,
+      maxTokens: 1200,
+    })
+
+    const analysis = this.parseFormulaAnalysis(response.text)
+
+    await this.saveFormulaAnalysis(formulaId, analysis)
+
+    return {
+      formulaId,
+      ...analysis
+    }
+  }
+
+  /**
+   * 批量分析论文中的所有图表
+   */
+  async analyzePaperFigures(paperId: string): Promise<{
+    figures: FigureAnalysisResult[]
+    tables: TableAnalysisResult[]
+    formulas: FormulaAnalysisResult[]
+  }> {
+    const paper = await prisma.paper.findUnique({
+      where: { id: paperId },
+      include: {
+        figures: true,
+        tables: true,
+        formulas: true,
+      }
+    })
+
+    if (!paper) {
+      throw new Error(`Paper not found: ${paperId}`)
+    }
+
+    const paperContext = `${paper.title}\n${paper.summary?.substring(0, 1000) || ''}`
+
+    const results = {
+      figures: [] as FigureAnalysisResult[],
+      tables: [] as TableAnalysisResult[],
+      formulas: [] as FormulaAnalysisResult[]
+    }
+
+    // 分析图表
+    for (const figure of paper.figures) {
+      try {
+        const analysis = await this.analyzeFigure(
+          figure.id,
+          figure.path || '',
+          figure.caption || '',
+          paperContext
+        )
+        results.figures.push(analysis)
+      } catch (e) {
+        console.error(`Failed to analyze figure ${figure.id}:`, e)
+      }
+    }
+
+    // 分析表格
+    for (const table of paper.tables) {
+      try {
+        const analysis = await this.analyzeTable(
+          table.id,
+          table.data,
+          table.caption || '',
+          paperContext
+        )
+        results.tables.push(analysis)
+      } catch (e) {
+        console.error(`Failed to analyze table ${table.id}:`, e)
+      }
+    }
+
+    // 分析公式
+    for (const formula of paper.formulas) {
+      try {
+        const analysis = await this.analyzeFormula(
+          formula.id,
+          formula.latex || '',
+          formula.rawText || '',
+          paperContext
+        )
+        results.formulas.push(analysis)
+      } catch (e) {
+        console.error(`Failed to analyze formula ${formula.id}:`, e)
+      }
     }
 
     return results
   }
 
   /**
-   * 分析图片并添加跨论文关联（用于多论文节点）
+   * 构建图表分析提示词
    */
-  async analyzeFigureWithCrossPaperRelation(
-    figure: ExtractedFigure,
-    previousPapersContext: string
-  ): Promise<CompleteFigure> {
-    const prompt = `
-${FIGURE_DEEP_ANALYSIS_PROMPT}
+  private buildFigureAnalysisPrompt(caption: string, paperContext: string): string {
+    if (this.language === 'zh') {
+      return `请分析以下学术论文中的图表。
 
-【跨论文上下文】
-${previousPapersContext}
+论文上下文：
+${paperContext.substring(0, 1500)}
 
-请在分析中特别关注这张图与前文工作的关系。
-`
+图表说明：
+${caption}
 
-    try {
-      const imageBase64 = figure.imageData.toString('base64')
-      const imageUrl = `data:image/${figure.imageFormat};base64,${imageBase64}`
+请提供以下分析（以JSON格式返回）：
+{
+  "description": {
+    "type": "图表类型（如：折线图、柱状图、散点图、流程图等）",
+    "overall": "整体描述",
+    "elements": ["组成元素1", "组成元素2"],
+    "structure": "结构说明"
+  },
+  "interpretation": {
+    "mainFinding": "主要发现",
+    "keyData": [
+      {"location": "位置", "value": "数值", "meaning": "含义"}
+    ],
+    "trends": ["趋势1", "趋势2"],
+    "comparisons": ["对比1", "对比2"],
+    "anomalies": ["异常点1"]
+  },
+  "significance": {
+    "supports": "支持了什么观点",
+    "proves": "证明了什么结论",
+    "limitations": "局限性",
+    "relationToText": "与正文的关系"
+  }
+}`
+    } else {
+      return `Please analyze the following figure from an academic paper.
 
-      const response = await this.client.analyzeFigure({
-        image: imageUrl,
-        prompt,
-        maxTokens: 2500
-      })
+Paper Context:
+${paperContext.substring(0, 1500)}
 
-      const analysis = this.parseAnalysisResponse(response.content)
+Figure Caption:
+${caption}
 
-      return {
-        ...figure,
-        deepAnalysis: analysis,
-        analysisTimestamp: new Date().toISOString()
-      }
-    } catch (error) {
-      console.error(`Failed to analyze figure with cross-paper relation ${figure.id}:`, error)
-      return this.analyzeFigure(figure) // 降级为普通分析
+Please provide the following analysis (return as JSON):
+{
+  "description": {
+    "type": "Figure type (e.g., line chart, bar chart, scatter plot, flowchart)",
+    "overall": "Overall description",
+    "elements": ["Element 1", "Element 2"],
+    "structure": "Structure description"
+  },
+  "interpretation": {
+    "mainFinding": "Main finding",
+    "keyData": [
+      {"location": "Location", "value": "Value", "meaning": "Meaning"}
+    ],
+    "trends": ["Trend 1", "Trend 2"],
+    "comparisons": ["Comparison 1", "Comparison 2"],
+    "anomalies": ["Anomaly 1"]
+  },
+  "significance": {
+    "supports": "What argument it supports",
+    "proves": "What conclusion it proves",
+    "limitations": "Limitations",
+    "relationToText": "Relation to the text"
+  }
+}`
     }
   }
 
   /**
-   * 解析分析响应
+   * 构建表格分析提示词
    */
-  private parseAnalysisResponse(content: string): FigureDeepAnalysis {
+  private buildTableAnalysisPrompt(tableData: any, caption: string, paperContext: string): string {
+    const tableJson = JSON.stringify(tableData, null, 2).substring(0, 2000)
+    
+    if (this.language === 'zh') {
+      return `请分析以下学术论文中的表格。
+
+论文上下文：
+${paperContext.substring(0, 1000)}
+
+表格说明：
+${caption}
+
+表格数据：
+${tableJson}
+
+请提供以下分析（以JSON格式返回）：
+{
+  "description": {
+    "structure": "表格结构",
+    "headers": ["表头1", "表头2"],
+    "dataTypes": ["数据类型1", "数据类型2"]
+  },
+  "interpretation": {
+    "keyFindings": ["关键发现1", "关键发现2"],
+    "patterns": ["模式1", "模式2"],
+    "outliers": ["异常值1"]
+  },
+  "significance": {
+    "supports": "支持了什么观点",
+    "relationToText": "与正文的关系"
+  }
+}`
+    } else {
+      return `Please analyze the following table from an academic paper.
+
+Paper Context:
+${paperContext.substring(0, 1000)}
+
+Table Caption:
+${caption}
+
+Table Data:
+${tableJson}
+
+Please provide the following analysis (return as JSON):
+{
+  "description": {
+    "structure": "Table structure",
+    "headers": ["Header 1", "Header 2"],
+    "dataTypes": ["Data type 1", "Data type 2"]
+  },
+  "interpretation": {
+    "keyFindings": ["Key finding 1", "Key finding 2"],
+    "patterns": ["Pattern 1", "Pattern 2"],
+    "outliers": ["Outlier 1"]
+  },
+  "significance": {
+    "supports": "What argument it supports",
+    "relationToText": "Relation to the text"
+  }
+}`
+    }
+  }
+
+  /**
+   * 构建公式分析提示词
+   */
+  private buildFormulaAnalysisPrompt(latex: string, rawText: string, paperContext: string): string {
+    if (this.language === 'zh') {
+      return `请分析以下学术论文中的公式。
+
+论文上下文：
+${paperContext.substring(0, 1000)}
+
+LaTeX公式：
+${latex}
+
+原始文本：
+${rawText}
+
+请提供以下分析（以JSON格式返回）：
+{
+  "description": {
+    "components": ["组成部分1", "组成部分2"],
+    "meaning": "公式含义",
+    "variables": [
+      {"symbol": "符号", "meaning": "含义"}
+    ]
+  },
+  "interpretation": {
+    "application": "应用场景",
+    "derivivation": "推导过程",
+    "significance": "重要性"
+  }
+}`
+    } else {
+      return `Please analyze the following formula from an academic paper.
+
+Paper Context:
+${paperContext.substring(0, 1000)}
+
+LaTeX Formula:
+${latex}
+
+Raw Text:
+${rawText}
+
+Please provide the following analysis (return as JSON):
+{
+  "description": {
+    "components": ["Component 1", "Component 2"],
+    "meaning": "Formula meaning",
+    "variables": [
+      {"symbol": "Symbol", "meaning": "Meaning"}
+    ]
+  },
+  "interpretation": {
+    "application": "Application scenario",
+    "derivation": "Derivation process",
+    "significance": "Significance"
+  }
+}`
+    }
+  }
+
+  /**
+   * 解析图表分析结果
+   */
+  private parseFigureAnalysis(text: string): any {
     try {
-      // 尝试提取 JSON 部分
-      const jsonMatch = content.match(/\{[\s\S]*\}/)
+      // 尝试提取 JSON
+      const jsonMatch = text.match(/\{[\s\S]*\}/)
       if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0])
-        
-        // 验证并填充默认值
-        return {
-          description: {
-            type: parsed.description?.type || 'other',
-            overall: parsed.description?.overall || '',
-            elements: parsed.description?.elements || [],
-            structure: parsed.description?.structure || ''
-          },
-          interpretation: {
-            mainFinding: parsed.interpretation?.mainFinding || '',
-            keyData: parsed.interpretation?.keyData || [],
-            trends: parsed.interpretation?.trends || [],
-            comparisons: parsed.interpretation?.comparisons || [],
-            anomalies: parsed.interpretation?.anomalies || []
-          },
-          significance: {
-            supports: parsed.significance?.supports || '',
-            proves: parsed.significance?.proves || '',
-            limitations: parsed.significance?.limitations || '',
-            relationToText: parsed.significance?.relationToText || ''
-          },
-          crossPaperRelation: parsed.crossPaperRelation ? {
-            relationToPrevious: parsed.crossPaperRelation.relationToPrevious || '',
-            evolutionSignificance: parsed.crossPaperRelation.evolutionSignificance || '',
-            uniqueContribution: parsed.crossPaperRelation.uniqueContribution || ''
-          } : undefined,
-          quality: {
-            confidence: parsed.quality?.confidence || 0.5,
-            needsReview: parsed.quality?.needsReview || false,
-            unclearParts: parsed.quality?.unclearParts || []
-          }
-        }
+        return JSON.parse(jsonMatch[0])
       }
-      
-      throw new Error('No JSON found in response')
-    } catch (error) {
-      console.error('Failed to parse analysis response:', error)
-      console.error('Raw content:', content)
-      
-      // 返回默认分析
-      return {
-        description: {
-          type: 'other',
-          overall: content.slice(0, 200),
-          elements: [],
-          structure: ''
-        },
-        interpretation: {
-          mainFinding: '',
-          keyData: [],
-          trends: [],
-          comparisons: [],
-          anomalies: []
-        },
-        significance: {
-          supports: '',
-          proves: '',
-          limitations: '',
-          relationToText: ''
-        },
-        quality: {
-          confidence: 0.3,
-          needsReview: true,
-          unclearParts: ['Failed to parse structured analysis']
-        }
-      }
+      return {}
+    } catch (e) {
+      console.error('Failed to parse figure analysis:', e)
+      return {}
     }
   }
 
   /**
-   * 选择代表性图片
-   * 优先选择架构图或主结果图
+   * 解析表格分析结果
    */
-  selectRepresentativeFigure(figures: CompleteFigure[]): CompleteFigure | null {
-    if (figures.length === 0) return null
+  private parseTableAnalysis(text: string): any {
+    try {
+      const jsonMatch = text.match(/\{[\s\S]*\}/)
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0])
+      }
+      return {}
+    } catch (e) {
+      console.error('Failed to parse table analysis:', e)
+      return {}
+    }
+  }
 
-    // 优先选择架构图
-    const architectureFigure = figures.find(f => 
-      f.deepAnalysis?.description?.type === 'architecture'
-    )
-    if (architectureFigure) return architectureFigure
+  /**
+   * 解析公式分析结果
+   */
+  private parseFormulaAnalysis(text: string): any {
+    try {
+      const jsonMatch = text.match(/\{[\s\S]*\}/)
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0])
+      }
+      return {}
+    } catch (e) {
+      console.error('Failed to parse formula analysis:', e)
+      return {}
+    }
+  }
 
-    // 其次选择主结果图
-    const resultFigure = figures.find(f =>
-      f.deepAnalysis?.description?.type === 'result'
-    )
-    if (resultFigure) return resultFigure
+  /**
+   * 保存图表分析结果
+   */
+  private async saveFigureAnalysis(figureId: string, analysis: any): Promise<void> {
+    await prisma.figure.update({
+      where: { id: figureId },
+      data: {
+        analysis: JSON.stringify(analysis),
+      }
+    })
+  }
 
-    // 默认返回第一张
-    return figures[0]
+  /**
+   * 保存表格分析结果
+   */
+  private async saveTableAnalysis(tableId: string, analysis: any): Promise<void> {
+    await prisma.table.update({
+      where: { id: tableId },
+      data: {
+        analysis: JSON.stringify(analysis),
+      }
+    })
+  }
+
+  /**
+   * 保存公式分析结果
+   */
+  private async saveFormulaAnalysis(formulaId: string, analysis: any): Promise<void> {
+    await prisma.formula.update({
+      where: { id: formulaId },
+      data: {
+        analysis: JSON.stringify(analysis),
+      }
+    })
+  }
+
+  /**
+   * 设置语言
+   */
+  setLanguage(language: 'zh' | 'en') {
+    this.language = language
   }
 }
 
-// 导出单例实例
+// 导出单例
 let globalAnalyzer: FigureAnalyzer | null = null
 
-export function initializeFigureAnalyzer(client: MultiModalClient): FigureAnalyzer {
-  globalAnalyzer = new FigureAnalyzer(client)
-  return globalAnalyzer
-}
-
-export function getFigureAnalyzer(): FigureAnalyzer {
+export function getFigureAnalyzer(language?: 'zh' | 'en'): FigureAnalyzer {
   if (!globalAnalyzer) {
-    throw new Error('FigureAnalyzer not initialized. Call initializeFigureAnalyzer first.')
+    globalAnalyzer = new FigureAnalyzer(language)
+  } else if (language) {
+    globalAnalyzer.setLanguage(language)
   }
   return globalAnalyzer
 }

@@ -1,6 +1,2 @@
 export { useFavorites } from './useFavorites'
 export { TopicRegistryProvider, useTopicRegistry } from './useTopicRegistry'
-export { useTimelineData, getTopicPapers } from './useTimelineData'
-export { useDataLayer } from './useDataLayer'
-export { useBranchTimelineData, useCitationGraphData } from './useDataBridge'
-export { useConfig, useResearchSession } from './useConfig'

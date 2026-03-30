@@ -5,6 +5,13 @@
 
 import * as fs from 'fs'
 import * as path from 'path'
+import { spawn } from 'child_process'
+import { promisify } from 'util'
+import { prisma } from './db'
+
+const writeFile = promisify(fs.writeFile)
+const mkdir = promisify(fs.mkdir)
+const exists = promisify(fs.exists)
 
 // 提取结果类型定义
 export interface ExtractedFigure {
@@ -12,8 +19,10 @@ export interface ExtractedFigure {
   number: number
   caption: string
   page: number
-  imageData: Buffer
-  imageFormat: 'png' | 'jpg' | 'svg'
+  imagePath: string
+  imageFormat: 'png' | 'jpg'
+  width: number
+  height: number
   bbox: { x: number; y: number; width: number; height: number }
 }
 
@@ -88,14 +97,6 @@ const DEFAULT_OPTIONS: ExtractionOptions = {
 
 /**
  * PDF 提取器类
- * 
- * 注意：这是一个框架实现。实际实现需要依赖 PyMuPDF (fitz)、pdf2image、
- * paddleocr 等 Python 库，或者使用 GROBID、PDFPlumber 等工具。
- * 
- * 在实际部署中，可以通过以下方式实现：
- * 1. 调用 Python 脚本进行提取
- * 2. 使用 Docker 容器运行提取服务
- * 3. 调用外部 API (如 GROBID)
  */
 export class PDFExtractor {
   private options: ExtractionOptions
@@ -128,15 +129,15 @@ export class PDFExtractor {
     paperId: string,
     paperTitle: string
   ): Promise<PDFExtractionResult> {
-    // 这里应该调用实际的提取逻辑
-    // 目前返回一个模拟结果，展示数据结构
+    // 创建临时文件
+    const tempDir = path.join(process.cwd(), 'temp', 'pdf', paperId)
+    await this.ensureDir(tempDir)
     
-    console.warn(
-      'PDFExtractor.extractFromBuffer is a stub. ' +
-      'Please implement actual extraction using PyMuPDF, GROBID, or similar tools.'
-    )
+    const tempPdfPath = path.join(tempDir, 'input.pdf')
+    await writeFile(tempPdfPath, pdfBuffer)
 
-    return this.createStubResult(paperId, paperTitle)
+    // 调用 Python 脚本进行提取
+    return this.extractWithPython(tempPdfPath, tempDir, paperId, paperTitle)
   }
 
   /**
@@ -157,22 +158,165 @@ export class PDFExtractor {
   }
 
   /**
-   * 创建模拟结果（用于开发和测试）
+   * 使用 Python 脚本提取 PDF
    */
-  private createStubResult(paperId: string, paperTitle: string): PDFExtractionResult {
-    return {
-      paperId,
-      paperTitle,
-      figures: [],
-      tables: [],
-      formulas: [],
-      text: {
-        fullText: '',
-        pages: []
-      },
-      metadata: {
-        pageCount: 0
+  private async extractWithPython(
+    pdfPath: string,
+    outputDir: string,
+    paperId: string,
+    paperTitle: string
+  ): Promise<PDFExtractionResult> {
+    return new Promise((resolve, reject) => {
+      const scriptPath = path.join(__dirname, '..', 'scripts', 'pdf_extract.py')
+      
+      // 检查 Python 脚本是否存在
+      if (!fs.existsSync(scriptPath)) {
+        reject(new Error(`Python script not found: ${scriptPath}`))
+        return
       }
+
+      const pythonProcess = spawn('python', [
+        scriptPath,
+        pdfPath,
+        outputDir,
+        paperId,
+        paperTitle
+      ], {
+        timeout: 300000 // 5分钟超时
+      })
+
+      let stdout = ''
+      let stderr = ''
+
+      pythonProcess.stdout.on('data', (data: Buffer) => {
+        stdout += data.toString()
+      })
+
+      pythonProcess.stderr.on('data', (data: Buffer) => {
+        stderr += data.toString()
+        console.log(`[PDF Extract] ${data.toString()}`)
+      })
+
+      pythonProcess.on('close', async (code: number) => {
+        if (code !== 0) {
+          reject(new Error(`PDF extraction failed with code ${code}: ${stderr}`))
+          return
+        }
+
+        try {
+          const result = JSON.parse(stdout) as PDFExtractionResult
+          
+          // 保存提取结果到数据库
+          await this.saveExtractionResult(result, paperId)
+          
+          resolve(result)
+        } catch (error) {
+          reject(new Error(`Failed to parse extraction result: ${error}`))
+        }
+      })
+
+      pythonProcess.on('error', (error) => {
+        reject(new Error(`Failed to start Python process: ${error.message}`))
+      })
+    })
+  }
+
+  /**
+   * 保存提取结果到数据库
+   */
+  private async saveExtractionResult(result: PDFExtractionResult, paperId: string): Promise<void> {
+    try {
+      // 查找对应的论文记录
+      const paper = await prisma.paper.findFirst({
+        where: {
+          OR: [
+            { id: paperId },
+            { arxivId: paperId }
+          ]
+        }
+      })
+
+      if (!paper) {
+        console.warn(`Paper not found for extraction result: ${paperId}`)
+        return
+      }
+
+      // 保存图表
+      for (const figure of result.figures) {
+        await prisma.figure.upsert({
+          where: { id: figure.id },
+          update: {
+            caption: figure.caption,
+            page: figure.page,
+            path: figure.imagePath,
+            width: figure.width,
+            height: figure.height,
+          },
+          create: {
+            id: figure.id,
+            paperId: paper.id,
+            caption: figure.caption,
+            page: figure.page,
+            path: figure.imagePath,
+            width: figure.width,
+            height: figure.height,
+          }
+        })
+      }
+
+      // 保存表格
+      for (const table of result.tables) {
+        await prisma.table.upsert({
+          where: { id: table.id },
+          update: {
+            caption: table.caption,
+            page: table.page,
+            data: table.rows,
+            rawText: table.rawText,
+          },
+          create: {
+            id: table.id,
+            paperId: paper.id,
+            caption: table.caption,
+            page: table.page,
+            data: table.rows,
+            rawText: table.rawText,
+          }
+        })
+      }
+
+      // 保存公式
+      for (const formula of result.formulas) {
+        await prisma.formula.upsert({
+          where: { id: formula.id },
+          update: {
+            latex: formula.latex,
+            rawText: formula.rawText,
+            page: formula.page,
+          },
+          create: {
+            id: formula.id,
+            paperId: paper.id,
+            latex: formula.latex,
+            rawText: formula.rawText,
+            page: formula.page,
+          }
+        })
+      }
+
+      console.log(`Saved extraction result for paper ${paperId}: ${result.figures.length} figures, ${result.tables.length} tables, ${result.formulas.length} formulas`)
+    } catch (error) {
+      console.error(`Failed to save extraction result: ${error}`)
+      throw error
+    }
+  }
+
+  /**
+   * 确保目录存在
+   */
+  private async ensureDir(dir: string): Promise<void> {
+    if (!await exists(dir)) {
+      await mkdir(dir, { recursive: true })
     }
   }
 
@@ -185,108 +329,23 @@ export class PDFExtractor {
 }
 
 /**
- * 使用外部 Python 脚本提取 PDF
- * 需要安装: pip install pymupdf pdf2image paddleocr
+ * 提取 PDF 并分析图表（完整流程）
  */
-export async function extractPDFWithPython(
-  pdfPath: string,
-  outputDir: string,
+export async function extractAndAnalyzePDF(
+  pdfUrl: string,
   paperId: string,
-  paperTitle: string
+  paperTitle: string,
+  language: 'zh' | 'en' = 'zh'
 ): Promise<PDFExtractionResult> {
-  const { spawn } = require('child_process')
-  const path = require('path')
-
-  return new Promise((resolve, reject) => {
-    const scriptPath = path.join(__dirname, '..', 'scripts', 'pdf_extract.py')
-    
-    const process = spawn('python', [
-      scriptPath,
-      pdfPath,
-      outputDir,
-      paperId,
-      paperTitle
-    ])
-
-    let stdout = ''
-    let stderr = ''
-
-    process.stdout.on('data', (data: Buffer) => {
-      stdout += data.toString()
-    })
-
-    process.stderr.on('data', (data: Buffer) => {
-      stderr += data.toString()
-    })
-
-    process.on('close', (code: number) => {
-      if (code !== 0) {
-        reject(new Error(`PDF extraction failed: ${stderr}`))
-        return
-      }
-
-      try {
-        const result = JSON.parse(stdout)
-        resolve(result)
-      } catch (error) {
-        reject(new Error(`Failed to parse extraction result: ${error}`))
-      }
-    })
-  })
-}
-
-/**
- * 使用 GROBID 提取 PDF
- * GROBID 是一个专门用于学术文献提取的工具
- */
-export async function extractPDFWithGrobid(
-  pdfPath: string,
-  grobidUrl: string = 'http://localhost:8070'
-): Promise<PDFExtractionResult> {
-  const FormData = require('form-data')
-  const fs = require('fs')
-
-  const formData = new FormData()
-  formData.append('input', fs.createReadStream(pdfPath))
-
-  const response = await fetch(`${grobidUrl}/api/processFulltextDocument`, {
-    method: 'POST',
-    body: formData
-  })
-
-  if (!response.ok) {
-    throw new Error(`GROBID extraction failed: ${response.status} ${response.statusText}`)
-  }
-
-  const teiXml = await response.text()
+  const extractor = new PDFExtractor()
   
-  // 解析 TEI XML 提取结构化数据
-  // 这里需要实现 TEI XML 解析逻辑
-  return parseGrobidTEI(teiXml)
-}
-
-/**
- * 解析 GROBID 返回的 TEI XML
- */
-function parseGrobidTEI(teiXml: string): PDFExtractionResult {
-  // 实现 TEI XML 解析
-  // 提取标题、作者、摘要、正文、图表、公式等信息
+  // 1. 提取 PDF 内容
+  console.log(`[PDF] Starting extraction for ${paperTitle}...`)
+  const extractionResult = await extractor.extractFromUrl(pdfUrl, paperId, paperTitle)
   
-  // 这是一个占位实现
-  return {
-    paperId: '',
-    paperTitle: '',
-    figures: [],
-    tables: [],
-    formulas: [],
-    text: {
-      fullText: '',
-      pages: []
-    },
-    metadata: {
-      pageCount: 0
-    }
-  }
+  console.log(`[PDF] Extraction complete: ${extractionResult.figures.length} figures, ${extractionResult.tables.length} tables`)
+  
+  return extractionResult
 }
 
 // 导出单例实例

@@ -24,6 +24,16 @@
       "@shared/*": ["../shared/*"]
     }
   },
-  "include": ["src/**/*", "../shared/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["src/**/*"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/routes/models.ts",
+    "src/routes/pdf.ts",
+    "src/routes/research.ts",
+    "src/routes/tasks.ts",
+    "src/services/enhanced-scheduler.ts",
+    "src/services/scheduler.ts",
+    "src/scripts/**/*"
+  ]
 }

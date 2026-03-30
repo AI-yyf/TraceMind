@@ -6,25 +6,20 @@
 import OpenAI from 'openai'
 import Anthropic from '@anthropic-ai/sdk'
 import { GoogleGenerativeAI } from '@google/generative-ai'
-import type { 
-  CustomModelConfig, 
-  MultiModalConfig, 
-  ModelProvider,
-  ModelCapability 
-} from './config'
 
 // 任务类型
 export type TaskType = 
-  | 'figureAnalysis' 
-  | 'contentGeneration' 
-  | 'formulaRecognition' 
+  | 'figure-analysis' 
+  | 'content-generation' 
+  | 'formula-recognition' 
   | 'ocr' 
-  | 'tableExtraction'
+  | 'table-extraction'
+  | 'paper-evaluation'
   | string
 
 // 模型调用结果
 export interface ModelResponse {
-  content: string
+  text: string
   usage?: {
     promptTokens?: number
     completionTokens?: number
@@ -34,513 +29,194 @@ export interface ModelResponse {
   modelId: string
 }
 
-// 图片分析请求
-export interface VisionRequest {
-  image: string  // base64 或 URL
-  prompt: string
-  maxTokens?: number
+// 附件类型
+export interface Attachment {
+  type: 'image' | 'file'
+  data: string
+  mimeType: string
 }
 
-// 文本生成请求
-export interface TextRequest {
+// 模型调用请求
+export interface CompletionRequest {
+  taskType: TaskType
   prompt: string
+  attachments?: Attachment[]
   maxTokens?: number
   temperature?: number
+  providerId?: string
+  model?: string
 }
 
-// 自定义API客户端
-class CustomAPIClient {
-  private baseUrl: string
-  private apiKey: string
+// 多模态模型客户端类
+export class MultimodalClient {
+  private openaiClient?: OpenAI
+  private anthropicClient?: Anthropic
+  private googleClient?: GoogleGenerativeAI
 
-  constructor(baseUrl: string, apiKey: string) {
-    this.baseUrl = baseUrl.replace(/\/$/, '')
-    this.apiKey = apiKey
-  }
-
-  async chatCompletion(params: {
-    model: string
-    messages: Array<{ role: string; content: string }>
-    temperature?: number
-    max_tokens?: number
-    top_p?: number
-  }): Promise<{ choices: Array<{ message: { content: string } }> }> {
-    const response = await fetch(`${this.baseUrl}/v1/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`
-      },
-      body: JSON.stringify(params)
-    })
-
-    if (!response.ok) {
-      throw new Error(`Custom API error: ${response.status} ${response.statusText}`)
+  constructor() {
+    // 初始化客户端（如果有环境变量）
+    if (process.env.OPENAI_API_KEY) {
+      this.openaiClient = new OpenAI({
+        apiKey: process.env.OPENAI_API_KEY,
+      })
     }
 
-    return response.json()
-  }
-
-  async visionCompletion(params: {
-    model: string
-    messages: Array<{ 
-      role: string
-      content: string | Array<{ type: string; text?: string; image_url?: { url: string } }>
-    }>
-    temperature?: number
-    max_tokens?: number
-  }): Promise<{ choices: Array<{ message: { content: string } }> }> {
-    const response = await fetch(`${this.baseUrl}/v1/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`
-      },
-      body: JSON.stringify(params)
-    })
-
-    if (!response.ok) {
-      throw new Error(`Custom API error: ${response.status} ${response.statusText}`)
+    if (process.env.ANTHROPIC_API_KEY) {
+      this.anthropicClient = new Anthropic({
+        apiKey: process.env.ANTHROPIC_API_KEY,
+      })
     }
 
-    return response.json()
-  }
-}
-
-/**
- * 多模态模型客户端
- */
-export class MultiModalClient {
-  private config: MultiModalConfig
-  private modelClients: Map<string, any> = new Map()
-
-  constructor(config: MultiModalConfig) {
-    this.config = config
-    this.initializeModelClients()
-  }
-
-  /**
-   * 初始化所有启用的模型客户端
-   */
-  private initializeModelClients() {
-    for (const model of this.config.models) {
-      if (model.enabled) {
-        const client = this.createModelClient(model)
-        this.modelClients.set(model.id, client)
-      }
+    if (process.env.GOOGLE_API_KEY) {
+      this.googleClient = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY)
     }
   }
 
   /**
-   * 创建模型客户端
+   * 调用模型生成内容
    */
-  private createModelClient(modelConfig: CustomModelConfig): any {
-    switch (modelConfig.provider) {
-      case 'openai':
-        return new OpenAI({
-          apiKey: modelConfig.apiKey,
-          baseURL: modelConfig.baseUrl
-        })
-      case 'anthropic':
-        return new Anthropic({
-          apiKey: modelConfig.apiKey
-        })
-      case 'google':
-        return new GoogleGenerativeAI(modelConfig.apiKey)
-      case 'local':
-      case 'custom':
-        return new CustomAPIClient(modelConfig.baseUrl || 'http://localhost:8000', modelConfig.apiKey)
-      default:
-        throw new Error(`Unknown provider: ${modelConfig.provider}`)
-    }
-  }
-
-  /**
-   * 获取指定任务的模型配置
-   */
-  private getModelForTask(taskName: string): { client: any; config: CustomModelConfig } {
-    const modelId = this.config.taskMapping[taskName]
-    if (!modelId) {
-      throw new Error(`No model mapped for task: ${taskName}`)
-    }
-
-    const client = this.modelClients.get(modelId)
-    const config = this.config.models.find(m => m.id === modelId)
-
-    if (!client || !config) {
-      throw new Error(`Model ${modelId} not found or not enabled`)
-    }
-
-    return { client, config }
-  }
-
-  /**
-   * 执行图片分析任务
-   */
-  async analyzeFigure(request: VisionRequest): Promise<ModelResponse> {
-    return this.executeVisionTask('figureAnalysis', request)
-  }
-
-  /**
-   * 执行OCR任务
-   */
-  async performOCR(request: VisionRequest): Promise<ModelResponse> {
-    return this.executeVisionTask('ocr', request)
-  }
-
-  /**
-   * 执行表格提取任务
-   */
-  async extractTable(request: VisionRequest): Promise<ModelResponse> {
-    return this.executeVisionTask('tableExtraction', request)
-  }
-
-  /**
-   * 执行公式识别任务
-   */
-  async recognizeFormula(request: VisionRequest): Promise<ModelResponse> {
-    return this.executeVisionTask('formulaRecognition', request)
-  }
-
-  /**
-   * 执行内容生成任务
-   */
-  async generateContent(request: TextRequest): Promise<ModelResponse> {
-    return this.executeTextTask('contentGeneration', request)
-  }
-
-  /**
-   * 执行自定义任务
-   */
-  async executeCustomTask(taskName: string, request: TextRequest | VisionRequest): Promise<ModelResponse> {
-    if ('image' in request) {
-      return this.executeVisionTask(taskName, request)
-    }
-    return this.executeTextTask(taskName, request)
-  }
-
-  /**
-   * 执行视觉任务
-   */
-  private async executeVisionTask(taskName: string, request: VisionRequest): Promise<ModelResponse> {
-    const { client, config } = this.getModelForTask(taskName)
+  async complete(request: CompletionRequest): Promise<ModelResponse> {
     const startTime = Date.now()
 
-    try {
-      const response = await this.callVisionModel(client, config, request)
-      return {
-        content: response,
-        latency: Date.now() - startTime,
-        modelId: config.id
-      }
-    } catch (error) {
-      // 如果启用备用策略，尝试使用备用模型
-      if (this.config.fallbackStrategy.enabled) {
-        console.warn(`Model ${config.id} failed for task ${taskName}, trying fallback...`)
-        return this.executeFallbackVisionTask(request, startTime)
-      }
-      throw error
-    }
-  }
+    // 优先使用 OpenAI
+    if (this.openaiClient) {
+      try {
+        const messages: any[] = []
 
-  /**
-   * 执行文本任务
-   */
-  private async executeTextTask(taskName: string, request: TextRequest): Promise<ModelResponse> {
-    const { client, config } = this.getModelForTask(taskName)
-    const startTime = Date.now()
-
-    try {
-      const response = await this.callTextModel(client, config, request)
-      return {
-        content: response,
-        latency: Date.now() - startTime,
-        modelId: config.id
-      }
-    } catch (error) {
-      // 如果启用备用策略，尝试使用备用模型
-      if (this.config.fallbackStrategy.enabled) {
-        console.warn(`Model ${config.id} failed for task ${taskName}, trying fallback...`)
-        return this.executeFallbackTextTask(request, startTime)
-      }
-      throw error
-    }
-  }
-
-  /**
-   * 调用视觉模型
-   */
-  private async callVisionModel(client: any, config: CustomModelConfig, request: VisionRequest): Promise<string> {
-    const maxTokens = request.maxTokens || config.parameters.maxTokens
-
-    switch (config.provider) {
-      case 'openai':
-        const openaiResponse = await client.chat.completions.create({
-          model: config.model,
-          messages: [
-            {
-              role: 'user',
-              content: [
-                { type: 'text', text: request.prompt },
-                {
-                  type: 'image_url',
-                  image_url: {
-                    url: request.image.startsWith('data:') ? request.image : `data:image/png;base64,${request.image}`
-                  }
-                }
-              ]
-            }
-          ],
-          temperature: config.parameters.temperature,
-          max_tokens: maxTokens,
-          top_p: config.parameters.topP
-        })
-        return openaiResponse.choices[0].message.content
-
-      case 'anthropic':
-        const anthropicResponse = await client.messages.create({
-          model: config.model,
-          max_tokens: maxTokens,
-          temperature: config.parameters.temperature,
-          messages: [
-            {
-              role: 'user',
-              content: [
-                { type: 'text', text: request.prompt },
-                {
-                  type: 'image',
-                  source: {
-                    type: 'base64',
-                    media_type: 'image/png',
-                    data: request.image.replace(/^data:image\/\w+;base64,/, '')
-                  }
-                }
-              ]
-            }
-          ]
-        })
-        return anthropicResponse.content[0].text
-
-      case 'google':
-        const googleModel = client.getGenerativeModel({ model: config.model })
-        const googleResult = await googleModel.generateContent([
-          request.prompt,
-          {
-            inlineData: {
-              data: request.image.replace(/^data:image\/\w+;base64,/, ''),
-              mimeType: 'image/png'
+        // 构建消息内容
+        if (request.attachments && request.attachments.length > 0) {
+          // 多模态消息
+          const content: any[] = [{ type: 'text', text: request.prompt }]
+          
+          for (const attachment of request.attachments) {
+            if (attachment.type === 'image') {
+              content.push({
+                type: 'image_url',
+                image_url: {
+                  url: `data:${attachment.mimeType};base64,${attachment.data}`,
+                },
+              })
             }
           }
-        ])
-        return googleResult.response.text()
 
-      case 'local':
-      case 'custom':
-        const customResponse = await client.visionCompletion({
-          model: config.model,
+          messages.push({
+            role: 'user',
+            content,
+          })
+        } else {
+          // 纯文本消息
+          messages.push({
+            role: 'user',
+            content: request.prompt,
+          })
+        }
+
+        const response = await this.openaiClient.chat.completions.create({
+          model: request.model || 'gpt-4o',
+          messages,
+          max_tokens: request.maxTokens || 2000,
+          temperature: request.temperature ?? 0.7,
+        })
+
+        return {
+          text: response.choices[0]?.message?.content || '',
+          usage: {
+            promptTokens: response.usage?.prompt_tokens,
+            completionTokens: response.usage?.completion_tokens,
+            totalTokens: response.usage?.total_tokens,
+          },
+          latency: Date.now() - startTime,
+          modelId: response.model,
+        }
+      } catch (error) {
+        console.error('OpenAI API error:', error)
+        throw error
+      }
+    }
+
+    // 降级到 Anthropic
+    if (this.anthropicClient) {
+      try {
+        const response = await this.anthropicClient.messages.create({
+          model: request.model || 'claude-3-opus-20240229',
+          max_tokens: request.maxTokens || 2000,
+          temperature: request.temperature ?? 0.7,
           messages: [
             {
               role: 'user',
-              content: [
-                { type: 'text', text: request.prompt },
-                {
-                  type: 'image_url',
-                  image_url: {
-                    url: request.image.startsWith('data:') ? request.image : `data:image/png;base64,${request.image}`
-                  }
-                }
-              ]
-            }
+              content: request.prompt,
+            },
           ],
-          temperature: config.parameters.temperature,
-          max_tokens: maxTokens
         })
-        return customResponse.choices[0].message.content
 
-      default:
-        throw new Error(`Unsupported provider for vision: ${config.provider}`)
-    }
-  }
+        const content = response.content[0]
+        const text = content.type === 'text' ? content.text : ''
 
-  /**
-   * 调用文本模型
-   */
-  private async callTextModel(client: any, config: CustomModelConfig, request: TextRequest): Promise<string> {
-    const maxTokens = request.maxTokens || config.parameters.maxTokens
-    const temperature = request.temperature ?? config.parameters.temperature
-
-    switch (config.provider) {
-      case 'openai':
-        const openaiResponse = await client.chat.completions.create({
-          model: config.model,
-          messages: [{ role: 'user', content: request.prompt }],
-          temperature,
-          max_tokens: maxTokens,
-          top_p: config.parameters.topP
-        })
-        return openaiResponse.choices[0].message.content
-
-      case 'anthropic':
-        const anthropicResponse = await client.messages.create({
-          model: config.model,
-          max_tokens: maxTokens,
-          temperature,
-          messages: [{ role: 'user', content: request.prompt }]
-        })
-        return anthropicResponse.content[0].text
-
-      case 'google':
-        const googleModel = client.getGenerativeModel({ model: config.model })
-        const googleResult = await googleModel.generateContent(request.prompt)
-        return googleResult.response.text()
-
-      case 'local':
-      case 'custom':
-        const customResponse = await client.chatCompletion({
-          model: config.model,
-          messages: [{ role: 'user', content: request.prompt }],
-          temperature,
-          max_tokens: maxTokens,
-          top_p: config.parameters.topP
-        })
-        return customResponse.choices[0].message.content
-
-      default:
-        throw new Error(`Unsupported provider for text: ${config.provider}`)
-    }
-  }
-
-  /**
-   * 执行备用视觉任务
-   */
-  private async executeFallbackVisionTask(request: VisionRequest, startTime: number): Promise<ModelResponse> {
-    const fallbackId = this.config.fallbackStrategy.fallbackModelId
-    if (!fallbackId) {
-      throw new Error('Fallback model not configured')
-    }
-
-    const fallbackConfig = this.config.models.find(m => m.id === fallbackId)
-    if (!fallbackConfig || !fallbackConfig.enabled) {
-      throw new Error('Fallback model not available')
-    }
-
-    // 确保备用模型客户端已初始化
-    let fallbackClient = this.modelClients.get(fallbackId)
-    if (!fallbackClient) {
-      fallbackClient = this.createModelClient(fallbackConfig)
-      this.modelClients.set(fallbackId, fallbackClient)
-    }
-
-    const response = await this.callVisionModel(fallbackClient, fallbackConfig, request)
-    return {
-      content: response,
-      latency: Date.now() - startTime,
-      modelId: fallbackId
-    }
-  }
-
-  /**
-   * 执行备用文本任务
-   */
-  private async executeFallbackTextTask(request: TextRequest, startTime: number): Promise<ModelResponse> {
-    const fallbackId = this.config.fallbackStrategy.fallbackModelId
-    if (!fallbackId) {
-      throw new Error('Fallback model not configured')
-    }
-
-    const fallbackConfig = this.config.models.find(m => m.id === fallbackId)
-    if (!fallbackConfig || !fallbackConfig.enabled) {
-      throw new Error('Fallback model not available')
-    }
-
-    // 确保备用模型客户端已初始化
-    let fallbackClient = this.modelClients.get(fallbackId)
-    if (!fallbackClient) {
-      fallbackClient = this.createModelClient(fallbackConfig)
-      this.modelClients.set(fallbackId, fallbackClient)
-    }
-
-    const response = await this.callTextModel(fallbackClient, fallbackConfig, request)
-    return {
-      content: response,
-      latency: Date.now() - startTime,
-      modelId: fallbackId
-    }
-  }
-
-  /**
-   * 测试模型连接
-   */
-  async testModel(modelId: string): Promise<{ success: boolean; latency: number; error?: string }> {
-    const config = this.config.models.find(m => m.id === modelId)
-    if (!config) {
-      return { success: false, latency: 0, error: 'Model not found' }
-    }
-
-    // 确保客户端已初始化
-    let client = this.modelClients.get(modelId)
-    if (!client) {
-      try {
-        client = this.createModelClient(config)
-        this.modelClients.set(modelId, client)
-      } catch (error) {
-        return { 
-          success: false, 
-          latency: 0, 
-          error: `Failed to create client: ${error instanceof Error ? error.message : String(error)}` 
+        return {
+          text,
+          latency: Date.now() - startTime,
+          modelId: response.model,
         }
+      } catch (error) {
+        console.error('Anthropic API error:', error)
+        throw error
       }
     }
 
-    const startTime = Date.now()
-    try {
-      // 发送一个简单的测试请求
-      await this.callTextModel(client, config, { prompt: 'Hello', maxTokens: 10 })
-      return { success: true, latency: Date.now() - startTime }
-    } catch (error) {
-      return { 
-        success: false, 
-        latency: Date.now() - startTime, 
-        error: error instanceof Error ? error.message : String(error) 
-      }
+    // 如果没有配置任何 API，返回模拟响应（开发环境）
+    console.warn('No AI API configured, returning mock response')
+    return {
+      text: this.generateMockResponse(request),
+      latency: Date.now() - startTime,
+      modelId: 'mock-model',
     }
   }
 
   /**
-   * 获取所有启用的模型
+   * 生成模拟响应（开发环境使用）
    */
-  getEnabledModels(): CustomModelConfig[] {
-    return this.config.models.filter(m => m.enabled)
-  }
+  private generateMockResponse(request: CompletionRequest): string {
+    if (request.taskType === 'paper-evaluation') {
+      return JSON.stringify({
+        relevant: true,
+        confidence: 0.85,
+        candidateType: 'direct',
+        citeIntent: 'supporting',
+        why: '与主题高度相关，方法创新',
+      })
+    }
 
-  /**
-   * 获取模型配置
-   */
-  getModelConfig(modelId: string): CustomModelConfig | undefined {
-    return this.config.models.find(m => m.id === modelId)
-  }
+    if (request.taskType === 'content-generation') {
+      return '这是一段生成的内容摘要。在实际环境中，这里会返回 AI 生成的真实内容。'
+    }
 
-  /**
-   * 更新配置
-   */
-  updateConfig(newConfig: MultiModalConfig) {
-    this.config = newConfig
-    this.modelClients.clear()
-    this.initializeModelClients()
+    if (request.taskType === 'figure-analysis') {
+      return JSON.stringify({
+        description: {
+          type: '折线图',
+          overall: '展示了实验结果的趋势',
+          elements: ['X轴', 'Y轴', '数据线'],
+          structure: '标准折线图结构',
+        },
+        interpretation: {
+          mainFinding: '性能随时间提升',
+          keyData: [],
+          trends: ['上升趋势'],
+          comparisons: [],
+          anomalies: [],
+        },
+        significance: {
+          supports: '方法有效性',
+          proves: '算法改进有效',
+          limitations: '样本量有限',
+          relationToText: '与正文描述一致',
+        },
+      })
+    }
+
+    return 'Mock response for ' + request.taskType
   }
 }
 
-// 导出单例实例（可选）
-let globalClient: MultiModalClient | null = null
-
-export function initializeMultiModalClient(config: MultiModalConfig): MultiModalClient {
-  globalClient = new MultiModalClient(config)
-  return globalClient
-}
-
-export function getMultiModalClient(): MultiModalClient {
-  if (!globalClient) {
-    throw new Error('MultiModalClient not initialized. Call initializeMultiModalClient first.')
-  }
-  return globalClient
-}
+// 导出单例实例
+export const multimodalClient = new MultimodalClient()

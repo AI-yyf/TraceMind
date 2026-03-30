@@ -1,352 +1,449 @@
-import { Link, useParams } from 'react-router-dom'
-import { ArrowLeft, GitBranch, Merge, Clock } from 'lucide-react'
+import { type ReactNode, useEffect, useMemo, useState } from 'react'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { ArrowLeft, Clock3, GitBranch, Layers3, RefreshCcw } from 'lucide-react'
 
-import { getTopicDisplay } from '@/data/topicDisplay'
-import { getTopicNodes, getPaperRecord } from '@/data/tracker'
-import { useTopicRegistry } from '@/hooks'
-import type { TopicId, TrackerNode } from '@/types/tracker'
+import { TopicChatSidebar } from '@/components/topic/TopicChatSidebar'
+import type { CitationRef, EvidencePayload, SuggestedAction, TopicViewModel } from '@/types/alpha'
+import { apiGet, apiPost } from '@/utils/api'
 
-// 分支颜色配置 - 与后端统一
-const branchColors = [
-  '#dc2626', // red-600 - 主线
-  '#2563eb', // blue-600
-  '#059669', // emerald-600
-  '#7c3aed', // violet-600
-  '#ea580c', // orange-600
-  '#0891b2', // cyan-600
-  '#db2777', // pink-600
-  '#4f46e5', // indigo-600
-]
+const COPY = {
+  loadError:
+    '\u8fd9\u4e2a\u4e3b\u9898\u8fd8\u6ca1\u6709\u8fdb\u5165\u65b0\u7684 Alpha \u540e\u7aef\u94fe\u8def\uff0c\u6216\u8005\u672c\u5730\u540e\u7aef\u8fd8\u6ca1\u6709\u542f\u52a8\u3002',
+  loading: '\u6b63\u5728\u52a0\u8f7d\u4e3b\u9898 artifact...',
+  backHome: '\u8fd4\u56de\u9996\u9875',
+  backOverview: '\u8fd4\u56de\u603b\u89c8',
+  unavailable: '\u4e3b\u9898\u6682\u4e0d\u53ef\u7528',
+  openDemo: '\u6253\u5f00\u6f14\u793a\u4e3b\u9898',
+  alphaState: 'Alpha State',
+  rebuild: '\u91cd\u5efa artifact',
+  nodeTimelineTitle: '\u9636\u6bb5\u4e0e\u8282\u70b9',
+  papersTitle: '\u4ee3\u8868\u8bba\u6587',
+  narrativeTitle: '\u4e3b\u9898\u53d9\u4e8b',
+  nodeChip: '\u8282\u70b9',
+  mergeChip: '\u6c47\u6d41',
+  provisionalChip: '\u4e34\u65f6',
+  primaryPaper: '\u4e3b\u8bba\u6587\uff1a',
+  relatedPapers: '\u7bc7\u5173\u8054\u8bba\u6587',
+  citationCount: '\u5f15\u7528',
+  authorFallback: '\u4f5c\u8005\u4fe1\u606f\u5f85\u8865\u5145',
+  figures: '\u56fe',
+  tables: '\u8868',
+  formulas: '\u516c\u5f0f',
+} as const
 
-interface NodeCardProps {
-  node: TrackerNode
-  color: string
-  isMainline: boolean
+function anchorDomId(anchorId: string) {
+  return `anchor-${anchorId.replace(/[^a-zA-Z0-9_-]/g, '-')}`
 }
 
-function NodeCard({ node, color, isMainline }: NodeCardProps) {
-  const primaryPaper = getPaperRecord(node.primaryPaperId)
-  const titleZh = primaryPaper?.titleZh || node.nodeLabel || '未命名节点'
-  const titleEn = primaryPaper?.titleEn
-  const summary = node.nodeSummary || primaryPaper?.summary || '该节点暂无详细摘要。'
-  const explanation = node.nodeExplanation || primaryPaper?.explanation
-  
-  // 获取配图 URL（优先使用节点配图，其次是论文封面）
-  const coverImage = node.nodeCoverImage || primaryPaper?.coverPath
-
-  return (
-    <Link
-      to={`/node/${node.nodeId}`}
-      className="group block overflow-hidden rounded-[20px] border border-black/8 bg-white transition hover:border-black/12 hover:shadow-md"
-    >
-      {/* 配图区域 */}
-      <div className="relative h-40 w-full overflow-hidden bg-gradient-to-br from-black/5 to-black/[0.02]">
-        {coverImage ? (
-          <img
-            src={coverImage}
-            alt={titleZh}
-            className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
-          />
-        ) : (
-          <div 
-            className="flex h-full w-full items-center justify-center"
-            style={{
-              background: `linear-gradient(135deg, ${color}08 0%, ${color}03 100%)`,
-            }}
-          >
-            <div className="text-center">
-              <span 
-                className="text-[64px] font-light leading-none opacity-10"
-                style={{ color }}
-              >
-                {node.stageIndex}
-              </span>
-            </div>
-          </div>
-        )}
-        
-        {/* 左上角标签 */}
-        <div className="absolute left-3 top-3 flex flex-wrap gap-1.5">
-          {node.sourceBranchLabels.slice(0, 1).map((label, i) => (
-            <span
-              key={i}
-              className="rounded-full bg-white/90 px-2.5 py-1 text-[10px] font-medium backdrop-blur-sm"
-              style={{ color }}
-            >
-              {label}
-            </span>
-          ))}
-          {node.isMergeNode && (
-            <span className="flex items-center gap-1 rounded-full bg-amber-500/90 px-2 py-1 text-[10px] font-medium text-white backdrop-blur-sm">
-              <Merge className="h-3 w-3" />
-              汇流
-            </span>
-          )}
-          {isMainline && (
-            <span className="rounded-full bg-red-500/90 px-2 py-1 text-[10px] font-medium text-white backdrop-blur-sm">
-              主线
-            </span>
-          )}
-        </div>
-
-        {/* 右下角状态 */}
-        {node.provisional && (
-          <div className="absolute bottom-3 right-3">
-            <span className="rounded-full bg-black/60 px-2 py-1 text-[10px] text-white backdrop-blur-sm">
-              临时
-            </span>
-          </div>
-        )}
-      </div>
-
-      {/* 内容区 */}
-      <div className="p-5">
-        {/* 中文标题 */}
-        <h4 className="text-[16px] font-semibold leading-snug text-black line-clamp-2">
-          {titleZh}
-        </h4>
-
-        {/* 英文标题 */}
-        {titleEn && titleEn !== titleZh && (
-          <p className="mt-1.5 text-[12px] italic leading-relaxed text-black/40 line-clamp-1">
-            {titleEn}
-          </p>
-        )}
-
-        {/* 简要讲解（优先使用 explanation，其次是 summary） */}
-        <p className="mt-3 text-[13px] leading-relaxed text-black/60 line-clamp-3">
-          {explanation || summary}
-        </p>
-
-        {/* 底部信息 */}
-        <div className="mt-4 flex items-center justify-between border-t border-black/5 pt-3">
-          <div className="flex items-center gap-3 text-[11px] text-black/40">
-            <span className="flex items-center gap-1">
-              <Clock className="h-3 w-3" />
-              {new Date(node.updatedAt).toLocaleDateString('zh-CN')}
-            </span>
-            <span>{node.paperCount} 篇论文</span>
-          </div>
-          
-          {/* 阅读更多 */}
-          <span className="flex items-center gap-1 text-[11px] font-medium text-black/60 transition group-hover:text-black">
-            阅读详情
-            <svg className="h-3 w-3 transition group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </span>
-        </div>
-      </div>
-    </Link>
-  )
-}
-
-interface StageSectionProps {
-  stageIndex: number
-  nodes: TrackerNode[]
-  branchColorMap: Map<string, string>
-  mainlineBranchId?: string
-}
-
-function StageSection({ stageIndex, nodes, branchColorMap, mainlineBranchId }: StageSectionProps) {
-  // 按分支分组节点
-  const nodesByBranch = nodes.reduce((acc, node) => {
-    const branchId = node.sourceBranchIds[0] || 'main'
-    if (!acc[branchId]) acc[branchId] = []
-    acc[branchId].push(node)
-    return acc
-  }, {} as Record<string, TrackerNode[]>)
-
-  const branchIds = Object.keys(nodesByBranch)
-
-  return (
-    <div className="relative">
-      {/* 阶段标题 */}
-      <div className="mb-4 flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black text-[14px] font-bold text-white">
-          {stageIndex}
-        </div>
-        <div>
-          <h3 className="text-[16px] font-semibold text-black">阶段 {stageIndex}</h3>
-          <p className="text-[12px] text-black/50">{nodes.length} 个节点 · {branchIds.length} 条分支</p>
-        </div>
-      </div>
-
-      {/* 分支时间线 */}
-      <div className="relative ml-5 border-l-2 border-black/10 pl-6">
-        {branchIds.map((branchId) => {
-          const branchNodes = nodesByBranch[branchId]
-          const color = branchColorMap.get(branchId) || '#dc2626'
-          const isMainline = branchId === mainlineBranchId || branchId === 'main'
-
-          return (
-            <div key={branchId} className="relative mb-4 last:mb-0">
-              {/* 分支标签 */}
-              <div className="mb-2 flex items-center gap-2">
-                <div className="h-2 w-2 rounded-full" style={{ backgroundColor: color }}></div>
-                <span className="text-[12px] font-medium" style={{ color }}>
-                  {branchNodes[0]?.sourceBranchLabels[0] || branchId}
-                </span>
-                {isMainline && (
-                  <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] text-red-600">
-                    主线
-                  </span>
-                )}
-              </div>
-
-              {/* 该分支的节点 - 网格布局 */}
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {branchNodes.map((node) => (
-                  <NodeCard
-                    key={node.nodeId}
-                    node={node}
-                    color={color}
-                    isMainline={isMainline}
-                  />
-                ))}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
+function formatStat(value: number, unit: string) {
+  return `${value} ${unit}`
 }
 
 export function TopicPage() {
-  const { topicId } = useParams<{ topicId: TopicId }>()
-  const { allTopicMap } = useTopicRegistry()
-  const topic = topicId ? allTopicMap[topicId] : null
-  const display = topic ? getTopicDisplay(topic.id) : null
-  const nodes = topicId ? getTopicNodes(topicId) : []
+  const { topicId = '' } = useParams<{ topicId: string }>()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [viewModel, setViewModel] = useState<TopicViewModel | null>(null)
+  const [selectedEvidence, setSelectedEvidence] = useState<EvidencePayload | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [rebuilding, setRebuilding] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  // 按阶段分组节点
-  const nodesByStage = nodes.reduce((acc, node) => {
-    const stage = node.stageIndex
-    if (!acc[stage]) acc[stage] = []
-    acc[stage].push(node)
-    return acc
-  }, {} as Record<number, TrackerNode[]>)
+  const highlightedAnchor = searchParams.get('anchor')
 
-  // 为每个分支分配颜色
-  const branchColorMap = new Map<string, string>()
-  display?.branchPalette.forEach((branch, index) => {
-    branchColorMap.set(branch.branchId, branchColors[index % branchColors.length])
-  })
+  useEffect(() => {
+    let alive = true
 
-  // 确定主线分支
-  const mainlineBranchId = display?.branchPalette.find(b => b.branchId === 'main')?.branchId
+    async function loadTopic() {
+      setLoading(true)
+      setError(null)
 
-  if (!topic || !display) {
+      try {
+        const data = await apiGet<TopicViewModel>(`/api/topics/${topicId}/view-model`)
+        if (!alive) return
+        setViewModel(data)
+      } catch {
+        if (!alive) return
+        setError(COPY.loadError)
+      } finally {
+        if (alive) setLoading(false)
+      }
+    }
+
+    void loadTopic()
+    return () => {
+      alive = false
+    }
+  }, [topicId])
+
+  useEffect(() => {
+    const anchorId = searchParams.get('anchor')
+    if (!anchorId) return
+
+    const element = document.getElementById(anchorDomId(anchorId))
+    if (!element) return
+
+    window.setTimeout(() => {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 120)
+  }, [searchParams, viewModel])
+
+  useEffect(() => {
+    const evidenceAnchor = searchParams.get('evidence')
+    if (!evidenceAnchor) {
+      setSelectedEvidence(null)
+      return
+    }
+    const activeEvidenceAnchor = evidenceAnchor
+
+    let alive = true
+
+    async function loadEvidence() {
+      try {
+        const evidence = await apiGet<EvidencePayload>(
+          `/api/evidence/${encodeURIComponent(activeEvidenceAnchor)}`,
+        )
+        if (alive) {
+          setSelectedEvidence(evidence)
+        }
+      } catch {
+        if (alive) {
+          setSelectedEvidence(null)
+        }
+      }
+    }
+
+    void loadEvidence()
+    return () => {
+      alive = false
+    }
+  }, [searchParams])
+
+  const stageSummary = useMemo(
+    () =>
+      viewModel?.stages.map((stage) => ({
+        stageIndex: stage.stageIndex,
+        title: stage.title,
+        nodeCount: stage.nodes.length,
+      })) ?? [],
+    [viewModel],
+  )
+
+  async function rebuildTopic() {
+    if (!topicId || rebuilding) return
+    setRebuilding(true)
+
+    try {
+      const response = await apiPost<
+        { topicId: string; rebuiltAt: string; viewModel: TopicViewModel },
+        Record<string, never>
+      >(`/api/topics/${topicId}/rebuild`, {})
+      setViewModel(response.viewModel)
+    } finally {
+      setRebuilding(false)
+    }
+  }
+
+  async function openEvidence(anchorId: string) {
+    const evidence = await apiGet<EvidencePayload>(`/api/evidence/${encodeURIComponent(anchorId)}`)
+    setSelectedEvidence(evidence)
+
+    const next = new URLSearchParams(searchParams)
+    next.set('evidence', anchorId)
+    next.delete('anchor')
+    setSearchParams(next, { replace: true })
+  }
+
+  function focusAnchor(anchorId: string) {
+    const next = new URLSearchParams(searchParams)
+    next.set('anchor', anchorId)
+    next.delete('evidence')
+    setSearchParams(next, { replace: true })
+  }
+
+  function handleCitation(citation: CitationRef) {
+    if (citation.type === 'figure' || citation.type === 'table' || citation.type === 'formula') {
+      void openEvidence(citation.anchorId)
+      return
+    }
+
+    focusAnchor(citation.anchorId)
+  }
+
+  function handleAction(action: SuggestedAction) {
+    if (!action.targetId) return
+
+    if (
+      action.action === 'show_evidence' ||
+      action.targetId.startsWith('figure:') ||
+      action.targetId.startsWith('table:') ||
+      action.targetId.startsWith('formula:')
+    ) {
+      void openEvidence(action.targetId)
+      return
+    }
+
+    focusAnchor(action.targetId)
+  }
+
+  if (loading) {
     return (
-      <div className="px-4 py-10 md:px-6 xl:px-10">
-        <Link to="/" className="text-sm underline underline-offset-4">
-          返回首页
-        </Link>
-        <div className="mt-4 text-black/60">这个主题不存在。</div>
-      </div>
+      <main className="px-4 pb-20 pt-6 md:px-6 xl:px-10">
+        <div className="mx-auto max-w-[1180px] rounded-[28px] border border-black/8 bg-white px-6 py-8 text-[14px] text-black/56">
+          {COPY.loading}
+        </div>
+      </main>
     )
   }
 
-  const stages = Object.keys(nodesByStage)
-    .map(Number)
-    .sort((a, b) => a - b)
+  if (!viewModel) {
+    return (
+      <main className="px-4 pb-20 pt-6 md:px-6 xl:px-10">
+        <div className="mx-auto max-w-[920px]">
+          <Link
+            to="/"
+            className="inline-flex items-center gap-2 text-sm text-black/50 transition hover:text-black"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            {COPY.backHome}
+          </Link>
+
+          <div className="mt-6 rounded-[28px] border border-black/8 bg-white px-6 py-8">
+            <div className="text-[11px] uppercase tracking-[0.24em] text-black/36">{COPY.alphaState}</div>
+            <h1 className="mt-4 text-[30px] font-semibold leading-[1.15] text-black">{COPY.unavailable}</h1>
+            <p className="mt-4 max-w-2xl text-[15px] leading-8 text-black/62">{error}</p>
+            <Link
+              to="/topic/topic-1"
+              className="mt-6 inline-flex items-center rounded-full border border-black bg-black px-4 py-2 text-sm text-white transition hover:bg-black/90"
+            >
+              {COPY.openDemo}
+            </Link>
+          </div>
+        </div>
+      </main>
+    )
+  }
 
   return (
     <main className="px-4 pb-20 pt-6 md:px-6 xl:px-10">
-      <div className="mx-auto max-w-[1100px]">
-        {/* 返回导航 */}
+      <div className="mx-auto max-w-[1280px]">
         <div className="mb-6">
           <Link
             to="/"
             className="inline-flex items-center gap-2 text-sm text-black/50 transition hover:text-black"
           >
             <ArrowLeft className="h-4 w-4" />
-            返回总览
+            {COPY.backOverview}
           </Link>
         </div>
 
-        {/* 主题头部 */}
-        <section className="overflow-hidden rounded-[32px] border border-black/8 bg-white px-8 py-10 md:px-12 md:py-12">
-          <div className="text-[11px] tracking-[0.3em] text-black/40 uppercase">
-            {display.hero.subtitle}
-          </div>
-          <h1 className="mt-4 font-display text-[40px] leading-[1.1] text-black md:text-[56px]">
-            {topic.nameZh}
-          </h1>
-          <p className="mt-5 max-w-3xl text-[16px] leading-8 text-black/60">
-            {display.hero.summary}
-          </p>
-          
-          {/* 统计信息 */}
-          <div className="mt-8 flex flex-wrap gap-6 text-[13px] text-black/50">
-            <div className="flex items-center gap-2">
-              <GitBranch className="h-4 w-4" />
-              <span>{display.branchPalette.length} 条分支</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Merge className="h-4 w-4" />
-              <span>{display.hero.mergeCount} 个汇流</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Clock className="h-4 w-4" />
-              <span>{stages.length} 个阶段</span>
-            </div>
-          </div>
-        </section>
+        <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="space-y-8">
+            <section className="overflow-hidden rounded-[32px] border border-black/8 bg-white px-8 py-9 md:px-10 md:py-10">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <div className="text-[11px] uppercase tracking-[0.28em] text-black/36">
+                    {viewModel.subtitle}
+                  </div>
+                  <h1 className="mt-4 font-display text-[38px] leading-[1.08] text-black md:text-[54px]">
+                    {viewModel.title}
+                  </h1>
+                </div>
 
-        {/* 节点时间树 */}
-        <section className="mt-12">
-          <div className="mb-8 flex items-center gap-4">
-            <div className="h-px flex-1 bg-black/10"></div>
-            <span className="text-[11px] tracking-[0.3em] text-black/40 uppercase">
-              节点时间树 · Node Timeline
-            </span>
-            <div className="h-px flex-1 bg-black/10"></div>
-          </div>
-
-          {stages.length === 0 ? (
-            <div className="rounded-[24px] border border-dashed border-black/12 bg-white px-6 py-12 text-center">
-              <div className="text-[11px] tracking-[0.2em] text-black/40 uppercase">
-                等待节点发现
+                <button
+                  type="button"
+                  onClick={() => void rebuildTopic()}
+                  disabled={rebuilding}
+                  className="inline-flex items-center gap-2 rounded-full border border-black/10 px-4 py-2 text-[12px] text-black/62 transition hover:border-black/20 hover:text-black disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <RefreshCcw className={`h-3.5 w-3.5 ${rebuilding ? 'animate-spin' : ''}`} />
+                  {COPY.rebuild}
+                </button>
               </div>
-              <p className="mt-3 text-[15px] text-black/50">
-                当前主题尚未发现任何研究节点，点击"开始研究"启动发现流程。
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-10">
-              {stages.map((stageIndex) => (
-                <StageSection
-                  key={stageIndex}
-                  stageIndex={stageIndex}
-                  nodes={nodesByStage[stageIndex]}
-                  branchColorMap={branchColorMap}
-                  mainlineBranchId={mainlineBranchId}
-                />
-              ))}
-            </div>
-          )}
-        </section>
 
-        {/* 页面底部文章 */}
-        <section className="mt-16 rounded-[24px] border border-black/8 bg-[#fafafa] px-6 py-8 md:px-8">
-          <h3 className="text-[13px] font-medium tracking-wide text-black/70">
-            关于本主题 · About This Topic
-          </h3>
-          <div className="mt-4 text-[15px] leading-8 text-black/70 whitespace-pre-line">
-            {display.narrativeArticle || '这个主题的故事仍在书写中……'}
+              <p className="mt-6 max-w-3xl text-[16px] leading-8 text-black/62">{viewModel.summary}</p>
+
+              <div className="mt-8 flex flex-wrap gap-6 text-[13px] text-black/50">
+                <Stat icon={<Layers3 className="h-4 w-4" />} label={formatStat(viewModel.stats.stageCount, '\u4e2a\u9636\u6bb5')} />
+                <Stat icon={<GitBranch className="h-4 w-4" />} label={formatStat(viewModel.stats.nodeCount, '\u4e2a\u8282\u70b9')} />
+                <Stat icon={<Clock3 className="h-4 w-4" />} label={formatStat(viewModel.stats.paperCount, '\u7bc7\u8bba\u6587')} />
+              </div>
+
+              {stageSummary.length > 0 && (
+                <div className="mt-8 flex flex-wrap gap-2">
+                  {stageSummary.map((stage) => (
+                    <button
+                      key={stage.stageIndex}
+                      type="button"
+                      onClick={() => focusAnchor(`stage:${stage.stageIndex}`)}
+                      className="rounded-full border border-black/10 px-3 py-1.5 text-[11px] text-black/60 transition hover:border-black/20 hover:text-black"
+                    >
+                      {`\u9636\u6bb5 ${stage.stageIndex} \u00b7 ${stage.nodeCount} \u4e2a\u8282\u70b9`}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="rounded-[28px] border border-black/8 bg-white px-6 py-7 md:px-8">
+              <SectionHeader label="Node Timeline" title={COPY.nodeTimelineTitle} />
+              <div className="mt-8 space-y-8">
+                {viewModel.stages.map((stage) => (
+                  <div
+                    key={stage.stageIndex}
+                    id={anchorDomId(`stage:${stage.stageIndex}`)}
+                    className="scroll-mt-24"
+                  >
+                    <div className="mb-4 flex items-center gap-4">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black text-[14px] font-semibold text-white">
+                        {stage.stageIndex}
+                      </div>
+                      <div>
+                        <h2 className="text-[17px] font-semibold text-black">{stage.title}</h2>
+                        <p className="text-[13px] text-black/48">{stage.description}</p>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {stage.nodes.map((node) => {
+                        const highlighted = highlightedAnchor === node.anchorId
+
+                        return (
+                          <article
+                            key={node.nodeId}
+                            id={anchorDomId(node.anchorId)}
+                            className={`scroll-mt-24 rounded-[22px] border px-5 py-5 transition ${
+                              highlighted
+                                ? 'border-black/22 bg-[#faf8f3] shadow-[0_12px_30px_rgba(17,17,17,0.05)]'
+                                : 'border-black/8 bg-white'
+                            }`}
+                          >
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="rounded-full border border-black/10 px-2.5 py-1 text-[10px] text-black/54">
+                                {COPY.nodeChip}
+                              </span>
+                              {node.isMergeNode && (
+                                <span className="rounded-full border border-black/10 px-2.5 py-1 text-[10px] text-black/54">
+                                  {COPY.mergeChip}
+                                </span>
+                              )}
+                              {node.provisional && (
+                                <span className="rounded-full border border-dashed border-black/16 px-2.5 py-1 text-[10px] text-black/42">
+                                  {COPY.provisionalChip}
+                                </span>
+                              )}
+                            </div>
+
+                            <h3 className="mt-4 text-[20px] font-semibold leading-[1.2] text-black">
+                              {node.title}
+                            </h3>
+
+                            {node.subtitle && (
+                              <p className="mt-2 text-[13px] leading-6 text-black/42">{node.subtitle}</p>
+                            )}
+
+                            <p className="mt-4 text-[14px] leading-7 text-black/64">{node.explanation}</p>
+
+                            <div className="mt-5 flex flex-wrap gap-3 text-[11px] text-black/42">
+                              <span>{`${COPY.primaryPaper}${node.primaryPaperTitle}`}</span>
+                              <span>{`${node.paperCount} ${COPY.relatedPapers}`}</span>
+                            </div>
+                          </article>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="rounded-[28px] border border-black/8 bg-white px-6 py-7 md:px-8">
+              <SectionHeader label="Representative Papers" title={COPY.papersTitle} />
+              <div className="mt-8 grid gap-4">
+                {viewModel.papers.map((paper) => {
+                  const highlighted = highlightedAnchor === paper.anchorId
+                  const authorText = paper.authors.slice(0, 3).join(' \u00b7 ') || COPY.authorFallback
+
+                  return (
+                    <article
+                      key={paper.paperId}
+                      id={anchorDomId(paper.anchorId)}
+                      className={`scroll-mt-24 rounded-[22px] border px-5 py-5 transition ${
+                        highlighted
+                          ? 'border-black/22 bg-[#faf8f3] shadow-[0_12px_30px_rgba(17,17,17,0.05)]'
+                          : 'border-black/8 bg-white'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <div className="text-[11px] uppercase tracking-[0.24em] text-black/34">
+                            {new Date(paper.publishedAt).toLocaleDateString('zh-CN')}
+                          </div>
+                          <h3 className="mt-3 text-[20px] font-semibold leading-[1.2] text-black">
+                            {paper.title}
+                          </h3>
+                          {paper.titleEn && paper.titleEn !== paper.title && (
+                            <div className="mt-2 text-[13px] italic text-black/40">{paper.titleEn}</div>
+                          )}
+                        </div>
+
+                        {paper.citationCount !== null && (
+                          <div className="rounded-full border border-black/10 px-3 py-1 text-[11px] text-black/52">
+                            {`${COPY.citationCount} ${paper.citationCount}`}
+                          </div>
+                        )}
+                      </div>
+
+                      <p className="mt-4 text-[14px] leading-7 text-black/64">{paper.explanation}</p>
+
+                      <div className="mt-5 flex flex-wrap gap-3 text-[11px] text-black/42">
+                        <span>{authorText}</span>
+                        <span>{`${paper.figuresCount} ${COPY.figures}`}</span>
+                        <span>{`${paper.tablesCount} ${COPY.tables}`}</span>
+                        <span>{`${paper.formulasCount} ${COPY.formulas}`}</span>
+                      </div>
+                    </article>
+                  )
+                })}
+              </div>
+            </section>
+
+            <section className="rounded-[28px] border border-black/8 bg-[#faf8f3] px-6 py-7 md:px-8">
+              <SectionHeader label="About This Topic" title={COPY.narrativeTitle} />
+              <div className="mt-6 whitespace-pre-line text-[15px] leading-8 text-black/66">
+                {viewModel.narrativeArticle}
+              </div>
+            </section>
           </div>
 
-          <div className="mt-8 flex flex-wrap gap-4 text-[12px] text-black/40">
-            <span>节点数：{nodes.length}</span>
-            <span>·</span>
-            <span>阶段数：{stages.length}</span>
-            <span>·</span>
-            <span>分支数：{display.branchPalette.length}</span>
-          </div>
-        </section>
+          <TopicChatSidebar
+            topicId={viewModel.topicId}
+            suggestedQuestions={viewModel.chatContext.suggestedQuestions}
+            selectedEvidence={selectedEvidence}
+            onOpenCitation={handleCitation}
+            onAction={handleAction}
+          />
+        </div>
       </div>
     </main>
+  )
+}
+
+function SectionHeader({ label, title }: { label: string; title: string }) {
+  return (
+    <div className="flex items-end justify-between gap-4">
+      <div>
+        <div className="text-[11px] uppercase tracking-[0.24em] text-black/34">{label}</div>
+        <h2 className="mt-3 text-[28px] font-semibold leading-[1.15] text-black">{title}</h2>
+      </div>
+    </div>
+  )
+}
+
+function Stat({ icon, label }: { icon: ReactNode; label: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-black/45">{icon}</span>
+      <span>{label}</span>
+    </div>
   )
 }

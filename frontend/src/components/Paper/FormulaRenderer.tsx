@@ -16,7 +16,7 @@ function preprocessLatex(formula: string): string {
     // 处理 \boldsymbol{...} 
     .replace(/\\boldsymbol\{([^}]+)\}/g, '\\vec{$1}')
     // 处理 \text{...} 中的特殊字符
-    .replace(/\\text\{([^}]*)\}/g, (match, content) => {
+    .replace(/\\text\{([^}]*)\}/g, (_match, content) => {
       // 保留 text 内容但确保不会破坏 math 环境
       return `\\text{${content}}`;
     })

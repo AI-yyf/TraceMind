@@ -1,229 +1,159 @@
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowRight, Search, Settings, Play } from 'lucide-react'
-import { useState } from 'react'
+import { ArrowRight, BookOpen, Sparkles } from 'lucide-react'
 
-import { useTopicRegistry, useConfig } from '@/hooks'
-import { getTopicDisplay } from '@/data/topicDisplay'
-import { SettingsPanel } from '@/components/SettingsPanel'
-import { BatchResearchLauncher } from '@/components/BatchResearchLauncher'
+import { useTopicRegistry } from '@/hooks'
+
+type BackendTopic = {
+  id: string
+  nameZh: string
+  focusLabel?: string | null
+  summary?: string | null
+  paperCount?: number
+  nodeCount?: number
+}
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001'
+
+const COPY = {
+  heroEyebrow: 'ArXiv Chronicle Alpha',
+  heroTitleLine1: '\u0041\u0049 \u5b66\u672f\u7814\u7a76\u81ea\u52a8\u5316\u540e\u7aef',
+  heroTitleLine2: 'AlphaXiv \u98ce\u683c\u6781\u7b80\u9605\u8bfb\u524d\u7aef',
+  heroBody:
+    '\u5f53\u524d Alpha \u4e3b\u8def\u5f84\u5df2\u7ecf\u6536\u655b\u5230\u4e3b\u9898\u9875\uff1a\u5de6\u4fa7\u67e5\u770b\u4e3b\u9898\u3001\u9636\u6bb5\u3001\u8282\u70b9\u548c\u4ee3\u8868\u8bba\u6587\uff0c\u53f3\u4fa7\u53ea\u5728\u4e3b\u9898\u9875\u63d0\u4f9b grounded chat\u3001\u5f15\u7528\u8df3\u8f6c\u548c\u8bc1\u636e\u5c55\u5f00\u3002',
+  enterAlpha: '\u8fdb\u5165 Alpha \u4e3b\u9898\u9875',
+  openDemo: '\u6253\u5f00\u6f14\u793a\u4e3b\u9898',
+  backendTopic: 'Backend Alpha',
+  fallbackTopic: 'Migration Fallback',
+  backendSummary:
+    '\u8fd9\u4e2a\u4e3b\u9898\u5df2\u7ecf\u8fdb\u5165\u540e\u7aef Alpha \u6570\u636e\u94fe\u8def\uff0c\u53ef\u4ee5\u76f4\u63a5\u67e5\u770b artifact \u4e0e\u4e3b\u9898\u95ee\u7b54\u3002',
+  alphaScope: 'Alpha Scope',
+  scopeLine1:
+    '\u4e3b\u9898\u9875\u662f\u552f\u4e00\u5bf9\u8bdd\u5165\u53e3\uff0c\u524d\u7aef\u53ea\u8d1f\u8d23\u5c55\u793a\u3001\u8df3\u8f6c\u548c\u9ad8\u4eae\u3002',
+  scopeLine2:
+    '\u540e\u7aef\u8d1f\u8d23\u6a21\u578b\u8def\u7531\u3001\u4e0a\u4e0b\u6587\u88c5\u914d\u3001\u5f15\u7528\u6eaf\u6e90\u3001artifact \u751f\u6210\u548c evidence \u67e5\u8be2\u3002',
+  scopeLine3:
+    '\u5f53\u524d\u6f14\u793a\u4e3b\u9898\u4e3a `topic-1`\uff0c\u53ef\u76f4\u63a5\u6d4b\u8bd5\u4e3b\u9898\u9875\u95ee\u7b54\u4e0e\u951a\u70b9\u8df3\u8f6c\u3002',
+} as const
 
 export function HomePage() {
   const { activeTopics } = useTopicRegistry()
-  const { isApiConfigured } = useConfig()
-  const [showSettings, setShowSettings] = useState(false)
-  const [showBatchResearch, setShowBatchResearch] = useState(false)
-  
-  const topicDisplays = activeTopics.map((topic) => ({
-    topic,
-    display: getTopicDisplay(topic.id),
-  }))
+  const [backendTopics, setBackendTopics] = useState<BackendTopic[]>([])
 
-  // 分支颜色配置 - 与后端统一
-  // 主线使用红色 (#dc2626)，其他分支使用以下配色
-  const branchColors = [
-    '#dc2626', // red-600 - 主线颜色
-    '#2563eb', // blue-600
-    '#059669', // emerald-600
-    '#7c3aed', // violet-600
-    '#ea580c', // orange-600
-    '#0891b2', // cyan-600
-    '#db2777', // pink-600
-    '#4f46e5', // indigo-600
-  ]
+  useEffect(() => {
+    let alive = true
 
+    async function loadBackendTopics() {
+      try {
+        const response = await fetch(`${API_BASE}/api/topics`)
+        if (!response.ok) return
+        const payload = (await response.json()) as {
+          success: boolean
+          data?: BackendTopic[]
+        }
 
+        if (alive && payload.data) {
+          setBackendTopics(payload.data)
+        }
+      } catch {
+        // Keep static topic cards as a fallback.
+      }
+    }
+
+    void loadBackendTopics()
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  const cards = useMemo(() => {
+    const staticCards = activeTopics.map((topic) => ({
+      id: topic.id,
+      nameZh: topic.nameZh,
+      focusLabel: topic.focusLabel,
+      summary: topic.summary,
+      href: `/topic/${topic.id}`,
+      source: 'static' as const,
+    }))
+
+    const dynamicCards = backendTopics
+      .filter((topic) => !staticCards.some((item) => item.id === topic.id))
+      .map((topic) => ({
+        id: topic.id,
+        nameZh: topic.nameZh,
+        focusLabel: topic.focusLabel ?? 'Backend Topic',
+        summary: topic.summary ?? COPY.backendSummary,
+        href: `/topic/${topic.id}`,
+        source: 'backend' as const,
+      }))
+
+    return [...dynamicCards, ...staticCards]
+  }, [activeTopics, backendTopics])
 
   return (
     <main className="px-4 pb-20 pt-6 md:px-6 xl:px-10">
-      <div className="mx-auto max-w-[1100px]">
-        {/* 书籍封面风格首页 */}
-        <section className="overflow-hidden rounded-[32px] border border-black/8 bg-white px-8 py-12 md:px-12 md:py-16">
-          <div className="flex items-start justify-between">
-            <div>
-              <div className="text-[12px] tracking-[0.4em] text-black/30 uppercase">ArXiv Chronicle · Tracing Knowledge</div>
-              <h1 className="mt-6 font-display text-[48px] leading-[1.05] text-black md:text-[72px]">
-                溯知集
-              </h1>
-              <p className="mt-4 max-w-2xl text-[18px] leading-8 text-black/60">
-                一本追溯知识源头的研究之书。以起源论文为根，以问题为脉，
-                记录每个研究领域从最初追问到当下探索的完整旅程——
-                让思想的河流，在时间的纸上留下可溯的轨迹。
-              </p>
-            </div>
-            
-            {/* 顶部工具按钮 */}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setShowSettings(true)}
-                className="flex items-center gap-2 rounded-full border border-black/10 px-4 py-2.5 text-[13px] text-black/70 transition hover:bg-black/5"
-              >
-                <Settings className="h-4 w-4" />
-                设置
-              </button>
-              <button
-                onClick={() => setShowBatchResearch(true)}
-                className="flex items-center gap-2 rounded-full bg-black px-4 py-2.5 text-[13px] font-medium text-white transition hover:bg-black/85"
-              >
-                <Play className="h-4 w-4" />
-                开始研究
-              </button>
-            </div>
-          </div>
+      <div className="mx-auto max-w-[1120px]">
+        <section className="rounded-[32px] border border-black/8 bg-white px-7 py-8 md:px-10 md:py-10">
+          <div className="text-[11px] uppercase tracking-[0.28em] text-black/38">{COPY.heroEyebrow}</div>
+          <h1 className="mt-4 font-display text-[38px] leading-[1.08] text-black md:text-[56px]">
+            {COPY.heroTitleLine1}
+            <br />
+            {COPY.heroTitleLine2}
+          </h1>
+          <p className="mt-6 max-w-3xl text-[16px] leading-8 text-black/62">{COPY.heroBody}</p>
 
           <div className="mt-8 flex flex-wrap gap-3">
-            {activeTopics[0] && (
-              <Link
-                to={`/topic/${activeTopics[0].id}`}
-                className="inline-flex items-center gap-2 rounded-full bg-black px-5 py-3 text-sm font-medium text-white transition hover:bg-black/85"
-              >
-                浏览主题
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-            )}
-            <button
-              type="button"
-              onClick={() => window.dispatchEvent(new CustomEvent('global-search-open'))}
-              className="inline-flex items-center gap-2 rounded-full border border-black/12 px-5 py-3 text-sm font-medium text-black/70 transition hover:border-black/20 hover:text-black"
+            <Link
+              to={cards[0]?.href ?? '/topic/topic-1'}
+              className="inline-flex items-center gap-2 rounded-full border border-black bg-black px-5 py-3 text-sm text-white transition hover:bg-black/90"
             >
-              <Search className="h-4 w-4" />
-              检索论文
-            </button>
+              <Sparkles className="h-4 w-4" />
+              {COPY.enterAlpha}
+            </Link>
+            <Link
+              to="/topic/topic-1"
+              className="inline-flex items-center gap-2 rounded-full border border-black/10 px-5 py-3 text-sm text-black/68 transition hover:border-black/20 hover:text-black"
+            >
+              <BookOpen className="h-4 w-4" />
+              {COPY.openDemo}
+            </Link>
           </div>
         </section>
 
-        {/* 时间线风格主题列表 */}
-        <section className="mt-12">
-          <div className="mb-8 flex items-center gap-4">
-            <div className="h-px flex-1 bg-black/10"></div>
-            <span className="text-[11px] tracking-[0.3em] text-black/40 uppercase">追踪主题 · Tracked Topics</span>
-            <div className="h-px flex-1 bg-black/10"></div>
-          </div>
-
-          <div className="relative">
-            {/* 主时间线 - 红色 */}
-            <div className="absolute left-[7px] top-0 bottom-0 w-[2px] bg-red-500/30 md:left-[11px]"></div>
-
-            <div className="space-y-6">
-              {topicDisplays.map(({ topic, display }, index) => {
-                const color = branchColors[index % branchColors.length]
-                return (
-                  <div key={topic.id} className="relative pl-8 md:pl-12">
-                    {/* 时间节点 - 彩色 */}
-                    <div
-                      className="absolute left-0 top-2 h-4 w-4 rounded-full border-2 border-white shadow-sm md:top-3 md:h-5 md:w-5"
-                      style={{ backgroundColor: color }}
-                    ></div>
-
-                    {/* 连接线 - 彩色 */}
-                    <div
-                      className="absolute left-[7px] top-4 h-[2px] w-4 md:left-[11px] md:top-5 md:w-6"
-                      style={{ backgroundColor: `${color}40` }}
-                    ></div>
-
-                    {/* 白色卡片 */}
-                    <div className="group rounded-[24px] border border-black/8 bg-white p-6 transition hover:border-black/12 hover:shadow-sm">
-                      {/* 第一行：时间和标签 */}
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          {/* 彩色标签点缀 */}
-                          <span
-                            className="rounded-full px-3 py-1 text-[11px] font-medium"
-                            style={{
-                              backgroundColor: `${color}12`,
-                              color: color,
-                            }}
-                          >
-                            {display?.hero.subtitle ?? topic.focusLabel}
-                          </span>
-                        </div>
-                        {/* 时间 - 最醒目 */}
-                        <span 
-                          className="text-[28px] font-light tracking-tight"
-                          style={{ color }}
-                        >
-                          {topic.originPaper.published.slice(0, 4)}
-                        </span>
-                      </div>
-
-                      <Link to={`/topic/${topic.id}`}>
-                        <h3 className="mt-4 text-[22px] font-semibold leading-[1.3] text-black transition group-hover:text-black/80">
-                          {topic.nameZh}
-                        </h3>
-                      </Link>
-                      
-                      <p className="mt-3 text-[15px] leading-7 text-black/60 line-clamp-2">
-                        {display?.hero.summary ?? topic.summary ?? topic.timelineDigest}
-                      </p>
-
-                      {/* 操作按钮 */}
-                      <div className="mt-5 flex items-center gap-3">
-                        <Link
-                          to={`/topic/${topic.id}`}
-                          className="flex items-center gap-2 text-sm text-black/50 transition hover:text-black"
-                        >
-                          <span>追溯知识脉络</span>
-                          <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
-                        </Link>
-                      </div>
+        <section className="mt-10 grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="space-y-5">
+            {cards.map((topic) => (
+              <Link
+                key={topic.id}
+                to={topic.href}
+                className="group block rounded-[24px] border border-black/8 bg-white px-6 py-6 transition hover:border-black/14 hover:shadow-[0_12px_40px_rgba(17,17,17,0.06)]"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-[11px] uppercase tracking-[0.24em] text-black/34">
+                      {topic.source === 'backend' ? COPY.backendTopic : COPY.fallbackTopic}
                     </div>
+                    <h2 className="mt-3 text-[24px] font-semibold leading-[1.2] text-black">{topic.nameZh}</h2>
+                    <p className="mt-3 text-[14px] leading-7 text-black/54">{topic.focusLabel}</p>
                   </div>
-                )
-              })}
+                  <ArrowRight className="mt-1 h-4 w-4 text-black/28 transition group-hover:translate-x-0.5 group-hover:text-black/55" />
+                </div>
+
+                <p className="mt-5 max-w-3xl text-[15px] leading-8 text-black/64">{topic.summary}</p>
+              </Link>
+            ))}
+          </div>
+
+          <aside className="rounded-[24px] border border-black/8 bg-[#faf8f3] px-5 py-6">
+            <div className="text-[11px] uppercase tracking-[0.24em] text-black/38">{COPY.alphaScope}</div>
+            <div className="mt-4 space-y-4 text-[14px] leading-7 text-black/62">
+              <p>{COPY.scopeLine1}</p>
+              <p>{COPY.scopeLine2}</p>
+              <p>{COPY.scopeLine3}</p>
             </div>
-          </div>
-        </section>
-
-        {/* 页面底部详细总结 */}
-        <section className="mt-16 rounded-[24px] border border-black/8 bg-[#fafafa] px-6 py-8 md:px-8">
-          <h3 className="text-[13px] font-medium tracking-wide text-black/70">溯知之法 · The Way of Tracing</h3>
-          <div className="mt-4 space-y-4 text-[14px] leading-7 text-black/60">
-            <p>
-              <strong className="text-black/80">【核心架构】</strong>
-              本系统采用问题驱动（Problem-Driven）架构，以单一起源论文（Origin Paper）为根节点构建学术谱系。
-              源头筛选遵循 earliest-representative 标准：选取首次系统性定义核心问题空间的代表性工作，
-              确保研究脉络的完整性与可追溯性。每个主题独立维护问题树（Problem Tree）与分支注册表（Branch Registry）。
-            </p>
-            <p>
-              <strong className="text-black/80">【阶段优先发现 Stage-First Discovery】</strong>
-              研究演进采用阶段性递进模型组织。Stage 代表特定研究时期，同一 Stage 内允许多个 Branch 横向并行。
-              这种二维组织（纵向时间、横向分支）支持观察：同一时期针对同一问题的多种解决方案如何共存、竞争与融合。
-              Branch 状态包括：active（活跃）、candidate（候选）、merged（已汇流）、dormant（休眠）。
-            </p>
-            <p>
-              <strong className="text-black/80">【双轮准入 Dual-Round Admission】</strong>
-              候选论文通过两轮评估准入：Round 1 基于问题相关性进行广度搜索（Breadth Search），
-              Round 2 基于方法论进行深度筛选（Depth Screening）。
-              准入标准：论文必须对问题空间有实质性推进，并明确关联研究约束（Constraints）与所需能力（Required Capabilities）。
-              当前系统追踪 {activeTopics.length} 个活跃主题。
-            </p>
-            <p>
-              <strong className="text-black/80">【可视化编码】</strong>
-              红色时间线（#dc2626）标识主脉演进，彩色节点对应不同分支贡献。
-              卡片左侧色条指示分支归属，标签展示分支名称与论文状态。
-              支持快速识别 Merge Nodes（汇流节点）：同时承接多条分支方法论贡献的关键论文。
-            </p>
-          </div>
-
-          <div className="mt-6 flex flex-wrap gap-4 text-[12px] text-black/40">
-            <span>origin-criteria: earliest-representative</span>
-            <span>·</span>
-            <span>evolution-model: stage-first</span>
-            <span>·</span>
-            <span>admission: dual-round</span>
-            <span>·</span>
-            <span>structure: temporal-problem-tree</span>
-          </div>
+          </aside>
         </section>
       </div>
-
-      {/* 设置面板 */}
-      <SettingsPanel isOpen={showSettings} onClose={() => setShowSettings(false)} />
-      
-      {/* 批量研究启动器 */}
-      <BatchResearchLauncher 
-        isOpen={showBatchResearch} 
-        onClose={() => setShowBatchResearch(false)}
-      />
     </main>
   )
 }

@@ -17,13 +17,14 @@ import topicRoutes from './routes/topics'
 import paperRoutes from './routes/papers'
 import nodeRoutes from './routes/nodes'
 import syncRoutes from './routes/sync'
-import researchRoutes from './routes/research'
 import configRoutes from './routes/config'
-import modelRoutes from './routes/models'
-import pdfRoutes from './routes/pdf'
-import tasksRoutes from './routes/tasks'
+import modelConfigRoutes from './routes/model-configs'
+import modelCapabilitiesRoutes from './routes/model-capabilities'
 import topicGenRoutes from './routes/topic-gen'
 import promptTemplatesRoutes from './routes/prompt-templates'
+import omniRoutes from './routes/omni'
+import topicAlphaRoutes from './routes/topic-alpha'
+import evidenceRoutes from './routes/evidence'
 
 // 加载环境变量
 dotenv.config()
@@ -82,11 +83,12 @@ app.use('/api/topics', topicRoutes)
 app.use('/api/papers', paperRoutes)
 app.use('/api/nodes', nodeRoutes)
 app.use('/api/sync', syncRoutes)
-app.use('/api/research', researchRoutes)
 app.use('/api/config', configRoutes)
-app.use('/api/models', modelRoutes)
-app.use('/api/pdf', pdfRoutes)
-app.use('/api/tasks', tasksRoutes)
+app.use('/api/model-configs', modelConfigRoutes)
+app.use('/api/model-capabilities', modelCapabilitiesRoutes)
+app.use('/api/omni', omniRoutes)
+app.use('/api/topics', topicAlphaRoutes)
+app.use('/api/evidence', evidenceRoutes)
 app.use('/api/topic-gen', topicGenRoutes)
 app.use('/api/prompt-templates', promptTemplatesRoutes)
 

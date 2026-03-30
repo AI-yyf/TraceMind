@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { BookMarked, Bot, Brain, CarFront, Cpu, House, Search, Star, CalendarDays } from 'lucide-react'
+import { BookMarked, Bot, Brain, CarFront, Cpu, Home, Search, Star, CalendarDays } from 'lucide-react'
 
 import { useTopicRegistry } from '@/hooks'
 import type { TopicId } from '@/types/tracker'
@@ -35,7 +35,7 @@ export function ThemeSidebar({ activeThemeId = null, onSearchClick }: ThemeSideb
           )}
           title="首页"
         >
-          <House className="h-4 w-4" />
+          <Home className="h-4 w-4" />
         </Link>
 
         {onSearchClick && (
@@ -116,7 +116,7 @@ export function ThemeSidebar({ activeThemeId = null, onSearchClick }: ThemeSideb
             )}
             aria-label="首页"
           >
-            <House className="h-4 w-4" />
+            <Home className="h-4 w-4" />
           </Link>
 
           {onSearchClick && (

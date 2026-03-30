@@ -186,7 +186,11 @@ router.delete('/tasks/:taskId', async (req, res) => {
     const success = enhancedTaskScheduler.removeTask(taskId)
 
     await prisma.systemConfig.deleteMany({
-      where: { key: { in [`task:${taskId}`, `task-progress:${taskId}`, `task-history:${taskId}`] } },
+      where: { 
+        key: { 
+          in: [`task:${taskId}`, `task-progress:${taskId}`, `task-history:${taskId}`] 
+        } 
+      },
     })
 
     res.json({ success })
@@ -417,9 +421,9 @@ router.get('/stats', async (req, res) => {
       completedTasks: tasks.filter(t => t.status === 'completed').length,
       totalRuns: tasks.reduce((sum, t) => sum + t.totalRuns, 0),
       totalDiscovered: tasks.reduce((sum, t) => sum + t.discoveredPapers, 0),
-      totalPromoted: tasks.reduce((sum, t) => sum + t.promotedPapers, 0),
+      totalPromoted: tasks.reduce((sum, t) => sum + (t as any).promotedPapers || 0, 0),
       successRate: tasks.length > 0
-        ? (tasks.reduce((sum, t) => sum + t.successfulRuns, 0) / Math.max(1, tasks.reduce((sum, t) => sum + t.totalRuns, 0)) * 100
+        ? (tasks.reduce((sum, t) => sum + t.successfulRuns, 0) / Math.max(1, tasks.reduce((sum, t) => sum + t.totalRuns, 0)) * 100)
         : 0,
     }
 
