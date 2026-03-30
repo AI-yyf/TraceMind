@@ -40,11 +40,13 @@ model Topic {
 
 // 研究阶段定义
 model TopicStage {
-  id          String @id @default(uuid())
-  topicId     String
-  order       Int
-  name        String
-  description String?
+  id            String @id @default(uuid())
+  topicId       String
+  order         Int
+  name          String
+  nameEn        String?
+  description   String?
+  descriptionEn String?
 
   topic Topic @relation(fields: [topicId], references: [id], onDelete: Cascade)
 

@@ -23,6 +23,7 @@ import modelRoutes from './routes/models'
 import pdfRoutes from './routes/pdf'
 import tasksRoutes from './routes/tasks'
 import topicGenRoutes from './routes/topic-gen'
+import promptTemplatesRoutes from './routes/prompt-templates'
 
 // 加载环境变量
 dotenv.config()
@@ -87,6 +88,7 @@ app.use('/api/models', modelRoutes)
 app.use('/api/pdf', pdfRoutes)
 app.use('/api/tasks', tasksRoutes)
 app.use('/api/topic-gen', topicGenRoutes)
+app.use('/api/prompt-templates', promptTemplatesRoutes)
 
 // 错误处理
 app.use(errorHandler)

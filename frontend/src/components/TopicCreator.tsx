@@ -1,12 +1,17 @@
 import React, { useState } from 'react'
-import { Sparkles, Globe, Loader2, ChevronRight, AlertCircle } from 'lucide-react'
+import { Sparkles, Globe, Loader2, ChevronRight, AlertCircle, Languages } from 'lucide-react'
 
 interface GeneratedTopic {
   nameZh: string
   nameEn: string
-  keywords: string[]
+  keywords: Array<{ zh: string; en: string }>
   summary: string
+  summaryZh?: string
+  summaryEn?: string
   recommendedStages: number
+  focusLabel?: string
+  focusLabelZh?: string
+  focusLabelEn?: string
 }
 
 interface TopicCreatorProps {
@@ -16,18 +21,21 @@ interface TopicCreatorProps {
 const languages = [
   { code: 'zh', name: '简体中文', nativeName: '简体中文' },
   { code: 'en', name: 'English', nativeName: 'English' },
+  { code: 'bilingual', name: '双语模式', nativeName: 'Bilingual' },
 ]
 
 export const TopicCreator: React.FC<TopicCreatorProps> = ({ onTopicCreated }) => {
   const [description, setDescription] = useState('')
-  const [language, setLanguage] = useState<'zh' | 'en'>('zh')
+  const [descriptionEn, setDescriptionEn] = useState('')
+  const [language, setLanguage] = useState<'zh' | 'en' | 'bilingual'>('bilingual')
   const [loading, setLoading] = useState(false)
   const [preview, setPreview] = useState<GeneratedTopic | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
   const handleGenerate = async () => {
-    if (description.length < 10) {
+    const desc = language === 'en' ? descriptionEn : description
+    if (desc.length < 10) {
       setError('描述至少需要10个字符')
       return
     }
@@ -37,10 +45,20 @@ export const TopicCreator: React.FC<TopicCreatorProps> = ({ onTopicCreated }) =>
     setPreview(null)
 
     try {
+      const requestBody: any = {
+        description: language === 'en' ? descriptionEn : description,
+        language,
+        save: false,
+      }
+
+      if (language === 'bilingual' && descriptionEn) {
+        requestBody.descriptionEn = descriptionEn
+      }
+
       const response = await fetch('/api/topic-gen/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ description, language, save: false }),
+        body: JSON.stringify(requestBody),
       })
 
       const result = await response.json()
@@ -64,10 +82,20 @@ export const TopicCreator: React.FC<TopicCreatorProps> = ({ onTopicCreated }) =>
     setError(null)
 
     try {
+      const requestBody: any = {
+        description: language === 'en' ? descriptionEn : description,
+        language,
+        save: true,
+      }
+
+      if (language === 'bilingual' && descriptionEn) {
+        requestBody.descriptionEn = descriptionEn
+      }
+
       const response = await fetch('/api/topic-gen/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ description, language, save: true }),
+        body: JSON.stringify(requestBody),
       })
 
       const result = await response.json()
@@ -75,6 +103,7 @@ export const TopicCreator: React.FC<TopicCreatorProps> = ({ onTopicCreated }) =>
       if (result.success) {
         onTopicCreated?.(result.topicId)
         setDescription('')
+        setDescriptionEn('')
         setPreview(null)
       } else {
         setError(result.error || '保存失败')
@@ -101,12 +130,14 @@ export const TopicCreator: React.FC<TopicCreatorProps> = ({ onTopicCreated }) =>
       <div className="space-y-6">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            研究方向描述
+            研究方向描述（{language === 'en' ? 'English' : '中文'}）
           </label>
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="例如：我想研究大语言模型在自动驾驶决策系统中的应用，特别是端到端规划和可解释性方面..."
+            placeholder={language === 'en'
+              ? "e.g., I want to research the application of Large Language Models in autonomous driving decision systems, especially end-to-end planning and interpretability..."
+              : "例如：我想研究大语言模型在自动驾驶决策系统中的应用，特别是端到端规划和可解释性方面..."}
             className="w-full h-32 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-transparent resize-none"
           />
           <p className="text-sm text-gray-500 mt-1">
@@ -114,16 +145,31 @@ export const TopicCreator: React.FC<TopicCreatorProps> = ({ onTopicCreated }) =>
           </p>
         </div>
 
+        {language === 'bilingual' && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+              <Languages className="w-4 h-4" />
+              英文描述（可选）
+            </label>
+            <textarea
+              value={descriptionEn}
+              onChange={(e) => setDescriptionEn(e.target.value)}
+              placeholder="English description (optional, for more accurate bilingual results)"
+              className="w-full h-24 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-transparent resize-none"
+            />
+          </div>
+        )}
+
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             <Globe className="w-4 h-4 inline mr-1" />
-            界面语言（创建后不可更改）
+            主题语言模式（创建后不可更改）
           </label>
           <div className="flex gap-3">
             {languages.map((lang) => (
               <button
                 key={lang.code}
-                onClick={() => setLanguage(lang.code as 'zh' | 'en')}
+                onClick={() => setLanguage(lang.code as 'zh' | 'en' | 'bilingual')}
                 className={`px-4 py-2 rounded-lg border-2 transition-all ${
                   language === lang.code
                     ? 'border-amber-500 bg-amber-50 text-amber-700'
@@ -131,9 +177,17 @@ export const TopicCreator: React.FC<TopicCreatorProps> = ({ onTopicCreated }) =>
                 }`}
               >
                 <span className="font-medium">{lang.nativeName}</span>
+                {lang.code === 'bilingual' && (
+                  <span className="block text-xs text-gray-500">中英双语</span>
+                )}
               </button>
             ))}
           </div>
+          <p className="text-sm text-gray-500 mt-2">
+            {language === 'bilingual'
+              ? '双语模式将生成中英文主题名和关键词'
+              : '选择后所有内容将使用该语言'}
+          </p>
         </div>
 
         {error && (
@@ -166,14 +220,15 @@ export const TopicCreator: React.FC<TopicCreatorProps> = ({ onTopicCreated }) =>
             <h3 className="text-lg font-bold text-gray-900 mb-4">主题预览</h3>
 
             <div className="space-y-4">
-              <div>
-                <label className="text-sm text-gray-500">主题名称（中文）</label>
-                <p className="text-xl font-semibold text-gray-900">{preview.nameZh}</p>
-              </div>
-
-              <div>
-                <label className="text-sm text-gray-500">Topic Name（English）</label>
-                <p className="text-xl font-semibold text-gray-900">{preview.nameEn}</p>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm text-gray-500">主题名称（中文）</label>
+                  <p className="text-xl font-semibold text-gray-900">{preview.nameZh}</p>
+                </div>
+                <div>
+                  <label className="text-sm text-gray-500">Topic Name（English）</label>
+                  <p className="text-xl font-semibold text-gray-900">{preview.nameEn}</p>
+                </div>
               </div>
 
               <div>
@@ -184,21 +239,51 @@ export const TopicCreator: React.FC<TopicCreatorProps> = ({ onTopicCreated }) =>
                       key={i}
                       className="px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-sm"
                     >
-                      {kw}
+                      {kw.zh} / {kw.en}
                     </span>
                   ))}
                 </div>
               </div>
 
-              <div>
-                <label className="text-sm text-gray-500">主题描述</label>
-                <p className="text-gray-700">{preview.summary}</p>
-              </div>
+              {(preview.summaryZh || preview.summaryEn) && (
+                <div className="grid grid-cols-2 gap-4">
+                  {preview.summaryZh && (
+                    <div>
+                      <label className="text-sm text-gray-500">描述（中文）</label>
+                      <p className="text-gray-700">{preview.summaryZh}</p>
+                    </div>
+                  )}
+                  {preview.summaryEn && (
+                    <div>
+                      <label className="text-sm text-gray-500">Description（English）</label>
+                      <p className="text-gray-700">{preview.summaryEn}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {!preview.summaryZh && !preview.summaryEn && preview.summary && (
+                <div>
+                  <label className="text-sm text-gray-500">主题描述</label>
+                  <p className="text-gray-700">{preview.summary}</p>
+                </div>
+              )}
 
               <div>
                 <label className="text-sm text-gray-500">推荐研究阶段数</label>
                 <p className="text-gray-900">{preview.recommendedStages} 个阶段</p>
               </div>
+
+              {(preview.focusLabelZh || preview.focusLabelEn) && (
+                <div>
+                  <label className="text-sm text-gray-500">核心焦点</label>
+                  <p className="text-gray-700">
+                    {preview.focusLabelZh && <span>{preview.focusLabelZh}</span>}
+                    {preview.focusLabelZh && preview.focusLabelEn && <span> | </span>}
+                    {preview.focusLabelEn && <span>{preview.focusLabelEn}</span>}
+                  </p>
+                </div>
+              )}
 
               <div className="pt-4 border-t border-gray-200">
                 <button

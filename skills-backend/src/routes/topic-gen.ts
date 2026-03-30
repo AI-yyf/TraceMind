@@ -1,5 +1,6 @@
 /**
  * 主题生成 API 路由
+ * 支持双语主题生成
  */
 
 import { Router } from 'express'
@@ -12,7 +13,8 @@ const prisma = new PrismaClient()
 
 const generateTopicSchema = z.object({
   description: z.string().min(10, '描述至少需要10个字符'),
-  language: z.enum(['zh', 'en', 'ja', 'ko']).default('zh'),
+  descriptionEn: z.string().optional(),
+  language: z.enum(['zh', 'en', 'ja', 'ko', 'bilingual']).default('bilingual'),
   provider: z.enum(['openai', 'anthropic']).optional(),
   save: z.boolean().default(false),
 })
@@ -76,46 +78,76 @@ function createLLMClient(provider?: 'openai' | 'anthropic') {
   }
 }
 
+const bilingualPrompt = `You are an academic research planning expert helping users crystallize research topics.
+
+The user wants to research the following direction:
+
+Primary Description (in Chinese/English): {description}
+
+Please generate a bilingual research topic with the following information:
+1. Topic Name in Chinese (中文主题名)
+2. Topic Name in English (English Topic Name)
+3. 3-5 Keywords (in both Chinese and English)
+4. One-sentence topic description (in both Chinese and English)
+5. Recommended number of research stages (3-5)
+
+Return the result in this JSON format exactly:
+{
+  "nameZh": "中文主题名",
+  "nameEn": "English Topic Name",
+  "keywords": [
+    {"zh": "中文关键词1", "en": "English Keyword 1"},
+    {"zh": "中文关键词2", "en": "English Keyword 2"},
+    {"zh": "中文关键词3", "en": "English Keyword 3"}
+  ],
+  "summary": "One-sentence description in English | 一句话中文描述",
+  "recommendedStages": 5,
+  "focusLabel": "Core focus area | 核心焦点"
+}
+
+IMPORTANT: Return ONLY the JSON object, no other text.`
+
 router.post('/generate', async (req, res) => {
   try {
     const body = generateTopicSchema.parse(req.body)
     const llmClient = createLLMClient(body.provider)
     const generator = createTopicGenerator(llmClient)
 
-    const result = await generator.generate({
-      description: body.description,
-      language: body.language,
-    })
+    let result: any
 
-    if (body.save) {
-      const stageNames = body.language === 'zh'
-        ? ['问题提出', '基础方法', '技术改进', '应用拓展', '综合分析']
-        : ['Problem Formulation', 'Foundation', 'Technical Improvement', 'Application', 'Synthesis']
+    if (body.language === 'bilingual' || body.language === 'en') {
+      const prompt = bilingualPrompt.replace('{description}', body.descriptionEn || body.description)
 
-      const stages = []
-      for (let i = 0; i < result.recommendedStages; i++) {
-        stages.push({
-          order: i + 1,
-          name: stageNames[i] || `Stage ${i + 1}`,
-          description: body.language === 'zh' ? `研究${stageNames[i]}` : `Research ${stageNames[i]}`,
-        })
-      }
-
-      const topic = await prisma.topic.create({
-        data: {
-          nameZh: result.nameZh,
-          nameEn: result.nameEn,
-          focusLabel: result.focusLabel || result.keywords[0] || '',
-          summary: result.summary,
-          description: body.description,
-          language: body.language,
-          status: 'active',
-          stages: {
-            create: stages,
-          },
-        },
+      const response = await llmClient.generate({
+        prompt,
+        temperature: 0.7,
+        maxTokens: 2000,
       })
 
+      result = parseBilingualResponse(response.text)
+
+      if (body.descriptionEn && body.language === 'bilingual') {
+        result.sourceDescription = body.description
+        result.sourceDescriptionEn = body.descriptionEn
+      } else {
+        result.sourceDescription = body.description
+      }
+    } else {
+      result = await generator.generate({
+        description: body.description,
+        language: body.language as 'zh' | 'en' | 'ja' | 'ko',
+      })
+
+      result.sourceDescription = body.description
+      result.nameEn = result.nameEn || `${result.nameZh} (English)`
+      result.keywords = result.keywords.map((kw: string, i: number) => ({
+        zh: kw,
+        en: `Keyword ${i + 1}`,
+      }))
+    }
+
+    if (body.save) {
+      const topic = await saveTopic(result, body.language)
       return res.json({
         success: true,
         data: result,
@@ -144,12 +176,95 @@ router.post('/generate', async (req, res) => {
   }
 })
 
+function parseBilingualResponse(text: string): any {
+  try {
+    const jsonMatch = text.match(/\{[\s\S]*\}/)
+    if (jsonMatch) {
+      const data = JSON.parse(jsonMatch[0])
+
+      return {
+        nameZh: data.nameZh || data.name || '',
+        nameEn: data.nameEn || '',
+        keywords: Array.isArray(data.keywords) ? data.keywords : [],
+        summary: data.summary || '',
+        summaryZh: data.summaryZh || data.summary?.split('|')[1]?.trim() || '',
+        summaryEn: data.summaryEn || data.summary?.split('|')[0]?.trim() || '',
+        recommendedStages: data.recommendedStages || 5,
+        focusLabel: data.focusLabel || '',
+        focusLabelEn: data.focusLabelEn || data.focusLabel?.split('|')[0]?.trim() || '',
+        focusLabelZh: data.focusLabelZh || data.focusLabel?.split('|')[1]?.trim() || '',
+      }
+    }
+  } catch (e) {
+    console.error('[Topic API] Parse error:', e)
+  }
+
+  return {
+    nameZh: '',
+    nameEn: '',
+    keywords: [],
+    summary: '',
+    recommendedStages: 5,
+  }
+}
+
+async function saveTopic(data: any, language: string) {
+  const stageNames = language === 'zh' || language === 'bilingual'
+    ? ['问题提出', '基础方法', '技术改进', '应用拓展', '综合分析']
+    : ['Problem Formulation', 'Foundation', 'Technical Improvement', 'Application', 'Synthesis']
+
+  const stageNamesEn = ['Problem Formulation', 'Foundation', 'Technical Improvement', 'Application', 'Synthesis']
+
+  const stages = []
+  for (let i = 0; i < (data.recommendedStages || 5); i++) {
+    stages.push({
+      order: i + 1,
+      name: stageNames[i] || `Stage ${i + 1}`,
+      nameEn: stageNamesEn[i] || `Stage ${i + 1}`,
+      description: language === 'zh' || language === 'bilingual' ? `研究${stageNames[i]}` : `Research ${stageNames[i]}`,
+      descriptionEn: `Research ${stageNamesEn[i]}`,
+    })
+  }
+
+  const topic = await prisma.topic.create({
+    data: {
+      nameZh: data.nameZh,
+      nameEn: data.nameEn,
+      focusLabel: data.focusLabel || data.focusLabelZh || data.keywords?.[0]?.zh || '',
+      summary: data.summary || data.summaryZh || '',
+      description: data.sourceDescription || data.description || '',
+      language,
+      status: 'active',
+      stages: {
+        create: stages,
+      },
+    },
+  })
+
+  await prisma.systemConfig.upsert({
+    where: { key: `topic:${topic.id}:keywords` },
+    update: { value: JSON.stringify(data.keywords || []) },
+    create: { key: `topic:${topic.id}:keywords`, value: JSON.stringify(data.keywords || []) },
+  })
+
+  if (data.summaryEn) {
+    await prisma.systemConfig.upsert({
+      where: { key: `topic:${topic.id}:summaryEn` },
+      update: { value: data.summaryEn },
+      create: { key: `topic:${topic.id}:summaryEn`, value: data.summaryEn },
+    })
+  }
+
+  return topic
+}
+
 router.get('/languages', (req, res) => {
   res.json({
     success: true,
     data: [
       { code: 'zh', name: '简体中文', nativeName: '简体中文' },
       { code: 'en', name: 'English', nativeName: 'English' },
+      { code: 'bilingual', name: '双语模式', nativeName: 'Bilingual (中英双语)' },
       { code: 'ja', name: '日本語', nativeName: '日本語' },
       { code: 'ko', name: '한국어', nativeName: '한국어' },
     ],

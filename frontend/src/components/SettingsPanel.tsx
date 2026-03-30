@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { X, Save, RotateCcw, Key, Server, Sliders, MessageSquare, FlaskConical, Eye, Image, Layers, Clock } from 'lucide-react'
+import { X, Save, RotateCcw, Key, Server, Sliders, MessageSquare, FlaskConical, Eye, Image, Layers, Clock, FileJson } from 'lucide-react'
 import { useConfig } from '@/hooks/useConfig'
 import { TaskScheduler } from './TaskScheduler'
+import { PromptTemplateManager } from './PromptTemplateManager'
 import type { AppConfig, ApiProvider } from '@/types/config'
 
 interface SettingsPanelProps {
@@ -653,39 +654,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
 
             {/* 提示词 */}
             {activeTab === 'prompts' && (
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-[16px] font-medium text-black">提示词模板</h3>
-                  <p className="mt-1 text-[13px] text-black/50">自定义各阶段的提示词模板（支持变量替换）</p>
-                </div>
-
-                <div className="space-y-4">
-                  {[
-                    { key: 'stageSelection', label: '阶段选择', vars: '{topicName}, {currentStage}, {problemDefinition}' },
-                    { key: 'paperDiscovery', label: '论文发现', vars: '{stageContext}, {searchScope}' },
-                    { key: 'nodeSummary', label: '节点摘要', vars: '{paperTitle}, {paperAbstract}, {stageIndex}' },
-                    { key: 'branchAnalysis', label: '分支分析', vars: '{nodeInfo}, {existingBranches}' },
-                    { key: 'imageAnalysis', label: '图像分析', vars: '{image}, {paperTitle}' },
-                    { key: 'imageGeneration', label: '配图生成', vars: '{nodeTitle}, {nodeSummary}' },
-                  ].map(({ key, label, vars }) => (
-                    <div key={key} className="rounded-xl border border-black/8 p-4">
-                      <div className="mb-2 flex items-center justify-between">
-                        <label className="text-[14px] font-medium text-black">{label}</label>
-                        <span className="text-[11px] text-black/40">变量: {vars}</span>
-                      </div>
-                      <textarea
-                        value={localConfig.prompts[key as keyof typeof localConfig.prompts]}
-                        onChange={(e) => setLocalConfig(prev => ({
-                          ...prev,
-                          prompts: { ...prev.prompts, [key]: e.target.value }
-                        }))}
-                        rows={5}
-                        className="w-full rounded-lg border border-black/10 px-3 py-2 text-[13px] font-mono outline-none transition focus:border-black"
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <PromptTemplateManager />
             )}
 
             {/* 定时任务 */}
