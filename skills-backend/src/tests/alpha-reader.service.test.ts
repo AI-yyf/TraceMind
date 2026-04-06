@@ -280,6 +280,79 @@ test('node view models keep only papers that belong to the same temporal stage b
   }
 })
 
+test('node view models keep section-level text blocks and all renderable evidence for stage-scoped papers', async () => {
+  const nodeRecord = await prisma.researchNode.findUnique({
+    where: { id: 'node-1' },
+    select: {
+      id: true,
+      topicId: true,
+    },
+  })
+
+  assert.ok(nodeRecord)
+
+  const topicPapers = await prisma.paper.findMany({
+    where: { topicId: nodeRecord.topicId },
+    include: {
+      sections: { orderBy: { order: 'asc' } },
+      figures: true,
+      tables: true,
+      formulas: true,
+    },
+  })
+
+  const viewModel = await getNodeViewModel(nodeRecord.id, { stageWindowMonths: 1 })
+  const allowedPaperIds = new Set(viewModel.paperRoles.map((paper) => paper.paperId))
+  const visiblePapers = topicPapers.filter((paper) => allowedPaperIds.has(paper.id))
+
+  const flowSectionAnchors = new Set(
+    viewModel.article.flow
+      .filter((block) => block.type === 'text' && block.paperId)
+      .map((block) => block.anchorId)
+      .filter((anchorId): anchorId is string => typeof anchorId === 'string' && anchorId.startsWith('section:')),
+  )
+  const flowEvidenceAnchors = new Set(
+    viewModel.article.flow
+      .filter(
+        (block) =>
+          block.type === 'figure' ||
+          block.type === 'table' ||
+          block.type === 'formula',
+      )
+      .map((block) => block.evidence.anchorId),
+  )
+
+  for (const paper of visiblePapers) {
+    for (const section of paper.sections) {
+      assert.ok(
+        flowSectionAnchors.has(`section:${section.id}`),
+        `missing section flow block for ${paper.id} / ${section.id}`,
+      )
+    }
+
+    for (const figure of paper.figures) {
+      assert.ok(
+        flowEvidenceAnchors.has(`figure:${figure.id}`),
+        `missing figure flow block for ${paper.id} / ${figure.id}`,
+      )
+    }
+
+    for (const table of paper.tables) {
+      assert.ok(
+        flowEvidenceAnchors.has(`table:${table.id}`),
+        `missing table flow block for ${paper.id} / ${table.id}`,
+      )
+    }
+
+    for (const formula of paper.formulas) {
+      assert.ok(
+        flowEvidenceAnchors.has(`formula:${formula.id}`),
+        `missing formula flow block for ${paper.id} / ${formula.id}`,
+      )
+    }
+  }
+})
+
 test('reader artifact fingerprints change when topic cognitive memory changes through research reports', async () => {
   const topic = await prisma.topic.create({
     data: {

@@ -8,6 +8,7 @@ export interface PipelineCritique {
 
 export interface NodePaperPass {
   paperId: string
+  overviewTitle: string
   role: string
   contribution: string
   body: string[]
@@ -25,8 +26,11 @@ export interface NodeComparisonPass {
 export interface NodeSynthesisPass {
   headline: string
   standfirst: string
+  leadTitle: string
   lead: string[]
+  evidenceTitle: string
   evidence: string[]
+  closingTitle: string
   closing: string[]
 }
 
@@ -312,19 +316,122 @@ function mergeMemoryContext(
 }
 
 function summarizePaper(paper: any) {
+  const paperTitle = paper.titleZh || paper.title
+
   return {
     paperId: paper.id,
-    title: paper.titleZh || paper.title,
+    title: paperTitle,
     titleEn: paper.titleEn ?? paper.title,
     publishedAt: normalizeIsoDate(paper.published),
-    summary: clipText(paper.summary, 280),
-    explanation: clipText(paper.explanation ?? paper.summary, 320),
-    figures: Array.isArray(paper.figures) ? paper.figures.map((item: any) => clipText(item.caption, 140)).slice(0, 4) : [],
-    tables: Array.isArray(paper.tables) ? paper.tables.map((item: any) => clipText(item.caption, 140)).slice(0, 3) : [],
-    formulas: Array.isArray(paper.formulas)
-      ? paper.formulas.map((item: any) => clipText(item.rawText || item.latex, 140)).slice(0, 3)
+    summary: clipText(paper.summary, 420),
+    explanation: clipText(paper.explanation ?? paper.summary, 520),
+    originalUrl:
+      typeof paper.arxivUrl === 'string' && paper.arxivUrl.trim()
+        ? paper.arxivUrl
+        : null,
+    pdfUrl:
+      typeof paper.pdfUrl === 'string' && paper.pdfUrl.trim()
+        ? paper.pdfUrl
+        : typeof paper.pdfPath === 'string' && paper.pdfPath.trim()
+          ? paper.pdfPath
+          : null,
+    sections: Array.isArray(paper.sections)
+      ? paper.sections.map((section: any, index: number) => ({
+          order: index + 1,
+          title: clipText(section.editorialTitle || section.sourceSectionTitle, 120),
+          summary: clipText(section.paragraphs, 420),
+        }))
       : [],
+    figures: Array.isArray(paper.figures)
+      ? paper.figures.map((item: any, index: number) => ({
+          label: `Figure ${item.number ?? index + 1}`,
+          caption: clipText(item.caption, 220),
+          analysis: clipText(item.analysis, 260),
+          page: asNumber(item.page),
+        }))
+      : [],
+    tables: Array.isArray(paper.tables)
+      ? paper.tables.map((item: any, index: number) => ({
+          label: `Table ${item.number ?? index + 1}`,
+          caption: clipText(item.caption, 220),
+          excerpt: clipText(item.rawText, 320),
+          page: asNumber(item.page),
+        }))
+      : [],
+    formulas: Array.isArray(paper.formulas)
+      ? paper.formulas.map((item: any, index: number) => ({
+          label: `Formula ${item.number ?? index + 1}`,
+          latex: clipText(item.latex, 220),
+          excerpt: clipText(item.rawText || item.latex, 220),
+          page: asNumber(item.page),
+        }))
+      : [],
+    stats: {
+      sectionCount: Array.isArray(paper.sections) ? paper.sections.length : 0,
+      figureCount: Array.isArray(paper.figures) ? paper.figures.length : 0,
+      tableCount: Array.isArray(paper.tables) ? paper.tables.length : 0,
+      formulaCount: Array.isArray(paper.formulas) ? paper.formulas.length : 0,
+    },
   }
+}
+
+function summarizePaperEvidenceCoverage(
+  paper: any,
+  roleLabel: string,
+) {
+  const paperTitle = paper.titleZh || paper.title
+  const leadSection = Array.isArray(paper.sections) ? paper.sections[0] : null
+  const secondarySection = Array.isArray(paper.sections) ? paper.sections[1] : null
+  const firstFigure = Array.isArray(paper.figures) ? paper.figures[0] : null
+  const firstTable = Array.isArray(paper.tables) ? paper.tables[0] : null
+  const firstFormula = Array.isArray(paper.formulas) ? paper.formulas[0] : null
+
+  return uniqueStrings(
+    [
+      `${paperTitle} 在这个节点里承担${roleLabel}：它不是孤立出现的，而是为了把当前问题线向前推进一跳。`,
+      leadSection
+        ? `${clipText(leadSection.editorialTitle || leadSection.sourceSectionTitle, 72)}：${clipText(leadSection.paragraphs, 260)}`
+        : clipText(paper.summary, 280),
+      secondarySection
+        ? `${clipText(secondarySection.editorialTitle || secondarySection.sourceSectionTitle, 72)}：${clipText(secondarySection.paragraphs, 240)}`
+        : clipText(paper.explanation ?? paper.summary, 260),
+      firstFigure
+        ? `关键图像证据是 Figure ${firstFigure.number ?? 1}：${clipText(firstFigure.caption, 220)}`
+        : '',
+      firstTable
+        ? `关键表格证据是 Table ${firstTable.number ?? 1}：${clipText(firstTable.caption, 220)}`
+        : '',
+      firstFormula
+        ? `关键公式锚点是 Formula ${firstFormula.number ?? 1}：${clipText(firstFormula.rawText || firstFormula.latex, 220)}`
+        : '',
+      `证据覆盖上，这篇论文提供了 ${Array.isArray(paper.sections) ? paper.sections.length : 0} 个正文 section、${Array.isArray(paper.figures) ? paper.figures.length : 0} 张图、${Array.isArray(paper.tables) ? paper.tables.length : 0} 张表和 ${Array.isArray(paper.formulas) ? paper.formulas.length : 0} 个公式，需要把这些材料都纳入叙述而不是只摘结论。`,
+    ],
+    8,
+  )
+}
+
+function buildNodePaperFallback(paper: any, index: number, primaryPaperId: string) {
+  const isPrimary = paper.id === primaryPaperId
+  const role = paperRoleLabel(index, isPrimary)
+  const paperTitle = paper.titleZh || paper.title
+  const fallbackBody = summarizePaperEvidenceCoverage(paper, role)
+
+  return {
+    paperId: paper.id,
+    overviewTitle: isPrimary
+      ? `${paperTitle} 为什么构成这个节点的主线起点`
+      : `${paperTitle} 在这条节点主线里补了哪一块`,
+    role,
+    contribution: clipText(paper.explanation ?? paper.summary, 200),
+    body:
+      fallbackBody.length > 0
+        ? fallbackBody
+        : [
+            clipText(paper.summary, 260),
+            clipText(paper.explanation ?? paper.summary, 320),
+            `证据重心：${Array.isArray(paper.figures) ? paper.figures.length : 0} 张图、${Array.isArray(paper.tables) ? paper.tables.length : 0} 张表、${Array.isArray(paper.formulas) ? paper.formulas.length : 0} 个公式。`,
+          ],
+  } satisfies NodePaperPass
 }
 
 async function requestPipelineOutput<T>({
@@ -376,16 +483,7 @@ export async function generateNodePaperPasses(
 
   return Promise.all(
     papers.map(async (paper, index) => {
-      const fallback: NodePaperPass = {
-        paperId: paper.id,
-        role: paperRoleLabel(index, paper.id === primaryPaperId),
-        contribution: clipText(paper.explanation ?? paper.summary, 120),
-        body: [
-          clipText(paper.summary, 180),
-          clipText(paper.explanation ?? paper.summary, 220),
-          `证据重心：${paper.figures.length} 张图、${paper.tables.length} 张表、${paper.formulas.length} 个公式。`,
-        ],
-      }
+      const fallback = buildNodePaperFallback(paper, index, primaryPaperId)
 
       if (!topicId) return fallback
 
@@ -400,6 +498,7 @@ export async function generateNodePaperPasses(
           paperIndex: index,
           paperCount: papers.length,
           primaryPaperId,
+          totalStructure: '总-分-总',
         },
         memoryContext: mergeMemoryContext(
           {
@@ -409,14 +508,18 @@ export async function generateNodePaperPasses(
           researchPipelineContext,
         ),
         fallback,
-        outputContract: '{"paperId":"","role":"","contribution":"","body":["","",""]}',
-        maxTokens: 1300,
+        outputContract: '{"paperId":"","overviewTitle":"","role":"","contribution":"","body":["","","",""]}',
+        maxTokens: 2200,
         summaryHint: fallback.contribution,
       })
 
       return {
         paperId: paper.id,
-        role: sanitizeString(response.paperId ? response.role : response.role, fallback.role),
+        overviewTitle: sanitizeString(
+          response.overviewTitle,
+          fallback.overviewTitle,
+        ),
+        role: sanitizeString(response.role, fallback.role),
         contribution: sanitizeString(response.contribution, fallback.contribution),
         body: sanitizeParagraphs(response.body, fallback.body),
       } satisfies NodePaperPass
@@ -525,14 +628,17 @@ export async function generateNodeSynthesisPass(
   const fallback: NodeSynthesisPass = {
     headline: `${node.nodeLabel} 并不是单篇论文结论，而是围绕同一问题形成的一段研究推进。`,
     standfirst: clipText(`${node.nodeSummary} ${node.nodeExplanation ?? ''}`, 280),
+    leadTitle: '先把这个节点的总问题和成立条件讲清楚',
     lead: [
       clipText(node.nodeSummary, 180),
       clipText(node.nodeExplanation ?? node.nodeSummary, 220),
     ],
+    evidenceTitle: '再看图、表、公式怎样把节点判断钉住',
     evidence: [
       '节点级判断不能只停在“论文很多”，而要看这些论文是否在问题、方法和结果层面形成能够互相支撑的论证链。',
       '图、表、公式在这里的意义，不是展示材料很多，而是帮助读者确认每篇论文到底贡献了哪一段关键证据。',
     ],
+    closingTitle: '最后收束到仍然没有被解决的问题',
     closing: [
       '如果读者读完这个节点后仍然不知道每篇论文各自做了什么，那就说明节点级聚合仍然不够成功。',
       '一个好的节点文章，应该让读者至少看清：核心问题是什么、谁先提出、谁补强了证据、谁暴露了真正还难的部分。',
@@ -549,36 +655,40 @@ export async function generateNodeSynthesisPass(
     templateId: PROMPT_TEMPLATE_IDS.ARTICLE_NODE,
     userPayload: {
       mode: 'node-synthesis',
-      node: {
-        nodeId: node?.id,
-        title: node?.nodeLabel,
-        subtitle: node?.nodeSubtitle,
-        summary: node?.nodeSummary,
-        explanation: node?.nodeExplanation,
-      },
-      papers: papers.map((paper) => summarizePaper(paper)),
-      paperPasses,
-      comparison,
-    },
-    memoryContext: mergeMemoryContext(
-      {
-        comparison,
+        node: {
+          nodeId: node?.id,
+          title: node?.nodeLabel,
+          subtitle: node?.nodeSubtitle,
+          summary: node?.nodeSummary,
+          explanation: node?.nodeExplanation,
+        },
+        papers: papers.map((paper) => summarizePaper(paper)),
         paperPasses,
+        comparison,
+        totalStructure: '总-分-总',
+      },
+      memoryContext: mergeMemoryContext(
+        {
+          comparison,
+          paperPasses,
       },
       researchPipelineContext,
-    ),
-    fallback,
-    outputContract:
-      '{"headline":"","standfirst":"","lead":["",""],"evidence":["",""],"closing":["",""]}',
-    maxTokens: 1700,
-    summaryHint: fallback.standfirst,
-  })
+      ),
+      fallback,
+      outputContract:
+        '{"headline":"","standfirst":"","leadTitle":"","lead":["",""],"evidenceTitle":"","evidence":["",""],"closingTitle":"","closing":["",""]}',
+      maxTokens: 2400,
+      summaryHint: fallback.standfirst,
+    })
 
   return {
     headline: sanitizeString(response.headline, fallback.headline),
     standfirst: sanitizeString(response.standfirst, fallback.standfirst),
+    leadTitle: sanitizeString(response.leadTitle, fallback.leadTitle),
     lead: sanitizeParagraphs(response.lead, fallback.lead),
+    evidenceTitle: sanitizeString(response.evidenceTitle, fallback.evidenceTitle),
     evidence: sanitizeParagraphs(response.evidence, fallback.evidence),
+    closingTitle: sanitizeString(response.closingTitle, fallback.closingTitle),
     closing: sanitizeParagraphs(response.closing, fallback.closing),
   } satisfies NodeSynthesisPass
 }
@@ -646,20 +756,33 @@ export async function generatePaperStoryPass(
         ? paper.sections.map((section: any) => ({
             sourceSectionTitle: section.sourceSectionTitle,
             editorialTitle: section.editorialTitle,
-            paragraphs: clipText(section.paragraphs, 320),
+            paragraphs: clipText(section.paragraphs, 520),
           }))
         : [],
       evidence: {
         figures: Array.isArray(paper.figures)
-          ? paper.figures.map((item: any) => clipText(item.caption, 160)).slice(0, 4)
+          ? paper.figures.map((item: any) => ({
+              label: `Figure ${item.number ?? ''}`.trim(),
+              caption: clipText(item.caption, 220),
+              analysis: clipText(item.analysis, 260),
+            }))
           : [],
         tables: Array.isArray(paper.tables)
-          ? paper.tables.map((item: any) => clipText(item.caption, 160)).slice(0, 3)
+          ? paper.tables.map((item: any) => ({
+              label: `Table ${item.number ?? ''}`.trim(),
+              caption: clipText(item.caption, 220),
+              excerpt: clipText(item.rawText, 320),
+            }))
           : [],
         formulas: Array.isArray(paper.formulas)
-          ? paper.formulas.map((item: any) => clipText(item.rawText || item.latex, 160)).slice(0, 3)
+          ? paper.formulas.map((item: any) => ({
+              label: `Formula ${item.number ?? ''}`.trim(),
+              latex: clipText(item.latex, 220),
+              excerpt: clipText(item.rawText || item.latex, 220),
+            }))
           : [],
       },
+      totalStructure: '总-分-总',
     },
     memoryContext: mergeMemoryContext(
       {
@@ -673,7 +796,7 @@ export async function generatePaperStoryPass(
     fallback,
     outputContract:
       '{"standfirst":"","sections":[{"title":"","body":["",""]}],"closing":["",""]}',
-    maxTokens: 1900,
+    maxTokens: 2600,
     summaryHint: fallback.standfirst,
   })
 
@@ -695,4 +818,6 @@ export async function generatePaperStoryPass(
 export const __testing = {
   buildArticleAuthorBrief,
   mergeMemoryContext,
+  buildNodePaperFallback,
+  summarizePaper,
 }

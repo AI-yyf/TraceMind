@@ -138,3 +138,69 @@ test('mergeMemoryContext injects explicit authorBrief while preserving researchP
     'Do not broaden the topic.',
   )
 })
+
+test('node paper fallback keeps section and evidence coverage visible for long-form node writing', () => {
+  const paper = {
+    id: 'paper-1',
+    title: 'Paper title',
+    titleZh: '论文标题',
+    titleEn: 'Paper title',
+    topicId: 'topic-1',
+    published: new Date('2026-01-01T00:00:00.000Z'),
+    summary: 'This paper opens the node with a concrete task framing.',
+    explanation: 'It then tightens the mechanism, evidence chain, and unresolved constraints.',
+    arxivUrl: 'https://arxiv.org/abs/2601.00001',
+    pdfUrl: 'https://arxiv.org/pdf/2601.00001.pdf',
+    pdfPath: null,
+    sections: [
+      {
+        sourceSectionTitle: 'Introduction',
+        editorialTitle: '问题提出',
+        paragraphs: 'The paper explains why the old setting fails and why a new mechanism is required.',
+      },
+      {
+        sourceSectionTitle: 'Method',
+        editorialTitle: '方法机制',
+        paragraphs: 'The method section defines the core mechanism and the main design constraint.',
+      },
+    ],
+    figures: [
+      {
+        number: 1,
+        caption: 'Figure 1 compares the new mechanism against the old baseline.',
+        analysis: 'The figure shows where the gain actually appears.',
+        page: 3,
+      },
+    ],
+    tables: [
+      {
+        number: 1,
+        caption: 'Table 1 reports the main benchmark comparison.',
+        rawText: 'Method | Score\nNew | 0.91\nOld | 0.84',
+        page: 5,
+      },
+    ],
+    formulas: [
+      {
+        number: '1',
+        latex: 'L = L_{task} + \\lambda L_{align}',
+        rawText: 'The loss combines task and alignment objectives.',
+        page: 4,
+      },
+    ],
+  }
+
+  const compact = articlePipelineTesting.summarizePaper(paper)
+  const fallback = articlePipelineTesting.buildNodePaperFallback(paper, 0, 'paper-1')
+
+  assert.equal(compact.sections.length, 2)
+  assert.equal(compact.figures.length, 1)
+  assert.equal(compact.tables.length, 1)
+  assert.equal(compact.formulas.length, 1)
+  assert.equal(fallback.role, '主线论文')
+  assert.ok(fallback.overviewTitle.includes('主线'))
+  assert.ok(fallback.body.some((paragraph) => paragraph.includes('Figure 1')))
+  assert.ok(fallback.body.some((paragraph) => paragraph.includes('Table 1')))
+  assert.ok(fallback.body.some((paragraph) => paragraph.includes('Formula 1')))
+  assert.ok(fallback.body.some((paragraph) => paragraph.includes('2 个正文 section')))
+})

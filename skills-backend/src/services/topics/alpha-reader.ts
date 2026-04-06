@@ -702,11 +702,11 @@ function pickText(...values: Array<string | null | undefined>) {
   return ''
 }
 
-function splitParagraphs(value: string | null | undefined, maxParts = 3) {
+function splitParagraphs(value: string | null | undefined, maxParts = 5) {
   const raw = (value ?? '').split(/\n+/u).map((item) => item.trim()).filter(Boolean)
   if (raw.length > 0) return raw.slice(0, maxParts)
 
-  const compact = clipText(value ?? '', 360)
+  const compact = clipText(value ?? '', 820)
   return compact ? compact.split(/(?<=[。！？.!?])/u).map((item) => item.trim()).filter(Boolean).slice(0, maxParts) : []
 }
 
@@ -746,7 +746,7 @@ function buildSectionEvidenceIds(evidence: EvidenceExplanation[], kinds: Array<'
 
 function buildPaperEvidence(paper: any): EvidenceExplanation[] {
   return [
-    ...paper.sections.slice(0, 4).map((section: any) => ({
+    ...paper.sections.map((section: any) => ({
       anchorId: `section:${section.id}`,
       type: 'section' as const,
       route: paperRoute(paper.id, `section:${section.id}`),
@@ -888,17 +888,17 @@ function buildPaperArticleSections(paper: any, evidence: EvidenceExplanation[]):
         id: 'paper-lead',
         kind: 'lead',
         title: '这篇论文到底在解决什么',
-        body: splitParagraphs(`${paper.summary}\n${paper.explanation ?? ''}`, 3),
+        body: splitParagraphs(`${paper.summary}\n${paper.explanation ?? ''}`, 5),
         evidenceIds: buildSectionEvidenceIds(evidence, ['figure', 'table', 'formula'], 2),
       },
     ]
   }
 
-  return paper.sections.slice(0, 5).map((section: any, index: number) => ({
+  return paper.sections.map((section: any, index: number) => ({
     id: `paper-section-${section.id}`,
     kind: index === 0 ? 'lead' : index === 1 ? 'paper-pass' : 'evidence',
     title: section.editorialTitle || section.sourceSectionTitle,
-    body: splitParagraphs(section.paragraphs, 3),
+    body: splitParagraphs(section.paragraphs, 5),
     anchorId: `section:${section.id}`,
     paperId: paper.id,
     paperTitle: paper.titleZh || paper.title,
@@ -908,6 +908,20 @@ function buildPaperArticleSections(paper: any, evidence: EvidenceExplanation[]):
         : index === 1
           ? buildSectionEvidenceIds(evidence, ['formula', 'figure'], 2)
           : buildSectionEvidenceIds(evidence, ['section', 'figure', 'table', 'formula'], 2),
+  }))
+}
+
+function buildPaperSectionFlowBlocks(paper: any): ArticleFlowBlock[] {
+  const paperTitle = paper.titleZh || paper.title
+
+  return paper.sections.map((section: any) => ({
+    id: `paper-section-flow-${section.id}`,
+    type: 'text' as const,
+    title: section.editorialTitle || section.sourceSectionTitle,
+    body: splitParagraphs(section.paragraphs, 5),
+    paperId: paper.id,
+    paperTitle,
+    anchorId: `section:${section.id}`,
   }))
 }
 
@@ -979,7 +993,7 @@ function buildNodeSynthesisSections(
   const lead = {
     id: 'node-lead',
     kind: 'lead' as const,
-    title: '这个节点到底在讲什么',
+    title: synthesis.leadTitle,
     body: synthesis.lead,
     evidenceIds: buildSectionEvidenceIds(evidence, ['figure', 'table'], 2),
   }
@@ -989,7 +1003,7 @@ function buildNodeSynthesisSections(
     return {
     id: `node-paper-${paper.id}`,
     kind: 'paper-pass' as const,
-    title: paper.titleZh || paper.title,
+    title: pass?.overviewTitle || paper.titleZh || paper.title,
     paperId: paper.id,
     paperTitle: paper.titleZh || paper.title,
     body: pass?.body ?? [
@@ -1003,7 +1017,7 @@ function buildNodeSynthesisSections(
   const closingEvidence = {
     id: 'node-evidence',
     kind: 'evidence' as const,
-    title: '这些证据为什么足以支撑这个节点',
+    title: synthesis.evidenceTitle,
     body: synthesis.evidence,
     evidenceIds: buildSectionEvidenceIds(evidence, ['figure', 'table', 'formula'], 3),
   }
@@ -1362,7 +1376,7 @@ function buildNodeArticleFlow({
     {
       id: 'node-intro',
       type: 'text',
-      title: '这个节点到底在讲什么',
+      title: synthesisPass.leadTitle,
       body: synthesisPass.lead,
       anchorId: 'node:intro',
     },
@@ -1392,7 +1406,7 @@ function buildNodeArticleFlow({
     flow.push({
       id: `paper-text-${paper.id}`,
       type: 'text',
-      title: paper.titleZh || paper.title,
+      title: pass?.overviewTitle || `${paper.titleZh || paper.title} 在这个节点里推进了什么`,
       body:
         pass?.body ?? [
           clipText(paper.summary, 180),
@@ -1401,6 +1415,7 @@ function buildNodeArticleFlow({
       paperId: paper.id,
       paperTitle: paper.titleZh || paper.title,
     })
+    flow.push(...buildPaperSectionFlowBlocks(paper))
     flow.push(...buildEvidenceFlowBlocks(paperEvidence))
   })
 
@@ -1417,7 +1432,7 @@ function buildNodeArticleFlow({
   flow.push({
     id: 'node-evidence',
     type: 'text',
-    title: '关键证据为什么能撑住这个节点',
+    title: synthesisPass.evidenceTitle,
     body: synthesisPass.evidence,
     anchorId: 'node:evidence',
   })
@@ -1433,7 +1448,7 @@ function buildNodeArticleFlow({
   flow.push({
     id: 'node-closing',
     type: 'closing',
-    title: '收束',
+    title: synthesisPass.closingTitle,
     body: synthesisPass.closing,
   })
 
@@ -1695,6 +1710,10 @@ async function buildNodeViewModel(
   const fallbackCritique = buildNodeCritique(node, papers)
   const fallbackPaperPasses = papers.map((paper, index) => ({
     paperId: paper.id,
+    overviewTitle:
+      paper.id === node.primaryPaperId
+        ? `${paper.titleZh || paper.title} 为什么构成节点主线`
+        : `${paper.titleZh || paper.title} 在这里补了什么`,
     role: paperRoleLabel(index, paper.id === node.primaryPaperId),
     contribution: clipText(paper.explanation ?? paper.summary, 120),
     body: [
@@ -1736,14 +1755,17 @@ async function buildNodeViewModel(
   const fallbackSynthesisPass: NodeSynthesisPass = {
     headline: `${node.nodeLabel} 不是单篇结论，而是一段围绕同一问题形成的研究推进。`,
     standfirst: clipText(`${node.nodeSummary} ${node.nodeExplanation ?? ''}`, 280),
+    leadTitle: '先把这个节点的问题、判断和边界说清楚',
     lead: [
       clipText(node.nodeSummary, 180),
       clipText(node.nodeExplanation ?? node.nodeSummary, 220),
     ],
+    evidenceTitle: '再看图、表、公式怎样撑起节点判断',
     evidence: [
       '节点级判断不能只停在“论文很多”，而要看这些论文是否在问题、方法与结果层面形成了能互相支撑的论证链。',
       '图、表、公式在这里的意义不是材料很多，而是帮助读者确认每篇论文到底贡献了哪一段关键证据。',
     ],
+    closingTitle: '最后回到这条研究线真正还没解决的问题',
     closing: [
       '如果读完这个节点后仍然不知道每篇论文各自做了什么，那就说明节点级组织仍然不够成功。',
       '一个好的节点应该让读者看清核心问题、关键推进、证据强弱，以及仍未解决的部分。',
