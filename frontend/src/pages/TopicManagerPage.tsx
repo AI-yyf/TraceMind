@@ -1,234 +1,325 @@
-import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { ArrowDown, ArrowLeft, ArrowUp, Archive, RotateCcw, Settings2 } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { ArrowLeft, ArrowRight, Loader2, PlusCircle, Trash2 } from 'lucide-react'
 
-import { ThemeSidebar } from '@/components/ThemeSidebar'
-import { TopicPrefEditor } from '@/components/TopicPrefEditor'
-import { useTopicRegistry } from '@/hooks'
-import type { TopicId, TopicPreferenceOverrides } from '@/types/tracker'
+import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+import { useI18n } from '@/i18n'
+import { formatDateTimeByLanguage } from '@/i18n/locale'
+import { getLanguageMetadata, type LanguageCode } from '@/i18n/types'
+import type { TopicLocalizationPayload } from '@/types/alpha'
+import { buildApiUrl } from '@/utils/api'
+import { getTopicLocalizedPair } from '@/utils/topicLocalization'
+import { isRegressionSeedTopic } from '@/utils/topicPresentation'
 
-export function TopicManagerPage() {
-  const {
-    activeTopics,
-    archivedTopics,
-    catalogMap,
-    activeEntries,
-    archiveTopic,
-    moveTopic,
-    restoreTopic,
-    updateTopicPreferences,
-    resetTopicPreferences,
-  } = useTopicRegistry()
+type ManagedTopic = {
+  id: string
+  nameZh: string
+  nameEn?: string | null
+  focusLabel?: string | null
+  summary?: string | null
+  status: string
+  language: string
+  updatedAt: string
+  paperCount?: number
+  nodeCount?: number
+  localization?: TopicLocalizationPayload | null
+  stageConfig?: {
+    windowMonths: number
+    updatedAt?: string | null
+  } | null
+}
 
-  const [editingTopicId, setEditingTopicId] = useState<TopicId | null>(null)
+const STAGE_CADENCE_PRESETS = [1, 3, 6, 12]
 
-  const libraryTopics = useMemo(
-    () => [...activeTopics, ...archivedTopics].sort((left, right) => left.nameZh.localeCompare(right.nameZh, 'zh-CN')),
-    [activeTopics, archivedTopics],
+function renderTemplate(template: string, variables: Record<string, string | number>) {
+  return Object.entries(variables).reduce(
+    (output, [key, value]) => output.split(`{${key}}`).join(String(value)),
+    template,
   )
+}
 
-  const editingCatalog = editingTopicId ? catalogMap[editingTopicId] : null
-
-  const handleSavePreferences = (topicId: TopicId, preferences: TopicPreferenceOverrides) => {
-    updateTopicPreferences(topicId, preferences)
+function formatLanguage(language: string, t: (key: string, fallback?: string) => string) {
+  if (language === 'bilingual') {
+    return t('language.modeBilingual', 'Bilingual')
   }
 
-  const handleResetPreferences = (topicId: TopicId) => {
-    resetTopicPreferences(topicId)
+  try {
+    return getLanguageMetadata(language as LanguageCode).nameLocal
+  } catch {
+    return language
+  }
+}
+
+function formatStatus(status: string, t: (key: string, fallback?: string) => string) {
+  switch (status) {
+    case 'active':
+      return t('topic.statusActive', 'Active')
+    case 'completed':
+      return t('topic.statusCompleted', 'Completed')
+    case 'paused':
+      return t('topic.statusPaused', 'Paused')
+    case 'archived':
+      return t('topic.statusArchived', 'Archived')
+    default:
+      return status
+  }
+}
+
+function formatStageCadence(windowMonths: number, t: (key: string, fallback?: string) => string) {
+  return renderTemplate(t('manage.stageCadenceValue', '{count} months'), {
+    count: windowMonths,
+  })
+}
+
+export function TopicManagerPage() {
+  const navigate = useNavigate()
+  const { t, preference } = useI18n()
+  const [topics, setTopics] = useState<ManagedTopic[]>([])
+  const [savingStageTopicId, setSavingStageTopicId] = useState<string | null>(null)
+
+  useDocumentTitle(t('manage.title'))
+
+  useEffect(() => {
+    let alive = true
+
+    fetch(buildApiUrl('/api/topics'))
+      .then((response) => response.json())
+      .then((payload: { data?: ManagedTopic[] }) => {
+        if (alive) setTopics((payload.data ?? []).filter((topic) => !isRegressionSeedTopic(topic)))
+      })
+      .catch(() => undefined)
+
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  async function removeTopic(id: string) {
+    const confirmed = window.confirm(t('manage.confirmDelete'))
+    if (!confirmed) return
+
+    await fetch(buildApiUrl(`/api/topics/${id}`), {
+      method: 'DELETE',
+    })
+    setTopics((current) => current.filter((item) => item.id !== id))
+  }
+
+  async function updateStageCadence(topicId: string, windowMonths: number) {
+    setSavingStageTopicId(topicId)
+
+    try {
+      const response = await fetch(buildApiUrl(`/api/topics/${topicId}/stage-config`), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ windowMonths }),
+      })
+
+      if (!response.ok) {
+        throw new Error('stage-config-save-failed')
+      }
+
+      const payload = (await response.json()) as {
+        data?: { windowMonths?: number; updatedAt?: string | null }
+      }
+
+      setTopics((current) =>
+        current.map((topic) =>
+          topic.id === topicId
+            ? {
+                ...topic,
+                stageConfig: {
+                  windowMonths: payload.data?.windowMonths ?? windowMonths,
+                  updatedAt: payload.data?.updatedAt ?? new Date().toISOString(),
+                },
+              }
+            : topic,
+        ),
+      )
+    } finally {
+      setSavingStageTopicId(null)
+    }
   }
 
   return (
-    <div className="min-h-screen bg-white text-black">
-      <ThemeSidebar />
-
-      <main className="px-4 pb-16 pt-4 md:px-6 xl:ml-[88px] xl:px-10 xl:pt-8">
-        <div className="mx-auto max-w-[1180px]">
+    <main className="px-4 pb-16 pt-6 md:px-6 xl:px-10">
+      <div className="mx-auto max-w-[1260px]">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <Link
             to="/"
-            className="inline-flex items-center gap-2 rounded-full border border-black/10 px-4 py-2 text-sm text-black/70 transition hover:border-black/20 hover:text-black"
+            className="inline-flex items-center gap-2 rounded-full border border-black/8 px-4 py-2 text-sm text-black/72"
           >
             <ArrowLeft className="h-4 w-4" />
-            返回总览
+            {t('manage.backHome')}
           </Link>
 
-          <section className="mt-5 rounded-[36px] border border-black/8 bg-[#fbfaf7] px-6 py-8 md:px-8">
-            <div className="text-[11px] tracking-[0.34em] text-red-600">内部维护</div>
-            <h1 className="mt-4 font-display text-[34px] leading-[1.1] text-black md:text-[50px]">主题管理</h1>
-            <p className="mt-4 max-w-4xl text-[15px] leading-8 text-black/64">
-              这里决定网页当前展示哪些主题，以及它们的排序和追踪偏好。修改偏好后，
-              skill 在下次生成内容时会使用新的配置。
-            </p>
-          </section>
-
-          <section className="mt-8 grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-            <div className="rounded-[32px] border border-black/8 bg-white px-6 py-6">
-              <div className="text-[11px] tracking-[0.24em] text-red-600">活跃主题</div>
-              <div className="mt-5 space-y-4">
-                {activeTopics.map((topic, index) => {
-                  const entry = activeEntries.find((item) => item.topicId === topic.id)
-                  const hasCustomPrefs = Boolean(entry?.preferences && Object.keys(entry.preferences).length > 0)
-                  const prefs = entry?.preferences
-
-                  return (
-                    <article key={topic.id} className="rounded-[24px] border border-black/8 bg-[#fafafa] px-5 py-5">
-                      <div className="flex flex-wrap items-start justify-between gap-4">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-3">
-                            <div className="text-[11px] tracking-[0.22em] text-black/34">
-                              位置 {String(index + 1).padStart(2, '0')}
-                            </div>
-                            {hasCustomPrefs && (
-                              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] text-amber-700">
-                                已自定义
-                              </span>
-                            )}
-                          </div>
-                          <div className="mt-3 text-[22px] font-semibold leading-9 text-black">
-                            {prefs?.nameZh ?? topic.nameZh}
-                          </div>
-                          <p className="mt-2 text-sm text-black/48">{prefs?.focusLabel ?? topic.focusLabel}</p>
-                          {prefs?.problemPreference && (
-                            <div className="mt-2 flex flex-wrap gap-1">
-                              {prefs.problemPreference.map((pref) => (
-                                <span
-                                  key={pref}
-                                  className="rounded-full border border-black/6 bg-white px-2 py-0.5 text-[11px] text-black/50"
-                                >
-                                  {pref}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                          <p className="mt-3 text-[15px] leading-8 text-black/64">{topic.timelineDigest}</p>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => moveTopic(topic.id, 'up')}
-                            className="rounded-full border border-black/10 px-3 py-2 text-xs text-black/60 transition hover:border-black/20 hover:text-black"
-                          >
-                            <ArrowUp className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => moveTopic(topic.id, 'down')}
-                            className="rounded-full border border-black/10 px-3 py-2 text-xs text-black/60 transition hover:border-black/20 hover:text-black"
-                          >
-                            <ArrowDown className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setEditingTopicId(topic.id)}
-                            className={cn(
-                              'inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-xs transition',
-                              hasCustomPrefs
-                                ? 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
-                                : 'border-black/10 text-black/60 hover:border-black/20 hover:text-black',
-                            )}
-                          >
-                            <Settings2 className="h-3.5 w-3.5" />
-                            偏好
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => archiveTopic(topic.id)}
-                            className="inline-flex items-center gap-2 rounded-full border border-black/10 px-3 py-2 text-xs text-black/60 transition hover:border-black/20 hover:text-black"
-                          >
-                            <Archive className="h-3.5 w-3.5" />
-                            归档
-                          </button>
-                        </div>
-                      </div>
-                    </article>
-                  )
-                })}
-              </div>
-            </div>
-
-            <div className="rounded-[32px] border border-black/8 bg-white px-6 py-6">
-              <div className="text-[11px] uppercase tracking-[0.24em] text-red-600">已归档主题</div>
-              <div className="mt-5 space-y-4">
-                {archivedTopics.length === 0 ? (
-                  <div className="rounded-[24px] border border-dashed border-black/10 px-5 py-6 text-sm leading-7 text-black/48">
-                    当前没有归档主题。
-                  </div>
-                ) : (
-                  archivedTopics.map((topic) => (
-                    <article key={topic.id} className="rounded-[24px] border border-black/8 bg-[#fafafa] px-5 py-5">
-                      <div className="flex flex-wrap items-start justify-between gap-4">
-                        <div>
-                          <div className="text-[11px] tracking-[0.22em] text-black/34">已归档</div>
-                          <div className="mt-3 text-[22px] font-semibold leading-9 text-black">{topic.nameZh}</div>
-                          <p className="mt-3 text-[15px] leading-8 text-black/64">{topic.timelineDigest}</p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => restoreTopic(topic.id)}
-                          className="inline-flex items-center gap-2 rounded-full border border-black/10 px-3 py-2 text-xs text-black/60 transition hover:border-black/20 hover:text-black"
-                        >
-                          <RotateCcw className="h-3.5 w-3.5" />
-                          恢复
-                        </button>
-                      </div>
-                    </article>
-                  ))
-                )}
-              </div>
-            </div>
-          </section>
-
-          <section className="mt-8 rounded-[32px] border border-black/8 bg-white px-6 py-6">
-            <div className="text-[11px] tracking-[0.24em] text-red-600">主题目录</div>
-            <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {libraryTopics.map((topic) => (
-                <article key={topic.id} className="rounded-[24px] border border-black/8 bg-[#fafafa] px-5 py-5">
-                  <div className="text-[18px] font-semibold leading-8 text-black">{topic.nameZh}</div>
-                  <div className="mt-2 text-sm text-black/48">{topic.focusLabel}</div>
-                  <p className="mt-3 text-[15px] leading-8 text-black/64">{topic.editorialThesis}</p>
-                  <div className="mt-3 flex flex-wrap gap-1">
-                    {topic.catalog.problemPreference.slice(0, 4).map((pref) => (
-                      <span
-                        key={pref}
-                        className="rounded-full border border-black/6 bg-white px-2 py-0.5 text-[11px] text-black/50"
-                      >
-                        {pref}
-                      </span>
-                    ))}
-                    {topic.catalog.problemPreference.length > 4 && (
-                      <span className="text-[11px] text-black/30">
-                        +{topic.catalog.problemPreference.length - 4}
-                      </span>
-                    )}
-                  </div>
-                </article>
-              ))}
-            </div>
-          </section>
+          <button
+            type="button"
+            onClick={() => navigate('/?create=1')}
+            className="inline-flex items-center gap-2 rounded-full border border-black bg-black px-4 py-2.5 text-sm font-medium text-white"
+          >
+            <PlusCircle className="h-4 w-4" />
+            {t('manage.createOnHome')}
+          </button>
         </div>
-      </main>
 
-      {editingTopicId && editingCatalog && (
-        <TopicPrefEditor
-          topicId={editingTopicId}
-          defaults={{
-            problemPreference: editingCatalog.problemPreference,
-            queryTags: editingCatalog.queryTags,
-            maxPaperIntervalDays: undefined,
-            nameZh: editingCatalog.nameZh,
-            focusLabel: editingCatalog.focusLabel,
-            originQuestionDefinition: editingCatalog.originQuestionDefinition,
-          }}
-          overrides={activeEntries.find((item) => item.topicId === editingTopicId)?.preferences}
-          onSave={handleSavePreferences}
-          onReset={handleResetPreferences}
-          onClose={() => setEditingTopicId(null)}
-        />
-      )}
-    </div>
+        <section className="mt-6 rounded-[34px] border border-black/8 bg-white px-6 py-8 shadow-[var(--shadow-panel)] md:px-8">
+          <div className="text-[11px] uppercase tracking-[0.28em] text-black/40">
+            {t('manage.eyebrow')}
+          </div>
+          <h1 className="mt-4 font-display text-[36px] leading-[1.08] text-black md:text-[52px]">
+            {t('manage.title')}
+          </h1>
+          <p className="mt-5 max-w-4xl text-[15px] leading-8 text-black/64">
+            {t('manage.description')}
+          </p>
+          <p className="mt-4 max-w-4xl text-[13px] leading-7 text-black/52">
+            {t(
+              'manage.stageCadenceDescription',
+              'Stage cadence now lives here instead of the topic reading surface. Set the publication-time window once for each topic, then let node and paper reading stay stable around that choice.',
+            )}
+          </p>
+        </section>
+
+        <section className="mt-8 grid gap-4">
+          {topics.length === 0 ? (
+            <div className="rounded-[28px] border border-dashed border-black/10 bg-[var(--surface-soft)] px-6 py-10 text-sm leading-7 text-black/54">
+              {t('manage.empty')}
+            </div>
+          ) : (
+            topics.map((topic) => {
+              const title = getTopicLocalizedPair(
+                topic.localization,
+                'name',
+                preference,
+                topic.nameZh,
+                topic.nameEn ?? topic.nameZh,
+              )
+              const focusLabel = getTopicLocalizedPair(
+                topic.localization,
+                'focusLabel',
+                preference,
+                topic.focusLabel ?? '',
+                topic.focusLabel ?? '',
+              )
+              const summary = getTopicLocalizedPair(
+                topic.localization,
+                'summary',
+                preference,
+                topic.summary ?? '',
+                topic.summary ?? '',
+              )
+              const stageWindowMonths = topic.stageConfig?.windowMonths ?? 1
+              const saving = savingStageTopicId === topic.id
+
+              return (
+                <article
+                  key={topic.id}
+                  className="rounded-[28px] border border-black/8 bg-white px-6 py-6 shadow-[0_12px_32px_rgba(15,23,42,0.04)]"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[11px] uppercase tracking-[0.22em] text-black/40">
+                        {formatLanguage(topic.language, t)} · {formatStatus(topic.status, t)}
+                      </div>
+                      <h2 className="mt-3 text-[24px] font-semibold leading-[1.2] text-black">
+                        {title.primary}
+                      </h2>
+                      {title.secondary && title.secondary !== title.primary ? (
+                        <div className="mt-1 text-[13px] text-black/42">{title.secondary}</div>
+                      ) : null}
+                      <div className="mt-3 text-[14px] text-black/54">{focusLabel.primary}</div>
+                      <p className="mt-4 text-[15px] leading-8 text-black/64">{summary.primary}</p>
+                      <div className="mt-4 flex flex-wrap gap-3 text-[12px] text-black/46">
+                        <span>
+                          {topic.paperCount ?? 0} {t('manage.paperUnit')}
+                        </span>
+                        <span>
+                          {topic.nodeCount ?? 0} {t('manage.nodeUnit')}
+                        </span>
+                        <span>{formatDateTimeByLanguage(topic.updatedAt, preference.primary)}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <Link
+                        to={`/topic/${topic.id}`}
+                        className="inline-flex items-center gap-2 rounded-full border border-black/8 bg-[var(--surface-soft)] px-4 py-2 text-sm text-black/68 transition hover:border-black/16"
+                      >
+                        {t('manage.open')}
+                        <ArrowRight className="h-4 w-4" />
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => void removeTopic(topic.id)}
+                        className="inline-flex items-center gap-2 rounded-full border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700 transition hover:bg-red-100"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        {t('manage.delete')}
+                      </button>
+                    </div>
+                  </div>
+
+                  <section className="mt-5 rounded-[24px] border border-black/8 bg-[var(--surface-soft)] px-4 py-4">
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="text-[10px] uppercase tracking-[0.2em] text-black/38">
+                          {t('manage.stageCadenceEyebrow', 'Stage cadence')}
+                        </div>
+                        <div className="mt-2 text-[14px] font-medium text-black">
+                          {renderTemplate(
+                            t(
+                              'manage.stageCadenceHeadline',
+                              'Current topic map cadence: {window}',
+                            ),
+                            { window: formatStageCadence(stageWindowMonths, t) },
+                          )}
+                        </div>
+                        <p className="mt-2 max-w-[760px] text-[13px] leading-6 text-black/56">
+                          {t(
+                            'manage.stageCadenceHint',
+                            'This controls the default publication-time bucket used by the topic map and its linked node or paper reading routes. Reading pages stay stable; change cadence here when the research setting truly changes.',
+                          )}
+                        </p>
+                      </div>
+
+                      {saving ? (
+                        <div className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-2 text-[12px] text-black/56">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          {t('common.saving', 'Saving')}
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {STAGE_CADENCE_PRESETS.map((preset) => {
+                        const active = preset === stageWindowMonths
+
+                        return (
+                          <button
+                            key={`${topic.id}:${preset}`}
+                            type="button"
+                            onClick={() => void updateStageCadence(topic.id, preset)}
+                            disabled={saving}
+                            className={`rounded-full px-3 py-2 text-[12px] transition ${
+                              active
+                                ? 'bg-black text-white'
+                                : 'border border-black/10 bg-white text-black/62 hover:border-black/18 hover:text-black'
+                            } disabled:cursor-not-allowed disabled:opacity-60`}
+                          >
+                            {formatStageCadence(preset, t)}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </section>
+                </article>
+              )
+            })
+          )}
+        </section>
+      </div>
+    </main>
   )
 }
 
-function cn(...classes: (string | false | undefined | null)[]) {
-  return classes.filter(Boolean).join(' ')
-}
+export default TopicManagerPage

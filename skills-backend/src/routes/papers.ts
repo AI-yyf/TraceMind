@@ -6,6 +6,13 @@ import { getPaperViewModel } from '../services/topics/alpha-reader'
 
 const router = Router()
 
+function readStageWindowMonths(value: unknown) {
+  const raw = Array.isArray(value) ? value[0] : value
+  if (typeof raw !== 'string' || !raw.trim()) return undefined
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
 router.get('/', asyncHandler(async (req, res) => {
   const { topicId, status } = req.query
   const where: Record<string, unknown> = {}
@@ -22,7 +29,8 @@ router.get('/', asyncHandler(async (req, res) => {
 }))
 
 router.get('/:paperId/view-model', asyncHandler(async (req, res) => {
-  const viewModel = await getPaperViewModel(req.params.paperId)
+  const stageWindowMonths = readStageWindowMonths(req.query.stageMonths)
+  const viewModel = await getPaperViewModel(req.params.paperId, { stageWindowMonths })
   res.json({ success: true, data: viewModel })
 }))
 

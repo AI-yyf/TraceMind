@@ -1,13 +1,21 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
-// WebSocket 消息类型
+import { buildWsUrl } from '@/utils/api'
+
 interface WSMessage {
-  type: 'connected' | 'subscribed' | 'unsubscribed' | 'research_progress' | 'research_complete' | 'research_error' | 'pong' | 'error'
+  type:
+    | 'connected'
+    | 'subscribed'
+    | 'unsubscribed'
+    | 'research_progress'
+    | 'research_complete'
+    | 'research_error'
+    | 'pong'
+    | 'error'
   sessionId?: string
-  payload?: any
+  payload?: unknown
 }
 
-// 研究会话进度
 export interface ResearchProgress {
   stage: string
   progress: number
@@ -18,57 +26,155 @@ export interface ResearchProgress {
   }>
 }
 
-// WebSocket 配置
 interface UseWebSocketOptions {
   onProgress?: (sessionId: string, progress: ResearchProgress) => void
-  onComplete?: (sessionId: string, result: any) => void
+  onComplete?: (sessionId: string, result: unknown) => void
   onError?: (sessionId: string, error: string) => void
   onConnect?: () => void
   onDisconnect?: () => void
 }
 
-export function useWebSocket(options: UseWebSocketOptions = {}) {
-  const wsRef = useRef<WebSocket | null>(null)
-  const [isConnected, setIsConnected] = useState(false)
-  const [subscribedSessions, setSubscribedSessions] = useState<Set<string>>(new Set())
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout>()
-  const reconnectAttemptsRef = useRef(0)
-  const maxReconnectAttempts = 5
+const MAX_RECONNECT_ATTEMPTS = 5
 
-  // 获取 WebSocket URL
-  const getWsUrl = useCallback(() => {
-    const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001'
-    return apiBase.replace(/^http/, 'ws') + '/ws'
+function extractErrorMessage(payload: unknown) {
+  if (payload && typeof payload === 'object' && 'error' in payload) {
+    const message = payload.error
+    if (typeof message === 'string' && message.trim()) {
+      return message
+    }
+  }
+
+  return 'Unknown error'
+}
+
+export function useWebSocket(options: UseWebSocketOptions = {}) {
+  const callbacksRef = useRef(options)
+  const wsRef = useRef<WebSocket | null>(null)
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const reconnectAttemptsRef = useRef(0)
+  const shouldReconnectRef = useRef(true)
+  const subscribedSessionsRef = useRef<Set<string>>(new Set())
+  const [isConnected, setIsConnected] = useState(false)
+  const [subscribedSessions, setSubscribedSessions] = useState<Set<string>>(
+    () => new Set(),
+  )
+
+  useEffect(() => {
+    callbacksRef.current = options
+  }, [options])
+
+  const clearReconnectTimeout = useCallback(() => {
+    if (!reconnectTimeoutRef.current) return
+    clearTimeout(reconnectTimeoutRef.current)
+    reconnectTimeoutRef.current = null
   }, [])
 
-  // 连接 WebSocket
+  const syncSubscribedSessions = useCallback(
+    (updater: (current: Set<string>) => Set<string>) => {
+      const next = updater(subscribedSessionsRef.current)
+      subscribedSessionsRef.current = next
+      setSubscribedSessions(new Set(next))
+      return next
+    },
+    [],
+  )
+
+  const getWsUrl = useCallback(() => buildWsUrl('/ws'), [])
+
+  const sendMessage = useCallback((message: Record<string, unknown>) => {
+    if (wsRef.current?.readyState !== WebSocket.OPEN) {
+      return false
+    }
+
+    wsRef.current.send(JSON.stringify(message))
+    return true
+  }, [])
+
+  const removeSubscription = useCallback(
+    (sessionId: string, notifyServer: boolean) => {
+      syncSubscribedSessions((current) => {
+        if (!current.has(sessionId)) return current
+        const next = new Set(current)
+        next.delete(sessionId)
+        return next
+      })
+
+      if (notifyServer) {
+        sendMessage({ type: 'unsubscribe', sessionId })
+      }
+    },
+    [sendMessage, syncSubscribedSessions],
+  )
+
+  const handleMessage = useCallback(
+    (message: WSMessage) => {
+      switch (message.type) {
+        case 'research_progress':
+          if (message.sessionId && message.payload) {
+            callbacksRef.current.onProgress?.(
+              message.sessionId,
+              message.payload as ResearchProgress,
+            )
+          }
+          break
+
+        case 'research_complete':
+          if (message.sessionId) {
+            callbacksRef.current.onComplete?.(message.sessionId, message.payload)
+            removeSubscription(message.sessionId, true)
+          }
+          break
+
+        case 'research_error':
+          if (message.sessionId) {
+            callbacksRef.current.onError?.(
+              message.sessionId,
+              extractErrorMessage(message.payload),
+            )
+          }
+          break
+
+        case 'error':
+          console.error('[WebSocket] Server error:', message.payload)
+          break
+
+        case 'connected':
+        case 'subscribed':
+        case 'unsubscribed':
+        case 'pong':
+        default:
+          break
+      }
+    },
+    [removeSubscription],
+  )
+
   const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
+    shouldReconnectRef.current = true
+
+    const readyState = wsRef.current?.readyState
+    if (readyState === WebSocket.OPEN || readyState === WebSocket.CONNECTING) {
       return
     }
 
+    clearReconnectTimeout()
+
     try {
-      const wsUrl = getWsUrl()
-      const ws = new WebSocket(wsUrl)
+      const ws = new WebSocket(getWsUrl())
 
       ws.onopen = () => {
-        console.log('[WebSocket] Connected')
         setIsConnected(true)
         reconnectAttemptsRef.current = 0
-        options.onConnect?.()
+        callbacksRef.current.onConnect?.()
 
-        // 重新订阅之前的会话
-        subscribedSessions.forEach(sessionId => {
-          ws.send(JSON.stringify({
-            type: 'subscribe',
-            sessionId
-          }))
+        subscribedSessionsRef.current.forEach((sessionId) => {
+          ws.send(JSON.stringify({ type: 'subscribe', sessionId }))
         })
       }
 
       ws.onmessage = (event) => {
         try {
-          const message: WSMessage = JSON.parse(event.data)
+          const message = JSON.parse(event.data) as WSMessage
           handleMessage(message)
         } catch (error) {
           console.error('[WebSocket] Failed to parse message:', error)
@@ -76,20 +182,26 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       }
 
       ws.onclose = () => {
-        console.log('[WebSocket] Disconnected')
+        wsRef.current = null
         setIsConnected(false)
-        options.onDisconnect?.()
+        callbacksRef.current.onDisconnect?.()
 
-        // 自动重连
-        if (reconnectAttemptsRef.current < maxReconnectAttempts) {
-          reconnectAttemptsRef.current++
-          const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000)
-          console.log(`[WebSocket] Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current})`)
-          
-          reconnectTimeoutRef.current = setTimeout(() => {
-            connect()
-          }, delay)
+        if (
+          !shouldReconnectRef.current ||
+          reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS
+        ) {
+          return
         }
+
+        reconnectAttemptsRef.current += 1
+        const delay = Math.min(
+          1000 * 2 ** reconnectAttemptsRef.current,
+          30000,
+        )
+
+        reconnectTimeoutRef.current = setTimeout(() => {
+          connect()
+        }, delay)
       }
 
       ws.onerror = (error) => {
@@ -100,105 +212,53 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     } catch (error) {
       console.error('[WebSocket] Failed to connect:', error)
     }
-  }, [getWsUrl, options, subscribedSessions])
+  }, [clearReconnectTimeout, getWsUrl, handleMessage])
 
-  // 处理消息
-  const handleMessage = useCallback((message: WSMessage) => {
-    switch (message.type) {
-      case 'research_progress':
-        if (message.sessionId && message.payload) {
-          options.onProgress?.(message.sessionId, message.payload)
-        }
-        break
+  const subscribe = useCallback(
+    (sessionId: string) => {
+      syncSubscribedSessions((current) => {
+        if (current.has(sessionId)) return current
+        const next = new Set(current)
+        next.add(sessionId)
+        return next
+      })
 
-      case 'research_complete':
-        if (message.sessionId) {
-          options.onComplete?.(message.sessionId, message.payload)
-          // 自动取消订阅
-          unsubscribe(message.sessionId)
-        }
-        break
+      sendMessage({ type: 'subscribe', sessionId })
+    },
+    [sendMessage, syncSubscribedSessions],
+  )
 
-      case 'research_error':
-        if (message.sessionId) {
-          options.onError?.(message.sessionId, message.payload?.error || 'Unknown error')
-        }
-        break
+  const unsubscribe = useCallback(
+    (sessionId: string) => {
+      removeSubscription(sessionId, true)
+    },
+    [removeSubscription],
+  )
 
-      case 'pong':
-        // 心跳响应
-        break
-
-      case 'error':
-        console.error('[WebSocket] Server error:', message.payload)
-        break
-    }
-  }, [options])
-
-  // 订阅研究会话
-  const subscribe = useCallback((sessionId: string) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      console.warn('[WebSocket] Not connected, cannot subscribe')
-      return
-    }
-
-    wsRef.current.send(JSON.stringify({
-      type: 'subscribe',
-      sessionId
-    }))
-
-    setSubscribedSessions(prev => new Set(prev).add(sessionId))
-  }, [])
-
-  // 取消订阅
-  const unsubscribe = useCallback((sessionId: string) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      return
-    }
-
-    wsRef.current.send(JSON.stringify({
-      type: 'unsubscribe',
-      sessionId
-    }))
-
-    setSubscribedSessions(prev => {
-      const newSet = new Set(prev)
-      newSet.delete(sessionId)
-      return newSet
-    })
-  }, [])
-
-  // 发送心跳
   const sendPing = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'ping' }))
-    }
-  }, [])
+    sendMessage({ type: 'ping' })
+  }, [sendMessage])
 
-  // 断开连接
   const disconnect = useCallback(() => {
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current)
-    }
-    
-    if (wsRef.current) {
-      wsRef.current.close()
-      wsRef.current = null
-    }
-    
-    setIsConnected(false)
-    setSubscribedSessions(new Set())
-  }, [])
+    shouldReconnectRef.current = false
+    reconnectAttemptsRef.current = 0
+    clearReconnectTimeout()
 
-  // 初始连接
+    if (wsRef.current) {
+      const ws = wsRef.current
+      wsRef.current = null
+      ws.close()
+    }
+
+    setIsConnected(false)
+  }, [clearReconnectTimeout])
+
   useEffect(() => {
     connect()
-
-    // 心跳定时器
-    const heartbeatInterval = setInterval(sendPing, 30000)
+    const heartbeatInterval = window.setInterval(sendPing, 30000)
 
     return () => {
-      clearInterval(heartbeatInterval)
+      window.clearInterval(heartbeatInterval)
       disconnect()
     }
   }, [connect, disconnect, sendPing])
@@ -209,7 +269,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     subscribe,
     unsubscribe,
     connect,
-    disconnect
+    disconnect,
   }
 }
 

@@ -6,10 +6,17 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
 }
 
+const PRISMA_QUERY_LOGS_ENABLED =
+  process.env.PRISMA_DISABLE_QUERY_LOGS === '1'
+    ? false
+    : process.argv.includes('--test') || process.execArgv.includes('--test')
+      ? false
+      : process.env.NODE_TEST_CONTEXT === 'child-v8'
+        ? false
+      : process.env.NODE_ENV === 'development'
+
 export const prisma = globalForPrisma.prisma ?? new PrismaClient({
-  log: process.env.NODE_ENV === 'development' 
-    ? ['query', 'error', 'warn']
-    : ['error'],
+  log: PRISMA_QUERY_LOGS_ENABLED ? ['query', 'error', 'warn'] : ['error'],
 })
 
 // 开发环境保持全局实例

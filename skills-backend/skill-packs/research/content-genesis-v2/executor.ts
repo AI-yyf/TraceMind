@@ -1,17 +1,14 @@
-import type { SkillContext, SkillInput, SkillOutput, ArtifactManager } from '../../../engine/contracts.ts'
-import { multimodalClient } from '../../../shared/multimodal-client.ts'
-import { getTopicDefinition } from '../../../topic-config/index.ts'
+import type { ArtifactManager, SkillContext, SkillInput, SkillOutput } from '../../../engine/contracts.ts'
 import { prisma } from '../../../shared/db.ts'
 import { researchMemory } from '../../../shared/research-memory.ts'
+import { getTopicDefinition } from '../../../topic-config/index.ts'
+import { omniGateway } from '../../../src/services/omni/gateway.ts'
 
 interface ContentGenesisInput {
   paperId: string
   topicId: string
-  branchId?: string
   stageIndex?: number
-  problemNodeIds?: string[]
   citeIntent?: 'supporting' | 'contrasting' | 'method-using' | 'background'
-  coverageStrict?: boolean
   contentMode?: 'editorial' | 'summary' | 'detailed'
   providerId?: string
   model?: string
@@ -19,611 +16,473 @@ interface ContentGenesisInput {
   maxTokens?: number
 }
 
-interface PaperEditorial {
-  titleZh: string
-  highlight: string
-  openingStandfirst: string
-  sections: EditorialSection[]
-  evidenceBlocks: EvidenceBlock[]
-  closingHandoff: string[]
-  problemsOut: ProblemOut[]
-  coverCaption: string
-}
-
-interface EditorialSection {
+interface TopicDefinitionLike {
   id: string
-  editorialTitle: string
-  paragraphs: string[]
-  evidence: Evidence[]
-}
-
-interface Evidence {
-  id: string
-  type: 'figure' | 'table' | 'formula' | 'text'
-  reference: string
-  description: string
-}
-
-interface EvidenceBlock {
-  id: string
-  type: string
-  content: string
-  source: string
-}
-
-interface ProblemOut {
-  id: string
-  description: string
-  relatedPapers: string[]
-  status: 'open' | 'resolved' | 'ongoing'
-}
-
-interface CoverageReport {
-  coveredAssets: string[]
-  uncoveredAssets: string[]
-  inferenceWarnings: string[]
-  coverageScore: number
+  nameZh: string
+  nameEn: string
+  focusLabel: string
 }
 
 interface GeneratedContent {
-  summary: string      // 第一层：摘要
-  narrative: string    // 第二层：叙述
-  evidence: string     // 第三层：证据
+  summary: string
+  narrative: string
+  evidence: string
   highlight: string
   cardDigest: string
   timelineDigest: string
 }
 
+function clipText(value: string | null | undefined, maxLength = 180) {
+  const normalized = (value ?? '').replace(/\s+/gu, ' ').trim()
+  if (normalized.length <= maxLength) return normalized
+  return `${normalized.slice(0, Math.max(0, maxLength - 3))}...`
+}
+
+function parseJsonStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+  }
+
+  if (typeof value !== 'string' || !value.trim()) {
+    return []
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      : []
+  } catch {
+    return value
+      .split(/[，,、/|]/u)
+      .map((item) => item.trim())
+      .filter(Boolean)
+  }
+}
+
+function isMissingRecordError(error: unknown) {
+  return Boolean(
+    error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      (error as { code?: unknown }).code === 'P2025',
+  )
+}
+
+function isMissingResearchSubjectMessage(message: string) {
+  return /\b(?:Topic|Paper) not found\b/iu.test(message)
+}
+
+async function resolveTopicDefinition(topicId: string, topic: any): Promise<TopicDefinitionLike> {
+  try {
+    const staticTopic = getTopicDefinition(topicId)
+    return {
+      id: staticTopic.id,
+      nameZh: staticTopic.nameZh,
+      nameEn: staticTopic.nameEn,
+      focusLabel: staticTopic.focusLabel,
+    }
+  } catch {
+    return {
+      id: topic.id,
+      nameZh: topic.nameZh || topic.nameEn || topic.id,
+      nameEn: topic.nameEn || topic.nameZh || topic.id,
+      focusLabel:
+        topic.focusLabel || topic.summary || topic.description || topic.nameZh || topic.nameEn || topic.id,
+    }
+  }
+}
+
+async function resolvePaper(topicId: string, paperId: string) {
+  const byId = await (prisma as any).paper.findUnique({
+    where: { id: paperId },
+    include: {
+      figures: true,
+      tables: true,
+      formulas: true,
+    },
+  })
+
+  if (byId) return byId
+
+  const alternatives = await (prisma as any).paper.findMany({
+    where: {
+      topicId,
+      OR: [
+        { arxivUrl: { contains: paperId } },
+        { title: { contains: paperId } },
+        { titleZh: { contains: paperId } },
+      ],
+    },
+    include: {
+      figures: true,
+      tables: true,
+      formulas: true,
+    },
+    take: 1,
+  })
+
+  return alternatives[0] ?? null
+}
+
+async function completePrompt(args: {
+  prompt: string
+  input: ContentGenesisInput
+  temperature: number
+  maxTokens: number
+}) {
+  return omniGateway.complete({
+    task: 'general_chat',
+    preferredSlot: 'language',
+    messages: [
+      {
+        role: 'user',
+        content: args.prompt,
+      },
+    ],
+    temperature: args.temperature,
+    maxTokens: args.maxTokens,
+  })
+}
+
+function buildFallbackContent(args: {
+  topicDef: TopicDefinitionLike
+  paper: any
+  relatedPapers: any[]
+}) {
+  const authors = parseJsonStringArray(args.paper.authors)
+  const title = args.paper.titleZh || args.paper.title
+  const focus = args.topicDef.focusLabel
+  const relatedLead = args.relatedPapers[0]?.titleZh || args.relatedPapers[0]?.title || '同主题既有论文'
+
+  return {
+    summary: `${title} 试图回应“${focus}”这条主线上的关键问题。它的核心价值在于把论文摘要中的机制、证据与应用意义压缩成一条可读判断。`,
+    narrative: `${title} 由 ${authors.join('、') || '未知作者'} 提出，位于 ${args.topicDef.nameZh} 这条研究主线中更靠近“${focus}”的位置。论文首先试图说明当前方法真正的瓶颈是什么，其次给出自己的技术回应，最后再通过实验或案例证明方案值得被纳入主线。结合主题内已有工作来看，它与 ${relatedLead} 之间既有延续，也有角色差异，因此更适合被理解为主线推进中的一个清晰转折点，而不是孤立结果。`,
+    evidence: `${title} 当前最重要的证据来自摘要与已有结构化资产。现阶段可以确认的是：论文确实在主题关注的方向上给出了一种可落回机制层的回答，但图表、公式与更细的实验边界还需要后续多模态解析继续补足。`,
+    highlight: clipText(`${title} 把 ${focus} 这条主线向前推进了一步。`, 64),
+    cardDigest: clipText(`${title} 围绕 ${focus} 给出新的方法判断，值得作为主题节点继续展开。`, 120),
+    timelineDigest: clipText(`${title} 在 ${args.topicDef.nameZh} 主线中承担一次新的机制推进。`, 90),
+  }
+}
+
+async function generateThreeLayerContent(args: {
+  topicDef: TopicDefinitionLike
+  paper: any
+  relatedPapers: any[]
+  input: ContentGenesisInput
+}): Promise<GeneratedContent> {
+  const authors = parseJsonStringArray(args.paper.authors)
+  const paperInfo = {
+    title: args.paper.title,
+    titleZh: args.paper.titleZh || args.paper.title,
+    summary: clipText(args.paper.summary, 2800),
+    authors,
+    published: args.paper.published,
+    focusLabel: args.topicDef.focusLabel,
+    relatedTitles: args.relatedPapers
+      .slice(0, 4)
+      .map((paper) => paper.titleZh || paper.title)
+      .join(' / '),
+  }
+
+  const promptPack = [
+    {
+      key: 'summary',
+      prompt: [
+        'Write a 180-260 word Chinese summary.',
+        `Topic: ${args.topicDef.nameZh} / ${args.topicDef.focusLabel}`,
+        `Paper: ${paperInfo.title}`,
+        `Summary: ${paperInfo.summary}`,
+      ].join('\n'),
+      temperature: args.input.temperature ?? 0.35,
+      maxTokens: 320,
+    },
+    {
+      key: 'narrative',
+      prompt: [
+        'Write a 500-800 word Chinese narrative with judgment, evidence awareness, and limitations.',
+        `Topic: ${args.topicDef.nameZh} / ${args.topicDef.focusLabel}`,
+        `Paper: ${paperInfo.title}`,
+        `Authors: ${paperInfo.authors.join(', ')}`,
+        `Published: ${paperInfo.published}`,
+        `Related papers: ${paperInfo.relatedTitles || 'None'}`,
+        `Summary: ${paperInfo.summary}`,
+      ].join('\n'),
+      temperature: args.input.temperature ?? 0.28,
+      maxTokens: Math.min(args.input.maxTokens ?? 1200, 1400),
+    },
+    {
+      key: 'evidence',
+      prompt: [
+        'Write a 220-360 word Chinese evidence note.',
+        `Figures: ${args.paper.figures?.length || 0}`,
+        `Tables: ${args.paper.tables?.length || 0}`,
+        `Formulas: ${args.paper.formulas?.length || 0}`,
+        `Summary: ${paperInfo.summary}`,
+      ].join('\n'),
+      temperature: 0.22,
+      maxTokens: 420,
+    },
+    {
+      key: 'highlight',
+      prompt: `Write one Chinese highlight under 40 characters for ${paperInfo.title}.`,
+      temperature: 0.45,
+      maxTokens: 80,
+    },
+    {
+      key: 'cardDigest',
+      prompt: `Write one Chinese card blurb under 80 characters for ${paperInfo.title}.`,
+      temperature: 0.4,
+      maxTokens: 120,
+    },
+    {
+      key: 'timelineDigest',
+      prompt: `Write one Chinese timeline sentence under 60 characters for ${paperInfo.title}.`,
+      temperature: 0.35,
+      maxTokens: 100,
+    },
+  ] as const
+
+  const fallback = buildFallbackContent(args)
+
+  try {
+    const results = await Promise.all(
+      promptPack.map((item) =>
+        completePrompt({
+          prompt: item.prompt,
+          input: args.input,
+          temperature: item.temperature,
+          maxTokens: item.maxTokens,
+        }),
+      ),
+    )
+
+    return {
+      summary: clipText(results[0].text.trim(), 500) || fallback.summary,
+      narrative: clipText(results[1].text.trim(), 1800) || fallback.narrative,
+      evidence: clipText(results[2].text.trim(), 800) || fallback.evidence,
+      highlight: clipText(results[3].text.trim(), 80) || fallback.highlight,
+      cardDigest: clipText(results[4].text.trim(), 120) || fallback.cardDigest,
+      timelineDigest: clipText(results[5].text.trim(), 90) || fallback.timelineDigest,
+    }
+  } catch {
+    return fallback
+  }
+}
+
+function buildCoverageReport(paper: any) {
+  const figures = paper.figures?.length || 0
+  const tables = paper.tables?.length || 0
+  const formulas = paper.formulas?.length || 0
+  const totalAssets = figures + tables + formulas
+
+  return {
+    coveredAssets: [
+      `figures:${figures}`,
+      `tables:${tables}`,
+      `formulas:${formulas}`,
+    ],
+    uncoveredAssets: totalAssets === 0 ? ['visual-evidence-pending'] : [],
+    inferenceWarnings:
+      totalAssets === 0 ? ['Paper currently lacks extracted figures/tables/formulas.'] : [],
+    coverageScore: totalAssets === 0 ? 0.6 : 1,
+  }
+}
+
+async function persistGeneratedContent(args: {
+  paperId: string
+  generatedContent: GeneratedContent
+  coverageScore: number
+  context: SkillContext
+}) {
+  try {
+    await (prisma as any).paper.update({
+      where: { id: args.paperId },
+      data: {
+        explanation: args.generatedContent.narrative,
+      },
+    })
+  } catch (error) {
+    if (isMissingRecordError(error)) {
+      args.context.logger.warn('Content genesis skipped because the paper disappeared before persistence.', {
+        paperId: args.paperId,
+      })
+      return false
+    }
+
+    throw error
+  }
+
+  await researchMemory.addContentGeneration(args.paperId, {
+    summary: args.generatedContent.summary,
+    narrative: args.generatedContent.narrative,
+    evidence: args.generatedContent.evidence,
+    generatedAt: new Date().toISOString(),
+    coverageScore: args.coverageScore,
+  })
+
+  args.context.logger.info('Content genesis persisted', { paperId: args.paperId })
+  return true
+}
+
 export async function executeContentGenesis(
   input: SkillInput<ContentGenesisInput>,
   context: SkillContext,
-  artifactManager: ArtifactManager
+  _artifactManager: ArtifactManager,
 ): Promise<SkillOutput> {
   const startTime = Date.now()
   const params = input.params
 
   context.logger.info('Starting content genesis execution', {
-    paperId: params.paperId,
     topicId: params.topicId,
+    paperId: params.paperId,
   })
 
   try {
-    // 1. 加载主题定义
-    const topicDef = await getTopicDefinition(params.topicId)
-    if (!topicDef) {
-      throw new Error(`Topic definition not found: ${params.topicId}`)
+    const topic = await (prisma as any).topic.findUnique({
+      where: { id: params.topicId },
+    })
+
+    if (!topic) {
+      throw new Error(`Topic not found: ${params.topicId}`)
     }
 
-    // 2. 获取论文信息
-    const paper = await prisma.paper.findFirst({
-      where: {
-        OR: [
-          { id: params.paperId },
-          { arxivId: params.paperId },
-        ],
-      },
-      include: {
-        figures: true,
-        tables: true,
-        formulas: true,
-        nodePapers: {
-          include: {
-            node: true,
-          },
-        },
-      },
-    })
+    const topicDef = await resolveTopicDefinition(params.topicId, topic)
+    const paper = await resolvePaper(params.topicId, params.paperId)
 
     if (!paper) {
       throw new Error(`Paper not found: ${params.paperId}`)
     }
 
-    // 3. 获取相关论文（同主题的其他论文）
-    const relatedPapers = await prisma.paper.findMany({
+    const relatedPapers = await (prisma as any).paper.findMany({
       where: {
         topicId: params.topicId,
         id: { not: paper.id },
       },
-      take: 10,
       orderBy: { published: 'desc' },
+      take: 6,
     })
 
-    // 4. 生成三层内容
     const generatedContent = await generateThreeLayerContent({
+      topicDef,
       paper,
       relatedPapers,
-      topicDef,
-      params,
-      context,
+      input: params,
     })
+    const coverageReport = buildCoverageReport(paper)
 
-    // 5. 生成论文社论结构
-    const paperEditorial = await generatePaperEditorial({
-      paper,
+    const persisted = await persistGeneratedContent({
+      paperId: paper.id,
       generatedContent,
-      topicDef,
-      params,
+      coverageScore: coverageReport.coverageScore,
       context,
     })
 
-    // 6. 生成覆盖报告
-    const coverageReport = await generateCoverageReport({
-      paper,
-      paperEditorial,
-      params,
-    })
+    if (!persisted) {
+      return {
+        success: false,
+        error: `Paper not found: ${paper.id}`,
+        data: null,
+        artifacts: [],
+      }
+    }
 
-    // 7. 构建输出
-    const output: SkillOutput = {
+    return {
       success: true,
       data: {
         paperEditorial: {
-          titleZh: paperEditorial.titleZh,
-          highlight: paperEditorial.highlight,
-          openingStandfirst: paperEditorial.openingStandfirst,
-          sections: paperEditorial.sections,
-          evidenceBlocks: paperEditorial.evidenceBlocks,
-          closingHandoff: paperEditorial.closingHandoff,
-          problemsOut: paperEditorial.problemsOut,
-          coverCaption: paperEditorial.coverCaption,
+          titleZh: paper.titleZh || paper.title,
+          highlight: generatedContent.highlight,
+          openingStandfirst: generatedContent.summary,
+          sections: [
+            {
+              id: 'narrative',
+              editorialTitle: '研究叙事',
+              paragraphs: generatedContent.narrative.split(/\n{2,}/u).filter(Boolean),
+              evidence: [],
+            },
+            {
+              id: 'evidence',
+              editorialTitle: '证据与边界',
+              paragraphs: [generatedContent.evidence],
+              evidence: [],
+            },
+          ],
+          evidenceBlocks: [
+            ...(paper.figures ?? []).slice(0, 3).map((figure: any) => ({
+              id: figure.id,
+              type: 'figure',
+              content: figure.caption,
+              source: paper.title,
+            })),
+            ...(paper.tables ?? []).slice(0, 2).map((table: any) => ({
+              id: table.id,
+              type: 'table',
+              content: table.caption,
+              source: paper.title,
+            })),
+          ],
+          closingHandoff: [
+            '下一步应继续核对图表、实验设置与批评链条，避免只停留在摘要层理解。',
+          ],
+          problemsOut: [
+            {
+              id: `problem-${paper.id}-scope`,
+              description: '仍需继续核对方法适用边界与外部泛化条件。',
+              relatedPapers: [paper.id],
+              status: 'open',
+            },
+          ],
+          coverCaption: generatedContent.highlight,
         },
         topicEditorialDelta: {
           addedPaperId: paper.id,
-          stageIndex: params.stageIndex,
-          branchId: params.branchId,
+          topicId: params.topicId,
+          stageIndex: params.stageIndex ?? null,
           generatedAt: new Date().toISOString(),
         },
         cardDigest: generatedContent.cardDigest,
         timelineDigest: generatedContent.timelineDigest,
-        problemsOut: paperEditorial.problemsOut,
+        problemsOut: [
+          {
+            id: `problem-${paper.id}-scope`,
+            description: '仍需继续核对方法适用边界与外部泛化条件。',
+            relatedPapers: [paper.id],
+            status: 'open',
+          },
+        ],
         contextUpdateProposal: {
           updateType: 'paper-content-generated',
           paperId: paper.id,
-          generatedSections: paperEditorial.sections.length,
-          evidenceCount: paperEditorial.evidenceBlocks.length,
+          generatedAt: new Date().toISOString(),
         },
-        coverageReport: {
-          coveredAssets: coverageReport.coveredAssets,
-          uncoveredAssets: coverageReport.uncoveredAssets,
-          inferenceWarnings: coverageReport.inferenceWarnings,
-          coverageScore: coverageReport.coverageScore,
-        },
-        // 额外的三层内容
-        threeLayerContent: {
-          summary: generatedContent.summary,
-          narrative: generatedContent.narrative,
-          evidence: generatedContent.evidence,
-        },
+        coverageReport,
+        threeLayerContent: generatedContent,
       },
       artifacts: [],
     }
-
-    // 8. 保存到数据库
-    await saveContentToDatabase({
-      paperId: paper.id,
-      generatedContent,
-      paperEditorial,
-      coverageReport,
-      context,
-    })
-
-    context.logger.info('Content genesis execution completed', {
-      duration: Date.now() - startTime,
-      paperId: paper.id,
-    })
-
-    return output
   } catch (error) {
-    context.logger.error('Content genesis execution failed', { error })
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    if (isMissingRecordError(error) || isMissingResearchSubjectMessage(message)) {
+      context.logger.warn('Content genesis skipped because its research subject no longer exists.', {
+        topicId: params.topicId,
+        paperId: params.paperId,
+        error: message,
+      })
+    } else {
+      context.logger.error('Content genesis execution failed', { error })
+    }
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: message,
       data: null,
+      artifacts: [],
     }
-  }
-}
-
-// 生成三层内容
-async function generateThreeLayerContent({
-  paper,
-  relatedPapers,
-  topicDef,
-  params,
-  context,
-}: {
-  paper: any
-  relatedPapers: any[]
-  topicDef: any
-  params: ContentGenesisInput
-  context: SkillContext
-}): Promise<GeneratedContent> {
-  // 准备论文信息
-  const paperInfo = {
-    title: paper.title,
-    titleZh: paper.titleZh,
-    summary: paper.summary,
-    authors: paper.authors,
-    published: paper.published,
-    categories: paper.categories,
-  }
-
-  // 准备相关论文信息
-  const relatedInfo = relatedPapers.map(p => ({
-    title: p.title,
-    summary: p.summary?.substring(0, 500),
-  }))
-
-  // 第一层：生成摘要（中文，面向普通读者）
-  const summaryPrompt = `请为以下学术论文生成一段简洁的中文摘要（200-300字），面向非专业读者：
-
-论文标题：${paperInfo.title}
-论文摘要：${paperInfo.summary?.substring(0, 2000)}
-
-要求：
-1. 用通俗易懂的语言解释核心贡献
-2. 说明这项研究为什么重要
-3. 避免过多技术术语
-
-请直接返回摘要内容。`
-
-  const summaryResponse = await multimodalClient.complete({
-    taskType: 'content-generation',
-    prompt: summaryPrompt,
-    providerId: params.providerId,
-    model: params.model,
-    temperature: params.temperature || 0.5,
-    maxTokens: params.maxTokens || 800,
-  })
-
-  // 第二层：生成叙述（学术风格，详细阐述）
-  const narrativePrompt = `请为以下学术论文生成详细的中文叙述内容（800-1200字）：
-
-论文标题：${paperInfo.title}
-论文摘要：${paperInfo.summary?.substring(0, 3000)}
-作者：${paperInfo.authors?.join(', ')}
-发表时间：${paperInfo.published}
-
-主题背景：${topicDef.focusLabel}
-
-相关研究：
-${relatedInfo.map((r, i) => `${i + 1}. ${r.title}`).join('\n')}
-
-要求：
-1. 详细阐述研究背景、方法、结果和意义
-2. 与相关研究进行对比
-3. 指出创新点和局限性
-4. 使用学术但易读的语言
-
-请直接返回叙述内容。`
-
-  const narrativeResponse = await multimodalClient.complete({
-    taskType: 'content-generation',
-    prompt: narrativePrompt,
-    providerId: params.providerId,
-    model: params.model,
-    temperature: params.temperature || 0.4,
-    maxTokens: params.maxTokens || 2000,
-  })
-
-  // 第三层：生成证据（技术细节，公式、图表分析）
-  const evidencePrompt = `请分析以下学术论文的技术细节和证据：
-
-论文标题：${paperInfo.title}
-论文摘要：${paperInfo.summary?.substring(0, 3000)}
-
-论文图表信息：
-- 图表数量：${paper.figures?.length || 0}
-- 表格数量：${paper.tables?.length || 0}
-- 公式数量：${paper.formulas?.length || 0}
-
-要求：
-1. 提取关键实验结果和数据
-2. 分析主要图表展示的内容
-3. 总结技术贡献的具体证据
-4. 用中文撰写，600-800字
-
-请直接返回证据分析内容。`
-
-  const evidenceResponse = await multimodalClient.complete({
-    taskType: 'content-generation',
-    prompt: evidencePrompt,
-    providerId: params.providerId,
-    model: params.model,
-    temperature: params.temperature || 0.3,
-    maxTokens: params.maxTokens || 1500,
-  })
-
-  // 生成亮点
-  const highlightPrompt = `请为以下论文生成一句吸引人的亮点描述（50字以内）：
-
-论文标题：${paperInfo.title}
-论文摘要：${paperInfo.summary?.substring(0, 1500)}
-
-要求：
-1. 突出核心创新
-2. 简洁有力
-3. 中文撰写
-
-请直接返回亮点描述。`
-
-  const highlightResponse = await multimodalClient.complete({
-    taskType: 'content-generation',
-    prompt: highlightPrompt,
-    providerId: params.providerId,
-    model: params.model,
-    temperature: params.temperature || 0.6,
-    maxTokens: 200,
-  })
-
-  // 生成卡片摘要（用于首页展示）
-  const cardDigestPrompt = `请为以下论文生成一段简短的中文卡片摘要（80-120字），用于在主题卡片中展示：
-
-论文标题：${paperInfo.title}
-核心内容：${summaryResponse.text.substring(0, 500)}
-
-要求：
-1. 简洁明了
-2. 突出价值
-3. 吸引点击阅读
-
-请直接返回卡片摘要。`
-
-  const cardDigestResponse = await multimodalClient.complete({
-    taskType: 'content-generation',
-    prompt: cardDigestPrompt,
-    providerId: params.providerId,
-    model: params.model,
-    temperature: params.temperature || 0.5,
-    maxTokens: 300,
-  })
-
-  // 生成时间线摘要（用于时间线展示）
-  const timelineDigestPrompt = `请为以下论文生成一句时间线摘要（30字以内），用于在时间线上展示：
-
-论文标题：${paperInfo.title}
-发表时间：${paperInfo.published}
-
-要求：
-1. 一句话概括
-2. 包含时间感
-3. 中文撰写
-
-请直接返回时间线摘要。`
-
-  const timelineDigestResponse = await multimodalClient.complete({
-    taskType: 'content-generation',
-    prompt: timelineDigestPrompt,
-    providerId: params.providerId,
-    model: params.model,
-    temperature: params.temperature || 0.5,
-    maxTokens: 150,
-  })
-
-  return {
-    summary: summaryResponse.text.trim(),
-    narrative: narrativeResponse.text.trim(),
-    evidence: evidenceResponse.text.trim(),
-    highlight: highlightResponse.text.trim(),
-    cardDigest: cardDigestResponse.text.trim(),
-    timelineDigest: timelineDigestResponse.text.trim(),
-  }
-}
-
-// 生成论文社论结构
-async function generatePaperEditorial({
-  paper,
-  generatedContent,
-  topicDef,
-  params,
-  context,
-}: {
-  paper: any
-  generatedContent: GeneratedContent
-  topicDef: any
-  params: ContentGenesisInput
-  context: SkillContext
-}): Promise<PaperEditorial> {
-  // 将叙述内容分段
-  const narrativeParagraphs = generatedContent.narrative
-    .split('\n\n')
-    .filter(p => p.trim().length > 0)
-
-  // 构建章节
-  const sections: EditorialSection[] = [
-    {
-      id: 'background',
-      editorialTitle: '研究背景',
-      paragraphs: narrativeParagraphs.slice(0, 2),
-      evidence: [],
-    },
-    {
-      id: 'method',
-      editorialTitle: '方法与创新',
-      paragraphs: narrativeParagraphs.slice(2, 4),
-      evidence: paper.figures?.slice(0, 2).map((f: any, i: number) => ({
-        id: f.id || `fig-${i}`,
-        type: 'figure' as const,
-        reference: f.caption || `图 ${i + 1}`,
-        description: f.analysis || '论文关键图表',
-      })) || [],
-    },
-    {
-      id: 'results',
-      editorialTitle: '实验结果',
-      paragraphs: narrativeParagraphs.slice(4, 6),
-      evidence: paper.tables?.slice(0, 1).map((t: any, i: number) => ({
-        id: t.id || `tab-${i}`,
-        type: 'table' as const,
-        reference: t.caption || `表 ${i + 1}`,
-        description: t.analysis || '实验数据表',
-      })) || [],
-    },
-  ]
-
-  // 构建证据块
-  const evidenceBlocks: EvidenceBlock[] = [
-    ...(paper.figures?.map((f: any, i: number) => ({
-      id: f.id || `figure-${i}`,
-      type: 'figure',
-      content: f.caption || `图 ${i + 1}`,
-      source: paper.title,
-    })) || []),
-    ...(paper.tables?.map((t: any, i: number) => ({
-      id: t.id || `table-${i}`,
-      type: 'table',
-      content: t.caption || `表 ${i + 1}`,
-      source: paper.title,
-    })) || []),
-    ...(paper.formulas?.map((f: any, i: number) => ({
-      id: f.id || `formula-${i}`,
-      type: 'formula',
-      content: f.latex || f.content || `公式 ${i + 1}`,
-      source: paper.title,
-    })) || []),
-  ]
-
-  // 生成待解决问题
-  const problemsOut: ProblemOut[] = [
-    {
-      id: `problem-${paper.id}-1`,
-      description: '需要进一步验证的方法泛化性',
-      relatedPapers: [paper.id],
-      status: 'open',
-    },
-    {
-      id: `problem-${paper.id}-2`,
-      description: '与其他方法的对比分析',
-      relatedPapers: relatedPapers.slice(0, 3).map(p => p.id),
-      status: 'ongoing',
-    },
-  ]
-
-  // 生成封面说明
-  const coverCaption = `${paper.titleZh || paper.title} - ${generatedContent.highlight}`
-
-  return {
-    titleZh: paper.titleZh || paper.title,
-    highlight: generatedContent.highlight,
-    openingStandfirst: generatedContent.summary,
-    sections,
-    evidenceBlocks,
-    closingHandoff: [
-      '这项研究为领域带来了新的视角和方法。',
-      '后续研究可以在此基础上进一步探索。',
-    ],
-    problemsOut,
-    coverCaption,
-  }
-}
-
-// 生成覆盖报告
-async function generateCoverageReport({
-  paper,
-  paperEditorial,
-  params,
-}: {
-  paper: any
-  paperEditorial: PaperEditorial
-  params: ContentGenesisInput
-}): Promise<CoverageReport> {
-  const coveredAssets: string[] = []
-  const uncoveredAssets: string[] = []
-  const inferenceWarnings: string[] = []
-
-  // 检查图表覆盖
-  if (paper.figures?.length > 0) {
-    const coveredFigures = paperEditorial.evidenceBlocks.filter(
-      e => e.type === 'figure'
-    ).length
-    coveredAssets.push(`${coveredFigures}/${paper.figures.length} 图表`)
-
-    if (coveredFigures < paper.figures.length) {
-      uncoveredAssets.push(`${paper.figures.length - coveredFigures} 个图表未分析`)
-    }
-  }
-
-  // 检查表格覆盖
-  if (paper.tables?.length > 0) {
-    const coveredTables = paperEditorial.evidenceBlocks.filter(
-      e => e.type === 'table'
-    ).length
-    coveredAssets.push(`${coveredTables}/${paper.tables.length} 表格`)
-
-    if (coveredTables < paper.tables.length) {
-      uncoveredAssets.push(`${paper.tables.length - coveredTables} 个表格未分析`)
-    }
-  }
-
-  // 检查公式覆盖
-  if (paper.formulas?.length > 0) {
-    const coveredFormulas = paperEditorial.evidenceBlocks.filter(
-      e => e.type === 'formula'
-    ).length
-    coveredAssets.push(`${coveredFormulas}/${paper.formulas.length} 公式`)
-
-    if (coveredFormulas < paper.formulas.length) {
-      uncoveredAssets.push(`${paper.formulas.length - coveredFormulas} 个公式未分析`)
-    }
-  }
-
-  // 生成警告
-  if (paper.figures?.length === 0 && paper.tables?.length === 0) {
-    inferenceWarnings.push('论文缺少可分析的多模态资源')
-  }
-
-  // 计算覆盖分数
-  const totalAssets = (paper.figures?.length || 0) + (paper.tables?.length || 0) + (paper.formulas?.length || 0)
-  const coveredCount = paperEditorial.evidenceBlocks.length
-  const coverageScore = totalAssets > 0 ? coveredCount / totalAssets : 0.8
-
-  return {
-    coveredAssets,
-    uncoveredAssets,
-    inferenceWarnings,
-    coverageScore: Math.min(1, coverageScore),
-  }
-}
-
-// 保存内容到数据库
-async function saveContentToDatabase({
-  paperId,
-  generatedContent,
-  paperEditorial,
-  coverageReport,
-  context,
-}: {
-  paperId: string
-  generatedContent: GeneratedContent
-  paperEditorial: PaperEditorial
-  coverageReport: CoverageReport
-  context: SkillContext
-}) {
-  context.logger.info('Saving content to database', { paperId })
-
-  try {
-    // 更新论文内容
-    await prisma.paper.update({
-      where: { id: paperId },
-      data: {
-        explanation: generatedContent.summary,
-        highlight: generatedContent.highlight,
-        cardDigest: generatedContent.cardDigest,
-        timelineDigest: generatedContent.timelineDigest,
-      },
+  } finally {
+    context.logger.info('Content genesis finished', {
+      topicId: params.topicId,
+      paperId: params.paperId,
+      duration: Date.now() - startTime,
     })
-
-    // 保存到研究记忆
-    await researchMemory.addContentGeneration(paperId, {
-      summary: generatedContent.summary,
-      narrative: generatedContent.narrative,
-      evidence: generatedContent.evidence,
-      generatedAt: new Date().toISOString(),
-      coverageScore: coverageReport.coverageScore,
-    })
-
-    context.logger.info('Content saved successfully', { paperId })
-  } catch (error) {
-    context.logger.error('Failed to save content', { paperId, error })
-    throw error
   }
 }

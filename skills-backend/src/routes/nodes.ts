@@ -7,6 +7,24 @@ import { logger } from '../utils/logger'
 
 const router = Router()
 
+function readStageWindowMonths(value: unknown) {
+  const raw = Array.isArray(value) ? value[0] : value
+  if (typeof raw !== 'string' || !raw.trim()) return undefined
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
+function normalizeFullContent(value: unknown) {
+  if (value === null || value === undefined) return undefined
+  if (typeof value === 'string') return value
+
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return undefined
+  }
+}
+
 router.get('/', asyncHandler(async (req, res) => {
   const { topicId, stageIndex } = req.query
   const where: Record<string, unknown> = {}
@@ -51,7 +69,8 @@ router.get('/', asyncHandler(async (req, res) => {
 }))
 
 router.get('/:nodeId/view-model', asyncHandler(async (req, res) => {
-  const viewModel = await getNodeViewModel(req.params.nodeId)
+  const stageWindowMonths = readStageWindowMonths(req.query.stageMonths)
+  const viewModel = await getNodeViewModel(req.params.nodeId, { stageWindowMonths })
   res.json({
     success: true,
     data: viewModel
@@ -148,7 +167,7 @@ router.post('/', asyncHandler(async (req, res) => {
       isMergeNode: isMergeNode || paperIds.length > 1,
       provisional: false,
       status: 'canonical',
-      fullContent: fullContent || {},
+      fullContent: normalizeFullContent(fullContent),
       papers: {
         create: paperIds.map((paperId: string, index: number) => ({
           paperId,
@@ -196,7 +215,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
       nodeCoverImage,
       stageIndex,
       status,
-      fullContent: fullContent || undefined
+      fullContent: normalizeFullContent(fullContent),
     },
     include: {
       papers: {

@@ -2,9 +2,9 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import type { AppConfig, ResearchSessionConfig, ResearchProgress } from '@/types/config'
 import { DEFAULT_CONFIG } from '@/types/config'
 import { useWebSocket } from './useWebSocket'
+import { buildApiUrl } from '@/utils/api'
 
 const STORAGE_KEY = 'arxiv-chronicle-config'
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001'
 
 /**
  * 加载配置
@@ -190,12 +190,12 @@ export function useResearchSession() {
   /**
    * 启动研究会话
    */
-  const startResearch = useCallback(async (sessionConfig: ResearchSessionConfig, appConfig: AppConfig) => {
+  const startResearch = useCallback(async (sessionConfig: ResearchSessionConfig, _appConfig: AppConfig) => {
     if (isRunning) return
 
     try {
       // 调用后端 API 启动研究会话
-      const response = await fetch(`${API_BASE_URL}/api/research/sessions`, {
+      const response = await fetch(buildApiUrl('/api/research/sessions'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

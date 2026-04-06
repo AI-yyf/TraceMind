@@ -2,66 +2,31 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Arxiv Research Tracker - AI前沿论文追踪平台" />
-    <title>Arxiv Research Tracker</title>
+    <meta
+      name="description"
+      content="溯知 TraceMind：让研究成为一条可追踪、可沉淀的思想脉络。"
+    />
+    <title>溯知 TraceMind</title>
+    <script>
+      window.__globalSearchRequested = false;
+      window.addEventListener(
+        'keydown',
+        function (event) {
+          var key = (event.key || '').toLowerCase();
+          if ((event.metaKey || event.ctrlKey) && key === 'k') {
+            event.preventDefault();
+            window.__globalSearchRequested = true;
+            window.dispatchEvent(new Event('global-search-open'));
+          }
+        },
+        true,
+      );
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-
-    <!-- MathJax Configuration -->
-    <script>
-      window.MathJax = {
-        tex: {
-          inlineMath: [['$', '$'], ['\\(', '\\)']],
-          displayMath: [['$$', '$$'], ['\\[', '\\]']],
-          processEscapes: true,
-          processEnvironments: true,
-          packages: {'[+]': ['ams', 'newcommand', 'configMacros', 'boldsymbol', 'mathtools']},
-          macros: {
-            // 常用数集
-            RR: '\\mathbb{R}',
-            NN: '\\mathbb{N}',
-            ZZ: '\\mathbb{Z}',
-            QQ: '\\mathbb{Q}',
-            CC: '\\mathbb{C}',
-            // 向量/矩阵
-            vec: ['\\boldsymbol{#1}', 1],
-            mat: ['\\mathbf{#1}', 1],
-            // 常用算子
-            E: '\\mathbb{E}',
-            Var: '\\operatorname{Var}',
-            Cov: '\\operatorname{Cov}',
-            argmax: '\\operatorname{arg\\,max}',
-            argmin: '\\operatorname{arg\\,min}',
-            softmax: '\\operatorname{softmax}',
-            relu: '\\operatorname{ReLU}',
-            // 梯度/偏导
-            grad: '\\nabla',
-            // 范数
-            norm: ['\\left\\|#1\\right\\|', 1],
-            // 内积
-            inner: ['\\left\\langle #1, #2 \\right\\rangle', 2],
-          }
-        },
-        svg: {
-          fontCache: 'global'
-        },
-        options: {
-          skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
-          renderActions: {
-            addMenu: []
-          }
-        },
-        startup: {
-          ready: function() {
-            MathJax.startup.defaultReady();
-          }
-        }
-      };
-    </script>
-    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Noto+Serif+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   </head>
   <body>
     <div id="root"></div>

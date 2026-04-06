@@ -1,113 +1,137 @@
-import express from 'express'
 import cors from 'cors'
+import dotenv from 'dotenv'
+import express from 'express'
+import { createServer, type Server as HttpServer } from 'http'
+import rateLimit from 'express-rate-limit'
 import helmet from 'helmet'
 import morgan from 'morgan'
-import rateLimit from 'express-rate-limit'
-import dotenv from 'dotenv'
 import path from 'path'
-import { createServer } from 'http'
 
-import { logger } from './utils/logger'
 import { errorHandler } from './middleware/errorHandler'
 import { requestValidator } from './middleware/requestValidator'
+import configRoutes from './routes/config'
+import evidenceRoutes from './routes/evidence'
+import modelCapabilitiesRoutes from './routes/model-capabilities'
+import modelConfigRoutes from './routes/model-configs'
+import nodeRoutes from './routes/nodes'
+import omniRoutes from './routes/omni'
+import paperRoutes from './routes/papers'
+import pdfRoutes from './routes/pdf'
+import promptTemplatesRoutes from './routes/prompt-templates'
+import searchRoutes from './routes/search'
+import syncRoutes from './routes/sync'
+import tasksRoutes from './routes/tasks'
+import topicAlphaRoutes from './routes/topic-alpha'
+import topicGenRoutes from './routes/topic-gen'
+import topicRoutes from './routes/topics'
+import { logger } from './utils/logger'
 import { initializeWebSocketServer } from './websocket/server'
 
-// 路由
-import topicRoutes from './routes/topics'
-import paperRoutes from './routes/papers'
-import nodeRoutes from './routes/nodes'
-import syncRoutes from './routes/sync'
-import configRoutes from './routes/config'
-import modelConfigRoutes from './routes/model-configs'
-import modelCapabilitiesRoutes from './routes/model-capabilities'
-import topicGenRoutes from './routes/topic-gen'
-import promptTemplatesRoutes from './routes/prompt-templates'
-import omniRoutes from './routes/omni'
-import topicAlphaRoutes from './routes/topic-alpha'
-import evidenceRoutes from './routes/evidence'
-
-// 加载环境变量
 dotenv.config()
 
-const app = express()
-const PORT = process.env.PORT || 3001
+const developmentOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://localhost:5175',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:5174',
+  'http://127.0.0.1:5175',
+  'http://localhost:4274',
+  'http://localhost:4275',
+  'http://127.0.0.1:4274',
+  'http://127.0.0.1:4275',
+  'http://localhost:4173',
+  'http://localhost:4174',
+  'http://127.0.0.1:4173',
+  'http://127.0.0.1:4174',
+] as const
 
-// 创建 HTTP 服务器（用于 WebSocket）
-const server = createServer(app)
+export function createApp() {
+  const app = express()
 
-// 安全中间件
-app.use(helmet({
-  crossOriginResourcePolicy: { policy: 'cross-origin' }
-}))
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+    }),
+  )
 
-// CORS
-app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? ['https://your-domain.com'] 
-    : ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175'],
-  credentials: true
-}))
+  app.use(
+    cors({
+      origin:
+        process.env.NODE_ENV === 'production'
+          ? ['https://your-domain.com']
+          : [...developmentOrigins],
+      credentials: true,
+    }),
+  )
 
-// 请求日志
-app.use(morgan('combined', { stream: { write: msg => logger.info(msg.trim()) } }))
+  app.use(morgan('combined', { stream: { write: (message) => logger.info(message.trim()) } }))
 
-// 速率限制
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 分钟
-  max: 100, // 每个 IP 限制 100 个请求
-  message: { error: '请求过于频繁，请稍后再试' }
-})
-app.use('/api/', limiter)
-
-// 解析 JSON
-app.use(express.json({ limit: '10mb' }))
-app.use(express.urlencoded({ extended: true, limit: '10mb' }))
-
-// 静态文件服务
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')))
-
-// 请求验证
-app.use(requestValidator)
-
-// 健康检查
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    timestamp: new Date().toISOString(),
-    version: '1.0.0'
+  const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: process.env.NODE_ENV === 'production' ? 100 : 10_000,
+    message: { error: 'Too many requests, please try again later.' },
+    skip: (req) =>
+      process.env.NODE_ENV !== 'production' &&
+      ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.ip ?? ''),
   })
-})
+  app.use('/api/', limiter)
 
-// API 路由
-app.use('/api/topics', topicRoutes)
-app.use('/api/papers', paperRoutes)
-app.use('/api/nodes', nodeRoutes)
-app.use('/api/sync', syncRoutes)
-app.use('/api/config', configRoutes)
-app.use('/api/model-configs', modelConfigRoutes)
-app.use('/api/model-capabilities', modelCapabilitiesRoutes)
-app.use('/api/omni', omniRoutes)
-app.use('/api/topics', topicAlphaRoutes)
-app.use('/api/evidence', evidenceRoutes)
-app.use('/api/topic-gen', topicGenRoutes)
-app.use('/api/prompt-templates', promptTemplatesRoutes)
+  app.use(express.json({ limit: '10mb' }))
+  app.use(express.urlencoded({ extended: true, limit: '10mb' }))
+  app.use('/uploads', express.static(path.join(__dirname, '../uploads')))
+  app.use(requestValidator)
 
-// 错误处理
-app.use(errorHandler)
+  app.get('/health', (_req, res) => {
+    res.json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      version: '1.0.0',
+    })
+  })
 
-// 404 处理
-app.use((req, res) => {
-  res.status(404).json({ error: '接口不存在' })
-})
+  app.use('/api/topics', topicRoutes)
+  app.use('/api/papers', paperRoutes)
+  app.use('/api/nodes', nodeRoutes)
+  app.use('/api/sync', syncRoutes)
+  app.use('/api/config', configRoutes)
+  app.use('/api/model-configs', modelConfigRoutes)
+  app.use('/api/model-capabilities', modelCapabilitiesRoutes)
+  app.use('/api/omni', omniRoutes)
+  app.use('/api/pdf', pdfRoutes)
+  app.use('/api/topics', topicAlphaRoutes)
+  app.use('/api/evidence', evidenceRoutes)
+  app.use('/api/topic-gen', topicGenRoutes)
+  app.use('/api/prompt-templates', promptTemplatesRoutes)
+  app.use('/api/tasks', tasksRoutes)
+  app.use('/api/search', searchRoutes)
 
-// 初始化 WebSocket 服务器
-initializeWebSocketServer(server)
+  app.use(errorHandler)
 
-// 启动服务器
-server.listen(PORT, () => {
-  logger.info(`服务器启动成功，端口: ${PORT}`)
-  logger.info(`环境: ${process.env.NODE_ENV || 'development'}`)
-  logger.info(`WebSocket 服务已启动，路径: /ws`)
-})
+  app.use((_req, res) => {
+    res.status(404).json({ error: 'Route not found.' })
+  })
 
-export default app
+  return app
+}
+
+export function startServer(port = Number(process.env.PORT || 3001)) {
+  const app = createApp()
+  const server = createServer(app)
+  initializeWebSocketServer(server)
+
+  return new Promise<HttpServer>((resolve) => {
+    server.listen(port, () => {
+      logger.info(`Server started on port ${port}`)
+      logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`)
+      logger.info('WebSocket server ready at /ws')
+      resolve(server)
+    })
+  })
+}
+
+if (require.main === module) {
+  void startServer()
+}
+
+export default createApp

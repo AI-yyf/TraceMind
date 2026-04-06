@@ -1,19 +1,63 @@
 import { useEffect, useState } from 'react'
 import { getItem, setItem } from '@/utils/storage'
 import type { FavoriteExcerpt } from '@/types/tracker'
+import { normalizeFavoriteExcerpt } from '@/utils/researchNotebook'
 
 const FAVORITES_KEY = 'favorite-excerpts'
+const LEGACY_FAVORITES_KEY = FAVORITES_KEY
+
+function normalizeFavoriteCollection(source: unknown): FavoriteExcerpt[] {
+  if (!Array.isArray(source)) return []
+  return source
+    .map((item) => normalizeFavoriteExcerpt(item))
+    .filter((item): item is FavoriteExcerpt => Boolean(item))
+}
+
+function loadInitialFavorites() {
+  const stored = normalizeFavoriteCollection(getItem<unknown[]>(FAVORITES_KEY, []))
+  if (stored.length > 0) return stored
+
+  if (typeof window === 'undefined') return stored
+
+  try {
+    const legacyRaw = window.localStorage.getItem(LEGACY_FAVORITES_KEY)
+    if (!legacyRaw) return stored
+
+    const legacy = normalizeFavoriteCollection(JSON.parse(legacyRaw))
+    if (legacy.length > 0) {
+      setItem(FAVORITES_KEY, legacy)
+      window.localStorage.removeItem(LEGACY_FAVORITES_KEY)
+    }
+    return legacy
+  } catch (error) {
+    console.error('Error migrating legacy favorites:', error)
+    return stored
+  }
+}
 
 export function useFavorites() {
   const [favorites, setFavorites] = useState<FavoriteExcerpt[]>([])
 
   useEffect(() => {
-    setFavorites(getItem<FavoriteExcerpt[]>(FAVORITES_KEY, []) ?? [])
+    setFavorites(loadInitialFavorites())
   }, [])
 
   const saveFavorites = (nextFavorites: FavoriteExcerpt[]) => {
     setFavorites(nextFavorites)
     setItem(FAVORITES_KEY, nextFavorites)
+  }
+
+  const addFavorite = (excerpt: FavoriteExcerpt) => {
+    const normalized = normalizeFavoriteExcerpt(excerpt)
+    if (!normalized) return false
+
+    const nextFavorites = [
+      normalized,
+      ...favorites.filter((item) => item.id !== normalized.id),
+    ]
+
+    saveFavorites(nextFavorites)
+    return !favorites.some((item) => item.id === normalized.id)
   }
 
   const toggleFavorite = (excerpt: FavoriteExcerpt) => {
@@ -22,8 +66,7 @@ export function useFavorites() {
       saveFavorites(favorites.filter((item) => item.id !== excerpt.id))
       return false
     }
-    saveFavorites([excerpt, ...favorites])
-    return true
+    return addFavorite(excerpt)
   }
 
   const removeFavorite = (favoriteId: string) => {
@@ -34,6 +77,7 @@ export function useFavorites() {
 
   return {
     favorites,
+    addFavorite,
     toggleFavorite,
     removeFavorite,
     isFavorite,

@@ -1,700 +1,447 @@
-import { useState } from 'react'
-import { X, Save, RotateCcw, Key, Server, Sliders, MessageSquare, FlaskConical, Eye, Image, Layers, Clock, FileJson } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { AlertTriangle, CheckCircle2, Clock3, KeyRound, Layers3, MessageSquare, RefreshCcw, Save, SlidersHorizontal, Workflow, X } from 'lucide-react'
+
 import { useConfig } from '@/hooks/useConfig'
+import type { ModelCapabilitySummary, ModelConfigResponse, ModelConfigSaveResponse, OmniIssue, UserModelConfig } from '@/types/alpha'
+import type { AppConfig } from '@/types/config'
+import { MODEL_CONFIG_UPDATED_EVENT } from '@/utils/workbench-events'
+import { apiGet, apiPost, buildApiUrl } from '@/utils/api'
+import { cn } from '@/utils/cn'
 import { TaskScheduler } from './TaskScheduler'
-import { PromptTemplateManager } from './PromptTemplateManager'
-import type { AppConfig, ApiProvider } from '@/types/config'
 
-interface SettingsPanelProps {
-  isOpen: boolean
-  onClose: () => void
-}
+type SettingsTab = 'models' | 'generation' | 'research' | 'batch' | 'prompts' | 'scheduler'
+type SlotForm = { provider: string; model: string; baseUrl: string; apiKey: string }
 
-export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
-  const { config, updateApiConfig, updateGenerationConfig, updateResearchConfig, resetConfig, isApiConfigured } = useConfig()
-  const [activeTab, setActiveTab] = useState<'api' | 'generation' | 'research' | 'batch' | 'prompts'>('api')
+const tabs = [
+  { id: 'models' as const, label: '模型接入', icon: KeyRound },
+  { id: 'generation' as const, label: '生成参数', icon: SlidersHorizontal },
+  { id: 'research' as const, label: '研究流程', icon: Workflow },
+  { id: 'batch' as const, label: '批量研究', icon: Layers3 },
+  { id: 'prompts' as const, label: '提示词', icon: MessageSquare },
+  { id: 'scheduler' as const, label: '定时任务', icon: Clock3 },
+]
+
+const emptySlot: SlotForm = { provider: '', model: '', baseUrl: '', apiKey: '' }
+
+export function SettingsPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  const { config, updateGenerationConfig, updateResearchConfig, resetConfig } = useConfig()
+  const [activeTab, setActiveTab] = useState<SettingsTab>('models')
   const [localConfig, setLocalConfig] = useState<AppConfig>(config)
-  const [showSaveSuccess, setShowSaveSuccess] = useState(false)
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
+  const [saved, setSaved] = useState(false)
+  const [modelConfig, setModelConfig] = useState<ModelConfigResponse | null>(null)
+  const [capabilities, setCapabilities] = useState<ModelCapabilitySummary | null>(null)
+  const [languageForm, setLanguageForm] = useState<SlotForm>(emptySlot)
+  const [multimodalForm, setMultimodalForm] = useState<SlotForm>(emptySlot)
+  const [modelNotice, setModelNotice] = useState<OmniIssue | null>(null)
+  const [savingModels, setSavingModels] = useState(false)
+
+  useEffect(() => {
+    if (!isOpen) return
+    setLocalConfig(config)
+  }, [config, isOpen])
+
+  useEffect(() => {
+    if (!isOpen) return
+    let alive = true
+
+    Promise.all([apiGet<ModelConfigResponse>('/api/model-configs'), apiGet<ModelCapabilitySummary>('/api/model-capabilities')])
+      .then(([configResponse, capabilityResponse]) => {
+        if (!alive) return
+        setModelConfig(configResponse)
+        setCapabilities(capabilityResponse)
+        setLanguageForm({
+          provider: configResponse.config.language?.provider ?? '',
+          model: configResponse.config.language?.model ?? '',
+          baseUrl: configResponse.config.language?.baseUrl ?? '',
+          apiKey: '',
+        })
+        setMultimodalForm({
+          provider: configResponse.config.multimodal?.provider ?? '',
+          model: configResponse.config.multimodal?.model ?? '',
+          baseUrl: configResponse.config.multimodal?.baseUrl ?? '',
+          apiKey: '',
+        })
+      })
+      .catch(() => {
+        if (alive) {
+          setModelNotice({
+            code: 'provider_error',
+            title: '模型中心暂时不可用',
+            message: '模型配置接口没有返回结果，但设置中心仍然保留在页面上，方便你继续检查本地配置。',
+          })
+        }
+      })
+
+    return () => {
+      alive = false
+    }
+  }, [isOpen])
+
+  const languageModels = useMemo(
+    () => modelConfig?.catalog.find((entry) => entry.provider === languageForm.provider)?.models ?? [],
+    [modelConfig, languageForm.provider],
+  )
+  const multimodalModels = useMemo(
+    () => modelConfig?.catalog.find((entry) => entry.provider === multimodalForm.provider)?.models ?? [],
+    [modelConfig, multimodalForm.provider],
+  )
 
   if (!isOpen) return null
 
-  const handleSave = () => {
-    // 保存所有配置
-    Object.entries(localConfig.api).forEach(([key, value]) => {
-      if (key !== 'multimodal') {
-        updateApiConfig({ [key]: value } as Partial<AppConfig['api']>)
-      }
-    })
-    // 保存多模态配置
-    updateApiConfig({ multimodal: localConfig.api.multimodal })
-    
-    Object.entries(localConfig.generation).forEach(([key, value]) => {
-      updateGenerationConfig({ [key]: value } as Partial<AppConfig['generation']>)
-    })
-    Object.entries(localConfig.research).forEach(([key, value]) => {
-      updateResearchConfig({ [key]: value } as Partial<AppConfig['research']>)
-    })
-    
-    setShowSaveSuccess(true)
-    setTimeout(() => setShowSaveSuccess(false), 2000)
-  }
+  async function saveModels() {
+    setSavingModels(true)
+    setModelNotice(null)
+    try {
+      const payload = {
+        language:
+          languageForm.provider && languageForm.model
+            ? {
+                provider: languageForm.provider as never,
+                model: languageForm.model,
+                baseUrl: languageForm.baseUrl || undefined,
+                apiKey: languageForm.apiKey || undefined,
+              }
+            : null,
+        multimodal:
+          multimodalForm.provider && multimodalForm.model
+            ? {
+                provider: multimodalForm.provider as never,
+                model: multimodalForm.model,
+                baseUrl: multimodalForm.baseUrl || undefined,
+                apiKey: multimodalForm.apiKey || undefined,
+              }
+            : null,
+      } satisfies UserModelConfig
 
-  const handleReset = () => {
-    if (confirm('确定要重置为默认配置吗？所有自定义设置将丢失。')) {
-      resetConfig()
-      setLocalConfig(config)
+      const response = await apiPost<ModelConfigSaveResponse, UserModelConfig>('/api/model-configs', payload)
+      setCapabilities(await apiGet<ModelCapabilitySummary>('/api/model-capabilities'))
+      setModelConfig(await apiGet<ModelConfigResponse>('/api/model-configs'))
+      setLanguageForm((current) => ({ ...current, apiKey: '' }))
+      setMultimodalForm((current) => ({ ...current, apiKey: '' }))
+      setModelNotice(response.validationIssues?.[0] ?? null)
+
+      window.dispatchEvent(
+        new CustomEvent(MODEL_CONFIG_UPDATED_EVENT, {
+          detail: response.slots,
+        }),
+      )
+
+      setSaved(true)
+      window.setTimeout(() => setSaved(false), 2000)
+    } catch {
+      setModelNotice({
+        code: 'provider_error',
+        title: '保存失败',
+        message: '模型设置没有保存成功，请检查接入地址、密钥和后端状态。',
+      })
+    } finally {
+      setSavingModels(false)
     }
   }
 
-  const testConnection = async () => {
-    setTestStatus('testing')
-    
-    try {
-      const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001'
-      
-      // 测试后端 API 连接
-      const response = await fetch(`${API_BASE}/health`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-      })
+  function saveLocalSettings() {
+    updateGenerationConfig(localConfig.generation)
+    updateResearchConfig(localConfig.research)
+    setSaved(true)
+    window.setTimeout(() => setSaved(false), 2000)
+  }
 
-      if (response.ok) {
-        setTestStatus('success')
-      } else {
-        setTestStatus('error')
-      }
-    } catch (error) {
-      console.error('API test failed:', error)
+  async function testConnection() {
+    setTestStatus('testing')
+    try {
+      const response = await fetch(buildApiUrl('/health'))
+      setTestStatus(response.ok ? 'success' : 'error')
+    } catch {
       setTestStatus('error')
     }
-
-    setTimeout(() => setTestStatus('idle'), 3000)
+    window.setTimeout(() => setTestStatus('idle'), 3000)
   }
 
-  const tabs = [
-    { id: 'api', label: 'API 配置', icon: Server },
-    { id: 'generation', label: '生成参数', icon: Sliders },
-    { id: 'research', label: '研究流程', icon: FlaskConical },
-    { id: 'batch', label: '批量研究', icon: Layers },
-    { id: 'prompts', label: '提示词', icon: MessageSquare },
-    { id: 'scheduler', label: '定时任务', icon: Clock },
-  ] as const
-
-  const providers: { id: ApiProvider; name: string; defaultUrl: string }[] = [
-    { id: 'openai', name: 'OpenAI', defaultUrl: 'https://api.openai.com/v1' },
-    { id: 'anthropic', name: 'Anthropic', defaultUrl: 'https://api.anthropic.com/v1' },
-    { id: 'custom', name: '自定义', defaultUrl: '' },
-  ]
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="flex h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-[24px] bg-white shadow-2xl">
-        {/* 头部 */}
-        <div className="flex items-center justify-between border-b border-black/8 px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black">
-              <Key className="h-5 w-5 text-white" />
-            </div>
-            <div>
-              <h2 className="text-[18px] font-semibold text-black">系统配置</h2>
-              <p className="text-[13px] text-black/50">
-                {isApiConfigured ? '✓ API 已配置' : '✗ API 未配置 - 请先完成 API 设置'}
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="flex h-10 w-10 items-center justify-center rounded-full transition hover:bg-black/5"
-          >
-            <X className="h-5 w-5 text-black/50" />
-          </button>
-        </div>
+    <div className="fixed inset-0 z-[110]">
+      <button type="button" onClick={onClose} className="absolute inset-0 bg-black/35 backdrop-blur-[2px]" aria-label="关闭设置中心" />
 
-        {/* 内容区 */}
-        <div className="flex flex-1 overflow-hidden">
-          {/* 左侧标签栏 */}
-          <div className="w-52 border-r border-black/8 bg-[#fafafa] p-4">
-            <nav className="space-y-1">
+      <section className="absolute right-0 top-0 flex h-full w-full max-w-[960px] flex-col border-l border-black/10 bg-white shadow-[-24px_0_60px_rgba(15,23,42,0.12)]">
+        <header className="flex items-start justify-between gap-4 border-b border-black/10 px-6 py-5">
+          <div>
+            <div className="text-[11px] tracking-[0.24em] text-black/40">设置中心</div>
+            <h2 className="mt-2 text-[24px] font-semibold text-black">研究配置与模型设置</h2>
+            <p className="mt-2 max-w-2xl text-[13px] leading-6 text-black/58">
+              右侧工作台只保留轻量入口；完整的模型、提示词、流程和调度设置统一放在这里。
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-full border border-black/10 bg-white p-2 text-black/60">
+            <X className="h-4 w-4" />
+          </button>
+        </header>
+
+        <div className="flex min-h-0 flex-1">
+          <aside className="w-[220px] border-r border-black/10 bg-[var(--surface-muted)] p-4">
+            <div className="space-y-2">
               {tabs.map((tab) => {
                 const Icon = tab.icon
                 return (
                   <button
                     key={tab.id}
+                    type="button"
                     onClick={() => setActiveTab(tab.id)}
-                    className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[14px] transition ${
+                    className={cn(
+                      'flex w-full items-center gap-3 rounded-[20px] border px-4 py-3 text-left text-sm transition',
                       activeTab === tab.id
-                        ? 'bg-black text-white'
-                        : 'text-black/60 hover:bg-black/5'
-                    }`}
+                        ? 'border-[#f59e0b] bg-white text-[var(--accent-ink)] shadow-[0_10px_24px_rgba(245,158,11,0.08)]'
+                        : 'border-transparent bg-white text-black/60 hover:border-black/10',
+                    )}
                   >
                     <Icon className="h-4 w-4" />
                     {tab.label}
                   </button>
                 )
               })}
-            </nav>
+            </div>
 
-            {/* 测试连接按钮 */}
-            {activeTab === 'api' && (
-              <div className="mt-6 border-t border-black/10 pt-4">
-                <button
-                  onClick={testConnection}
-                  disabled={testStatus === 'testing'}
-                  className={`w-full rounded-xl px-4 py-3 text-[13px] font-medium transition ${
-                    testStatus === 'success'
-                      ? 'bg-green-500 text-white'
-                      : testStatus === 'error'
-                      ? 'bg-red-500 text-white'
-                      : 'bg-black text-white hover:bg-black/85'
-                  }`}
-                >
-                  {testStatus === 'testing' ? '测试中...' : 
-                   testStatus === 'success' ? '连接成功' :
-                   testStatus === 'error' ? '连接失败' : '测试连接'}
+            <button
+              type="button"
+              onClick={() => void testConnection()}
+              className={cn(
+                'mt-6 flex w-full items-center justify-center gap-2 rounded-full px-4 py-2 text-xs font-medium text-white',
+                testStatus === 'success'
+                  ? 'bg-green-600'
+                  : testStatus === 'error'
+                  ? 'bg-red-600'
+                  : 'bg-black',
+              )}
+              disabled={testStatus === 'testing'}
+            >
+              {testStatus === 'testing'
+                ? '测试中…'
+                : testStatus === 'success'
+                  ? '连接正常'
+                  : testStatus === 'error'
+                    ? '连接失败'
+                    : '测试连接'}
+            </button>
+          </aside>
+
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+            {activeTab === 'models' && (
+              <div className="space-y-5">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <StatusCard label="语言模型" ready={capabilities?.slots.language.apiKeyStatus === 'configured'} model={capabilities?.slots.language.model ?? '未配置'} />
+                  <StatusCard label="多模态模型" ready={capabilities?.slots.multimodal.apiKeyStatus === 'configured'} model={capabilities?.slots.multimodal.model ?? '未配置'} />
+                </div>
+                {modelNotice && <NoticeCard notice={modelNotice} />}
+                <SlotCard
+                  title="语言模型槽位"
+                  form={languageForm}
+                  setForm={setLanguageForm}
+                  preview={modelConfig?.config.language?.apiKeyPreview}
+                  providers={modelConfig?.catalog ?? []}
+                  models={languageModels.map((item) => ({ label: item.label, value: item.id }))}
+                />
+                <SlotCard
+                  title="多模态模型槽位"
+                  form={multimodalForm}
+                  setForm={setMultimodalForm}
+                  preview={modelConfig?.config.multimodal?.apiKeyPreview}
+                  providers={modelConfig?.catalog ?? []}
+                  models={multimodalModels.map((item) => ({ label: item.label, value: item.id }))}
+                />
+                <button type="button" onClick={() => void saveModels()} disabled={savingModels} className="inline-flex items-center gap-2 rounded-full bg-black px-5 py-3 text-sm font-medium text-white disabled:opacity-60">
+                  {savingModels ? <RefreshCcw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  保存模型设置
                 </button>
               </div>
             )}
-          </div>
 
-          {/* 右侧配置区 */}
-          <div className="flex-1 overflow-y-auto p-6">
-            {/* API 配置 */}
-            {activeTab === 'api' && (
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-[16px] font-medium text-black">API 连接</h3>
-                  <p className="mt-1 text-[13px] text-black/50">配置 LLM API 连接信息</p>
-                </div>
-
-                {/* 提供商选择 */}
-                <div>
-                  <label className="mb-2 block text-[13px] font-medium text-black">API 提供商</label>
-                  <div className="grid grid-cols-3 gap-3">
-                    {providers.map((provider) => (
-                      <button
-                        key={provider.id}
-                        onClick={() => setLocalConfig(prev => ({ 
-                          ...prev, 
-                          api: { 
-                            ...prev.api, 
-                            provider: provider.id,
-                            baseUrl: provider.defaultUrl 
-                          } 
-                        }))}
-                        className={`rounded-xl border px-4 py-3 text-[14px] transition ${
-                          localConfig.api.provider === provider.id
-                            ? 'border-black bg-black text-white'
-                            : 'border-black/10 hover:border-black/30'
-                        }`}
-                      >
-                        {provider.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-[13px] font-medium text-black">API 基础 URL</label>
-                  <input
-                    type="url"
-                    value={localConfig.api.baseUrl}
-                    onChange={(e) => setLocalConfig(prev => ({ ...prev, api: { ...prev.api, baseUrl: e.target.value } }))}
-                    placeholder="https://api.openai.com/v1"
-                    className="w-full rounded-xl border border-black/10 px-4 py-3 text-[14px] outline-none transition focus:border-black"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-[13px] font-medium text-black">API Key</label>
-                  <input
-                    type="password"
-                    value={localConfig.api.apiKey}
-                    onChange={(e) => setLocalConfig(prev => ({ ...prev, api: { ...prev.api, apiKey: e.target.value } }))}
-                    placeholder="sk-..."
-                    className="w-full rounded-xl border border-black/10 px-4 py-3 text-[14px] outline-none transition focus:border-black"
-                  />
-                  <p className="mt-1 text-[12px] text-black/40">您的 API 密钥将被安全存储在本地浏览器中</p>
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-[13px] font-medium text-black">模型</label>
-                  <select
-                    value={localConfig.api.model}
-                    onChange={(e) => setLocalConfig(prev => ({ ...prev, api: { ...prev.api, model: e.target.value } }))}
-                    className="w-full rounded-xl border border-black/10 px-4 py-3 text-[14px] outline-none transition focus:border-black"
-                  >
-                    <optgroup label="OpenAI">
-                      <option value="gpt-4o">GPT-4o (多模态)</option>
-                      <option value="gpt-4o-mini">GPT-4o Mini</option>
-                      <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                    </optgroup>
-                    <optgroup label="Anthropic">
-                      <option value="claude-3-5-sonnet">Claude 3.5 Sonnet</option>
-                      <option value="claude-3-opus">Claude 3 Opus</option>
-                      <option value="claude-3-sonnet">Claude 3 Sonnet</option>
-                    </optgroup>
-                    <optgroup label="自定义">
-                      <option value="custom">自定义模型</option>
-                    </optgroup>
-                  </select>
-                </div>
-
-                {localConfig.api.provider === 'openai' && (
-                  <div>
-                    <label className="mb-2 block text-[13px] font-medium text-black">组织 ID (可选)</label>
-                    <input
-                      type="text"
-                      value={localConfig.api.organizationId || ''}
-                      onChange={(e) => setLocalConfig(prev => ({ ...prev, api: { ...prev.api, organizationId: e.target.value } }))}
-                      placeholder="org-..."
-                      className="w-full rounded-xl border border-black/10 px-4 py-3 text-[14px] outline-none transition focus:border-black"
-                    />
-                  </div>
-                )}
-
-                <div className="flex items-center gap-3 rounded-xl bg-black/5 p-4">
-                  <input
-                    type="checkbox"
-                    id="api-enabled"
-                    checked={localConfig.api.enabled}
-                    onChange={(e) => setLocalConfig(prev => ({ ...prev, api: { ...prev.api, enabled: e.target.checked } }))}
-                    className="h-5 w-5 rounded border-black/20"
-                  />
-                  <label htmlFor="api-enabled" className="text-[14px] text-black">
-                    启用 API 连接
-                  </label>
-                </div>
-
-                {/* 多模态配置 */}
-                <div className="rounded-xl border border-black/8 p-5">
-                  <div className="mb-4 flex items-center gap-2">
-                    <Eye className="h-5 w-5 text-black/50" />
-                    <h4 className="text-[15px] font-medium text-black">多模态能力</h4>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-[14px] text-black">启用视觉理解</p>
-                        <p className="text-[12px] text-black/50">分析论文中的图表和图像</p>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={localConfig.api.multimodal.enableVision}
-                        onChange={(e) => setLocalConfig(prev => ({ 
-                          ...prev, 
-                          api: { 
-                            ...prev.api, 
-                            multimodal: { ...prev.api.multimodal, enableVision: e.target.checked } 
-                          } 
-                        }))}
-                        className="h-5 w-5 rounded border-black/20"
-                      />
-                    </div>
-
-                    {localConfig.api.multimodal.enableVision && (
-                      <div>
-                        <label className="mb-2 block text-[13px] text-black">视觉模型</label>
-                        <select
-                          value={localConfig.api.multimodal.visionModel}
-                          onChange={(e) => setLocalConfig(prev => ({ 
-                            ...prev, 
-                            api: { 
-                              ...prev.api, 
-                              multimodal: { ...prev.api.multimodal, visionModel: e.target.value } 
-                            } 
-                          }))}
-                          className="w-full rounded-lg border border-black/10 px-3 py-2 text-[14px]"
-                        >
-                          <option value="gpt-4o">GPT-4o</option>
-                          <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                          <option value="claude-3-opus">Claude 3 Opus</option>
-                        </select>
-                      </div>
-                    )}
-
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-[14px] text-black">启用图像生成</p>
-                        <p className="text-[12px] text-black/50">为节点自动生成配图</p>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={localConfig.api.multimodal.enableImageGeneration}
-                        onChange={(e) => setLocalConfig(prev => ({ 
-                          ...prev, 
-                          api: { 
-                            ...prev.api, 
-                            multimodal: { ...prev.api.multimodal, enableImageGeneration: e.target.checked } 
-                          } 
-                        }))}
-                        className="h-5 w-5 rounded border-black/20"
-                      />
-                    </div>
-
-                    {localConfig.api.multimodal.enableImageGeneration && (
-                      <div>
-                        <label className="mb-2 block text-[13px] text-black">图像生成模型</label>
-                        <select
-                          value={localConfig.api.multimodal.imageGenerationModel}
-                          onChange={(e) => setLocalConfig(prev => ({ 
-                            ...prev, 
-                            api: { 
-                              ...prev.api, 
-                              multimodal: { ...prev.api.multimodal, imageGenerationModel: e.target.value } 
-                            } 
-                          }))}
-                          className="w-full rounded-lg border border-black/10 px-3 py-2 text-[14px]"
-                        >
-                          <option value="dall-e-3">DALL-E 3</option>
-                          <option value="dall-e-2">DALL-E 2</option>
-                        </select>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* 生成参数 */}
             {activeTab === 'generation' && (
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-[16px] font-medium text-black">生成参数</h3>
-                  <p className="mt-1 text-[13px] text-black/50">控制 LLM 生成内容的参数</p>
-                </div>
-
-                <div className="grid gap-6 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-2 block text-[13px] font-medium text-black">
-                      温度 (Temperature): {localConfig.generation.temperature}
-                    </label>
-                    <input
-                      type="range"
-                      min="0"
-                      max="2"
-                      step="0.1"
-                      value={localConfig.generation.temperature}
-                      onChange={(e) => setLocalConfig(prev => ({ ...prev, generation: { ...prev.generation, temperature: parseFloat(e.target.value) } }))}
-                      className="w-full"
-                    />
-                    <p className="mt-1 text-[12px] text-black/40">较低值更确定，较高值更有创造性</p>
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block text-[13px] font-medium text-black">
-                      最大 Token: {localConfig.generation.maxTokens}
-                    </label>
-                    <input
-                      type="range"
-                      min="1024"
-                      max="8192"
-                      step="1024"
-                      value={localConfig.generation.maxTokens}
-                      onChange={(e) => setLocalConfig(prev => ({ ...prev, generation: { ...prev.generation, maxTokens: parseInt(e.target.value) } }))}
-                      className="w-full"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block text-[13px] font-medium text-black">
-                      Top P: {localConfig.generation.topP}
-                    </label>
-                    <input
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.1"
-                      value={localConfig.generation.topP}
-                      onChange={(e) => setLocalConfig(prev => ({ ...prev, generation: { ...prev.generation, topP: parseFloat(e.target.value) } }))}
-                      className="w-full"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block text-[13px] font-medium text-black">
-                      上下文窗口: {localConfig.generation.contextWindow.toLocaleString()}
-                    </label>
-                    <select
-                      value={localConfig.generation.contextWindow}
-                      onChange={(e) => setLocalConfig(prev => ({ ...prev, generation: { ...prev.generation, contextWindow: parseInt(e.target.value) } }))}
-                      className="w-full rounded-xl border border-black/10 px-4 py-3 text-[14px]"
-                    >
-                      <option value="8192">8K</option>
-                      <option value="32768">32K</option>
-                      <option value="128000">128K</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3 rounded-xl bg-black/5 p-4">
-                  <input
-                    type="checkbox"
-                    id="json-mode"
-                    checked={localConfig.generation.jsonMode}
-                    onChange={(e) => setLocalConfig(prev => ({ ...prev, generation: { ...prev.generation, jsonMode: e.target.checked } }))}
-                    className="h-5 w-5 rounded border-black/20"
-                  />
-                  <label htmlFor="json-mode" className="text-[14px] text-black">
-                    启用 JSON 模式（确保输出结构化数据）
-                  </label>
-                </div>
-
-                <div className="rounded-xl bg-amber-50 p-4">
-                  <p className="text-[13px] text-amber-700">
-                    <strong>研究建议：</strong>学术论文分析建议 Temperature 0.3-0.5，
-                    节点摘要生成建议 0.5-0.7。启用 JSON 模式可确保输出格式一致。
-                  </p>
-                </div>
+              <div className="space-y-5">
+                <PanelTitle title="生成参数" body="控制默认回答风格、生成稳定性与上下文窗口。" />
+                <RangeCard label={`温度系数 · ${localConfig.generation.temperature}`} min={0} max={2} step={0.1} value={localConfig.generation.temperature} onChange={(value) => setLocalConfig((current) => ({ ...current, generation: { ...current.generation, temperature: value } }))} />
+                <RangeCard label={`最大输出长度 · ${localConfig.generation.maxTokens}`} min={1024} max={8192} step={512} value={localConfig.generation.maxTokens} onChange={(value) => setLocalConfig((current) => ({ ...current, generation: { ...current.generation, maxTokens: value } }))} />
+                <RangeCard label={`采样阈值 · ${localConfig.generation.topP}`} min={0} max={1} step={0.1} value={localConfig.generation.topP} onChange={(value) => setLocalConfig((current) => ({ ...current, generation: { ...current.generation, topP: value } }))} />
               </div>
             )}
 
-            {/* 研究流程 */}
             {activeTab === 'research' && (
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-[16px] font-medium text-black">研究流程配置</h3>
-                  <p className="mt-1 text-[13px] text-black/50">控制发现、生成和分支管理的参数</p>
-                </div>
-
-                <div className="space-y-6">
-                  {/* 发现阶段 */}
-                  <div className="rounded-xl border border-black/8 p-4">
-                    <h4 className="mb-4 text-[14px] font-medium text-black">发现阶段</h4>
-                    
-                    <div className="space-y-4">
-                      <div>
-                        <label className="mb-2 block text-[13px] text-black">候选池大小: {localConfig.research.discovery.candidatePoolSize}</label>
-                        <input
-                          type="range"
-                          min="5"
-                          max="20"
-                          step="1"
-                          value={localConfig.research.discovery.candidatePoolSize}
-                          onChange={(e) => setLocalConfig(prev => ({ 
-                            ...prev, 
-                            research: { 
-                              ...prev.research, 
-                              discovery: { ...prev.research.discovery, candidatePoolSize: parseInt(e.target.value) } 
-                            } 
-                          }))}
-                          className="w-full"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="mb-2 block text-[13px] text-black">搜索范围（年）: {localConfig.research.discovery.searchYearRange}</label>
-                        <input
-                          type="range"
-                          min="1"
-                          max="10"
-                          step="1"
-                          value={localConfig.research.discovery.searchYearRange}
-                          onChange={(e) => setLocalConfig(prev => ({ 
-                            ...prev, 
-                            research: { 
-                              ...prev.research, 
-                              discovery: { ...prev.research.discovery, searchYearRange: parseInt(e.target.value) } 
-                            } 
-                          }))}
-                          className="w-full"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 节点生成 */}
-                  <div className="rounded-xl border border-black/8 p-4">
-                    <h4 className="mb-4 text-[14px] font-medium text-black">节点生成</h4>
-                    
-                    <div className="space-y-3">
-                      {[
-                        { key: 'generateImagePrompt', label: '生成配图描述' },
-                        { key: 'extractKeyCitations', label: '提取关键引用' },
-                        { key: 'generateEnglishSummary', label: '生成英文摘要' },
-                        { key: 'analyzeFigures', label: '分析论文图表' },
-                      ].map(({ key, label }) => (
-                        <label key={key} className="flex items-center justify-between rounded-lg bg-black/5 p-3">
-                          <span className="text-[14px] text-black">{label}</span>
-                          <input
-                            type="checkbox"
-                            checked={localConfig.research.nodeGeneration[key as keyof typeof localConfig.research.nodeGeneration] as boolean}
-                            onChange={(e) => setLocalConfig(prev => ({ 
-                              ...prev, 
-                              research: { 
-                                ...prev.research, 
-                                nodeGeneration: { ...prev.research.nodeGeneration, [key]: e.target.checked } 
-                              } 
-                            }))}
-                            className="h-5 w-5 rounded border-black/20"
-                          />
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                </div>
+              <div className="space-y-5">
+                <PanelTitle title="研究流程" body="控制发现宽度、搜索时间范围与节点生成行为。" />
+                <RangeCard label={`候选池规模 · ${localConfig.research.discovery.candidatePoolSize}`} min={5} max={20} step={1} value={localConfig.research.discovery.candidatePoolSize} onChange={(value) => setLocalConfig((current) => ({ ...current, research: { ...current.research, discovery: { ...current.research.discovery, candidatePoolSize: value } } }))} />
+                <RangeCard label={`搜索年份范围 · ${localConfig.research.discovery.searchYearRange}`} min={1} max={10} step={1} value={localConfig.research.discovery.searchYearRange} onChange={(value) => setLocalConfig((current) => ({ ...current, research: { ...current.research, discovery: { ...current.research.discovery, searchYearRange: value } } }))} />
+                <ToggleCard label="抽取关键引用" checked={localConfig.research.nodeGeneration.extractKeyCitations} onChange={(checked) => setLocalConfig((current) => ({ ...current, research: { ...current.research, nodeGeneration: { ...current.research.nodeGeneration, extractKeyCitations: checked } } }))} />
+                <ToggleCard label="分析图表" checked={localConfig.research.nodeGeneration.analyzeFigures} onChange={(checked) => setLocalConfig((current) => ({ ...current, research: { ...current.research, nodeGeneration: { ...current.research.nodeGeneration, analyzeFigures: checked } } }))} />
               </div>
             )}
 
-            {/* 批量研究 */}
             {activeTab === 'batch' && (
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-[16px] font-medium text-black">批量研究配置</h3>
-                  <p className="mt-1 text-[13px] text-black/50">配置自动批量研究所有主题的参数</p>
-                </div>
+              <div className="space-y-5">
+                <PanelTitle title="批量研究" body="控制批量推进时的并发、阈值和跳过策略。" />
+                <ToggleCard label="启用批量研究" checked={localConfig.research.batchResearch.enabled} onChange={(checked) => setLocalConfig((current) => ({ ...current, research: { ...current.research, batchResearch: { ...current.research.batchResearch, enabled: checked } } }))} />
+                <RangeCard label={`并行主题数 · ${localConfig.research.batchResearch.concurrentTopics}`} min={1} max={5} step={1} value={localConfig.research.batchResearch.concurrentTopics} onChange={(value) => setLocalConfig((current) => ({ ...current, research: { ...current.research, batchResearch: { ...current.research.batchResearch, concurrentTopics: value } } }))} />
+                <RangeCard label={`完成阈值 · ${localConfig.research.batchResearch.completionThreshold}`} min={1} max={20} step={1} value={localConfig.research.batchResearch.completionThreshold} onChange={(value) => setLocalConfig((current) => ({ ...current, research: { ...current.research, batchResearch: { ...current.research.batchResearch, completionThreshold: value } } }))} />
+              </div>
+            )}
 
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between rounded-xl bg-black/5 p-4">
-                    <div>
-                      <p className="text-[14px] font-medium text-black">启用批量研究模式</p>
-                      <p className="text-[12px] text-black/50">自动研究所有未完成主题</p>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={localConfig.research.batchResearch.enabled}
-                      onChange={(e) => setLocalConfig(prev => ({ 
-                        ...prev, 
-                        research: { 
-                          ...prev.research, 
-                          batchResearch: { ...prev.research.batchResearch, enabled: e.target.checked } 
-                        } 
-                      }))}
-                      className="h-5 w-5 rounded border-black/20"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block text-[13px] font-medium text-black">
-                      同时处理主题数: {localConfig.research.batchResearch.concurrentTopics}
-                    </label>
-                    <input
-                      type="range"
-                      min="1"
-                      max="5"
-                      step="1"
-                      value={localConfig.research.batchResearch.concurrentTopics}
-                      onChange={(e) => setLocalConfig(prev => ({ 
-                        ...prev, 
-                        research: { 
-                          ...prev.research, 
-                          batchResearch: { ...prev.research.batchResearch, concurrentTopics: parseInt(e.target.value) } 
-                        } 
-                      }))}
-                      className="w-full"
-                    />
-                    <p className="mt-1 text-[12px] text-black/40">数值越高速度越快，但 API 消耗越大</p>
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block text-[13px] font-medium text-black">
-                      每个主题最大阶段数: {localConfig.research.batchResearch.maxStagesPerTopic}
-                    </label>
-                    <input
-                      type="range"
-                      min="1"
-                      max="20"
-                      step="1"
-                      value={localConfig.research.batchResearch.maxStagesPerTopic}
-                      onChange={(e) => setLocalConfig(prev => ({ 
-                        ...prev, 
-                        research: { 
-                          ...prev.research, 
-                          batchResearch: { ...prev.research.batchResearch, maxStagesPerTopic: parseInt(e.target.value) } 
-                        } 
-                      }))}
-                      className="w-full"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block text-[13px] font-medium text-black">
-                      完成阈值（节点数）: {localConfig.research.batchResearch.completionThreshold}
-                    </label>
-                    <input
-                      type="range"
-                      min="1"
-                      max="20"
-                      step="1"
-                      value={localConfig.research.batchResearch.completionThreshold}
-                      onChange={(e) => setLocalConfig(prev => ({ 
-                        ...prev, 
-                        research: { 
-                          ...prev.research, 
-                          batchResearch: { ...prev.research.batchResearch, completionThreshold: parseInt(e.target.value) } 
-                        } 
-                      }))}
-                      className="w-full"
-                    />
-                    <p className="mt-1 text-[12px] text-black/40">节点数达到此值视为研究完成</p>
-                  </div>
-
-                  <div className="flex items-center justify-between rounded-xl bg-black/5 p-4">
-                    <div>
-                      <p className="text-[14px] font-medium text-black">跳过已完成的主题</p>
-                      <p className="text-[12px] text-black/50">节点数达到阈值的主题将跳过</p>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={localConfig.research.batchResearch.skipCompleted}
-                      onChange={(e) => setLocalConfig(prev => ({ 
-                        ...prev, 
-                        research: { 
-                          ...prev.research, 
-                          batchResearch: { ...prev.research.batchResearch, skipCompleted: e.target.checked } 
-                        } 
-                      }))}
-                      className="h-5 w-5 rounded border-black/20"
-                    />
-                  </div>
+            {activeTab === 'prompts' && (
+              <div className="space-y-5">
+                <PanelTitle title="提示词" body="完整模板管理保留在设置中心，不再塞进聊天栏。" />
+                <div className="rounded-[24px] border border-black/10 bg-[var(--surface-muted)] p-5">
+                  <p className="text-sm leading-7 text-black/60">
+                    Prompt Studio 已经独立成页。这里不再内嵌长表单，避免设置抽屉被提示词编辑器撑满；完整的母模板、多语言版本、运行时轮数、主题记忆和外部 agent 适配说明，都统一放在独立页面里维护。
+                  </p>
+                  <Link
+                    to="/prompt-studio"
+                    onClick={onClose}
+                    className="mt-4 inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-4 py-2 text-sm text-black/70 transition hover:border-black/18 hover:text-black"
+                  >
+                    <MessageSquare className="h-4 w-4" />
+                    打开 Prompt Studio
+                  </Link>
                 </div>
               </div>
             )}
 
-            {/* 提示词 */}
-            {activeTab === 'prompts' && (
-              <PromptTemplateManager />
-            )}
-
-            {/* 定时任务 */}
             {activeTab === 'scheduler' && (
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-[16px] font-medium text-black">定时任务管理</h3>
-                  <p className="mt-1 text-[13px] text-black/50">自动执行论文发现和数据同步</p>
-                </div>
-
+              <div className="space-y-5">
+                <PanelTitle title="定时任务" body="调度与执行策略统一在这里管理。" />
                 <TaskScheduler />
               </div>
             )}
           </div>
         </div>
 
-        {/* 底部按钮 */}
-        <div className="flex items-center justify-between border-t border-black/8 px-6 py-4">
+        <footer className="flex items-center justify-between border-t border-black/10 px-6 py-4">
           <button
-            onClick={handleReset}
-            className="flex items-center gap-2 rounded-xl px-4 py-2 text-[14px] text-black/50 transition hover:bg-black/5 hover:text-black"
+            type="button"
+            onClick={() => {
+              resetConfig()
+              setLocalConfig(config)
+            }}
+            className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-4 py-2 text-sm text-black/62"
           >
-            <RotateCcw className="h-4 w-4" />
-            重置默认
+            <RefreshCcw className="h-4 w-4" />
+            重置本地设置
           </button>
-
           <div className="flex items-center gap-3">
-            {showSaveSuccess && (
-              <span className="text-[14px] text-green-600">保存成功！</span>
+            {saved && (
+              <span className="inline-flex items-center gap-2 text-sm text-green-700">
+                <CheckCircle2 className="h-4 w-4" />
+                已保存
+              </span>
             )}
-            <button
-              onClick={handleSave}
-              className="flex items-center gap-2 rounded-xl bg-black px-6 py-2 text-[14px] font-medium text-white transition hover:bg-black/85"
-            >
-              <Save className="h-4 w-4" />
-              保存配置
-            </button>
+            {activeTab !== 'models' && activeTab !== 'prompts' && activeTab !== 'scheduler' && (
+              <button type="button" onClick={saveLocalSettings} className="inline-flex items-center gap-2 rounded-full bg-black px-5 py-3 text-sm font-medium text-white">
+                <Save className="h-4 w-4" />
+                保存当前设置
+              </button>
+            )}
           </div>
-        </div>
-      </div>
+        </footer>
+      </section>
     </div>
   )
 }
+
+function PanelTitle({ title, body }: { title: string; body: string }) {
+  return (
+    <div>
+      <h3 className="text-[28px] font-semibold text-black">{title}</h3>
+      <p className="mt-2 text-[14px] leading-7 text-black/58">{body}</p>
+    </div>
+  )
+}
+
+function StatusCard({ label, ready, model }: { label: string; ready: boolean; model: string }) {
+  return (
+    <article className="rounded-[24px] border border-black/10 bg-white p-5">
+      <div className="text-[11px] uppercase tracking-[0.18em] text-black/40">{label}</div>
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <div className="text-[16px] font-semibold text-black">{model}</div>
+        {ready ? <CheckCircle2 className="h-5 w-5 text-green-600" /> : <AlertTriangle className="h-5 w-5 text-amber-600" />}
+      </div>
+    </article>
+  )
+}
+
+function NoticeCard({ notice }: { notice: OmniIssue }) {
+  return (
+    <div className="rounded-[24px] border border-[#f59e0b]/35 bg-white px-5 py-4 text-black/78 shadow-[0_10px_24px_rgba(245,158,11,0.06)]">
+      <div className="text-sm font-semibold text-[var(--accent-ink)]">{notice.title}</div>
+      <p className="mt-1 text-[13px] leading-6">{notice.message}</p>
+    </div>
+  )
+}
+
+function SlotCard({
+  title,
+  form,
+  setForm,
+  preview,
+  providers,
+  models,
+}: {
+  title: string
+  form: SlotForm
+  setForm: (form: SlotForm) => void
+  preview?: string
+  providers: Array<{ provider: string; label: string; baseUrl: string }>
+  models: Array<{ label: string; value: string }>
+}) {
+  return (
+    <article className="rounded-[24px] border border-black/10 bg-white p-5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-[16px] font-semibold text-black">{title}</div>
+        {preview && <div className="text-[11px] text-black/42">已保存密钥：{preview}</div>}
+      </div>
+      <div className="mt-4 grid gap-3">
+        <select
+          value={form.provider}
+          onChange={(event) => {
+            const provider = providers.find((item) => item.provider === event.target.value)
+            setForm({ provider: event.target.value, model: '', baseUrl: provider?.baseUrl ?? '', apiKey: form.apiKey })
+          }}
+          className="rounded-[18px] border border-black/10 bg-[var(--surface-muted)] px-4 py-3 text-sm text-black outline-none"
+        >
+          <option value="">选择提供商</option>
+          {providers.map((item) => (
+            <option key={item.provider} value={item.provider}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+        <select value={form.model} onChange={(event) => setForm({ ...form, model: event.target.value })} className="rounded-[18px] border border-black/10 bg-[var(--surface-muted)] px-4 py-3 text-sm text-black outline-none">
+          <option value="">选择模型</option>
+          {models.map((item) => (
+            <option key={item.value} value={item.value}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+        <input value={form.model} onChange={(event) => setForm({ ...form, model: event.target.value })} placeholder="自定义模型标识" className="rounded-[18px] border border-black/10 bg-[var(--surface-muted)] px-4 py-3 text-sm text-black outline-none placeholder:text-black/30" />
+        <input value={form.baseUrl} onChange={(event) => setForm({ ...form, baseUrl: event.target.value })} placeholder="接入地址" className="rounded-[18px] border border-black/10 bg-[var(--surface-muted)] px-4 py-3 text-sm text-black outline-none placeholder:text-black/30" />
+        <input value={form.apiKey} onChange={(event) => setForm({ ...form, apiKey: event.target.value })} placeholder="留空则继续使用已保存的密钥" className="rounded-[18px] border border-black/10 bg-[var(--surface-muted)] px-4 py-3 text-sm text-black outline-none placeholder:text-black/30" />
+      </div>
+    </article>
+  )
+}
+
+function RangeCard({ label, min, max, step, value, onChange }: { label: string; min: number; max: number; step: number; value: number; onChange: (value: number) => void }) {
+  return (
+    <label className="block rounded-[24px] border border-black/10 bg-white p-5">
+      <div className="text-sm font-medium text-black">{label}</div>
+      <input type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} className="mt-4 w-full accent-[#f59e0b]" />
+    </label>
+  )
+}
+
+function ToggleCard({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
+  return (
+    <label className="flex items-center justify-between rounded-[24px] border border-black/10 bg-white p-5">
+      <span className="text-sm font-medium text-black">{label}</span>
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="h-5 w-5 rounded border-black/20 accent-[#f59e0b]" />
+    </label>
+  )
+}
+
+export default SettingsPanel

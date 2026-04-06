@@ -1,216 +1,207 @@
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, ArrowRight, ExternalLink, GitMerge } from 'lucide-react'
+import { ArrowLeft, ExternalLink } from 'lucide-react'
 
-import { PaperNarrative } from '@/components/paper/PaperNarrative'
-import { getDisplayPaper, getPaperNeighbors, getTopicDisplay } from '@/data/topicDisplay'
-import { paperMap, topicMap } from '@/data/tracker'
+import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+import { useProductCopy } from '@/hooks/useProductCopy'
+import { useI18n } from '@/i18n'
+import type { PaperViewModel } from '@/types/alpha'
+import { apiGet, resolveApiAssetUrl } from '@/utils/api'
+import {
+  readStageWindowSearchParam,
+  withOptionalStageWindowQuery,
+  withStageWindowRoute,
+} from '@/utils/stageWindow'
+
+function resolvePaperDownloadUrl(source: { pdfUrl?: string | null }) {
+  return resolveApiAssetUrl(source.pdfUrl) ?? source.pdfUrl ?? null
+}
+
+function formatPublishedDate(value?: string) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(+date)) return value
+  return `${date.getFullYear()}.${`${date.getMonth() + 1}`.padStart(2, '0')}.${`${date.getDate()}`.padStart(2, '0')}`
+}
 
 export function PaperPage() {
-  const { paperId } = useParams<{ paperId: string }>()
+  const { paperId = '' } = useParams<{ paperId: string }>()
   const [searchParams] = useSearchParams()
-  const explicitTopicId = searchParams.get('theme')
-  const paper = paperId ? paperMap[paperId] : null
-  const topicId = explicitTopicId ?? paper?.topicIds[0] ?? null
-  const topic = topicId ? topicMap[topicId] : null
-  const display = topic ? getTopicDisplay(topic.id) : null
-  const displayPaper = display && paper ? getDisplayPaper(display, paper.id) : null
-  const neighbors = display && paper ? getPaperNeighbors(display, paper.id) : { previous: null, next: null }
+  const [viewModel, setViewModel] = useState<PaperViewModel | null>(null)
+  const [loading, setLoading] = useState(true)
+  const { copy } = useProductCopy()
+  const { t } = useI18n()
+  const requestedStageWindowMonths = useMemo(
+    () => readStageWindowSearchParam(searchParams),
+    [searchParams],
+  )
+  const stageWindowMonths = viewModel?.stageWindowMonths ?? requestedStageWindowMonths ?? 1
+  const paperDownloadUrl = useMemo(
+    () => (viewModel ? resolvePaperDownloadUrl(viewModel) : null),
+    [viewModel],
+  )
+  const primaryNode = viewModel?.relatedNodes[0] ?? null
 
-  if (!paper) {
+  useDocumentTitle(
+    viewModel?.title ??
+      (loading
+        ? copy('reading.paperLoadingTitle', t('paper.readingTitle', 'Paper redirect'))
+        : copy('reading.paperUnavailableTitle', t('paper.unavailableTitle', 'Paper unavailable'))),
+  )
+
+  useEffect(() => {
+    let alive = true
+    setLoading(true)
+
+    apiGet<PaperViewModel>(
+      withOptionalStageWindowQuery(`/api/papers/${paperId}/view-model`, requestedStageWindowMonths),
+    )
+      .then((payload) => {
+        if (alive) setViewModel(payload)
+      })
+      .catch(() => {
+        if (alive) setViewModel(null)
+      })
+      .finally(() => {
+        if (alive) setLoading(false)
+      })
+
+    return () => {
+      alive = false
+    }
+  }, [paperId, requestedStageWindowMonths])
+
+  if (loading) {
     return (
-      <div className="px-4 py-10 md:px-6 xl:px-10">
-        <Link to="/" className="text-sm underline underline-offset-4">
-          返回首页
-        </Link>
-        <div className="mt-4 text-black/60">这篇论文不存在。</div>
-      </div>
+      <main className="px-4 pb-20 pt-6 md:px-6 xl:px-10">
+        <div className="mx-auto max-w-[760px] py-12 text-[14px] text-black/56">
+          {copy('reading.paperLoading', t('paper.loading', 'Loading paper...'))}
+        </div>
+      </main>
+    )
+  }
+
+  if (!viewModel) {
+    return (
+      <main className="px-4 pb-20 pt-6 md:px-6 xl:px-10">
+        <div className="mx-auto max-w-[760px] py-12">
+          <Link
+            to="/"
+            className="inline-flex items-center gap-2 text-sm text-black/54 transition hover:text-black"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            {copy('reading.backHome', t('topic.backHome', 'Back to Home'))}
+          </Link>
+          <h1 className="mt-6 text-[32px] font-semibold text-black">
+            {copy('reading.paperUnavailableTitle', t('paper.unavailableTitle', 'Paper unavailable'))}
+          </h1>
+        </div>
+      </main>
     )
   }
 
   return (
-    <main className="px-4 pb-20 pt-6 md:px-6 xl:px-10 xl:pt-8">
-      <div className="mx-auto max-w-[1020px]">
-        <div className="flex flex-wrap gap-3">
-          <Link
-            to={topic ? `/topic/${topic.id}` : '/'}
-            className="inline-flex items-center gap-2 rounded-full border border-black/10 px-4 py-2 text-sm text-black/70 transition hover:border-black/20 hover:text-black"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            {topic ? `返回 ${topic.nameZh}` : '返回首页'}
-          </Link>
-          <a
-            href={paper.arxivUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-2 rounded-full border border-black/10 px-4 py-2 text-sm text-black/70 transition hover:border-black/20 hover:text-black"
-          >
-            查看原文
-            <ExternalLink className="h-4 w-4" />
-          </a>
-        </div>
+    <main
+      data-testid="paper-redirect"
+      className="px-4 pb-20 pt-6 md:px-6 xl:px-10"
+    >
+      <div className="mx-auto max-w-[840px]">
+        <Link
+          to={withStageWindowRoute(viewModel.topic.route, stageWindowMonths)}
+          className="inline-flex items-center gap-2 text-sm text-black/54 transition hover:text-black"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          {copy('reading.backTopic', t('node.backTopic', 'Back to Topic'))}
+        </Link>
 
-        <section className="mt-5 rounded-[36px] border border-black/8 bg-[#f6f2ea] px-6 py-8 md:px-8">
-          {topic && (
-            <Link
-              to={`/topic/${topic.id}`}
-              className="inline-flex rounded-full border border-red-200 bg-red-50 px-3 py-1 text-[11px] text-red-700"
-            >
-              {topic.nameZh}
-            </Link>
-          )}
-
-          <h1 className="mt-5 text-[34px] font-semibold leading-[1.12] text-black md:text-[50px]">
-            {paper.titleZh || paper.title}
+        <section className="mt-8 rounded-[28px] border border-black/8 bg-white px-6 py-6 shadow-[0_16px_36px_rgba(15,23,42,0.06)] md:px-8">
+          <div className="text-[11px] uppercase tracking-[0.24em] text-black/36">
+            {t('paper.redirectEyebrow', 'Reading moved')}
+          </div>
+          <h1 className="mt-3 font-display text-[34px] leading-[1.08] text-black md:text-[46px]">
+            {viewModel.title}
           </h1>
-          {paper.titleZh && paper.titleZh !== paper.title && (
-            <div className="mt-3 text-[16px] italic leading-7 text-black/44">{paper.title}</div>
-          )}
-
-          <div className="mt-6 flex flex-wrap gap-3 text-sm text-black/56">
-            <span>{paper.published.slice(0, 10)}</span>
-            {paper.authors.length > 0 && <span>{paper.authors.join('、')}</span>}
-            {paper.citationCount !== null && <span>被引用 {paper.citationCount} 次</span>}
-          </div>
-
-          <p className="mt-6 max-w-4xl text-[16px] leading-8 text-black/66">
-            {paper.highlight || paper.timelineDigest || paper.cardDigest || paper.summary}
-          </p>
-        </section>
-
-        {topic && display && (
-          <section className="mt-8 grid gap-4 lg:grid-cols-3">
-            <ContextCard
-              label="所属分支"
-              value={displayPaper?.card.branchLabel ?? paper.branchContext.branchLabel ?? '当前主线'}
-              detail="这篇论文在当前主题里挂载的研究线。"
-            />
-            <ContextCard
-              label="所在阶段"
-              value={displayPaper?.stageTitle ?? (paper.branchContext.stageIndex ? `阶段 ${String(paper.branchContext.stageIndex).padStart(2, '0')}` : '未标定')}
-              detail={
-                displayPaper?.card.windowStart && displayPaper?.card.windowEnd
-                  ? `${displayPaper.card.windowStart} 至 ${displayPaper.card.windowEnd}`
-                  : '当前没有单独落账的阶段窗口。'
-              }
-            />
-            <ContextCard
-              label="关系状态"
-              value={displayPaper?.card.isMergePaper || paper.branchContext.isMergePaper ? '汇流节点' : '普通节点'}
-              detail="如果一篇论文同时承接多条分支，它会在这里被标记为汇流。"
-            />
-          </section>
-        )}
-
-        {displayPaper?.card.isMergePaper && (
-          <section className="mt-6 rounded-[28px] border border-emerald-200 bg-emerald-50/70 px-6 py-5">
-            <div className="flex items-center gap-2 text-sm font-medium text-emerald-800">
-              <GitMerge className="h-4 w-4" />
-              这是一篇汇流论文
-            </div>
-            <p className="mt-3 text-[15px] leading-8 text-emerald-900/82">
-              它不只是沿单一分支向前走，而是把多个并行判断重新压回同一个节点，因此后续排序会围绕它重新校准。
-            </p>
-          </section>
-        )}
-
-        <section className="mt-8 rounded-[32px] border border-black/8 bg-white px-6 py-6 md:px-8">
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <div className="text-[11px] tracking-[0.24em] text-red-600">研究正文</div>
-              <h2 className="mt-3 text-[28px] font-semibold leading-[1.2] text-black">论文正文</h2>
-            </div>
-            {topic && (
-              <Link
-                to={`/topic/${topic.id}/research`}
-                className="inline-flex items-center gap-2 text-sm font-medium text-black"
-              >
-                回到研究页
-                <ArrowRight className="h-4 w-4" />
-              </Link>
+          <p className="mt-4 max-w-[720px] text-[16px] leading-8 text-black/64">
+            {t(
+              'paper.redirectSummary',
+              'Paper pages are now treated as a fallback surface. The full explanation, evidence ordering, and critical reading live inside the node article.',
             )}
+          </p>
+
+          <div className="mt-5 flex flex-wrap gap-2 text-[12px] text-black/50">
+            {viewModel.publishedAt ? (
+              <span className="rounded-full bg-[var(--surface-soft)] px-3 py-1.5">
+                {formatPublishedDate(viewModel.publishedAt)}
+              </span>
+            ) : null}
+            {typeof viewModel.citationCount === 'number' ? (
+              <span className="rounded-full bg-[var(--surface-soft)] px-3 py-1.5">
+                {viewModel.citationCount} {t('paper.citations', 'Citations')}
+              </span>
+            ) : null}
+            <span className="rounded-full bg-[var(--surface-soft)] px-3 py-1.5">
+              {viewModel.relatedNodes.length} {t('paper.relatedNodes', 'Related nodes')}
+            </span>
           </div>
 
-          <div className="mt-8">
-            <PaperNarrative paper={paper} />
+          <div className="mt-6 flex flex-wrap items-center gap-3">
+            {primaryNode ? (
+              <Link
+                to={withStageWindowRoute(`/node/${primaryNode.nodeId}?anchor=${encodeURIComponent(`paper:${viewModel.paperId}`)}`, stageWindowMonths)}
+                className="inline-flex items-center gap-2 rounded-full bg-black px-4 py-2.5 text-sm text-white transition hover:bg-black/86"
+              >
+                {t('paper.openPrimaryNode', 'Open node article')}
+              </Link>
+            ) : null}
+            {viewModel.originalUrl ? (
+              <a
+                href={viewModel.originalUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-4 py-2.5 text-sm text-black/68 transition hover:border-black/18 hover:text-black"
+              >
+                {t('node.openSource', 'Original source')}
+                <ExternalLink className="h-4 w-4" />
+              </a>
+            ) : null}
+            {paperDownloadUrl ? (
+              <a
+                href={paperDownloadUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-4 py-2.5 text-sm text-black/68 transition hover:border-black/18 hover:text-black"
+              >
+                {t('node.downloadPdf', 'Download PDF')}
+              </a>
+            ) : null}
           </div>
         </section>
 
-        {display && (neighbors.previous || neighbors.next) && (
-          <section className="mt-8 grid gap-4 md:grid-cols-2">
-            <NeighborCard
-              direction="上一篇"
-              topicId={topic?.id ?? null}
-              paper={neighbors.previous}
-            />
-            <NeighborCard
-              direction="下一篇"
-              topicId={topic?.id ?? null}
-              paper={neighbors.next}
-            />
-          </section>
-        )}
+        <section className="mt-6 rounded-[28px] border border-black/8 bg-[var(--surface-soft)] px-6 py-6 md:px-8">
+          <div className="text-[11px] uppercase tracking-[0.22em] text-black/36">
+            {t('paper.redirectNodesEyebrow', 'Where to read this paper')}
+          </div>
+          <div className="mt-4 grid gap-3">
+            {viewModel.relatedNodes.map((node) => (
+              <Link
+                key={node.nodeId}
+                to={withStageWindowRoute(`/node/${node.nodeId}?anchor=${encodeURIComponent(`paper:${viewModel.paperId}`)}`, stageWindowMonths)}
+                className="rounded-[22px] border border-black/8 bg-white px-4 py-4 transition hover:border-black/16"
+              >
+                <div className="text-[11px] uppercase tracking-[0.18em] text-black/36">
+                  {node.stageLabel || `${t('workbench.nodeStageLabel', 'Stage {stage}').replace('{stage}', String(node.stageIndex))}`}
+                </div>
+                <div className="mt-2 text-[18px] font-semibold text-black">{node.title}</div>
+                <p className="mt-2 text-[14px] leading-7 text-black/60">
+                  {node.summary || node.subtitle}
+                </p>
+              </Link>
+            ))}
+          </div>
+        </section>
       </div>
     </main>
   )
 }
 
-function ContextCard({
-  label,
-  value,
-  detail,
-}: {
-  label: string
-  value: string
-  detail: string
-}) {
-  return (
-    <article className="rounded-[24px] border border-black/8 bg-white px-5 py-5">
-      <div className="text-[11px] uppercase tracking-[0.18em] text-black/36">{label}</div>
-      <div className="mt-3 text-[22px] font-semibold leading-8 text-black">{value}</div>
-      <p className="mt-3 text-[14px] leading-7 text-black/58">{detail}</p>
-    </article>
-  )
-}
-
-function NeighborCard({
-  direction,
-  topicId,
-  paper,
-}: {
-  direction: string
-  topicId: string | null
-  paper: {
-    stageIndex: number
-    branchId: string
-    branchLabel: string
-    paperId: string
-    paperTitleZh: string
-    paperTitleEn: string
-    isMergePaper: boolean
-  } | null
-}) {
-  if (!paper) {
-    return (
-      <article className="rounded-[24px] border border-black/8 bg-white px-5 py-5">
-        <div className="text-[11px] uppercase tracking-[0.18em] text-black/36">{direction}</div>
-        <div className="mt-3 text-[16px] leading-7 text-black/46">当前没有可连接的论文。</div>
-      </article>
-    )
-  }
-
-  return (
-    <Link
-      to={`/paper/${paper.paperId}${topicId ? `?theme=${topicId}` : ''}`}
-      className="block rounded-[24px] border border-black/8 bg-white px-5 py-5 transition hover:border-black/14"
-    >
-      <div className="text-[11px] uppercase tracking-[0.18em] text-black/36">{direction}</div>
-      <div className="mt-3 text-[20px] font-semibold leading-8 text-black">{paper.paperTitleZh}</div>
-      <div className="mt-2 text-sm italic leading-7 text-black/42">{paper.paperTitleEn}</div>
-      <div className="mt-4 flex flex-wrap gap-2 text-[11px] text-black/48">
-        <span>阶段 {String(paper.stageIndex).padStart(2, '0')}</span>
-        <span>{paper.branchLabel}</span>
-        {paper.isMergePaper && <span>汇流</span>}
-      </div>
-    </Link>
-  )
-}
+export default PaperPage

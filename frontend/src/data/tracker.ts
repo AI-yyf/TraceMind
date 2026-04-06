@@ -30,9 +30,6 @@ import type {
   ResearchNode,
 } from '@/types/tracker'
 import {
-  buildPaperCardDigestFallback,
-  buildPaperHighlightFallback,
-  buildPaperTimelineDigestFallback,
   localizeFocusLabel,
 } from '@/utils/researchCopy'
 
@@ -152,7 +149,7 @@ const papersById: Record<string, TrackerPaper> = Object.fromEntries(
     const memberships = paperMembership.get(paperId) ?? []
     const status = editorial?.status ?? inferPaperStatus(memberships.map((item) => item.status))
     const topicIds = memberships.map((item) => item.topicId)
-    const tags = editorial?.tags ?? buildFallbackTags(topicIds)
+    const tags = editorial?.tags ?? []
     const titleZh = editorial?.titleZh ?? catalog.title
     const summary = catalog.summary ?? ''
 
@@ -176,7 +173,7 @@ const papersById: Record<string, TrackerPaper> = Object.fromEntries(
         topicIds,
         status,
         tags,
-        highlight: editorial?.highlight ?? buildPaperHighlightFallback(titleZh),
+        highlight: editorial?.highlight ?? '',
         cardDigest: editorial?.cardDigest ?? buildCardDigest(summary, titleZh),
         timelineDigest: editorial?.timelineDigest ?? buildTimelineDigest(summary, titleZh),
         openingStandfirst:
@@ -306,7 +303,7 @@ export function buildSearchItems(selectedTopics: TrackerTopic[]) {
         kind: 'candidate' as const,
         title: item.paper?.titleZh ?? item.candidate.paperId,
         subtitle: item.candidate.whyThisCouldWork,
-        href: `/topic/${topic.id}/research#candidate-${item.candidate.paperId}`,
+        href: `/topic/${topic.id}?workbench=assistant&focus=research`,
         year: item.paper?.published.slice(0, 4) ?? '',
         tags: item.capabilities.map((capability) => capability.name),
       })),
@@ -817,11 +814,7 @@ function buildFailureModes(capabilityIds: string[]) {
   })
 }
 
-function buildFallbackTags(topicIds: TopicId[]) {
-  return topicIds
-    .flatMap((topicId) => catalogTopicMap[topicId]?.problemPreference.slice(0, 2) ?? [])
-    .filter((tag, index, collection) => collection.indexOf(tag) === index)
-}
+
 
 function inferPaperStatus(statuses: TrackerPaper['status'][]) {
   if (statuses.includes('published')) return 'published'
@@ -829,16 +822,12 @@ function inferPaperStatus(statuses: TrackerPaper['status'][]) {
   return 'candidate'
 }
 
-function buildCardDigest(summary: string, title: string) {
-  return /[\u4e00-\u9fff]/.test(summary)
-    ? truncate(summary, 72)
-    : buildPaperCardDigestFallback(title)
+function buildCardDigest(summary: string, _title: string) {
+  return /[\u4e00-\u9fff]/.test(summary) ? truncate(summary, 72) : ''
 }
 
-function buildTimelineDigest(summary: string, title: string) {
-  return /[\u4e00-\u9fff]/.test(summary)
-    ? truncate(summary, 96)
-    : buildPaperTimelineDigestFallback(title)
+function buildTimelineDigest(summary: string, _title: string) {
+  return /[\u4e00-\u9fff]/.test(summary) ? truncate(summary, 96) : ''
 }
 
 function truncate(value: string, maxLength: number) {

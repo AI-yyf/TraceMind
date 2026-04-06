@@ -2,6 +2,54 @@ import { createElement, useEffect, useRef } from 'react'
 
 const SCRIPT_ID = 'mathjax-script'
 const SCRIPT_SRC = 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js'
+const MATHJAX_CONFIG: Record<string, unknown> = {
+  tex: {
+    inlineMath: [
+      ['$', '$'],
+      ['\\(', '\\)'],
+    ],
+    displayMath: [
+      ['$$', '$$'],
+      ['\\[', '\\]'],
+    ],
+    processEscapes: true,
+    processEnvironments: true,
+    packages: { '[+]': ['ams', 'newcommand', 'configMacros', 'boldsymbol', 'mathtools'] },
+    macros: {
+      RR: '\\mathbb{R}',
+      NN: '\\mathbb{N}',
+      ZZ: '\\mathbb{Z}',
+      QQ: '\\mathbb{Q}',
+      CC: '\\mathbb{C}',
+      vec: ['\\boldsymbol{#1}', 1],
+      mat: ['\\mathbf{#1}', 1],
+      E: '\\mathbb{E}',
+      Var: '\\operatorname{Var}',
+      Cov: '\\operatorname{Cov}',
+      argmax: '\\operatorname{arg\\,max}',
+      argmin: '\\operatorname{arg\\,min}',
+      softmax: '\\operatorname{softmax}',
+      relu: '\\operatorname{ReLU}',
+      grad: '\\nabla',
+      norm: ['\\left\\|#1\\right\\|', 1],
+      inner: ['\\left\\langle #1, #2 \\right\\rangle', 2],
+    },
+  },
+  svg: {
+    fontCache: 'global',
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    renderActions: {
+      addMenu: [],
+    },
+  },
+  startup: {
+    ready: () => {
+      (window.MathJax as any)?.startup?.defaultReady?.()
+    },
+  },
+}
 
 export function ensureMathJax() {
   if (window.MathJax?.typesetPromise) {
@@ -12,10 +60,10 @@ export function ensureMathJax() {
     return window.__mathJaxLoadingPromise
   }
 
-  // MathJax 配置已在 index.html 中定义，这里只初始化对象
-  if (!window.MathJax) {
-    window.MathJax = {}
-  }
+  window.MathJax = {
+    ...MATHJAX_CONFIG,
+    ...(window.MathJax ?? {}),
+  } as any
 
   const existing = document.getElementById(SCRIPT_ID) as HTMLScriptElement | null
   if (existing) {

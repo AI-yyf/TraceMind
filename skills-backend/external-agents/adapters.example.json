@@ -1,0 +1,19 @@
+{
+  "apiBaseUrl": "http://127.0.0.1:3303",
+  "jobDir": "./external-agents/jobs",
+  "outputDir": "./external-agents/outputs",
+  "adapters": {
+    "codex": {
+      "description": "Configure this with your real Codex CLI command.",
+      "command": "YOUR_CODEX_COMMAND {promptFile} {outputFile}"
+    },
+    "openclaw": {
+      "description": "Configure this with your real OpenClaw CLI command.",
+      "command": "YOUR_OPENCLAW_COMMAND {promptFile} {outputFile}"
+    },
+    "claudecode": {
+      "description": "Configure this with your real ClaudeCode CLI command.",
+      "command": "YOUR_CLAUDECODE_COMMAND {promptFile} {outputFile}"
+    }
+  }
+}

@@ -34,6 +34,7 @@
     "src/routes/tasks.ts",
     "src/services/enhanced-scheduler.ts",
     "src/services/scheduler.ts",
-    "src/scripts/**/*"
+    "src/scripts/**/*",
+    "src/tests/**/*"
   ]
 }

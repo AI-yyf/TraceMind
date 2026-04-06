@@ -5,6 +5,8 @@
 
 import cron, { ScheduledTask } from 'node-cron'
 
+export type ResearchMode = 'stage-rounds' | 'duration'
+
 export interface TaskConfig {
   id: string
   name: string
@@ -12,9 +14,17 @@ export interface TaskConfig {
   enabled: boolean
   topicId?: string
   action: 'discover' | 'refresh' | 'sync'
+  researchMode?: ResearchMode
   options?: {
     maxResults?: number
     stageIndex?: number
+    maxIterations?: number
+    durationHours?: number
+    cycleDelayMs?: number
+    stageRounds?: Array<{
+      stageIndex: number
+      rounds: number
+    }>
   }
 }
 
@@ -70,7 +80,6 @@ class TaskScheduler {
     if (!entry) return false
 
     entry.task.stop()
-    entry.task.destroy()
     this.tasks.delete(taskId)
     console.log(`[Scheduler] Task removed: ${taskId}`)
     return true

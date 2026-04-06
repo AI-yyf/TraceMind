@@ -7,13 +7,14 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
+    "test": "node --import tsx --test src/tests/**/*.test.ts",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
     "db:seed": "tsx src/scripts/seed.ts",
     "scheduler:start": "tsx src/scripts/scheduler-cli.ts",
     "topic:generate": "tsx src/scripts/topic-generate.ts",
-    "lint": "eslint src --ext .ts",
+    "lint": "eslint \"src/**/*.ts\"",
     "type-check": "tsc --noEmit"
   },
   "prisma": {

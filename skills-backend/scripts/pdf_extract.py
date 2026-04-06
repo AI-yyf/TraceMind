@@ -12,6 +12,11 @@ from typing import Dict, List, Any, Optional
 import base64
 import io
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
 try:
     import fitz  # PyMuPDF
 except ImportError:
@@ -24,6 +29,18 @@ try:
     from PIL import Image
 except ImportError:
     Image = None
+
+
+def emit_json(payload: Dict[str, Any]) -> None:
+    """Write JSON using UTF-8 even on Windows terminals with GBK defaults."""
+    data = json.dumps(payload, ensure_ascii=False, indent=2)
+
+    try:
+        sys.stdout.write(data)
+        sys.stdout.write("\n")
+    except UnicodeEncodeError:
+        sys.stdout.buffer.write(data.encode("utf-8"))
+        sys.stdout.buffer.write(b"\n")
 
 def extract_text_from_page(page: fitz.Page) -> Dict[str, Any]:
     """提取页面文本"""
@@ -260,7 +277,7 @@ def main():
     result = extract_pdf_content(pdf_path, output_dir, paper_id, paper_title)
     
     # 输出 JSON 结果
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    emit_json(result)
 
 if __name__ == "__main__":
     main()

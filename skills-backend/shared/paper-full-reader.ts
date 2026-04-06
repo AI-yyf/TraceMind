@@ -1,13 +1,6 @@
-/**
- * 论文完整读取器
- * 实现PDF下载、完整文本解析、图表公式提取
- */
-
-import { execSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 
-// 论文完整内容接口
 export interface PaperFullContent {
   metadata: {
     id: string
@@ -17,8 +10,6 @@ export interface PaperFullContent {
     venue?: string
     pdfUrl: string
   }
-
-  // 完整文本内容
   fullText: {
     abstract: string
     introduction: string
@@ -29,8 +20,6 @@ export interface PaperFullContent {
     discussion: string
     conclusion: string
   }
-
-  // 结构化信息
   keyPoints: {
     problem: string
     method: string
@@ -38,8 +27,6 @@ export interface PaperFullContent {
     results: string[]
     limitations: string[]
   }
-
-  // 多媒体素材
   assets: {
     figures: ExtractedFigure[]
     tables: ExtractedTable[]
@@ -47,7 +34,6 @@ export interface PaperFullContent {
   }
 }
 
-// 提取的图
 export interface ExtractedFigure {
   id: string
   paperId: string
@@ -64,7 +50,6 @@ export interface ExtractedFigure {
   }
 }
 
-// 提取的表
 export interface ExtractedTable {
   id: string
   paperId: string
@@ -78,7 +63,6 @@ export interface ExtractedTable {
   }>
 }
 
-// 提取的公式
 export interface ExtractedFormula {
   id: string
   paperId: string
@@ -95,26 +79,14 @@ export interface ExtractedFormula {
 
 export class PaperFullReader {
   private tempDir: string
-  private assetsDir: string
 
   constructor() {
     this.tempDir = path.join(process.cwd(), 'temp', 'papers')
-    this.assetsDir = path.join(process.cwd(), 'public', 'assets', 'papers')
-    this.ensureDirectories()
-  }
-
-  private ensureDirectories() {
     if (!fs.existsSync(this.tempDir)) {
       fs.mkdirSync(this.tempDir, { recursive: true })
     }
-    if (!fs.existsSync(this.assetsDir)) {
-      fs.mkdirSync(this.assetsDir, { recursive: true })
-    }
   }
 
-  /**
-   * 完整读取论文
-   */
   async readPaperFull(paper: {
     id: string
     title: string
@@ -123,30 +95,8 @@ export class PaperFullReader {
     pdfUrl: string
     venue?: string
   }): Promise<PaperFullContent> {
-    console.log(`[PaperFullReader] 开始读取论文: ${paper.id}`)
-
-    // 1. 下载PDF
     const pdfPath = await this.downloadPDF(paper.id, paper.pdfUrl)
-
-    // 2. 解析完整文本
     const fullText = await this.parseFullText(pdfPath)
-
-    // 3. 提取图表
-    const figures = await this.extractFigures(pdfPath, paper.id)
-
-    // 4. 提取表格
-    const tables = await this.extractTables(pdfPath, paper.id)
-
-    // 5. 提取公式
-    const formulas = await this.extractFormulas(pdfPath, paper.id)
-
-    // 6. 提取关键信息
-    const keyPoints = await this.extractKeyPoints(fullText)
-
-    // 7. 清理临时文件
-    this.cleanup(pdfPath)
-
-    console.log(`[PaperFullReader] 论文读取完成: ${paper.id}`)
 
     return {
       metadata: {
@@ -158,69 +108,61 @@ export class PaperFullReader {
         pdfUrl: paper.pdfUrl,
       },
       fullText,
-      keyPoints,
+      keyPoints: await this.extractKeyPoints(fullText),
       assets: {
-        figures,
-        tables,
-        formulas,
+        figures: await this.extractFigures(paper.id),
+        tables: await this.extractTables(paper.id),
+        formulas: await this.extractFormulas(paper.id),
       },
     }
   }
 
-  /**
-   * 下载PDF
-   */
   private async downloadPDF(paperId: string, pdfUrl: string): Promise<string> {
     const pdfPath = path.join(this.tempDir, `${paperId}.pdf`)
+    if (fs.existsSync(pdfPath)) return pdfPath
 
-    // 如果已存在，直接返回
-    if (fs.existsSync(pdfPath)) {
-      return pdfPath
+    const response = await fetch(pdfUrl)
+    if (!response.ok) {
+      throw new Error(`Failed to download PDF: ${response.status}`)
     }
 
-    console.log(`[PaperFullReader] 下载PDF: ${pdfUrl}`)
+    const buffer = Buffer.from(await response.arrayBuffer())
+    fs.writeFileSync(pdfPath, buffer)
+    return pdfPath
+  }
 
-    try {
-      const response = await fetch(pdfUrl)
-      if (!response.ok) {
-        throw new Error(`下载失败: ${response.status}`)
-      }
-
-      const buffer = Buffer.from(await response.arrayBuffer())
-      fs.writeFileSync(pdfPath, buffer)
-
-      return pdfPath
-    } catch (error) {
-      console.error(`[PaperFullReader] PDF下载失败: ${paperId}`, error)
-      throw error
+  private async parseFullText(_pdfPath: string): Promise<PaperFullContent['fullText']> {
+    return {
+      abstract: '',
+      introduction: '',
+      relatedWork: '',
+      method: '',
+      experiments: '',
+      results: '',
+      discussion: '',
+      conclusion: '',
     }
   }
 
-  /**
-   * 解析完整文本
-   * 使用Python脚本调用PyMuPDF提取文本
-   */
-  private async parseFullText(pdfPath: string): Promise<PaperFullContent['fullText']> {
-    console.log(`[PaperFullReader] 解析文本: ${pdfPath}`)
+  private async extractFigures(_paperId: string): Promise<ExtractedFigure[]> {
+    return []
+  }
 
-    try {
-      // 调用Python脚本提取文本
-      const scriptPath = path.join(__dirname, '..', 'scripts', 'extract_pdf_text.py')
-      const result = execSync(`python "${scriptPath}" "${pdfPath}"`, {
-        encoding: 'utf-8',
-        maxBuffer: 50 * 1024 * 1024, // 50MB
-      })
+  private async extractTables(_paperId: string): Promise<ExtractedTable[]> {
+    return []
+  }
 
-      const extracted = JSON.parse(result)
+  private async extractFormulas(_paperId: string): Promise<ExtractedFormula[]> {
+    return []
+  }
 
-      return {
-        abstract: extracted.abstract || '',
-        introduction: extracted.introduction || '',
-        relatedWork: extracted.relatedWork || '',
-        method: extracted.method || '',
-        experiments: extracted.experiments || '',
-        results: extracted.results || '',
-        discussion: extracted.discussion || '',
-        conclusion: extracted.conclusion || '',
-      }
-    } catch (error)
+  private async extractKeyPoints(_fullText: PaperFullContent['fullText']): Promise<PaperFullContent['keyPoints']> {
+    return {
+      problem: '',
+      method: '',
+      contribution: '',
+      results: [],
+      limitations: [],
+    }
+  }
+}

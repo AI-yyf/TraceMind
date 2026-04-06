@@ -9,7 +9,10 @@ export function formatDate(date: string | Date, options?: Intl.DateTimeFormatOpt
     day: 'numeric',
     ...options,
   }
-  return d.toLocaleDateString('zh-CN', defaultOptions)
+  return d.toLocaleDateString(
+    typeof navigator !== 'undefined' ? navigator.language : undefined,
+    defaultOptions,
+  )
 }
 
 /**
@@ -20,13 +23,16 @@ export function formatRelativeTime(date: string | Date): string {
   const now = new Date()
   const diff = now.getTime() - d.getTime()
   const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+  const formatter = new Intl.RelativeTimeFormat(
+    typeof navigator !== 'undefined' ? navigator.language : 'en-US',
+    { numeric: 'auto' },
+  )
 
-  if (days === 0) return '今天'
-  if (days === 1) return '昨天'
-  if (days < 7) return `${days}天前`
-  if (days < 30) return `${Math.floor(days / 7)}周前`
-  if (days < 365) return `${Math.floor(days / 30)}个月前`
-  return `${Math.floor(days / 365)}年前`
+  if (days === 0) return formatter.format(0, 'day')
+  if (days < 7) return formatter.format(-days, 'day')
+  if (days < 30) return formatter.format(-Math.floor(days / 7), 'week')
+  if (days < 365) return formatter.format(-Math.floor(days / 30), 'month')
+  return formatter.format(-Math.floor(days / 365), 'year')
 }
 
 /**

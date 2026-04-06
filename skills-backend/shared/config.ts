@@ -116,10 +116,16 @@ export interface SystemConfig {
   multimodal: MultiModalConfig
 }
 
+export interface SystemConfigOverride {
+  discovery?: Partial<DiscoveryConfig>
+  nodeMerge?: Partial<NodeMergeConfig>
+  contentGen?: Partial<ContentGenConfig>
+  display?: Partial<DisplayConfig>
+  multimodal?: Partial<MultiModalConfig>
+}
+
 /** 主题级配置覆盖 */
-export type TopicConfigOverrides = Partial<{
-  [topicId: string]: Partial<SystemConfig>
-}>
+export type TopicConfigOverrides = Partial<Record<string, SystemConfigOverride>>
 
 /** 完整配置结构 */
 export interface AppConfig {
@@ -258,7 +264,7 @@ export const DEFAULT_TOPIC_OVERRIDES: TopicConfigOverrides = {
  */
 export function mergeConfig(
   defaults: SystemConfig,
-  topicOverride?: Partial<SystemConfig>
+  topicOverride?: SystemConfigOverride
 ): SystemConfig {
   if (!topicOverride) return defaults
 
@@ -358,8 +364,8 @@ export function validateConfig(config: unknown): ValidationError[] {
 /**
  * 从环境变量加载配置
  */
-export function loadConfigFromEnv(): Partial<SystemConfig> {
-  const config: Partial<SystemConfig> = {}
+export function loadConfigFromEnv(): SystemConfigOverride {
+  const config: SystemConfigOverride = {}
 
   // Discovery
   if (process.env.DISCOVERY_MAX_ROUNDS) {

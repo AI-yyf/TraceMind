@@ -1,158 +1,533 @@
 import { Router } from 'express'
+
 import { prisma } from '../lib/prisma'
 import { asyncHandler, AppError } from '../middleware/errorHandler'
+import {
+  loadTopicGenerationMemory,
+} from '../services/generation/memory-store'
+import { collectTopicGenerationContext } from '../services/generation/research-judgment-store'
+import { enhancedTaskScheduler } from '../services/enhanced-scheduler'
+import { getTopicLocalization, getTopicLocalizationMap } from '../services/topics/localization'
+import {
+  buildResearchPipelineContext,
+  loadResearchPipelineState,
+} from '../services/topics/research-pipeline'
+import {
+  loadTopicResearchReport,
+  sanitizeResearchFacingSummary,
+} from '../services/topics/research-report'
+import { loadTopicGuidanceLedger } from '../services/topics/topic-guidance-ledger'
+import {
+  loadTopicStageConfig,
+  loadTopicStageConfigMap,
+  saveTopicStageConfig,
+} from '../services/topics/topic-stage-config'
+import { syncTopicResearchWorldSnapshot } from '../services/topics/research-world'
+import { collectTopicSessionMemoryContext } from '../services/topics/topic-session-memory'
+import { buildTopicCognitiveMemory } from '../services/topics/topic-cognitive-memory'
 import { logger } from '../utils/logger'
 
 const router = Router()
 
-// 获取所有主题
-router.get('/', asyncHandler(async (req, res) => {
-  const topics = await prisma.topic.findMany({
-    include: {
-      _count: {
-        select: {
-          papers: true,
-          nodes: true
-        }
-      }
-    },
-    orderBy: { updatedAt: 'desc' }
-  })
+const DEFAULT_RESEARCH_CONVERSATION_STYLE =
+  'Answer like the same scholar who has been building this topic: stay grounded in stages, nodes, papers, and evidence; be explicit about uncertainty; avoid generic filler.'
 
-  res.json({
-    success: true,
-    data: topics.map(topic => ({
-      ...topic,
-      paperCount: topic._count.papers,
-      nodeCount: topic._count.nodes,
-      _count: undefined
-    }))
-  })
-}))
+const DEFAULT_RESEARCH_USER_INTENT =
+  'Continue the current topic by examining the key judgments, node relationships, and unresolved questions.'
 
-// 获取单个主题详情
-router.get('/:id', asyncHandler(async (req, res) => {
-  const { id } = req.params
+function clipBriefText(value: string | null | undefined, maxLength = 220) {
+  const normalized = (value ?? '').replace(/\s+/gu, ' ').trim()
+  if (!normalized) return ''
+  if (normalized.length <= maxLength) return normalized
+  return `${normalized.slice(0, Math.max(0, maxLength - 3))}...`
+}
 
-  const topic = await prisma.topic.findUnique({
-    where: { id },
-    include: {
-      papers: {
-        orderBy: { published: 'desc' }
-      },
-      nodes: {
-        include: {
-          papers: {
-            include: {
-              paper: true
-            }
-          }
-        },
-        orderBy: { stageIndex: 'asc' }
-      },
-      stages: {
-        orderBy: { order: 'asc' }
-      }
-    }
-  })
+function uniqueBriefLines(
+  values: Array<string | null | undefined>,
+  limit = 6,
+  maxLength = 220,
+) {
+  const seen = new Set<string>()
+  const output: string[] = []
 
-  if (!topic) {
-    throw new AppError(404, '主题不存在')
+  for (const value of values) {
+    const normalized = clipBriefText(value, maxLength)
+    if (!normalized || seen.has(normalized)) continue
+    seen.add(normalized)
+    output.push(normalized)
+    if (output.length >= limit) break
   }
 
-  res.json({
-    success: true,
-    data: topic
-  })
-}))
+  return output
+}
 
-// 创建主题
-router.post('/', asyncHandler(async (req, res) => {
-  const { nameZh, nameEn, focusLabel, summary, description } = req.body
+function mergeBriefNarrative(
+  values: Array<string | null | undefined>,
+  options?: { maxLength?: number; limit?: number },
+) {
+  const lines = uniqueBriefLines(values, options?.limit ?? 2, options?.maxLength ?? 220)
+  return clipBriefText(lines.join(' '), options?.maxLength ?? 220)
+}
 
-  const topic = await prisma.topic.create({
-    data: {
-      nameZh,
-      nameEn,
-      focusLabel,
-      summary,
-      description
-    }
-  })
+function buildResearchBriefSessionSummary(args: {
+  topic: {
+    nameZh: string
+    summary: string | null
+    description: string | null
+    focusLabel: string | null
+  }
+  report: Awaited<ReturnType<typeof loadTopicResearchReport>>
+  pipeline: ReturnType<typeof buildResearchPipelineContext>
+  generationContext: Awaited<ReturnType<typeof collectTopicGenerationContext>>
+  summary: Awaited<ReturnType<typeof collectTopicSessionMemoryContext>>['summary']
+  world: Awaited<ReturnType<typeof syncTopicResearchWorldSnapshot>>
+  guidance: Awaited<ReturnType<typeof loadTopicGuidanceLedger>>
+}) {
+  const { topic, report, pipeline, generationContext, summary, world, guidance } = args
+  const latestGuidanceSummary = sanitizeResearchFacingSummary(
+    guidance.latestApplication?.summary || guidance.summary.latestAppliedSummary,
+    guidance.latestApplication?.summary || guidance.summary.latestAppliedSummary || '',
+  )
+  const guidanceFocusHeadline = sanitizeResearchFacingSummary(
+    guidance.summary.focusHeadline,
+    guidance.summary.focusHeadline || '',
+  )
+  const guidanceStyleHeadline = sanitizeResearchFacingSummary(
+    guidance.summary.styleHeadline,
+    guidance.summary.styleHeadline || '',
+  )
+  const guidanceChallengeHeadline = sanitizeResearchFacingSummary(
+    guidance.summary.challengeHeadline,
+    guidance.summary.challengeHeadline || '',
+  )
+  const latestDirectiveHeadline = sanitizeResearchFacingSummary(
+    guidance.summary.latestDirective,
+    guidance.summary.latestDirective || '',
+  )
+  const guidanceNarrative = mergeBriefNarrative(
+    [
+      latestGuidanceSummary,
+      guidanceFocusHeadline,
+      guidanceChallengeHeadline,
+      latestDirectiveHeadline,
+    ],
+    { maxLength: 240, limit: 3 },
+  )
 
-  logger.info('创建主题', { topicId: topic.id, nameZh })
+  return {
+    currentFocus:
+      summary.currentFocus ||
+      world.summary.currentFocus ||
+      guidanceFocusHeadline ||
+      sanitizeResearchFacingSummary(
+        report?.headline ||
+          report?.summary ||
+          topic.summary ||
+          topic.focusLabel ||
+          topic.nameZh,
+        '',
+      ),
+    continuity: mergeBriefNarrative(
+      [
+        summary.continuity,
+        guidanceNarrative,
+        world.summary.continuity,
+        report?.latestStageSummary,
+        pipeline.lastRun?.stageSummary,
+        pipeline.currentStage?.stageSummary,
+        generationContext.continuityThreads[0],
+        topic.description,
+        topic.summary,
+      ].map((value) => sanitizeResearchFacingSummary(value, value ?? '')),
+      { maxLength: 260 },
+    ),
+    establishedJudgments:
+      summary.establishedJudgments.length > 0
+        ? summary.establishedJudgments
+        : uniqueBriefLines(
+            [
+              world.summary.thesis,
+              ...world.claims.slice(0, 4).map((claim) => claim.statement),
+              ...(report?.keyMoves ?? []),
+              ...generationContext.judgmentLedger,
+            ],
+            6,
+            200,
+          ),
+    openQuestions:
+      summary.openQuestions.length > 0
+        ? summary.openQuestions
+        : uniqueBriefLines(
+            [
+              world.summary.dominantQuestion,
+              ...world.questions.slice(0, 4).map((question) => question.question),
+              ...(report?.openQuestions ?? []),
+              ...pipeline.globalOpenQuestions,
+              ...generationContext.openQuestions,
+            ],
+            6,
+            180,
+          ),
+    researchMomentum:
+      summary.researchMomentum.length > 0
+        ? summary.researchMomentum
+        : uniqueBriefLines(
+            [
+              latestGuidanceSummary,
+              guidanceFocusHeadline,
+              latestDirectiveHeadline,
+              world.summary.agendaHeadline,
+              ...world.agenda.slice(0, 3).map((item) => item.title),
+              ...(report?.keyMoves ?? []),
+              ...pipeline.continuityThreads,
+              ...generationContext.continuityThreads,
+            ],
+            5,
+            180,
+          ),
+    legacyConversationStyle:
+      summary.conversationStyle ||
+      '像已经参与过这条主题编撰一样回答，优先沿阶段、节点、论文与证据推进。',
+    legacyLastResearchMove: mergeBriefNarrative(
+      [
+        summary.lastResearchMove,
+        latestGuidanceSummary,
+        report?.latestStageSummary,
+        pipeline.lastRun?.stageSummary,
+        pipeline.currentStage?.stageSummary,
+        generationContext.continuityThreads[0],
+      ].map((value) => sanitizeResearchFacingSummary(value, value ?? '')),
+      { maxLength: 180 },
+    ),
+    legacyLastUserIntent:
+      summary.lastUserIntent || '围绕当前主题继续追问关键判断、节点关系与未解问题。',
+    conversationStyle:
+      summary.conversationStyle ||
+      guidanceStyleHeadline ||
+      DEFAULT_RESEARCH_CONVERSATION_STYLE,
+    lastResearchMove: mergeBriefNarrative(
+      [
+        summary.lastResearchMove,
+        latestGuidanceSummary,
+        latestDirectiveHeadline,
+        report?.latestStageSummary,
+        pipeline.lastRun?.stageSummary,
+        pipeline.currentStage?.stageSummary,
+        generationContext.continuityThreads[0],
+      ].map((value) => sanitizeResearchFacingSummary(value, value ?? '')),
+      { maxLength: 180 },
+    ),
+    lastUserIntent:
+      summary.lastUserIntent || latestDirectiveHeadline || DEFAULT_RESEARCH_USER_INTENT,
+  }
+}
 
-  res.status(201).json({
-    success: true,
-    data: topic
-  })
-}))
-
-// 更新主题
-router.patch('/:id', asyncHandler(async (req, res) => {
-  const { id } = req.params
-  const { nameZh, nameEn, focusLabel, summary, description, status } = req.body
-
-  const topic = await prisma.topic.update({
-    where: { id },
-    data: {
-      nameZh,
-      nameEn,
-      focusLabel,
-      summary,
-      description,
-      status
-    }
-  })
-
-  logger.info('更新主题', { topicId: id })
-
-  res.json({
-    success: true,
-    data: topic
-  })
-}))
-
-// 删除主题
-router.delete('/:id', asyncHandler(async (req, res) => {
-  const { id } = req.params
-
-  await prisma.topic.delete({
-    where: { id }
-  })
-
-  logger.info('删除主题', { topicId: id })
-
-  res.json({
-    success: true,
-    message: '主题已删除'
-  })
-}))
-
-// 获取主题统计
-router.get('/:id/stats', asyncHandler(async (req, res) => {
-  const { id } = req.params
-
-  const [paperStats, nodeStats] = await Promise.all([
-    prisma.paper.groupBy({
-      by: ['status'],
-      where: { topicId: id },
-      _count: true
-    }),
-    prisma.researchNode.groupBy({
-      by: ['status'],
-      where: { topicId: id },
-      _count: true
+router.get(
+  '/',
+  asyncHandler(async (_req, res) => {
+    const topics = await prisma.topic.findMany({
+      include: {
+        _count: {
+          select: {
+            papers: true,
+            nodes: true,
+          },
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
     })
-  ])
 
-  res.json({
-    success: true,
-    data: {
-      papers: paperStats,
-      nodes: nodeStats
+    const [localizationMap, stageConfigMap] = await Promise.all([
+      getTopicLocalizationMap(topics.map((topic) => topic.id)),
+      loadTopicStageConfigMap(topics.map((topic) => topic.id)),
+    ])
+
+    res.json({
+      success: true,
+      data: topics.map((topic) => {
+        const stageConfig = stageConfigMap.get(topic.id)
+
+        return {
+          ...topic,
+          paperCount: topic._count.papers,
+          nodeCount: topic._count.nodes,
+          localization: localizationMap.get(topic.id) ?? null,
+          stageConfig: stageConfig
+            ? {
+                windowMonths: stageConfig.windowMonths,
+                updatedAt: stageConfig.updatedAt,
+              }
+            : null,
+          _count: undefined,
+        }
+      }),
+    })
+  }),
+)
+
+router.get(
+  '/:id',
+  asyncHandler(async (req, res) => {
+    const { id } = req.params
+
+    const topic = await prisma.topic.findUnique({
+      where: { id },
+      include: {
+        papers: {
+          orderBy: { published: 'desc' },
+        },
+        nodes: {
+          include: {
+            papers: {
+              include: {
+                paper: true,
+              },
+            },
+          },
+          orderBy: { stageIndex: 'asc' },
+        },
+        stages: {
+          orderBy: { order: 'asc' },
+        },
+      },
+    })
+
+    if (!topic) {
+      throw new AppError(404, 'Topic not found.')
     }
-  })
-}))
+
+    res.json({
+      success: true,
+      data: {
+        ...topic,
+        localization: await getTopicLocalization(id),
+      },
+    })
+  }),
+)
+
+router.post(
+  '/',
+  asyncHandler(async (req, res) => {
+    const { nameZh, nameEn, focusLabel, summary, description } = req.body
+
+    const topic = await prisma.topic.create({
+      data: {
+        nameZh,
+        nameEn,
+        focusLabel,
+        summary,
+        description,
+      },
+    })
+
+    logger.info('Created topic', { topicId: topic.id, nameZh })
+
+    res.status(201).json({
+      success: true,
+      data: topic,
+    })
+  }),
+)
+
+router.patch(
+  '/:id',
+  asyncHandler(async (req, res) => {
+    const { id } = req.params
+    const { nameZh, nameEn, focusLabel, summary, description, status } = req.body
+
+    const topic = await prisma.topic.update({
+      where: { id },
+      data: {
+        nameZh,
+        nameEn,
+        focusLabel,
+        summary,
+        description,
+        status,
+      },
+    })
+
+    logger.info('Updated topic', { topicId: id })
+
+    res.json({
+      success: true,
+      data: topic,
+    })
+  }),
+)
+
+router.delete(
+  '/:id',
+  asyncHandler(async (req, res) => {
+    const { id } = req.params
+
+    await prisma.topic.delete({
+      where: { id },
+    })
+
+    logger.info('Deleted topic', { topicId: id })
+
+    res.json({
+      success: true,
+      message: 'Topic deleted.',
+    })
+  }),
+)
+
+router.get(
+  '/:id/stage-config',
+  asyncHandler(async (req, res) => {
+    const { id } = req.params
+
+    const topic = await prisma.topic.findUnique({
+      where: { id },
+      select: { id: true },
+    })
+
+    if (!topic) {
+      throw new AppError(404, 'Topic not found.')
+    }
+
+    const config = await loadTopicStageConfig(id)
+
+    res.json({
+      success: true,
+      data: config,
+    })
+  }),
+)
+
+router.patch(
+  '/:id/stage-config',
+  asyncHandler(async (req, res) => {
+    const { id } = req.params
+
+    const topic = await prisma.topic.findUnique({
+      where: { id },
+      select: { id: true },
+    })
+
+    if (!topic) {
+      throw new AppError(404, 'Topic not found.')
+    }
+
+    const windowMonths = Number(req.body?.windowMonths)
+    if (!Number.isFinite(windowMonths)) {
+      throw new AppError(400, 'Stage cadence windowMonths is required.')
+    }
+
+    const config = await saveTopicStageConfig(id, windowMonths)
+
+    res.json({
+      success: true,
+      data: config,
+    })
+  }),
+)
+
+router.get(
+  '/:id/stats',
+  asyncHandler(async (req, res) => {
+    const { id } = req.params
+
+    const [paperStats, nodeStats] = await Promise.all([
+      prisma.paper.groupBy({
+        by: ['status'],
+        where: { topicId: id },
+        _count: true,
+      }),
+      prisma.researchNode.groupBy({
+        by: ['status'],
+        where: { topicId: id },
+        _count: true,
+      }),
+    ])
+
+    res.json({
+      success: true,
+      data: {
+        papers: paperStats,
+        nodes: nodeStats,
+      },
+    })
+  }),
+)
+
+router.get(
+  '/:id/research-brief',
+  asyncHandler(async (req, res) => {
+    const { id } = req.params
+
+    const [topic, session, pipelineState, sessionMemory, latestResearchReport, topicMemory, world, guidance] =
+      await Promise.all([
+        prisma.topic.findUnique({
+          where: { id },
+          select: {
+            id: true,
+            nameZh: true,
+            nameEn: true,
+            summary: true,
+            description: true,
+            focusLabel: true,
+          },
+        }),
+        enhancedTaskScheduler.getTopicResearchState(id),
+        loadResearchPipelineState(id),
+        collectTopicSessionMemoryContext(id, { recentLimit: 8 }),
+        loadTopicResearchReport(id),
+        loadTopicGenerationMemory(id),
+        syncTopicResearchWorldSnapshot(id),
+        loadTopicGuidanceLedger(id),
+      ])
+
+    if (!topic) {
+      throw new AppError(404, 'Topic not found.')
+    }
+
+    const pipeline = buildResearchPipelineContext(pipelineState, { historyLimit: 8 })
+    const generationContext = await collectTopicGenerationContext(id, topicMemory, { limit: 12 })
+    const report = session.report ?? latestResearchReport ?? null
+    const mergedSessionMemory = {
+      ...sessionMemory,
+      summary: buildResearchBriefSessionSummary({
+        topic,
+        report,
+        pipeline,
+        generationContext,
+        summary: sessionMemory.summary,
+        world,
+        guidance,
+      }),
+    }
+    const cognitiveMemory = buildTopicCognitiveMemory({
+      generationContext,
+      sessionMemory: mergedSessionMemory,
+      guidance,
+      report,
+      world,
+    })
+
+    res.json({
+      success: true,
+      data: {
+        topicId: id,
+        session: {
+          ...session,
+          report,
+        },
+        pipeline,
+        sessionMemory: mergedSessionMemory,
+        world,
+        guidance,
+        cognitiveMemory,
+      },
+    })
+  }),
+)
 
 export default router
+
+export const __testing = {
+  buildResearchBriefSessionSummary,
+}

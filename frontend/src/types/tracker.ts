@@ -452,14 +452,32 @@ export interface SearchItem {
   tags: string[]
 }
 
+export type ResearchNoteKind =
+  | 'excerpt'
+  | 'assistant'
+  | 'evidence'
+  | 'node'
+  | 'paper'
+  | 'stage'
+  | 'context'
+
 export interface FavoriteExcerpt {
   id: string
-  paperId: string
-  paperTitleZh: string
+  kind?: ResearchNoteKind
   topicId?: TopicId
+  topicTitle?: string
+  paperId?: string
+  paperTitleZh?: string
+  nodeId?: string
+  nodeTitle?: string
   excerptTitle: string
   paragraphs: string[]
   savedAt: string
+  route?: string
+  anchorId?: string
+  sourceLabel?: string
+  summary?: string
+  tags?: string[]
 }
 
 // ========== 节点中心类型 (Node-Centric Types) ==========

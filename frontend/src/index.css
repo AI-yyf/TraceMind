@@ -6,6 +6,20 @@
 
 :root {
   color-scheme: light;
+  --surface-page: #ffffff;
+  --surface-panel: #ffffff;
+  --surface-muted: #fcfcfc;
+  --surface-soft: #f8f8f8;
+  --surface-accent: #fff9ef;
+  --border-soft: rgba(15, 23, 42, 0.06);
+  --border-strong: rgba(15, 23, 42, 0.1);
+  --text-main: #141414;
+  --text-soft: rgba(20, 20, 20, 0.66);
+  --text-faint: rgba(20, 20, 20, 0.42);
+  --accent: #f59e0b;
+  --accent-strong: #d97706;
+  --accent-ink: #9a6708;
+  --shadow-panel: 0 18px 48px rgba(15, 23, 42, 0.05);
 }
 
 * {
@@ -19,9 +33,11 @@ html {
 body {
   margin: 0;
   font-family: 'Manrope', 'PingFang SC', 'Noto Sans SC', sans-serif;
-  background: #ffffff;
-  color: #111111;
-  line-height: 1.7;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 1) 0%, rgba(250, 250, 250, 1) 100%),
+    var(--surface-page);
+  color: var(--text-main);
+  line-height: 1.72;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
@@ -38,7 +54,7 @@ img {
 }
 
 ::selection {
-  background: rgba(239, 68, 68, 0.18);
+  background: rgba(245, 158, 11, 0.18);
   color: #111111;
 }
 
@@ -52,12 +68,12 @@ img {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(127, 127, 127, 0.3);
+  background: rgba(127, 127, 127, 0.28);
   border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(127, 127, 127, 0.48);
+  background: rgba(127, 127, 127, 0.42);
 }
 
 .font-display {
@@ -67,6 +83,23 @@ img {
 .story-chunk {
   content-visibility: auto;
   contain-intrinsic-size: 960px;
+}
+
+.reading-surface {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(255, 255, 255, 0.96) 100%);
+}
+
+.soft-grid {
+  background-image:
+    linear-gradient(rgba(15, 23, 42, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.035) 1px, transparent 1px);
+  background-size: 18px 18px;
+  background-position: center;
+}
+
+.article-prose p + p {
+  margin-top: 1.1rem;
 }
 
 .math-display svg,
@@ -79,7 +112,6 @@ img {
 }
 
 @media print {
-  /* ── 基础 ── */
   body {
     background: #ffffff;
     font-size: 11pt;
@@ -90,82 +122,56 @@ img {
     scroll-behavior: auto;
   }
 
-  /* ── 隐藏所有非正文控件 ── */
   .no-print,
-  /* 侧栏 */
   aside,
-  /* 顶部粘性导航 */
   header.sticky,
-  /* 搜索弹窗 */
-  [class*="z-[80]"],
-  [class*="z-[90]"],
-  /* 浮动按钮 */
-  button[aria-label*="搜索"],
-  button[aria-label*="收藏"],
-  /* 键盘提示 */
+  [class*='z-[80]'],
+  [class*='z-[90]'],
+  button[aria-label*='搜索'],
+  button[aria-label*='收藏'],
   kbd,
-  /* 骨架屏 */
   .animate-pulse,
-  /* 返回/导航按钮 */
-  [class*="back"],
-  /* 动画元素 */
+  [class*='back'],
   .motion,
-  /* Hero 区域（首页） */
   .min-h-\[90vh\] {
     display: none !important;
   }
 
-  /* ── 侧栏容器 ── */
-  .xl\:ml-\[88px\] {
+  .xl\:ml-\[128px\] {
     margin-left: 0 !important;
   }
 
-  /* ── 打印友好的内容区 ── */
   .max-w-5xl {
     max-width: 100% !important;
     padding-left: 0 !important;
     padding-right: 0 !important;
   }
 
-  /* ── 避免分页断裂 ── */
-  .print-break-inside-avoid {
-    break-inside: avoid;
-  }
-
-  /* 论文卡片避免跨页 */
+  .print-break-inside-avoid,
   .rounded-xl,
   .rounded-2xl {
     break-inside: avoid;
     page-break-inside: avoid;
   }
 
-  /* ── 链接显示 URL ── */
-  a[href^="http"]::after {
-    content: " (" attr(href) ")";
+  a[href^='http']::after {
+    content: ' (' attr(href) ')';
     font-size: 0.8em;
     color: #666;
   }
 
-  /* ── 图片 ── */
   img {
     max-width: 100% !important;
     page-break-inside: avoid;
   }
 
-  /* ── 背景装饰 ── */
-  [class*="bg-gradient"],
-  [class*="blur-3xl"] {
+  [class*='bg-gradient'],
+  [class*='blur-3xl'] {
     display: none !important;
   }
 
-  /* ── 移除固定定位 ── */
   .fixed,
   .sticky {
     position: static !important;
-  }
-
-  /* ── 时间线优化 ── */
-  .relative > [class*="absolute"] {
-    /* 保留时间线连接线 */
   }
 }

@@ -1,46 +1,337 @@
-/**
- * GlobalSearch - 增强版全局搜索组件
- *
- * 功能：
- * 1. 多字段搜索（标题、描述、标签）
- * 2. 相关性评分排序
- * 3. 键盘导航（↑↓ 选择，Enter 打开）
- * 4. 类型图标区分
- * 5. 匹配字段高亮
- * 6. 搜索结果计数
- */
-
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Search, X, Calendar, Tag, FileText, BookOpen,
-  FlaskConical, Keyboard, ArrowUp, ArrowDown
+  ArrowDown,
+  ArrowUp,
+  ArrowUpRight,
+  Keyboard,
+  Loader2,
+  MessageSquarePlus,
+  Plus,
+  Search,
+  Sparkles,
+  X,
 } from 'lucide-react'
+import { useLocation, useNavigate } from 'react-router-dom'
+
 import { useTopicRegistry } from '@/hooks'
+import { useProductCopy } from '@/hooks/useProductCopy'
+import { useI18n } from '@/i18n'
+import type { ContextPill, SearchResponse, SearchResultItem } from '@/types/alpha'
+import { apiGet } from '@/utils/api'
 import { cn } from '@/utils/cn'
-import type { SearchItem } from '@/types/tracker'
+import { isRegressionSeedTopic } from '@/utils/topicPresentation'
+import {
+  TOPIC_CONTEXT_ADD_EVENT,
+  TOPIC_QUESTION_SEED_EVENT,
+  queueTopicContext,
+} from '@/utils/workbench-events'
 
 type GlobalSearchProps = {
   open: boolean
   onClose: () => void
 }
 
+type QuickActionId = 'open' | 'add-context' | 'follow-up'
+
+const searchKinds = ['topic', 'node', 'paper', 'section', 'figure', 'table', 'formula'] as const
+const recentSearchStorageKey = 'global-search:recent'
+
+function readRecentSearches() {
+  if (typeof window === 'undefined') return [] as string[]
+
+  try {
+    const raw = window.localStorage.getItem(recentSearchStorageKey)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as string[]
+    return Array.isArray(parsed) ? parsed.filter(Boolean).slice(0, 8) : []
+  } catch {
+    return []
+  }
+}
+
+function buildContextPill(item: SearchResultItem): ContextPill {
+  return {
+    id: `search:${item.kind}:${item.id}`,
+    kind: 'search',
+    label: item.title,
+    description: item.excerpt,
+    route: item.route,
+    anchorId: item.anchorId,
+  }
+}
+
+function getOwningTopicId(item: SearchResultItem) {
+  if (item.kind === 'topic') return item.id
+  return item.topicId ?? ''
+}
+
+function buildTopicAnchorRoute(item: SearchResultItem) {
+  const topicId = getOwningTopicId(item)
+  if (!topicId) return item.route
+  return item.anchorId
+    ? `/topic/${topicId}?anchor=${encodeURIComponent(item.anchorId)}`
+    : `/topic/${topicId}`
+}
+
+function buildFollowUpPrompt(
+  item: SearchResultItem,
+  translate: (key: string, fallback: string) => string,
+) {
+  return translate(
+    'topic.followUpPromptTemplate',
+    'Place "{title}" back into the current topic mainline: what did it advance, what evidence supports it, and what remains unresolved?',
+  ).replace('{title}', item.title)
+}
+
+function searchItemKey(item: SearchResultItem) {
+  return `${item.kind}:${item.id}:${item.anchorId ?? ''}`
+}
+
+function formatStageLabel(stageLabel: string | undefined, stageIndex: number, fallback: string) {
+  return stageLabel ?? fallback.replace('{stage}', String(stageIndex))
+}
+
+function collectStageLabels(item: SearchResultItem) {
+  const labels = new Set<string>()
+
+  if (item.stageLabel) {
+    labels.add(item.stageLabel)
+  }
+
+  for (const location of item.relatedNodes ?? []) {
+    if (location.stageLabel) {
+      labels.add(location.stageLabel)
+    }
+  }
+
+  return Array.from(labels)
+}
+
+function buildStageFacetsFromGroups(groups: SearchResponse['groups']) {
+  const facets = new Map<string, { value: string; label: string; count: number }>()
+
+  for (const group of groups) {
+    for (const item of group.items) {
+      for (const label of collectStageLabels(item)) {
+        const current = facets.get(label)
+        if (current) {
+          current.count += 1
+          continue
+        }
+
+        facets.set(label, {
+          value: label,
+          label,
+          count: 1,
+        })
+      }
+    }
+  }
+
+  return Array.from(facets.values()).sort((left, right) => left.label.localeCompare(right.label))
+}
+
 export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
   const navigate = useNavigate()
   const location = useLocation()
-  const { searchItems } = useTopicRegistry()
+  const { activeTopics } = useTopicRegistry()
+  const { copy } = useProductCopy()
+  const { t } = useI18n()
+  const searchText = useCallback(
+    (id: string, fallback: string) => copy(id, t(id, fallback)),
+    [copy, t],
+  )
   const inputRef = useRef<HTMLInputElement>(null)
   const resultsRef = useRef<HTMLDivElement>(null)
   const [query, setQuery] = useState('')
-  const [year, setYear] = useState('all')
-  const [tag, setTag] = useState('all')
-  const [selectedIdx, setSelectedIdx] = useState(-1)
-  const deferredQuery = useDeferredValue(query)
+  const [selectedKinds, setSelectedKinds] = useState<string[]>([])
+  const [selectedTopicId, setSelectedTopicId] = useState('')
+  const [selectedStages, setSelectedStages] = useState<string[]>([])
+  const [loading, setLoading] = useState(false)
+  const [selectedIndex, setSelectedIndex] = useState(-1)
+  const [result, setResult] = useState<SearchResponse | null>(null)
+  const [recentSearches, setRecentSearches] = useState<string[]>(() => readRecentSearches())
+  const activeStageWindowMonths = useMemo(() => {
+    const params = new URLSearchParams(location.search)
+    const value = Number(params.get('stageMonths'))
+    return Number.isFinite(value) && value > 0 ? Math.trunc(value) : null
+  }, [location.search])
 
-  // ── 过滤 & 评分 ──
-  const results = computeResults(searchItems, deferredQuery, year, tag)
+  const kindLabels = useMemo(
+    () => ({
+      topic: t('search.filterTopics', 'Topics'),
+      node: t('search.filterNodes', 'Nodes'),
+      paper: t('search.filterPapers', 'Papers'),
+      section: t('workbench.searchKindSection', 'Section'),
+      figure: t('workbench.searchKindFigure', 'Figure'),
+      table: t('workbench.searchKindTable', 'Table'),
+      formula: t('workbench.searchKindFormula', 'Formula'),
+    }) satisfies Record<(typeof searchKinds)[number], string>,
+    [t],
+  )
+  const groupLabels = useMemo<Record<'topic' | 'node' | 'paper' | 'evidence', string>>(
+    () => ({
+      topic: t('workbench.searchGroupTopic', 'Topics'),
+      node: t('workbench.searchGroupNode', 'Nodes'),
+      paper: t('workbench.searchGroupPaper', 'Papers'),
+      evidence: t('workbench.searchGroupEvidence', 'Evidence'),
+    }),
+    [t],
+  )
 
-  // ── 自动聚焦 & ESC 关闭 ──
+  const matchFieldLabels = useMemo<Record<string, string>>(
+    () => ({
+      title: t('workbench.searchMatchTitle', 'Title'),
+      subtitle: t('workbench.searchMatchSubtitle', 'Subtitle'),
+      excerpt: t('workbench.searchMatchExcerpt', 'Excerpt'),
+      tags: t('workbench.searchMatchTags', 'Tags'),
+      source: t('workbench.searchMatchSource', 'Source'),
+    }),
+    [t],
+  )
+  const stageLabelFallback = useMemo(
+    () => t('workbench.nodeStageLabel', 'Stage {stage}'),
+    [t],
+  )
+
+  const hintItems = useMemo(
+    () => [
+      searchText(
+        'search.hintLocate',
+        'Search sections, figures, tables, and formulas to jump directly to the exact anchor in the reading surface.',
+      ),
+      searchText(
+        'search.hintContext',
+        'Add a hit to the right workbench and keep asking questions without leaving your current reading position.',
+      ),
+      searchText(
+        'search.hintFilter',
+        'Filter by type first, then narrow by topic when you want to inspect one thread inside a larger branching map.',
+      ),
+    ],
+    [searchText],
+  )
+
+  const visibleGroups = useMemo(() => {
+    if (!result) return []
+
+    return result.groups
+      .map((group) => ({
+        ...group,
+        items: group.items.filter((item) => {
+          if (item.kind === 'topic') {
+            return !isRegressionSeedTopic({
+              nameZh: item.title,
+              summary: `${item.subtitle ?? ''} ${item.excerpt ?? ''}`,
+            })
+          }
+
+          if (item.topicTitle) {
+            return !isRegressionSeedTopic({
+              nameZh: item.topicTitle,
+              summary: item.excerpt,
+            })
+          }
+
+          return true
+        }),
+      }))
+      .filter((group) => group.items.length > 0)
+  }, [result])
+
+  const topicFilters = useMemo(() => {
+    if (result?.facets?.topics && result.facets.topics.length > 0) {
+      return result.facets.topics.map((topic) => ({
+        id: topic.value,
+        title: topic.label,
+      }))
+    }
+
+    const options = new Map<string, { id: string; title: string; count: number }>()
+
+    for (const group of visibleGroups) {
+      for (const item of group.items) {
+        if (item.kind === 'topic') {
+          const key = item.title.trim().toLowerCase()
+          const existing = options.get(key)
+          options.set(key, {
+            id: existing?.id ?? item.id,
+            title: existing?.title ?? item.title,
+            count: (existing?.count ?? 0) + 1,
+          })
+          continue
+        }
+
+        if (item.topicId && item.topicTitle) {
+          const key = item.topicTitle.trim().toLowerCase()
+          const existing = options.get(key)
+          options.set(key, {
+            id: existing?.id ?? item.topicId,
+            title: existing?.title ?? item.topicTitle,
+            count: (existing?.count ?? 0) + 1,
+          })
+        }
+      }
+    }
+
+    return Array.from(options.values())
+      .sort((left, right) => right.count - left.count || left.title.localeCompare(right.title))
+      .map(({ id, title }) => ({ id, title }))
+  }, [result?.facets?.topics, visibleGroups])
+
+  const stageFacets = useMemo(
+    () =>
+      result?.facets?.stages && result.facets.stages.length > 0
+        ? result.facets.stages
+        : buildStageFacetsFromGroups(visibleGroups),
+    [result?.facets?.stages, visibleGroups],
+  )
+
+  const filteredGroups = useMemo(() => visibleGroups, [visibleGroups])
+
+  const flatItems = useMemo(
+    () => filteredGroups.flatMap((group) => group.items),
+    [filteredGroups],
+  )
+
+  const visibleTotals = useMemo(
+    () =>
+      filteredGroups.reduce(
+        (totals, group) => {
+          totals.all += group.items.length
+          if (group.group === 'topic') totals.topic += group.items.length
+          if (group.group === 'node') totals.node += group.items.length
+          if (group.group === 'paper') totals.paper += group.items.length
+          if (group.group === 'evidence') totals.evidence += group.items.length
+          return totals
+        },
+        { all: 0, topic: 0, node: 0, paper: 0, evidence: 0 },
+      ),
+    [filteredGroups],
+  )
+
+  const starterQueries = useMemo(() => {
+    const liveTopics = activeTopics
+      .filter((topic) => !isRegressionSeedTopic(topic))
+      .flatMap((topic) => [
+        topic.nameZh,
+        topic.focusLabel,
+        topic.originPaper?.titleZh,
+        topic.originPaper?.title,
+      ])
+      .filter((value): value is string => Boolean(value && value.trim()))
+      .slice(0, 6)
+
+    const fallbacks = [
+      t('search.starterAutonomousDriving', 'autonomous driving'),
+      t('search.starterWorldModel', 'world model'),
+      t('search.starterEmbodiedAI', 'embodied intelligence'),
+      t('search.starterScientificReading', 'scientific reading'),
+    ]
+
+    return [...new Set([...liveTopics, ...fallbacks])].slice(0, 6)
+  }, [activeTopics, t])
+
   useEffect(() => {
     if (!open) return
     const timer = window.setTimeout(() => inputRef.current?.focus(), 60)
@@ -49,378 +340,622 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
 
   useEffect(() => {
     if (!open) return
+
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose()
     }
+
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [onClose, open])
 
-  // 重置选中
-  useEffect(() => { setSelectedIdx(-1) }, [deferredQuery, year, tag])
-
-  const handleNavigate = useCallback((item: SearchItem) => {
-    const current = `${location.pathname}${location.search}${location.hash}`
-    if (item.href !== current) navigate(item.href)
-    onClose()
-  }, [location.hash, location.pathname, location.search, navigate, onClose])
-
-  // ── 键盘导航 ──
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      setSelectedIdx(prev => Math.min(prev + 1, results.length - 1))
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      setSelectedIdx(prev => Math.max(prev - 1, -1))
-    } else if (e.key === 'Enter' && selectedIdx >= 0 && selectedIdx < results.length) {
-      e.preventDefault()
-      handleNavigate(results[selectedIdx].item)
-    }
-  }, [handleNavigate, selectedIdx, results])
-
-  // 滚动选中项到可见
   useEffect(() => {
-    if (selectedIdx < 0) return
-    const el = resultsRef.current?.querySelector(`[data-idx="${selectedIdx}"]`)
-    el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-  }, [selectedIdx])
+    setSelectedIndex(-1)
+  }, [query, selectedKinds, selectedStages, selectedTopicId])
 
-  // ── 筛选项 ──
-  const years = useYears(searchItems)
-  const tags = useTags(searchItems)
+  useEffect(() => {
+    if (!selectedTopicId) return
+    if (topicFilters.some((topic) => topic.id === selectedTopicId)) return
+    setSelectedTopicId('')
+  }, [selectedTopicId, topicFilters])
 
-  // ── 导航 ──
+  useEffect(() => {
+    setSelectedStages((current) => {
+      if (current.length === 0) return current
+      const validStages = new Set(stageFacets.map((facet) => facet.value))
+      const next = current.filter((item) => validStages.has(item))
+      return next.length === current.length ? current : next
+    })
+  }, [stageFacets])
+
+  useEffect(() => {
+    if (selectedIndex < flatItems.length) return
+    setSelectedIndex(flatItems.length - 1)
+  }, [flatItems.length, selectedIndex])
+
+  useEffect(() => {
+    const trimmed = query.trim()
+    if (!trimmed || !open) {
+      setResult(null)
+      if (!trimmed) {
+        setSelectedStages((current) => (current.length === 0 ? current : []))
+      }
+      return
+    }
+
+    const timer = window.setTimeout(async () => {
+      setLoading(true)
+      try {
+        const types = selectedKinds.length > 0 ? `&types=${selectedKinds.join(',')}` : ''
+        const topics = selectedTopicId ? `&topics=${encodeURIComponent(selectedTopicId)}` : ''
+        const stages =
+          selectedStages.length > 0
+            ? `&stages=${selectedStages.map((stage) => encodeURIComponent(stage)).join(',')}`
+            : ''
+        const stageWindowParam = activeStageWindowMonths ? `&stageMonths=${activeStageWindowMonths}` : ''
+        const payload = await apiGet<SearchResponse>(
+          `/api/search?q=${encodeURIComponent(trimmed)}&scope=global${types}${topics}${stages}${stageWindowParam}&limit=28`,
+        )
+        setResult(payload)
+      } catch {
+        setResult(null)
+      } finally {
+        setLoading(false)
+      }
+    }, 180)
+
+    return () => window.clearTimeout(timer)
+  }, [activeStageWindowMonths, open, query, selectedKinds, selectedStages, selectedTopicId])
+
+  useEffect(() => {
+    if (selectedIndex < 0) return
+    const element = resultsRef.current?.querySelector(`[data-idx="${selectedIndex}"]`)
+    element?.scrollIntoView({ block: 'nearest' })
+  }, [selectedIndex])
+
+  function rememberQuery(value: string) {
+    const trimmed = value.trim()
+    if (trimmed.length < 2 || typeof window === 'undefined') return
+
+    const next = [trimmed, ...recentSearches.filter((item) => item !== trimmed)].slice(0, 8)
+    setRecentSearches(next)
+    window.localStorage.setItem(recentSearchStorageKey, JSON.stringify(next))
+  }
+
+  function scopedRoute(route: string) {
+    if (!activeStageWindowMonths) return route
+
+    const [pathname, search = ''] = route.split('?')
+    const params = new URLSearchParams(search)
+    params.set('stageMonths', String(activeStageWindowMonths))
+    const nextSearch = params.toString()
+    return nextSearch ? `${pathname}?${nextSearch}` : pathname
+  }
+
+  function handleOpen(item: SearchResultItem) {
+    rememberQuery(query)
+    const targetRoute = scopedRoute(item.route)
+
+    navigate(targetRoute)
+    onClose()
+  }
+
+  function handleQuickAction(item: SearchResultItem, action: QuickActionId) {
+    if (action === 'open') {
+      handleOpen(item)
+      return
+    }
+
+    const topicId = getOwningTopicId(item)
+    if (!topicId) {
+      handleOpen(item)
+      return
+    }
+
+    const pill = buildContextPill(item)
+    const onSameTopicPage =
+      typeof window !== 'undefined' && window.location.pathname === `/topic/${topicId}`
+    const followUpPrompt = buildFollowUpPrompt(item, t)
+
+    rememberQuery(query)
+
+    if (onSameTopicPage) {
+      window.dispatchEvent(new CustomEvent(TOPIC_CONTEXT_ADD_EVENT, { detail: pill }))
+      if (action === 'follow-up') {
+        window.dispatchEvent(
+          new CustomEvent(TOPIC_QUESTION_SEED_EVENT, { detail: followUpPrompt }),
+        )
+      }
+      if (item.anchorId) {
+        navigate(`/topic/${topicId}?anchor=${encodeURIComponent(item.anchorId)}`)
+      }
+      onClose()
+      return
+    }
+
+    queueTopicContext({
+      topicId,
+      pill,
+      question: action === 'follow-up' ? followUpPrompt : undefined,
+    })
+
+    navigate(buildTopicAnchorRoute(item))
+    onClose()
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      setSelectedIndex((current) => Math.min(current + 1, flatItems.length - 1))
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      setSelectedIndex((current) => Math.max(current - 1, 0))
+    } else if (event.key === 'Enter' && selectedIndex >= 0) {
+      event.preventDefault()
+      const target = flatItems[selectedIndex]
+      if (target) handleOpen(target)
+    }
+  }
+
   if (!open) return null
-
-  const hasQuery = deferredQuery.trim().length > 0
 
   return (
     <>
-      {/* 遮罩 */}
       <button
         type="button"
-        className="fixed inset-0 z-[80] bg-white/80 backdrop-blur-sm"
+        className="fixed inset-0 z-[80] bg-white/84 backdrop-blur-sm"
         onClick={onClose}
-        aria-label="关闭搜索"
+        aria-label={searchText('search.close', 'Close Search')}
       />
 
-      {/* 搜索面板 */}
-      <div className="fixed right-4 top-4 z-[90] w-[min(94vw,36rem)] overflow-hidden rounded-[28px] border border-black/10 bg-white shadow-[0_24px_80px_rgba(17,17,17,0.12)]">
-        {/* 搜索输入框 */}
-        <div className="border-b border-black/8 px-4 py-4">
-          <div className="flex items-center gap-3 rounded-[22px] border border-black/10 bg-[#fafafa] px-4 py-3">
-            <Search className="h-4 w-4 text-black/45 flex-shrink-0" />
+      <div
+        data-testid="global-search"
+        className="fixed inset-x-4 top-4 z-[90] mx-auto flex max-h-[min(860px,calc(100vh-2rem))] w-[min(92vw,72rem)] flex-col overflow-hidden rounded-[34px] border border-black/8 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.12)]"
+      >
+        <div className="border-b border-black/8 px-5 py-5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="text-[11px] tracking-[0.24em] text-black/38">
+                {searchText('search.title', 'Global Search')}
+              </div>
+              <div className="mt-2 max-w-[760px] text-[13px] leading-6 text-black/52">
+                {searchText(
+                  'search.description',
+                  'Search topics, nodes, papers, sections, figures, and formulas in one place, then open them, jump back into a topic, or add them to the workbench.',
+                )}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-full border border-black/8 p-2 text-black/52 transition hover:border-black/14 hover:text-black"
+              aria-label={searchText('search.close', 'Close Search')}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="mt-4 flex items-center gap-3 rounded-[24px] border border-black/8 bg-[var(--surface-soft)] px-4 py-3">
+            <Search className="h-4 w-4 text-black/42" />
             <input
+              data-testid="global-search-input"
               ref={inputRef}
               value={query}
-              onChange={e => setQuery(e.target.value)}
+              onChange={(event) => setQuery(event.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="搜索论文、主题、标签…"
-              className="w-full bg-transparent text-sm text-black outline-none placeholder:text-black/35"
+              placeholder={searchText(
+                'search.placeholder',
+                'Search topics, nodes, papers, sections, figures, and formulas',
+              )}
+              className="w-full bg-transparent text-sm text-black outline-none placeholder:text-black/32"
             />
-            {query && (
+            {loading ? <Loader2 className="h-4 w-4 animate-spin text-black/42" /> : null}
+            {query ? (
               <button
                 type="button"
-                onClick={() => setQuery('')}
-                className="rounded-full p-1 text-black/45 transition hover:bg-black/5 hover:text-black"
-                aria-label="清空搜索"
+                onClick={() => {
+                  setQuery('')
+                  setSelectedTopicId('')
+                  setSelectedStages([])
+                }}
+                className="rounded-full p-1 text-black/38 transition hover:bg-white hover:text-black"
+                aria-label={searchText('search.clear', 'Clear Search')}
               >
-                <X className="h-3.5 w-3.5" />
+                <X className="h-4 w-4" />
               </button>
-            )}
+            ) : null}
           </div>
 
-          {/* 键盘提示 */}
-          <div className="mt-2 flex items-center gap-4 text-[11px] text-black/30">
-            <span className="flex items-center gap-1"><ArrowUp className="w-3 h-3" /><ArrowDown className="w-3 h-3" /> 选择</span>
-            <span className="flex items-center gap-1"><Keyboard className="w-3 h-3" /> Enter 打开</span>
-            <span className="flex items-center gap-1">Esc 关闭</span>
-          </div>
-        </div>
-
-        {/* 筛选器 */}
-        <div className="grid gap-4 border-b border-black/8 px-4 py-4">
-          <div>
-            <div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.28em] text-black/38">
-              <Calendar className="h-3.5 w-3.5" />
-              时间
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <FilterChip active={year === 'all'} label="全部" onClick={() => setYear('all')} />
-              {years.map(item => (
-                <FilterChip key={item} active={year === item} label={item} onClick={() => setYear(item)} />
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.28em] text-black/38">
-              <Tag className="h-3.5 w-3.5" />
-              标签
-            </div>
-            <div className="flex max-h-28 flex-wrap gap-2 overflow-y-auto pr-1">
-              <FilterChip active={tag === 'all'} label="全部" onClick={() => setTag('all')} />
-              {tags.map(item => (
-                <FilterChip key={item} active={tag === item} label={item} onClick={() => setTag(item)} />
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* 结果列表 */}
-        <div ref={resultsRef} className="max-h-[52vh] overflow-y-auto">
-          {/* 结果计数 */}
-          {hasQuery && (
-            <div className="px-4 py-2.5 text-[11px] text-black/38 border-b border-black/5">
-              找到 {results.length} 个结果
-              {results.length > 0 && ` · 按相关性排序`}
-            </div>
-          )}
-
-          {results.length === 0 ? (
-            <div className="px-4 py-12 text-center text-sm text-black/45">
-              {hasQuery ? '没有找到合适的结果，试试缩短关键词。' : '输入关键词开始搜索'}
-            </div>
-          ) : (
-            results.map((result, idx) => (
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {searchKinds.map((kind) => (
               <button
-                key={result.item.id}
+                key={kind}
                 type="button"
-                data-idx={idx}
-                onClick={() => handleNavigate(result.item)}
-                onMouseEnter={() => setSelectedIdx(idx)}
+                onClick={() =>
+                  setSelectedKinds((current) =>
+                    current.includes(kind)
+                      ? current.filter((item) => item !== kind)
+                      : [...current, kind],
+                  )
+                }
                 className={cn(
-                  'block w-full border-b border-black/6 px-4 py-4 text-left transition',
-                  idx === selectedIdx
-                    ? 'bg-red-50/60'
-                    : 'hover:bg-[#fafafa]',
+                  'rounded-full border px-3 py-1.5 text-[11px] transition',
+                  selectedKinds.includes(kind)
+                    ? 'border-[#f59e0b]/35 bg-[var(--surface-accent)] text-[var(--accent-ink)]'
+                    : 'border-black/8 bg-white text-black/58 hover:border-black/14 hover:text-black',
                 )}
               >
-                {/* 类型标签 + 年份 */}
-                <div className="flex items-center gap-3 text-[11px] uppercase tracking-[0.28em]">
-                  <span className="text-red-600">{result.item.year || '研究'}</span>
-                  <span className="text-black/34 flex items-center gap-1">
-                    <KindIcon kind={result.item.kind} />
-                    {searchKindLabel[result.item.kind]}
-                  </span>
-                  {/* 匹配字段标记 */}
-                  {hasQuery && result.matchedFields.length > 0 && (
-                    <span className="text-[10px] text-black/20">
-                      匹配: {result.matchedFields.join('、')}
-                    </span>
+                {kindLabels[kind]}
+              </button>
+            ))}
+          </div>
+
+          {topicFilters.length > 1 ? (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedTopicId('')}
+                className={cn(
+                  'rounded-full px-3 py-1.5 text-[11px] transition',
+                  !selectedTopicId ? 'bg-black text-white' : 'bg-[var(--surface-soft)] text-black/58',
+                )}
+              >
+                {searchText('search.allTopics', 'All Topics')}
+              </button>
+              {topicFilters.slice(0, 6).map((topic) => (
+                <button
+                  key={topic.id}
+                  type="button"
+                  data-testid={`global-search-topic-filter-${topic.id}`}
+                  onClick={() => setSelectedTopicId(topic.id)}
+                  className={cn(
+                    'max-w-[11rem] truncate rounded-full px-3 py-1.5 text-[11px] transition',
+                    selectedTopicId === topic.id ? 'bg-black text-white' : 'bg-[var(--surface-soft)] text-black/58',
                   )}
-                </div>
+                  title={topic.title}
+                >
+                  {topic.title}
+                </button>
+              ))}
+            </div>
+          ) : null}
 
-                {/* 标题 */}
-                <div className="mt-2 text-base font-semibold text-black">
-                  <HighlightText text={result.item.title} query={deferredQuery} />
-                </div>
+          {query.trim() && stageFacets.length > 0 ? (
+            <div
+              data-testid="global-search-stage-filters"
+              className="mt-3 space-y-2"
+            >
+              <div className="flex items-center justify-between gap-3 text-[11px] text-black/42">
+                <span>
+                  {searchText('search.stageFilterLabel', 'Filter by stage')}
+                </span>
+                {selectedStages.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedStages([])}
+                    className="text-black/48 transition hover:text-black"
+                  >
+                    {searchText('search.clearStageFilter', 'Clear')}
+                  </button>
+                ) : null}
+              </div>
 
-                {/* 副标题 */}
-                <div className="mt-1 text-sm leading-7 text-black/62 line-clamp-2">
-                  <HighlightText text={result.item.subtitle} query={deferredQuery} />
-                </div>
+              <div className="flex flex-wrap gap-2">
+                {stageFacets.map((facet, index) => {
+                  const active = selectedStages.includes(facet.value)
 
-                {/* 标签 */}
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {result.item.tags.slice(0, 4).map(t => (
-                    <span
-                      key={t}
+                  return (
+                    <button
+                      key={facet.value}
+                      type="button"
+                      data-testid={`global-search-stage-filter-${index}`}
+                      onClick={() =>
+                        setSelectedStages((current) =>
+                          current.includes(facet.value)
+                            ? current.filter((item) => item !== facet.value)
+                            : [...current, facet.value],
+                        )
+                      }
                       className={cn(
-                        'rounded-full border px-2.5 py-1 text-[11px]',
-                        hasQuery && t.toLowerCase().includes(deferredQuery.toLowerCase())
-                          ? 'border-red-300 bg-red-50 text-red-700'
-                          : 'border-black/10 bg-white text-black/54',
+                        'rounded-full border px-3 py-1.5 text-[11px] transition',
+                        active
+                          ? 'border-[#7d1938]/28 bg-[#f6ecef] text-[#7d1938]'
+                          : 'border-black/8 bg-white text-black/58 hover:border-black/14 hover:text-black',
                       )}
                     >
-                      {t}
-                    </span>
+                      {facet.label} · {facet.count}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="grid min-h-0 flex-1 gap-0 lg:grid-cols-[300px_minmax(0,1fr)]">
+          <aside className="border-r border-black/8 bg-[var(--surface-soft)] px-5 py-5">
+            <div className="space-y-5">
+              <section>
+                <div className="text-[11px] uppercase tracking-[0.22em] text-black/36">
+                  {searchText('search.recentTitle', 'Recent Searches')}
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {recentSearches.length > 0 ? (
+                    recentSearches.map((item) => (
+                      <button
+                        key={item}
+                        type="button"
+                        onClick={() => setQuery(item)}
+                        className="rounded-full bg-white px-3 py-2 text-[11px] text-black/62 shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition hover:text-black"
+                      >
+                        {item}
+                      </button>
+                    ))
+                  ) : (
+                    <div className="text-[12px] leading-6 text-black/46">
+                      {searchText(
+                        'search.recentEmpty',
+                        'Your recent searches appear here so you can return to earlier research threads.',
+                      )}
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              <section>
+                <div className="text-[11px] uppercase tracking-[0.22em] text-black/36">
+                  {searchText('search.recommendTitle', 'Suggested Starting Points')}
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {starterQueries.map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => setQuery(item)}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-2 text-[11px] text-black/62 shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition hover:text-black"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      {item}
+                    </button>
                   ))}
                 </div>
-              </button>
-            ))
-          )}
+              </section>
+
+              {result ? (
+                <section className="rounded-[24px] bg-white px-4 py-4 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
+                  <div className="text-[11px] uppercase tracking-[0.22em] text-black/36">
+                    {searchText('search.resultsLabel', 'Search Results')}
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <CountChip label={searchText('search.resultsAll', 'All')} value={visibleTotals.all} />
+                    <CountChip label={t('search.filterTopics', 'Topics')} value={visibleTotals.topic} />
+                    <CountChip label={t('search.filterNodes', 'Nodes')} value={visibleTotals.node} />
+                    <CountChip label={t('search.filterPapers', 'Papers')} value={visibleTotals.paper} />
+                    <CountChip label={searchText('search.resultsEvidence', 'Evidence')} value={visibleTotals.evidence} />
+                  </div>
+                </section>
+              ) : null}
+
+              <section className="rounded-[24px] bg-white px-4 py-4 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
+                <div className="flex items-center gap-2 text-[12px] text-black/56">
+                  <Keyboard className="h-4 w-4" />
+                  <span>Enter</span>
+                  <ArrowDown className="h-3.5 w-3.5" />
+                  <ArrowUp className="h-3.5 w-3.5" />
+                </div>
+                <p className="mt-3 text-[12px] leading-6 text-black/52">
+                  {searchText(
+                    'search.keyboardHint',
+                    'Press Enter to open a result, and use the arrow keys to move through the list.',
+                  )}
+                </p>
+              </section>
+
+              <section className="rounded-[24px] bg-white px-4 py-4 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
+                <div className="text-[11px] uppercase tracking-[0.22em] text-black/36">
+                  {searchText('search.title', 'Global Search')}
+                </div>
+                <div className="mt-3 space-y-3 text-[12px] leading-6 text-black/56">
+                  {hintItems.map((item) => (
+                    <p key={item}>{item}</p>
+                  ))}
+                </div>
+              </section>
+            </div>
+          </aside>
+
+          <div ref={resultsRef} className="min-h-0 overflow-y-auto px-5 py-5">
+            {!query.trim() ? (
+              <div className="text-[14px] leading-7 text-black/56">
+                {searchText(
+                  'search.idle',
+                  'Once you start typing, grouped results for topics, nodes, papers, and evidence appear here.',
+                )}
+              </div>
+            ) : null}
+
+            {query.trim() && result ? (
+              <div className="mb-4 flex items-center justify-between gap-3 text-[11px] uppercase tracking-[0.22em] text-black/36">
+                <span>{searchText('search.resultsLabel', 'Search Results')}</span>
+                <span>{flatItems.length}</span>
+              </div>
+            ) : null}
+
+            {query.trim() && result && flatItems.length === 0 ? (
+              <div className="text-[14px] leading-7 text-black/56">
+                {searchText(
+                  'search.empty',
+                  'No matching results yet. Try another keyword or narrow the search types first.',
+                )}
+              </div>
+            ) : null}
+
+            <div className="space-y-6">
+              {filteredGroups.map((group) => (
+                <section
+                  key={group.group}
+                  data-testid={`global-search-group-${group.group}`}
+                  className="space-y-3"
+                >
+                  <div className="text-[11px] uppercase tracking-[0.24em] text-black/38">
+                    {groupLabels[group.group] ?? group.label}
+                  </div>
+
+                  <div className="space-y-3">
+                    {group.items.map((item) => {
+                      const absoluteIndex = flatItems.findIndex(
+                        (candidate) => searchItemKey(candidate) === searchItemKey(item),
+                      )
+
+                      return (
+                        <article
+                          key={`${group.group}-${item.id}-${item.anchorId ?? 'root'}`}
+                          data-idx={absoluteIndex}
+                          data-testid={`global-search-result-${item.kind}`}
+                          onClick={() => handleQuickAction(item, 'open')}
+                          className={cn(
+                            'cursor-pointer rounded-[24px] border border-black/8 bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.03)] transition',
+                            selectedIndex === absoluteIndex &&
+                              'border-[#f59e0b]/35 bg-[var(--surface-accent)]',
+                          )}
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="min-w-0">
+                              <div className="text-[10px] uppercase tracking-[0.18em] text-black/34">
+                                {[kindLabels[item.kind], item.stageLabel, item.timeLabel]
+                                  .filter(Boolean)
+                                  .join(' · ')}
+                              </div>
+                              <h3 className="mt-1 text-[16px] font-semibold leading-6 text-black">
+                                {item.title}
+                              </h3>
+                              <div className="mt-1 text-[12px] leading-6 text-black/46">
+                                {[item.subtitle, item.topicTitle].filter(Boolean).join(' · ')}
+                              </div>
+                              {item.relatedNodes && item.relatedNodes.length > 0 ? (
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {item.relatedNodes.slice(0, 3).map((location) => (
+                                    <button
+                                      key={`${item.id}-${location.nodeId}`}
+                                      type="button"
+                                      onClick={(event) => {
+                                        event.stopPropagation()
+                                        rememberQuery(query)
+                                        navigate(scopedRoute(location.route))
+                                        onClose()
+                                      }}
+                                      className="rounded-full border border-black/8 bg-[var(--surface-soft)] px-2.5 py-1 text-[10px] text-black/54"
+                                    >
+                                      {[
+                                        formatStageLabel(
+                                          location.stageLabel,
+                                          location.stageIndex,
+                                          stageLabelFallback,
+                                        ),
+                                        location.title,
+                                      ].join(' · ')}
+                                    </button>
+                                  ))}
+                                  {item.relatedNodes.length > 3 ? (
+                                    <span className="rounded-full border border-black/8 bg-[var(--surface-soft)] px-2.5 py-1 text-[10px] text-black/44">
+                                      +{item.relatedNodes.length - 3}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              ) : item.locationLabel ? (
+                                <div className="mt-2 text-[11px] leading-5 text-black/52">
+                                  {item.locationLabel}
+                                </div>
+                              ) : null}
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                handleQuickAction(item, 'add-context')
+                              }}
+                              className="rounded-full border border-black/8 bg-[var(--surface-soft)] p-2 text-black/64 transition hover:border-black/16 hover:text-black"
+                              aria-label={`${searchText('search.contextAction', 'Add Context')} ${item.title}`}
+                            >
+                              <Plus className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+
+                          <p className="mt-3 text-[14px] leading-7 text-black/58">{item.excerpt}</p>
+
+                          {item.matchedFields.length > 0 ? (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {item.matchedFields.slice(0, 4).map((field) => (
+                                <span
+                                  key={field}
+                                  className="rounded-full border border-black/8 bg-[var(--surface-soft)] px-2.5 py-1 text-[10px] text-black/52"
+                                >
+                                  {matchFieldLabels[field] ?? field}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
+
+                          <div className="mt-4 flex flex-wrap items-center gap-3 text-[12px]">
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                handleQuickAction(item, 'open')
+                              }}
+                              className="inline-flex items-center gap-1.5 text-black/72 transition hover:text-black"
+                            >
+                              {searchText('search.openAction', 'Open Result')}
+                              <ArrowUpRight className="h-3.5 w-3.5" />
+                            </button>
+
+                            {getOwningTopicId(item) ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    handleQuickAction(item, 'add-context')
+                                  }}
+                                  className="text-black/56 transition hover:text-black"
+                                >
+                                  {searchText('search.contextAction', 'Add Context')}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    handleQuickAction(item, 'follow-up')
+                                  }}
+                                  className="inline-flex items-center gap-1.5 text-black/56 transition hover:text-black"
+                                >
+                                  {searchText('search.followUpAction', 'Ask Follow-Up')}
+                                  <MessageSquarePlus className="h-3.5 w-3.5" />
+                                </button>
+                              </>
+                            ) : null}
+                          </div>
+                        </article>
+                      )
+                    })}
+                  </div>
+                </section>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </>
   )
 }
 
-// ============ 子组件 & 工具 ============
-
-const searchKindLabel = {
-  topic: '主题',
-  paper: '论文',
-  candidate: '候选',
-  research: '研究',
-} as const
-
-function KindIcon({ kind }: { kind: SearchItem['kind'] }) {
-  switch (kind) {
-    case 'topic': return <BookOpen className="w-3 h-3" />
-    case 'paper': return <FileText className="w-3 h-3" />
-    case 'candidate': return <FlaskConical className="w-3 h-3" />
-    case 'research': return <FlaskConical className="w-3 h-3" />
-  }
-}
-
-/** 高亮匹配文本 */
-function HighlightText({ text, query }: { text: string; query: string }) {
-  if (!query.trim()) return <>{text}</>
-
-  const keywords = query.trim().split(/\s+/).filter(Boolean)
-  if (keywords.length === 0) return <>{text}</>
-
-  // 构建正则
-  const pattern = keywords
-    .map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-    .join('|')
-  const regex = new RegExp(`(${pattern})`, 'gi')
-
-  const parts = text.split(regex)
+function CountChip({ label, value }: { label: string; value: number }) {
   return (
-    <>
-      {parts.map((part, i) =>
-        regex.test(part) ? (
-          <mark key={i} className="bg-red-100 text-red-900 rounded-sm px-0.5">{part}</mark>
-        ) : (
-          <span key={i}>{part}</span>
-        )
-      )}
-    </>
+    <div className="rounded-[18px] bg-[var(--surface-soft)] px-3 py-3">
+      <div className="text-[10px] uppercase tracking-[0.18em] text-black/34">{label}</div>
+      <div className="mt-1 text-[16px] font-semibold text-black">{value}</div>
+    </div>
   )
-}
-
-function FilterChip({
-  active,
-  label,
-  onClick,
-}: {
-  active: boolean
-  label: string
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'rounded-full border px-3 py-1.5 text-xs transition',
-        active
-          ? 'border-red-500 bg-red-50 text-red-700'
-          : 'border-black/10 bg-white text-black/58 hover:border-black/20 hover:text-black',
-      )}
-    >
-      {label}
-    </button>
-  )
-}
-
-function useYears(items: SearchItem[]) {
-  return useMemo(
-    () => Array.from(new Set(items.map(i => i.year))).sort(),
-    [items],
-  )
-}
-
-function useTags(items: SearchItem[]) {
-  return useMemo(
-    () =>
-      Array.from(new Set(items.flatMap(i => i.tags)))
-        .sort((a, b) => a.localeCompare(b, 'zh-CN'))
-        .slice(0, 30),
-    [items],
-  )
-}
-
-function useDeferredValue<T>(value: T, ms = 120): T {
-  const [deferred, setDeferred] = useState(value)
-  useEffect(() => {
-    const timer = setTimeout(() => setDeferred(value), ms)
-    return () => clearTimeout(timer)
-  }, [value, ms])
-  return deferred
-}
-
-// ============ 搜索评分 ============
-
-interface SearchResult {
-  item: SearchItem
-  score: number
-  matchedFields: string[]
-}
-
-function computeResults(items: SearchItem[], query: string, year: string, tag: string): SearchResult[] {
-  const keywords = query.trim().split(/\s+/).filter(Boolean)
-  const hasKeywords = keywords.length > 0
-
-  const filtered = items.filter(item => {
-    if (year !== 'all' && item.year !== year) return false
-    if (tag !== 'all' && !item.tags.includes(tag)) return false
-    if (!hasKeywords) return true
-
-    const corpus = `${item.title} ${item.subtitle} ${item.tags.join(' ')}`.toLowerCase()
-    return keywords.every(kw => corpus.includes(kw.toLowerCase()))
-  })
-
-  if (!hasKeywords) {
-    // 无关键词时按类型优先、年份倒序排列
-    const kindOrder: Record<string, number> = { paper: 0, topic: 1, candidate: 2, research: 3 }
-    return filtered
-      .sort((a, b) => {
-        const ka = kindOrder[a.kind] ?? 9
-        const kb = kindOrder[b.kind] ?? 9
-        if (ka !== kb) return ka - kb
-        return b.year.localeCompare(a.year)
-      })
-      .map(item => ({ item, score: 0, matchedFields: [] as string[] }))
-  }
-
-  // 有关键词：评分排序
-  return filtered
-    .map(item => {
-      const { score, matchedFields } = scoreItem(item, keywords)
-      return { item, score, matchedFields }
-    })
-    .filter(r => r.score > 0)
-    .sort((a, b) => b.score - a.score)
-}
-
-function scoreItem(item: SearchItem, keywords: string[]): { score: number; matchedFields: string[] } {
-  const matchedFields: string[] = []
-  let score = 0
-
-  const titleLower = item.title.toLowerCase()
-  const subtitleLower = item.subtitle.toLowerCase()
-  const tagsLower = item.tags.map(t => t.toLowerCase()).join(' ')
-
-  for (const kw of keywords) {
-    const k = kw.toLowerCase()
-
-    // 标题匹配（最高权重）
-    if (titleLower.includes(k)) {
-      const count = titleLower.split(k).length - 1
-      score += 12 * count
-      if (!matchedFields.includes('标题')) matchedFields.push('标题')
-    }
-
-    // 标签匹配
-    if (tagsLower.includes(k)) {
-      score += 7
-      if (!matchedFields.includes('标签')) matchedFields.push('标签')
-    }
-
-    // 副标题/描述匹配
-    if (subtitleLower.includes(k)) {
-      score += 4
-      if (!matchedFields.includes('描述')) matchedFields.push('描述')
-    }
-  }
-
-  // 类型加权
-  const kindWeight = { paper: 1.2, topic: 1.0, candidate: 0.85, research: 0.75 }
-  score *= kindWeight[item.kind] || 1.0
-
-  return { score, matchedFields }
 }
