@@ -1,10 +1,11 @@
 ﻿import { type CSSProperties, useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import { useCallback } from 'react'
 
 import { RightSidebarShell } from '@/components/topic/RightSidebarShell'
 import { TopicDashboard } from '@/components/topic/TopicDashboard'
+import { usePageScrollRestoration, useReadingWorkspace } from '@/contexts/ReadingWorkspaceContext'
 import type { TopicDashboard as TopicDashboardData } from '@/types/article'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useI18n } from '@/i18n'
@@ -642,8 +643,10 @@ function NodeCard({
 
 export function TopicPage() {
   const { topicId = '' } = useParams<{ topicId: string }>()
+  const location = useLocation()
   const navigate = useNavigate()
   const { t, preference } = useI18n()
+  const { rememberTrail } = useReadingWorkspace()
   const [searchParams, setSearchParams] = useSearchParams()
   const [viewModel, setViewModel] = useState<TopicViewModel | null>(null)
   const [researchBrief, setResearchBrief] = useState<TopicResearchBrief | null>(null)
@@ -659,10 +662,24 @@ export function TopicPage() {
     [searchParams],
   )
   const effectiveStageWindowMonths = viewModel?.stageConfig?.windowMonths ?? requestedStageWindowMonths ?? 1
-
+  const hasFocusAnchor = Boolean(searchParams.get('anchor') || searchParams.get('evidence'))
+  usePageScrollRestoration(`topic:${topicId}:stage:${effectiveStageWindowMonths}`, {
+    skipInitialRestore: hasFocusAnchor,
+  })
   const topicTitle = useMemo(() => getTopicLocalizedPair(viewModel?.localization, 'name', preference, viewModel?.title ?? '', viewModel?.titleEn ?? viewModel?.title ?? ''), [preference, viewModel])
   const topicSummary = useMemo(() => getTopicLocalizedPair(viewModel?.localization, 'summary', preference, viewModel?.summary ?? '', viewModel?.summary ?? ''), [preference, viewModel])
   const topicDescription = useMemo(() => getTopicLocalizedPair(viewModel?.localization, 'description', preference, viewModel?.description ?? '', viewModel?.description ?? ''), [preference, viewModel])
+  useEffect(() => {
+    if (!viewModel) return
+
+    rememberTrail({
+      id: `topic:${viewModel.topicId}`,
+      kind: 'topic',
+      topicId: viewModel.topicId,
+      title: topicTitle.primary || viewModel.title,
+      route: `${location.pathname}${location.search}`,
+    })
+  }, [location.pathname, location.search, rememberTrail, topicTitle.primary, viewModel])
   const topicStandfirst = useMemo(
     () =>
       uniqueText(
@@ -1187,4 +1204,3 @@ export function TopicPage() {
 }
 
 export default TopicPage
-

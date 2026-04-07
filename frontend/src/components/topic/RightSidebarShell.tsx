@@ -9,11 +9,13 @@ import { ConversationThread } from './ConversationThread'
 import { GuidanceLedgerCard } from './GuidanceLedgerCard'
 import { GroundedComposer } from './GroundedComposer'
 import { NotebookPanel } from './NotebookPanel'
+import { ReadingPathCard } from './ReadingPathCard'
 import { ResearchWorldCard } from './ResearchWorldCard'
 import { ResearchSessionCard } from './ResearchSessionCard'
 import { ResourcesPanel } from './ResourcesPanel'
 import { SearchPanel } from './SearchPanel'
 import { SidebarToolTabs } from './SidebarToolTabs'
+import { useReadingWorkspace } from '@/contexts/ReadingWorkspaceContext'
 import { useFavorites } from '@/hooks'
 import { useProductCopy } from '@/hooks/useProductCopy'
 import { useI18n } from '@/i18n'
@@ -70,8 +72,7 @@ type ResourceCard = {
   route?: string
   anchorId?: string
 }
-
-const drawerStorageKey = 'topic-workbench:drawer-open'
+type WorkbenchStyle = 'brief' | 'balanced' | 'deep'
 
 function createThread(title = ''): StoredChatThread {
   const now = new Date().toISOString()
@@ -954,24 +955,15 @@ export function RightSidebarShell({
   const [searchParams, setSearchParams] = useSearchParams()
   const { preference, t } = useI18n()
   const { copy } = useProductCopy()
+  const { state: readingWorkspaceState, getTopicWorkbenchState, patchTopicWorkbenchState } =
+    useReadingWorkspace()
   const { favorites, addFavorite, removeFavorite } = useFavorites()
   const scrollBodyRef = useRef<HTMLDivElement | null>(null)
   const [isDesktopViewport, setIsDesktopViewport] = useState(() => {
     if (typeof window === 'undefined') return true
     return window.innerWidth >= 1024
   })
-  const [activeTab, setActiveTab] = useState<TopicWorkbenchTab>('assistant')
-  const [open, setOpen] = useState(() => {
-    if (typeof window === 'undefined') return false
-    const stored = window.localStorage.getItem(drawerStorageKey)
-    return stored ? stored === '1' : false
-  })
-  const [historyOpen, setHistoryOpen] = useState(false)
   const [assistantState, setAssistantState] = useState<AssistantState>('empty')
-  const [contextPills, setContextPills] = useState<ContextPill[]>([])
-  const [searchEnabled, setSearchEnabled] = useState(true)
-  const [thinkingEnabled, setThinkingEnabled] = useState(true)
-  const [style, setStyle] = useState<'brief' | 'balanced' | 'deep'>('balanced')
   const [modelStatus, setModelStatus] = useState<ModelCapabilitySummary | null>(null)
   const [researchBriefState, setResearchBriefState] = useState<TopicResearchBrief | null>(null)
   const [researchBriefError, setResearchBriefError] = useState<string | null>(null)
@@ -988,6 +980,65 @@ export function RightSidebarShell({
     const thread = createThread()
     return { currentThreadId: thread.id, threads: [thread] }
   })
+  const workbenchState = getTopicWorkbenchState(topicId)
+  const { open, activeTab, historyOpen, contextPills, searchEnabled, thinkingEnabled, style } =
+    workbenchState
+  const setOpen = useCallback(
+    (next: boolean | ((current: boolean) => boolean)) =>
+      patchTopicWorkbenchState(topicId, (current) => ({
+        ...current,
+        open: typeof next === 'function' ? next(current.open) : next,
+      })),
+    [patchTopicWorkbenchState, topicId],
+  )
+  const setActiveTab = useCallback(
+    (next: TopicWorkbenchTab | ((current: TopicWorkbenchTab) => TopicWorkbenchTab)) =>
+      patchTopicWorkbenchState(topicId, (current) => ({
+        ...current,
+        activeTab: typeof next === 'function' ? next(current.activeTab) : next,
+      })),
+    [patchTopicWorkbenchState, topicId],
+  )
+  const setHistoryOpen = useCallback(
+    (next: boolean | ((current: boolean) => boolean)) =>
+      patchTopicWorkbenchState(topicId, (current) => ({
+        ...current,
+        historyOpen: typeof next === 'function' ? next(current.historyOpen) : next,
+      })),
+    [patchTopicWorkbenchState, topicId],
+  )
+  const setContextPills = useCallback(
+    (next: ContextPill[] | ((current: ContextPill[]) => ContextPill[])) =>
+      patchTopicWorkbenchState(topicId, (current) => ({
+        ...current,
+        contextPills: typeof next === 'function' ? next(current.contextPills) : next,
+      })),
+    [patchTopicWorkbenchState, topicId],
+  )
+  const setSearchEnabled = useCallback(
+    (next: boolean | ((current: boolean) => boolean)) =>
+      patchTopicWorkbenchState(topicId, (current) => ({
+        ...current,
+        searchEnabled: typeof next === 'function' ? next(current.searchEnabled) : next,
+      })),
+    [patchTopicWorkbenchState, topicId],
+  )
+  const setThinkingEnabled = useCallback(
+    (next: boolean | ((current: boolean) => boolean)) =>
+      patchTopicWorkbenchState(topicId, (current) => ({
+        ...current,
+        thinkingEnabled: typeof next === 'function' ? next(current.thinkingEnabled) : next,
+      })),
+    [patchTopicWorkbenchState, topicId],
+  )
+  const setStyle = useCallback(
+    (next: WorkbenchStyle | ((current: WorkbenchStyle) => WorkbenchStyle)) =>
+      patchTopicWorkbenchState(topicId, (current) => ({
+        ...current,
+        style: typeof next === 'function' ? next(current.style as WorkbenchStyle) : next,
+      })),
+    [patchTopicWorkbenchState, topicId],
+  )
 
   const currentThread =
     useMemo(
@@ -1013,6 +1064,20 @@ export function RightSidebarShell({
         )
         .sort((left, right) => Date.parse(right.savedAt) - Date.parse(left.savedAt)),
     [favorites, topicId],
+  )
+  const readingPathEntries = useMemo(
+    () =>
+      readingWorkspaceState.trail
+        .filter((entry) => entry.topicId === topicId)
+        .slice(0, 3)
+        .reverse()
+        .map((entry) => ({
+          id: entry.id,
+          title: entry.title,
+          route: entry.route,
+          kind: entry.kind,
+        })),
+    [readingWorkspaceState.trail, topicId],
   )
 
   const starterPrompt = copy(
@@ -1183,11 +1248,6 @@ export function RightSidebarShell({
   }
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    window.localStorage.setItem(drawerStorageKey, open ? '1' : '0')
-  }, [open])
-
-  useEffect(() => {
     let alive = true
 
     const load = async () => {
@@ -1213,10 +1273,7 @@ export function RightSidebarShell({
   useEffect(() => {
     if (typeof window === 'undefined') return
     setStore(parseChatStore(window.localStorage.getItem(`topic-chat:${topicId}`)))
-    setContextPills([])
     setAssistantState('empty')
-    setHistoryOpen(false)
-    setActiveTab('assistant')
     setResearchStarting(false)
     setResearchStopping(false)
   }, [topicId])
@@ -1839,98 +1896,103 @@ export function RightSidebarShell({
           <div className={historyOpen ? 'pointer-events-none opacity-15 blur-[1px]' : ''}>
             {activeTab === 'assistant' ? (
               <div className="space-y-2">
-              <ResearchSessionCard
-                session={researchSession}
-                brief={researchBriefState}
-                durationHours={researchHours}
-                onDurationHoursChange={setResearchHours}
-                onStart={() => void startResearchSession()}
-                onStop={() => void stopResearchSession()}
-                starting={researchStarting || researchLoading}
-                stopping={researchStopping}
-                onUsePrompt={setQuestion}
-              />
-
-              {researchLoading || researchBriefError || hasResearchIntel ? (
-                <section
-                  data-testid="topic-research-intel"
-                  className="rounded-[18px] border border-black/8 bg-[var(--surface-soft)] px-3 py-3"
-                >
-                  <div className="max-w-[30ch]">
-                    <div className="text-[10px] uppercase tracking-[0.2em] text-black/34">
-                      {t('workbench.researchIntelEyebrow', 'Research intel')}
-                    </div>
-                    <p className="mt-1 text-[11px] leading-5 text-black/56">
-                      {t(
-                        'workbench.researchIntelDek',
-                        'The thesis, latest absorbed guidance, and current calibration stay visible here instead of collapsing into chat history.',
-                      )}
-                    </p>
-                  </div>
-
-                  <div className="mt-3 space-y-2">
-                    {researchLoading && !hasResearchIntel ? (
-                      <ResearchIntelStateCard
-                        loading
-                        message={t(
-                          'workbench.researchIntelLoadingMessage',
-                          'Pulling the latest thesis, absorbed guidance, and calibration notes from the backend.',
-                        )}
-                      />
-                    ) : null}
-
-                    {researchBriefError ? (
-                      <ResearchIntelStateCard
-                        message={researchBriefError}
-                        onRetry={() => void loadResearchSession()}
-                      />
-                    ) : null}
-
-                    {hasResearchIntel ? (
-                      <>
-                        <ResearchWorldCard
-                          world={researchBriefState?.world ?? null}
-                          onUsePrompt={setQuestion}
-                        />
-
-                        <GuidanceLedgerCard
-                          guidance={researchBriefState?.guidance ?? null}
-                          onUsePrompt={setQuestion}
-                        />
-
-                        <WorkbenchPulseCard
-                          brief={researchBriefState}
-                          onUsePrompt={setQuestion}
-                        />
-                      </>
-                    ) : null}
-                  </div>
-                </section>
-              ) : null}
-
-              {currentThread.messages.length === 0 ? (
-                <AssistantEmptyState
-                  starterPrompt={starterPrompt}
-                  suggestedQuestions={suggestedQuestions}
+                <ResearchSessionCard
+                  session={researchSession}
                   brief={researchBriefState}
+                  durationHours={researchHours}
+                  onDurationHoursChange={setResearchHours}
+                  onStart={() => void startResearchSession()}
+                  onStop={() => void stopResearchSession()}
+                  starting={researchStarting || researchLoading}
+                  stopping={researchStopping}
                   onUsePrompt={setQuestion}
                 />
-              ) : (
-                <ConversationThread
-                  messages={currentThread.messages}
-                  onOpenCitation={onOpenCitation}
-                  onAction={(action) =>
-                    ((action.action === 'explain' ||
-                      action.action === 'compare' ||
-                      action.action === 'summarize') &&
-                    !action.targetId
-                      ? void sendQuestion(action.label)
-                      : onAction(action))
-                  }
-                  onUsePrompt={setQuestion}
-                  onSaveMessage={saveAssistantMessage}
+
+                <ReadingPathCard
+                  entries={readingPathEntries}
+                  onNavigate={(route) => navigate(route)}
                 />
-              )}
+
+                {researchLoading || researchBriefError || hasResearchIntel ? (
+                  <section
+                    data-testid="topic-research-intel"
+                    className="rounded-[18px] border border-black/8 bg-[var(--surface-soft)] px-3 py-3"
+                  >
+                    <div className="max-w-[30ch]">
+                      <div className="text-[10px] uppercase tracking-[0.2em] text-black/34">
+                        {t('workbench.researchIntelEyebrow', 'Research intel')}
+                      </div>
+                      <p className="mt-1 text-[11px] leading-5 text-black/56">
+                        {t(
+                          'workbench.researchIntelDek',
+                          'The thesis, latest absorbed guidance, and current calibration stay visible here instead of collapsing into chat history.',
+                        )}
+                      </p>
+                    </div>
+
+                    <div className="mt-3 space-y-2">
+                      {researchLoading && !hasResearchIntel ? (
+                        <ResearchIntelStateCard
+                          loading
+                          message={t(
+                            'workbench.researchIntelLoadingMessage',
+                            'Pulling the latest thesis, absorbed guidance, and calibration notes from the backend.',
+                          )}
+                        />
+                      ) : null}
+
+                      {researchBriefError ? (
+                        <ResearchIntelStateCard
+                          message={researchBriefError}
+                          onRetry={() => void loadResearchSession()}
+                        />
+                      ) : null}
+
+                      {hasResearchIntel ? (
+                        <>
+                          <GuidanceLedgerCard
+                            guidance={researchBriefState?.guidance ?? null}
+                            onUsePrompt={setQuestion}
+                          />
+
+                          <ResearchWorldCard
+                            world={researchBriefState?.world ?? null}
+                            onUsePrompt={setQuestion}
+                          />
+
+                          <WorkbenchPulseCard
+                            brief={researchBriefState}
+                            onUsePrompt={setQuestion}
+                          />
+                        </>
+                      ) : null}
+                    </div>
+                  </section>
+                ) : null}
+
+                {currentThread.messages.length === 0 ? (
+                  <AssistantEmptyState
+                    starterPrompt={starterPrompt}
+                    suggestedQuestions={suggestedQuestions}
+                    brief={researchBriefState}
+                    onUsePrompt={setQuestion}
+                  />
+                ) : (
+                  <ConversationThread
+                    messages={currentThread.messages}
+                    onOpenCitation={onOpenCitation}
+                    onAction={(action) =>
+                      ((action.action === 'explain' ||
+                        action.action === 'compare' ||
+                        action.action === 'summarize') &&
+                      !action.targetId
+                        ? void sendQuestion(action.label)
+                        : onAction(action))
+                    }
+                    onUsePrompt={setQuestion}
+                    onSaveMessage={saveAssistantMessage}
+                  />
+                )}
               </div>
             ) : activeTab === 'notes' ? (
               <NotebookPanel

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, ExternalLink } from 'lucide-react'
 
 import {
@@ -10,6 +10,7 @@ import {
 import { ReadingEvidenceBlock } from '@/components/reading/ReadingEvidenceBlock'
 import { PaperSectionBlock } from '@/components/reading/PaperSectionBlock'
 import { RightSidebarShell } from '@/components/topic/RightSidebarShell'
+import { usePageScrollRestoration, useReadingWorkspace } from '@/contexts/ReadingWorkspaceContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useProductCopy } from '@/hooks/useProductCopy'
 import { useI18n } from '@/i18n'
@@ -258,7 +259,9 @@ function formatExternalLinkLabel(url: string) {
 
 export function NodePage() {
   const { nodeId = '' } = useParams<{ nodeId: string }>()
+  const location = useLocation()
   const navigate = useNavigate()
+  const { rememberTrail } = useReadingWorkspace()
   const [searchParams, setSearchParams] = useSearchParams()
   const [viewModel, setViewModel] = useState<NodeViewModel | null>(null)
   const [selectedEvidence, setSelectedEvidence] = useState<EvidencePayload | null>(null)
@@ -276,6 +279,11 @@ export function NodePage() {
     [searchParams],
   )
   const stageWindowMonths = viewModel?.stageWindowMonths ?? requestedStageWindowMonths ?? 1
+  const hasFocusAnchor = Boolean(searchParams.get('anchor') || searchParams.get('evidence'))
+
+  usePageScrollRestoration(`node:${nodeId}:stage:${stageWindowMonths}`, {
+    skipInitialRestore: hasFocusAnchor,
+  })
 
   useDocumentTitle(
     viewModel?.title ??
@@ -303,6 +311,19 @@ export function NodePage() {
       alive = false
     }
   }, [nodeId, requestedStageWindowMonths])
+
+  useEffect(() => {
+    if (!viewModel) return
+
+    rememberTrail({
+      id: `node:${viewModel.nodeId}`,
+      kind: 'node',
+      topicId: viewModel.topic.topicId,
+      nodeId: viewModel.nodeId,
+      title: viewModel.title,
+      route: `${location.pathname}${location.search}`,
+    })
+  }, [location.pathname, location.search, rememberTrail, viewModel])
 
   useEffect(() => {
     const evidenceAnchor = searchParams.get('evidence')
