@@ -1,6 +1,6 @@
-import { executeOrchestrator } from './executor.ts'
+import { executeOrchestrator } from './executor'
 
-import type { SkillDefinition } from '../../../engine/contracts.ts'
+import type { SkillDefinition } from '../../../engine/contracts'
 
 export const orchestratorSkill: SkillDefinition = {
   manifest: {

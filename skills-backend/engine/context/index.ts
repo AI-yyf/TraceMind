@@ -1,20 +1,34 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 
-import { writeCompiledTopics } from '../../topic-config/compile-topics.ts'
+import { writeCompiledTopics } from '../../topic-config/compile-topics'
 import {
   normalizeDecisionMemoryFile,
   normalizeExecutionMemoryFile,
-} from '../../shared/research-memory.ts'
+} from '../../shared/research-memory'
 
-import type { SkillAttachment, SkillContextSnapshot, SkillExecutionRequest } from '../contracts.ts'
+import type { SkillAttachment, SkillContextSnapshot, SkillExecutionRequest } from '../contracts'
 
-const currentDir = path.dirname(fileURLToPath(import.meta.url))
+const currentDir = __dirname
 const repoRoot = path.resolve(currentDir, '..', '..', '..')
 export const generatedDataRoot = path.join(repoRoot, 'generated-data', 'app-data')
 export const workflowRoot = path.join(generatedDataRoot, 'workflow')
 export const trackerContentRoot = path.join(generatedDataRoot, 'tracker-content')
+
+const defaultLogger: SkillContextSnapshot['logger'] = {
+  info(message, meta) {
+    console.info(message, meta ?? {})
+  },
+  warn(message, meta) {
+    console.warn(message, meta ?? {})
+  },
+  error(message, meta) {
+    console.error(message, meta ?? {})
+  },
+  debug(message, meta) {
+    console.debug(message, meta ?? {})
+  },
+}
 
 function readJson<T>(absolutePath: string, fallback: T): T {
   if (!fs.existsSync(absolutePath)) return fallback
@@ -201,6 +215,11 @@ export function buildContextSnapshot(request: SkillExecutionRequest): SkillConte
       paperCount: Object.keys(paperCatalog).length,
       topicCount: topicCatalog.topics.length,
       capabilityCount: capabilityLibrary.length,
+      nodeCount: Object.values(topicMemory).reduce((sum, entry) => {
+        const researchNodes = Array.isArray(entry?.researchNodes) ? entry.researchNodes : []
+        return sum + researchNodes.length
+      }, 0),
     },
+    logger: defaultLogger,
   }
 }

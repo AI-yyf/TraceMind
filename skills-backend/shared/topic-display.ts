@@ -2,7 +2,7 @@ import {
   buildResearchNodesFromStageLedger,
   normalizeResearchNodes,
   resolveMainlineBranchId,
-} from './research-graph.ts'
+} from './research-graph'
 
 type TopicDisplayBuilderArgs = {
   topicId: string
@@ -58,9 +58,11 @@ export function buildTopicDisplay(args: TopicDisplayBuilderArgs): Record<string,
   } = args
 
   // 1. 构建研究节点
-  const stageLedger = (topicMemory.stageLedger || {}) as Record<string, unknown>
-  const researchNodes = buildResearchNodesFromStageLedger(stageLedger)
-  const normalizedNodes = normalizeResearchNodes(researchNodes)
+  const normalizedNodes = normalizeResearchNodes(
+    Array.isArray(topicMemory.researchNodes) && topicMemory.researchNodes.length > 0
+      ? (topicMemory.researchNodes as unknown[])
+      : buildResearchNodesFromStageLedger((topicMemory.stageLedger || {}) as Record<string, unknown>),
+  )
 
   // 2. 解析论文目录
   const papers = Object.entries(paperCatalog).map(([paperId, paperData]) => ({
@@ -101,10 +103,22 @@ export function buildTopicDisplay(args: TopicDisplayBuilderArgs): Record<string,
  * 为分支分配颜色
  */
 function assignBranchColors(
-  nodes: Array<Record<string, unknown>>,
+  nodes: Array<{ branchId?: string; sourceBranchIds?: string[] }>,
   mainlineBranchId: string
 ): Record<string, string> {
-  const branchIds = [...new Set(nodes.map((n) => n.branchId as string).filter(Boolean))]
+  const branchIds = [
+    ...new Set(
+      nodes
+        .map((node) => {
+          return typeof node.branchId === 'string'
+            ? node.branchId
+            : Array.isArray(node.sourceBranchIds) && typeof node.sourceBranchIds[0] === 'string'
+              ? node.sourceBranchIds[0]
+              : ''
+        })
+        .filter(Boolean),
+    ),
+  ]
   const colors: Record<string, string> = {}
 
   branchIds.forEach((branchId, index) => {
@@ -130,7 +144,47 @@ export function buildTopicDisplayCollection(
   }
 }
 
+export function buildTopicDisplayEntry(args: TopicDisplayBuilderArgs): Record<string, unknown> {
+  return buildTopicDisplay(args)
+}
+
+export function createEmptyTopicDisplayCollection(): TopicDisplayCollection {
+  return {
+    schemaVersion: 1,
+    topics: [],
+  }
+}
+
+export function upsertTopicDisplayEntry(
+  collection: TopicDisplayCollection,
+  entry: Record<string, unknown>,
+): TopicDisplayCollection {
+  const topicId = typeof entry.topicId === 'string' ? entry.topicId : ''
+  if (!topicId) {
+    return collection
+  }
+
+  const nextTopics = [...collection.topics]
+  const index = nextTopics.findIndex((item) => item.topicId === topicId)
+  if (index >= 0) {
+    nextTopics[index] = {
+      ...nextTopics[index],
+      ...entry,
+    }
+  } else {
+    nextTopics.push(entry)
+  }
+
+  return {
+    schemaVersion: collection.schemaVersion ?? 1,
+    topics: nextTopics,
+  }
+}
+
 export default {
   buildTopicDisplay,
+  buildTopicDisplayEntry,
   buildTopicDisplayCollection,
+  createEmptyTopicDisplayCollection,
+  upsertTopicDisplayEntry,
 }

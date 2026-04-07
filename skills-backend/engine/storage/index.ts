@@ -1,10 +1,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 
-import type { SkillArtifactChange, SkillStorageMode } from '../contracts.ts'
+import type { SkillArtifactChange, SkillStorageMode } from '../contracts'
 
-const currentDir = path.dirname(fileURLToPath(import.meta.url))
+const currentDir = __dirname
 const repoRoot = path.resolve(currentDir, '..', '..', '..')
 const generatedRoot = path.join(repoRoot, 'generated-data', 'app-data')
 const tmpRoot = path.join(repoRoot, 'tmp', 'skill-runs')

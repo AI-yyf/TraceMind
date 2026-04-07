@@ -1,8 +1,8 @@
-import type { ArtifactManager, SkillContext, SkillInput, SkillOutput } from '../../../engine/contracts.ts'
-import { prisma } from '../../../shared/db.ts'
-import { researchMemory } from '../../../shared/research-memory.ts'
-import { getTopicDefinition } from '../../../topic-config/index.ts'
-import { omniGateway } from '../../../src/services/omni/gateway.ts'
+import type { ArtifactManager, SkillContext, SkillInput, SkillOutput } from '../../../engine/contracts'
+import { prisma } from '../../../shared/db'
+import { researchMemory } from '../../../shared/research-memory'
+import { getTopicDefinition } from '../../../topic-config/index'
+import { omniGateway } from '../../../src/services/omni/gateway'
 
 interface ContentGenesisInput {
   paperId: string

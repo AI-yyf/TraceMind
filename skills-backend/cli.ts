@@ -1,8 +1,8 @@
-import { buildPlanForSkillDefinition, runSkillDefinition } from './engine/runner.ts'
-import { getResearchSkill, listResearchSkills } from './skill-packs/research/index.ts'
-import { writeCompiledTopics, writeResetOriginTopics } from './topic-config/compile-topics.ts'
+import { buildPlanForSkillDefinition, runSkillDefinition } from './engine/runner'
+import { getResearchSkill, listResearchSkills } from './skill-packs/research'
+import { writeCompiledTopics, writeResetOriginTopics } from './topic-config/compile-topics'
 
-import type { AgentTarget, SkillExecutionMode, SkillId, SkillStorageMode } from './engine/contracts.ts'
+import type { AgentTarget, SkillExecutionMode, SkillId, SkillStorageMode } from './engine/contracts'
 
 const reservedFlags = new Set(['agent', 'mode', 'storageMode'])
 
@@ -84,9 +84,9 @@ async function main() {
       JSON.stringify(
         {
           ok: true,
-          topicCount: compiled.topicCatalog.topics.length,
-          activeTopicCount: compiled.activeTopics.length,
-          capabilityCount: compiled.capabilityLibrary.length,
+          topicCount: compiled.compiled?.topicCatalog.topics.length ?? 0,
+          activeTopicCount: compiled.compiled?.activeTopics.length ?? 0,
+          capabilityCount: compiled.compiled?.capabilityLibrary.length ?? 0,
         },
         null,
         2,

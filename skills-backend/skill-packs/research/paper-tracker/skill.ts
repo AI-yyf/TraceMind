@@ -1,6 +1,6 @@
-import { executePaperTracker } from './executor.ts'
+import { executePaperTracker } from './executor'
 
-import type { SkillDefinition } from '../../../engine/contracts.ts'
+import type { SkillDefinition } from '../../../engine/contracts'
 
 export const paperTrackerSkill: SkillDefinition = {
   manifest: {

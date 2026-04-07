@@ -1,6 +1,6 @@
-import { executeTopicVisualizer } from './executor.ts'
+import { executeTopicVisualizer } from './executor'
 
-import type { SkillDefinition } from '../../../engine/contracts.ts'
+import type { SkillDefinition } from '../../../engine/contracts'
 
 export const topicVisualizerSkill: SkillDefinition = {
   manifest: {

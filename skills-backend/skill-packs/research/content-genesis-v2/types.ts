@@ -1,4 +1,4 @@
-import type { SkillAttachment } from '../../../engine/contracts.ts'
+import type { SkillAttachment } from '../../../engine/contracts'
 
 export interface ContentGenesisInput {
   paperId: string

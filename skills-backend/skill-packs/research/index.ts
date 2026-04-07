@@ -1,9 +1,9 @@
-import { contentGenesisSkill } from './content-genesis-v2/skill.ts'
-import { orchestratorSkill } from './orchestrator/skill.ts'
-import { paperTrackerSkill } from './paper-tracker/skill.ts'
-import { topicVisualizerSkill } from './topic-visualizer/skill.ts'
+import { contentGenesisSkill } from './content-genesis-v2/skill'
+import { orchestratorSkill } from './orchestrator/skill'
+import { paperTrackerSkill } from './paper-tracker/skill'
+import { topicVisualizerSkill } from './topic-visualizer/skill'
 
-import type { SkillDefinition, SkillId } from '../../engine/contracts.ts'
+import type { SkillDefinition, SkillId } from '../../engine/contracts'
 
 const researchSkills = [
   paperTrackerSkill,

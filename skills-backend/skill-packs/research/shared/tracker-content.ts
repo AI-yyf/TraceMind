@@ -1,4 +1,4 @@
-import type { SkillArtifactChange, SkillContextSnapshot } from '../../../engine/contracts.ts'
+import type { SkillArtifactChange, SkillContextSnapshot } from '../../../engine/contracts'
 
 function clonePaperEditorialStore(context: SkillContextSnapshot) {
   return structuredClone((context.paperEditorialStore ?? {}) as Record<string, Record<string, unknown>>)

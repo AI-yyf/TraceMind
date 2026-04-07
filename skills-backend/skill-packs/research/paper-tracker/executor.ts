@@ -1,14 +1,14 @@
-import type { ArtifactManager, SkillContext, SkillInput, SkillOutput } from '../../../engine/contracts.ts'
-import { prisma } from '../../../shared/db.ts'
-import { researchMemory } from '../../../shared/research-memory.ts'
-import { getTopicDefinition } from '../../../topic-config/index.ts'
-import { omniGateway } from '../../../src/services/omni/gateway.ts'
-import { discoverExternalCandidates, type DiscoveryQuery } from './discovery.ts'
+import type { ArtifactManager, SkillContext, SkillInput, SkillOutput } from '../../../engine/contracts'
+import { prisma } from '../../../shared/db'
+import { researchMemory } from '../../../shared/research-memory'
+import { getTopicDefinition } from '../../../topic-config/index'
+import { omniGateway } from '../../../src/services/omni/gateway'
+import { discoverExternalCandidates, type DiscoveryQuery } from './discovery'
 import {
   deriveTemporalStageBuckets,
   normalizeStageWindowMonths,
-} from '../../../src/services/topics/stage-buckets.ts'
-import { loadTopicStageConfig } from '../../../src/services/topics/topic-stage-config.ts'
+} from '../../../src/services/topics/stage-buckets'
+import { loadTopicStageConfig } from '../../../src/services/topics/topic-stage-config'
 
 interface PaperTrackerInput {
   topicId: string

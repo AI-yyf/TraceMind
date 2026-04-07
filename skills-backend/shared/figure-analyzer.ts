@@ -73,6 +73,14 @@ export interface FormulaAnalysisResult {
   }
 }
 
+export interface CompleteFigure {
+  id: string
+  caption: string
+  imageFormat: string
+  imageData: Buffer
+  paperId?: string
+}
+
 /**
  * 图表分析器类
  */
@@ -133,6 +141,10 @@ export class FigureAnalyzer {
       figureId,
       ...analysis
     }
+  }
+
+  async analyzeFigures(figures: CompleteFigure[]): Promise<CompleteFigure[]> {
+    return figures
   }
 
   /**

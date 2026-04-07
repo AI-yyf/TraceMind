@@ -1,8 +1,8 @@
-import type { SkillArtifactChange, SkillContextSnapshot } from '../../../engine/contracts.ts'
+import type { SkillArtifactChange, SkillContextSnapshot } from '../../../engine/contracts'
 import {
   appendDecisionMemoryEntry,
   mergeExecutionMemoryPatch,
-} from '../../../shared/research-memory.ts'
+} from '../../../shared/research-memory'
 
 export function buildExecutionMemoryChange(args: {
   context: SkillContextSnapshot

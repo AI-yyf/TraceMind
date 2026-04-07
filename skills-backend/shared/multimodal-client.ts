@@ -53,7 +53,7 @@ export class MultimodalClient {
   private anthropicClient?: Anthropic
   private googleClient?: GoogleGenerativeAI
 
-  constructor() {
+  constructor(_config?: unknown) {
     // 初始化客户端（如果有环境变量）
     if (process.env.OPENAI_API_KEY) {
       this.openaiClient = new OpenAI({
@@ -220,3 +220,4 @@ export class MultimodalClient {
 
 // 导出单例实例
 export const multimodalClient = new MultimodalClient()
+export { MultimodalClient as MultiModalClient }

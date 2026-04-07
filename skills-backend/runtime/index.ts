@@ -1,2 +1,2 @@
-export * from './contracts.ts'
-export * from './skill-runner.ts'
+export * from './contracts'
+export * from './skill-runner'

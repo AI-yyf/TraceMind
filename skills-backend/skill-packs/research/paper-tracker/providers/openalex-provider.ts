@@ -5,7 +5,7 @@
  */
 
 import https from 'https'
-import type { SearchResult } from './discovery-engine'
+import type { SearchResult } from '../discovery-engine'
 
 const OPENALEX_API_BASE = 'https://api.openalex.org'
 

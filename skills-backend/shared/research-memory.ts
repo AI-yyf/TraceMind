@@ -1,9 +1,21 @@
 /**
- * 研究记忆模块
- * 用于存储和检索研究过程中的发现和内容
+ * Research memory helpers used by both the legacy skill executors and the
+ * newer workflow compiler/runtime.
  */
 
 import { prisma } from './db'
+
+type JsonRecord = Record<string, unknown>
+
+export interface DecisionMemoryFile {
+  schemaVersion: number
+  entries: JsonRecord[]
+}
+
+export interface ExecutionMemoryFile {
+  schemaVersion: number
+  skills: Record<string, JsonRecord>
+}
 
 interface DiscoveryRecord {
   paperId: string
@@ -21,13 +33,81 @@ interface ContentGenerationRecord {
   coverageScore: number
 }
 
+function isRecord(value: unknown): value is JsonRecord {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function asRecordArray(value: unknown): JsonRecord[] {
+  if (!Array.isArray(value)) return []
+  return value.filter(isRecord)
+}
+
+export function normalizeDecisionMemoryFile(value: unknown): DecisionMemoryFile {
+  const record = isRecord(value) ? value : {}
+  const schemaVersion =
+    typeof record.schemaVersion === 'number' && Number.isFinite(record.schemaVersion)
+      ? Math.max(1, Math.trunc(record.schemaVersion))
+      : 1
+
+  return {
+    schemaVersion,
+    entries: asRecordArray(record.entries),
+  }
+}
+
+export function normalizeExecutionMemoryFile(value: unknown): ExecutionMemoryFile {
+  const record = isRecord(value) ? value : {}
+  const rawSkills = isRecord(record.skills) ? record.skills : {}
+  const skills = Object.fromEntries(
+    Object.entries(rawSkills).map(([skillId, payload]) => [
+      skillId,
+      isRecord(payload) ? payload : {},
+    ]),
+  ) as Record<string, JsonRecord>
+
+  const schemaVersion =
+    typeof record.schemaVersion === 'number' && Number.isFinite(record.schemaVersion)
+      ? Math.max(1, Math.trunc(record.schemaVersion))
+      : 1
+
+  return {
+    schemaVersion,
+    skills,
+  }
+}
+
+export function appendDecisionMemoryEntry(
+  memory: unknown,
+  entry: JsonRecord,
+): DecisionMemoryFile {
+  const normalized = normalizeDecisionMemoryFile(memory)
+  return {
+    ...normalized,
+    entries: [...normalized.entries, entry],
+  }
+}
+
+export function mergeExecutionMemoryPatch(args: {
+  memory: unknown
+  skillId: string
+  patch: JsonRecord
+}): ExecutionMemoryFile {
+  const normalized = normalizeExecutionMemoryFile(args.memory)
+  return {
+    ...normalized,
+    skills: {
+      ...normalized.skills,
+      [args.skillId]: {
+        ...(normalized.skills[args.skillId] ?? {}),
+        ...args.patch,
+      },
+    },
+  }
+}
+
 export class ResearchMemory {
-  /**
-   * 添加发现批次
-   */
   async addDiscoveryBatch(topicId: string, discoveries: DiscoveryRecord[]): Promise<void> {
     try {
-      // 保存到数据库
       for (const discovery of discoveries) {
         await prisma.systemConfig.upsert({
           where: { key: `discovery:${topicId}:${discovery.paperId}` },
@@ -45,9 +125,6 @@ export class ResearchMemory {
     }
   }
 
-  /**
-   * 添加内容生成记录
-   */
   async addContentGeneration(paperId: string, content: ContentGenerationRecord): Promise<void> {
     try {
       await prisma.systemConfig.upsert({
@@ -65,9 +142,6 @@ export class ResearchMemory {
     }
   }
 
-  /**
-   * 获取主题的发现历史
-   */
   async getDiscoveryHistory(topicId: string): Promise<DiscoveryRecord[]> {
     try {
       const records = await prisma.systemConfig.findMany({
@@ -78,26 +152,20 @@ export class ResearchMemory {
         },
       })
 
-      return records.map((r) => JSON.parse(r.value))
+      return records.map((record) => JSON.parse(record.value) as DiscoveryRecord)
     } catch (error) {
       console.error('Failed to get discovery history:', error)
       return []
     }
   }
 
-  /**
-   * 获取论文的内容生成记录
-   */
   async getContentGeneration(paperId: string): Promise<ContentGenerationRecord | null> {
     try {
       const record = await prisma.systemConfig.findUnique({
         where: { key: `content:${paperId}` },
       })
 
-      if (record) {
-        return JSON.parse(record.value)
-      }
-      return null
+      return record ? (JSON.parse(record.value) as ContentGenerationRecord) : null
     } catch (error) {
       console.error('Failed to get content generation:', error)
       return null
@@ -105,5 +173,4 @@ export class ResearchMemory {
   }
 }
 
-// 导出单例
 export const researchMemory = new ResearchMemory()

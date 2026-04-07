@@ -1,9 +1,5 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
-
-import defaultsJson from './defaults.json' with { type: 'json' }
-import capabilitiesJson from './capabilities.json' with { type: 'json' }
 
 import {
   assertCapabilityDefinition,
@@ -12,21 +8,27 @@ import {
   type CapabilityDefinition,
   type TopicDefaults,
   type TopicDefinition,
-} from './schema.ts'
+} from './schema'
 
-const currentDir = path.dirname(fileURLToPath(import.meta.url))
+const currentDir = __dirname
 const topicsDir = path.join(currentDir, 'topics')
+
+function readJson<T>(fileName: string): T {
+  return JSON.parse(fs.readFileSync(path.join(currentDir, fileName), 'utf8')) as T
+}
 
 export function getTopicConfigRoot() {
   return currentDir
 }
 
 export function loadTopicDefaults(): TopicDefaults {
+  const defaultsJson = readJson<TopicDefaults>('defaults.json')
   assertTopicDefaults(defaultsJson)
   return defaultsJson
 }
 
 export function loadCapabilityDefinitions(): CapabilityDefinition[] {
+  const capabilitiesJson = readJson<CapabilityDefinition[]>('capabilities.json')
   if (!Array.isArray(capabilitiesJson)) {
     throw new Error('capabilities.json must be an array.')
   }

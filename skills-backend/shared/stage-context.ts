@@ -5,6 +5,44 @@
 
 import type { ResearchNode } from './research-node'
 
+export interface DiscoveryRound {
+  roundNumber: 1 | 2
+  queries: string[]
+  results?: Array<{
+    paperId: string
+    title: string
+    abstract: string
+    published: string
+    authors: string[]
+    relevanceScore: number
+    matchedQueryIds: string[]
+    source: string
+    pdfUrl?: string
+    categories?: string[]
+    citationCount?: number
+  }>
+  candidates?: Array<{
+    paperId: string
+    title: string
+    abstract: string
+    published: string
+    authors: string[]
+    matchedBranchIds: string[]
+    matchedProblemNodeIds: string[]
+    discoveryRounds: number[]
+    queryHits: Array<{
+      queryId: string
+      queryText: string
+      relevanceScore: number
+    }>
+    discoveryChannels: string[]
+    confidence: number
+  }>
+  executionTime?: number
+  resultCount?: number
+  topCandidates?: string[]
+}
+
 /** 决策信号 */
 export interface DecisionSignal {
   type: 'branch_out' | 'branch_merge' | 'capability_gap' | 'method_shift' | 'problem_solved'

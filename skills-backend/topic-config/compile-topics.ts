@@ -1,6 +1,5 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 
 import {
   buildResearchNodesFromStageLedger,
@@ -12,27 +11,27 @@ import {
   normalizeStageRunLedger,
   resolvePaperPublishedAt,
   syncLegacyBranchTree,
-} from '../shared/research-graph.ts'
+} from '../shared/research-graph'
 import {
   normalizeDecisionMemoryFile,
   normalizeExecutionMemoryFile,
-} from '../shared/research-memory.ts'
+} from '../shared/research-memory'
 import {
   buildProblemNodesFromTimelineContext,
   normalizeTimelineContext,
-} from '../shared/timeline-context.ts'
+} from '../shared/timeline-context'
 import {
   buildTopicDisplayEntry,
   createEmptyTopicDisplayCollection,
   upsertTopicDisplayEntry,
-} from '../shared/topic-display.ts'
-import { loadCapabilityDefinitions, loadTopicDefaults, loadTopicDefinitions } from './index.ts'
-import type { TopicDefinition } from './schema.ts'
+} from '../shared/topic-display'
+import { loadCapabilityDefinitions, loadTopicDefaults, loadTopicDefinitions } from './index'
+import type { TopicDefinition } from './schema'
 
 type ExistingTopicMemory = Record<string, Record<string, unknown>>
 type JsonRecord = Record<string, Record<string, unknown>>
 
-const currentDir = path.dirname(fileURLToPath(import.meta.url))
+const currentDir = __dirname
 const repoRoot = path.resolve(currentDir, '..', '..')
 const generatedRoot = path.join(repoRoot, 'generated-data', 'app-data')
 const workflowRoot = path.join(generatedRoot, 'workflow')
@@ -371,14 +370,15 @@ function buildBaseTopicMemory(args: {
   return topicMemory
 }
 
-function mergeByKey<T extends Record<string, unknown>>(
+function mergeByKey<T extends object>(
   baseValues: T[],
   existingValues: T[],
   key: keyof T,
 ) {
   const byKey = new Map<string, T>()
   for (const value of [...baseValues, ...existingValues]) {
-    const keyValue = typeof value[key] === 'string' ? (value[key] as string) : ''
+    const rawKey = value[key]
+    const keyValue = typeof rawKey === 'string' ? rawKey : ''
     if (!keyValue) continue
     const previous = byKey.get(keyValue)
     byKey.set(keyValue, previous ? ({ ...previous, ...value } as T) : value)
@@ -856,7 +856,7 @@ export function compileTopics(options: CompileOptions = {}): CompileResult {
       errors,
       preserved,
       written,
-      compiled: dryRun ? compiled : undefined
+      compiled
     }
 
   } catch (error) {
@@ -909,22 +909,26 @@ function validateCompiledData(compiled: ReturnType<typeof compileTopicsInternal>
 }
 
 function writeCompiledOutput(compiled: ReturnType<typeof compileTopics>) {
+  if (!compiled.compiled) {
+    throw new Error('Missing compiled payload.')
+  }
+  const payload = compiled.compiled
   ensureDir(generatedRoot)
   ensureDir(workflowRoot)
   ensureDir(trackerContentRoot)
-  writeJson(paperCatalogPath, compiled.paperCatalog)
-  writeJson(paperAssetsPath, compiled.paperAssets)
-  writeJson(paperMetricsPath, compiled.paperMetrics)
-  writeJson(paperEditorialPath, compiled.paperEditorial)
-  writeJson(nodeEditorialPath, compiled.nodeEditorial)
-  writeJson(topicEditorialPath, compiled.topicEditorial)
-  writeJson(topicCatalogPath, compiled.topicCatalog)
-  writeJson(topicMemoryPath, compiled.topicMemory)
-  writeJson(topicDisplayPath, compiled.topicDisplay)
-  writeJson(capabilityLibraryPath, compiled.capabilityLibrary)
-  writeJson(activeTopicsPath, compiled.activeTopics)
-  writeJson(decisionMemoryPath, compiled.decisionMemory)
-  writeJson(executionMemoryPath, compiled.executionMemory)
+  writeJson(paperCatalogPath, payload.paperCatalog)
+  writeJson(paperAssetsPath, payload.paperAssets)
+  writeJson(paperMetricsPath, payload.paperMetrics)
+  writeJson(paperEditorialPath, payload.paperEditorial)
+  writeJson(nodeEditorialPath, payload.nodeEditorial)
+  writeJson(topicEditorialPath, payload.topicEditorial)
+  writeJson(topicCatalogPath, payload.topicCatalog)
+  writeJson(topicMemoryPath, payload.topicMemory)
+  writeJson(topicDisplayPath, payload.topicDisplay)
+  writeJson(capabilityLibraryPath, payload.capabilityLibrary)
+  writeJson(activeTopicsPath, payload.activeTopics)
+  writeJson(decisionMemoryPath, payload.decisionMemory)
+  writeJson(executionMemoryPath, payload.executionMemory)
 }
 
 /**
@@ -968,7 +972,7 @@ export function writeResetOriginTopics(options?: Omit<CompileOptions, 'resetOrig
   return result
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (require.main === module) {
   const result = writeCompiledTopics()
   console.log('Safely compiled topic-config into canonical workflow data.')
   if (result.warnings.length > 0) {

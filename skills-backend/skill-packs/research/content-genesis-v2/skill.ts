@@ -1,6 +1,6 @@
-import { executeContentGenesis } from './executor.ts'
+import { executeContentGenesis } from './executor'
 
-import type { SkillDefinition } from '../../../engine/contracts.ts'
+import type { SkillDefinition } from '../../../engine/contracts'
 
 export const contentGenesisSkill: SkillDefinition = {
   manifest: {

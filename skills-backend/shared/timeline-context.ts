@@ -1,4 +1,4 @@
-import { asRecord, asString, asStringArray, clamp } from './research-graph.ts'
+import { asRecord, asString, asStringArray, clamp } from './research-graph'
 
 export type TimelineProblemStatus = 'origin' | 'active' | 'watch' | 'resolved'
 export type TimelineBranchStatus = 'origin' | 'active' | 'candidate' | 'merged' | 'dormant' | 'resolved'
@@ -134,6 +134,10 @@ function normalizeProblemNode(value: unknown, fallbackTimestamp: string) {
     lastUpdatedAt: asString(record.lastUpdatedAt, fallbackTimestamp),
     priorityScore: clamp(asNumber(record.priorityScore, 0.6), 0, 1),
   } satisfies TimelineProblemNode
+}
+
+function notNull<T>(value: T | null): value is T {
+  return value !== null
 }
 
 function normalizeMethodNode(value: unknown, fallbackTimestamp: string) {
@@ -289,22 +293,22 @@ export function normalizeTimelineContext(
   const problems = Array.isArray(asRecord(record.problemSpace)?.nodes)
     ? (asRecord(record.problemSpace)?.nodes as unknown[])
         .map((node) => normalizeProblemNode(node, timestamp))
-        .filter((node): node is TimelineProblemNode => Boolean(node))
+        .filter(notNull)
     : []
   const methods = Array.isArray(asRecord(record.methodSpace)?.nodes)
     ? (asRecord(record.methodSpace)?.nodes as unknown[])
         .map((node) => normalizeMethodNode(node, timestamp))
-        .filter((node): node is TimelineMethodNode => Boolean(node))
+        .filter(notNull)
     : []
   const branches = Array.isArray(asRecord(record.branchSpace)?.branches)
     ? (asRecord(record.branchSpace)?.branches as unknown[])
         .map((node) => normalizeBranchNode(node, timestamp))
-        .filter((node): node is TimelineBranchNode => Boolean(node))
+        .filter(notNull)
     : []
   const signals = Array.isArray(asRecord(record.qualitySpace)?.signals)
     ? (asRecord(record.qualitySpace)?.signals as unknown[])
         .map((node) => normalizeQualitySignal(node, timestamp))
-        .filter((node): node is TimelineQualitySignal => Boolean(node))
+        .filter(notNull)
     : []
 
   return {

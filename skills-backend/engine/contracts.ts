@@ -80,6 +80,13 @@ export interface SkillContextPaper {
   topicIds?: string[]
 }
 
+export interface SkillLogger {
+  info(message: string, meta?: Record<string, unknown>): void
+  warn(message: string, meta?: Record<string, unknown>): void
+  error(message: string, meta?: Record<string, unknown>): void
+  debug?(message: string, meta?: Record<string, unknown>): void
+}
+
 // Re-export new types for backward compatibility
 export type { ResearchNode, NodeStatus, NodeCreationProps, NodeUpdate, SplitSpec, MergeSpec } from '../shared/research-node'
 export type { StageContext, StageSelectionResult, TimeWindow, DecisionSignal } from '../shared/stage-context'
@@ -152,11 +159,29 @@ export interface SkillContextSnapshot {
     capabilityCount: number
     nodeCount: number
   }
+  logger: SkillLogger
   /** System configuration */
   systemConfig?: import('../shared/config').SystemConfig
 }
 
 export type SkillContext = SkillContextSnapshot
+
+export interface ArtifactManager {
+  addChange(change: SkillArtifactChange): void
+  listChanges(): SkillArtifactChange[]
+}
+
+export interface SkillInput<TParams = Record<string, unknown>> {
+  params: TParams
+  request: SkillExecutionRequest
+}
+
+export interface SkillOutput<TData = Record<string, unknown>> {
+  success: boolean
+  data: TData | null
+  error?: string
+  artifacts?: SkillArtifactChange[]
+}
 
 export interface SkillExecutionRequest {
   skillId: SkillId
@@ -216,8 +241,5 @@ export interface SkillExecutionResult {
 
 export interface SkillDefinition {
   manifest: SkillManifest
-  execute(args: {
-    request: SkillExecutionRequest
-    context: SkillContextSnapshot
-  }): Promise<SkillExecutorResult>
+  execute: any
 }

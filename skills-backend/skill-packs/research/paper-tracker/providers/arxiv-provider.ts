@@ -5,7 +5,7 @@
 
 import https from 'https'
 import { URL } from 'url'
-import type { SearchResult } from './discovery-engine'
+import type { SearchResult } from '../discovery-engine'
 
 const ARXIV_API_BASE = 'http://export.arxiv.org/api/query'
 

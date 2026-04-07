@@ -1,14 +1,17 @@
-import { buildContextSnapshot, generatedDataRoot, listInputAttachments } from './context/index.ts'
-import { persistArtifactChanges } from './storage/index.ts'
+import { buildContextSnapshot, generatedDataRoot, listInputAttachments } from './context/index'
+import { persistArtifactChanges } from './storage/index'
 
 import type {
   AgentTarget,
+  ArtifactManager,
   SkillDefinition,
   SkillExecutionPlan,
   SkillExecutionRequest,
   SkillExecutionResult,
+  SkillExecutorResult,
+  SkillOutput,
   SkillStorageMode,
-} from './contracts.ts'
+} from './contracts'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -294,15 +297,37 @@ export async function runSkillDefinition(
 ): Promise<SkillExecutionResult> {
   const plan = buildPlanForSkillDefinition(definition, request)
   const runId = `${definition.manifest.id}-${Date.now()}`
-  const executed = await definition.execute({
-    request: {
-      ...request,
-      agentTarget: plan.agentTarget,
-      mode: plan.mode,
-      storageMode: plan.storageMode,
+  const normalizedRequest = {
+    ...request,
+    agentTarget: plan.agentTarget,
+    mode: plan.mode,
+    storageMode: plan.storageMode,
+  }
+  const collectedChanges: NonNullable<SkillExecutorResult['artifactChanges']> = []
+  const artifactManager: ArtifactManager = {
+    addChange(change) {
+      collectedChanges.push(change)
     },
-    context: plan.context,
-  })
+    listChanges() {
+      return [...collectedChanges]
+    },
+  }
+  const executeFn = definition.execute as unknown as (...args: unknown[]) => Promise<unknown>
+  const rawExecuted =
+    executeFn.length >= 2
+      ? await executeFn(
+          {
+            params: normalizedRequest.input,
+            request: normalizedRequest,
+          },
+          plan.context,
+          artifactManager,
+        )
+      : await executeFn({
+          request: normalizedRequest,
+          context: plan.context,
+        })
+  const executed = normalizeExecutionResult(rawExecuted, collectedChanges)
 
   validateOutput(definition, executed.output)
   const artifactChanges = [...(executed.artifactChanges ?? []), ...(executed.debugArtifacts ?? [])]
@@ -329,4 +354,37 @@ export async function runSkillDefinition(
     persistedArtifacts,
     summary: executed.summary,
   }
+}
+
+function normalizeExecutionResult(
+  value: unknown,
+  artifactChanges: NonNullable<SkillExecutorResult['artifactChanges']>,
+): SkillExecutorResult {
+  const legacy = value as SkillOutput | null
+  if (
+    legacy &&
+    typeof legacy === 'object' &&
+    'success' in legacy &&
+    typeof legacy.success === 'boolean'
+  ) {
+    if (!legacy.success) {
+      throw new Error(legacy.error ?? 'Legacy skill execution failed.')
+    }
+    const output =
+      legacy.data && typeof legacy.data === 'object' && !Array.isArray(legacy.data)
+        ? (legacy.data as Record<string, unknown>)
+        : {}
+    return {
+      output,
+      artifactChanges: [...artifactChanges, ...(legacy.artifacts ?? [])],
+      summary:
+        typeof output.summary === 'string'
+          ? output.summary
+          : typeof output.decisionSummary === 'string'
+            ? output.decisionSummary
+            : 'Legacy skill execution completed.',
+    }
+  }
+
+  return value as SkillExecutorResult
 }

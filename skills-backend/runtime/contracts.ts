@@ -14,4 +14,4 @@ export type {
   SkillInputField,
   SkillManifest,
   SkillStorageMode,
-} from '../engine/contracts.ts'
+} from '../engine/contracts'

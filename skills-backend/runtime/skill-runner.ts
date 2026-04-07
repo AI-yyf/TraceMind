@@ -1,7 +1,7 @@
-import { buildPlanForSkillDefinition, runSkillDefinition } from '../engine/runner.ts'
-import { getResearchSkill, listResearchSkills } from '../skill-packs/research/index.ts'
+import { buildPlanForSkillDefinition, runSkillDefinition } from '../engine/runner'
+import { getResearchSkill, listResearchSkills } from '../skill-packs/research'
 
-import type { SkillExecutionRequest, SkillId } from './contracts.ts'
+import type { SkillExecutionRequest, SkillId } from './contracts'
 
 export function listSkillManifests() {
   return listResearchSkills().map((skill) => skill.manifest)

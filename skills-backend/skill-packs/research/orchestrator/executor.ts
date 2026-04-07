@@ -1,8 +1,8 @@
-import { runSkillDefinition } from '../../../engine/runner.ts'
-import { contentGenesisSkill } from '../content-genesis-v2/skill.ts'
-import { buildDecisionMemoryChange, buildExecutionMemoryChange } from '../shared/memory.ts'
-import { paperTrackerSkill } from '../paper-tracker/skill.ts'
-import { topicVisualizerSkill } from '../topic-visualizer/skill.ts'
+import { runSkillDefinition } from '../../../engine/runner'
+import { contentGenesisSkill } from '../content-genesis-v2/skill'
+import { buildDecisionMemoryChange, buildExecutionMemoryChange } from '../shared/memory'
+import { paperTrackerSkill } from '../paper-tracker/skill'
+import { topicVisualizerSkill } from '../topic-visualizer/skill'
 
 import {
   asRecord,
@@ -14,11 +14,11 @@ import {
   resolveMainlineBranchId,
   syncLegacyBranchTree,
   uniqueStrings,
-} from '../../../shared/research-graph.ts'
+} from '../../../shared/research-graph'
 
-import type { SkillArtifactChange, SkillContextSnapshot, SkillExecutionRequest } from '../../../engine/contracts.ts'
-import type { PaperTrackerCandidate } from '../paper-tracker/types.ts'
-import type { OrchestratorStepResult, OrchestratorWorkflowMode } from './types.ts'
+import type { SkillArtifactChange, SkillContextSnapshot, SkillExecutionRequest } from '../../../engine/contracts'
+import type { PaperTrackerCandidate } from '../paper-tracker/types'
+import type { OrchestratorStepResult, OrchestratorWorkflowMode } from './types'
 
 function resolveWorkflowMode(input: Record<string, unknown>): OrchestratorWorkflowMode {
   const workflowMode = input.workflowMode
@@ -66,7 +66,7 @@ function inferSelectedBranch(output: Record<string, unknown>) {
   }
 }
 
-function resolvePaperIdFromMemory(topicMemory: Record<string, unknown>) {
+function resolvePaperIdFromMemory(topicMemory: Record<string, unknown>): string | null {
   const queue = Array.isArray(topicMemory.recommendationQueue)
     ? (topicMemory.recommendationQueue as Array<Record<string, unknown>>)
     : []
@@ -78,7 +78,7 @@ function resolvePaperIdFromMemory(topicMemory: Record<string, unknown>) {
   )
 }
 
-function resolveBranchIdForPaper(topicMemory: Record<string, unknown>, paperId: string) {
+function resolveBranchIdForPaper(topicMemory: Record<string, unknown>, paperId: string): string | null {
   const paperRelations = Array.isArray(topicMemory.paperRelations)
     ? (topicMemory.paperRelations as Array<Record<string, unknown>>)
     : []
@@ -180,6 +180,7 @@ function buildPromotionChanges(args: {
   const relationMap = new Map(paperRelations.map((entry) => [entry.paperId, { ...entry }]))
   const currentRelation = relationMap.get(args.paperId) ?? {
     paperId: args.paperId,
+    nodeId: `node:${args.paperId}`,
     problemNodeIds: [],
     branchIds: [],
     primaryBranchId: args.branchId ?? mainlineBranchId,

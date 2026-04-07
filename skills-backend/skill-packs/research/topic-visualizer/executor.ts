@@ -1,4 +1,4 @@
-import { buildExecutionMemoryChange } from '../shared/memory.ts'
+import { buildExecutionMemoryChange } from '../shared/memory'
 
 import {
   asRecord,
@@ -9,14 +9,14 @@ import {
   normalizeBranchingDefaults,
   normalizeStageLedger,
   resolveMainlineBranchId,
-} from '../../../shared/research-graph.ts'
-import { buildTopicDisplayEntry, upsertTopicDisplayEntry } from '../../../shared/topic-display.ts'
+} from '../../../shared/research-graph'
+import { buildTopicDisplayEntry, upsertTopicDisplayEntry } from '../../../shared/topic-display'
 
 import type {
   SkillArtifactChange,
   SkillContextSnapshot,
   SkillExecutionRequest,
-} from '../../../engine/contracts.ts'
+} from '../../../engine/contracts'
 
 export async function executeTopicVisualizer(args: {
   request: SkillExecutionRequest
@@ -25,7 +25,10 @@ export async function executeTopicVisualizer(args: {
   const topic = args.context.topic
   const topicMemory = asRecord(args.context.topicMemory)
   const workflowTopicMemory = args.context.workflowTopicMemory ?? {}
-  const topicDisplayStore = args.context.topicDisplayStore ?? { schemaVersion: 1, topics: [] }
+  const topicDisplayStore = {
+    schemaVersion: args.context.topicDisplayStore?.schemaVersion ?? 1,
+    topics: args.context.topicDisplayStore?.topics ?? [],
+  }
   const paperCatalog = (args.context.paperCatalog ?? {}) as Record<string, Record<string, unknown>>
   if (!topic || !topicMemory) {
     throw new Error('topic-visualizer 需要合法的 topicId 和 canonical 主题记忆。')

@@ -84,6 +84,8 @@ export interface ResearchNode {
   mergedInto?: string // 合并到哪个节点
 }
 
+export type TrackerPaper = Record<string, unknown>
+
 /** 节点创建参数 */
 export interface NodeCreationProps {
   topicId: string
