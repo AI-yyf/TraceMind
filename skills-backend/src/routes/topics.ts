@@ -7,7 +7,11 @@ import {
 } from '../services/generation/memory-store'
 import { collectTopicGenerationContext } from '../services/generation/research-judgment-store'
 import { enhancedTaskScheduler } from '../services/enhanced-scheduler'
-import { getTopicLocalization, getTopicLocalizationMap } from '../services/topics/localization'
+import {
+  getTopicLocalization,
+  getTopicLocalizationMap,
+  type TopicLocalizationPayload,
+} from '../services/topics/localization'
 import {
   buildResearchPipelineContext,
   loadResearchPipelineState,
@@ -21,6 +25,7 @@ import {
   loadTopicStageConfig,
   loadTopicStageConfigMap,
   saveTopicStageConfig,
+  type TopicStageConfigState,
 } from '../services/topics/topic-stage-config'
 import { syncTopicResearchWorldSnapshot } from '../services/topics/research-world'
 import { collectTopicSessionMemoryContext } from '../services/topics/topic-session-memory'
@@ -34,6 +39,35 @@ const DEFAULT_RESEARCH_CONVERSATION_STYLE =
 
 const DEFAULT_RESEARCH_USER_INTENT =
   'Continue the current topic by examining the key judgments, node relationships, and unresolved questions.'
+
+function safeParseError(error: unknown) {
+  if (error instanceof Error) return { message: error.message, stack: error.stack }
+  return { message: String(error) }
+}
+
+async function safeGetTopicLocalizationMap(topicIds: string[]) {
+  try {
+    return await getTopicLocalizationMap(topicIds)
+  } catch (error) {
+    logger.warn('Topic localization map unavailable during list render; falling back to null.', {
+      topicIds,
+      ...safeParseError(error),
+    })
+    return new Map<string, TopicLocalizationPayload>()
+  }
+}
+
+async function safeLoadTopicStageConfigMap(topicIds: string[]) {
+  try {
+    return await loadTopicStageConfigMap(topicIds)
+  } catch (error) {
+    logger.warn('Topic stage config map unavailable during list render; falling back to defaults.', {
+      topicIds,
+      ...safeParseError(error),
+    })
+    return new Map<string, TopicStageConfigState>()
+  }
+}
 
 function clipBriefText(value: string | null | undefined, maxLength = 220) {
   const normalized = (value ?? '').replace(/\s+/gu, ' ').trim()
@@ -237,10 +271,11 @@ router.get(
       },
       orderBy: { updatedAt: 'desc' },
     })
+    const topicIds = topics.map((topic) => topic.id)
 
     const [localizationMap, stageConfigMap] = await Promise.all([
-      getTopicLocalizationMap(topics.map((topic) => topic.id)),
-      loadTopicStageConfigMap(topics.map((topic) => topic.id)),
+      safeGetTopicLocalizationMap(topicIds),
+      safeLoadTopicStageConfigMap(topicIds),
     ])
 
     res.json({

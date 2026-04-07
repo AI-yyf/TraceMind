@@ -30,22 +30,51 @@ import { startPaperMonitorCron } from './services/topics/paper-monitor-cron'
 
 dotenv.config()
 
-const developmentOrigins = [
+const DEFAULT_DEVELOPMENT_ORIGINS = [
   'http://localhost:5173',
-  'http://localhost:5174',
-  'http://localhost:5175',
   'http://127.0.0.1:5173',
-  'http://127.0.0.1:5174',
-  'http://127.0.0.1:5175',
   'http://localhost:4274',
-  'http://localhost:4275',
   'http://127.0.0.1:4274',
-  'http://127.0.0.1:4275',
-  'http://localhost:4173',
-  'http://localhost:4174',
-  'http://127.0.0.1:4173',
-  'http://127.0.0.1:4174',
 ] as const
+
+function parseConfiguredOrigins(value: string | undefined) {
+  return (value ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function isDevelopmentOrigin(origin: string) {
+  return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/u.test(origin)
+}
+
+function buildCorsOriginChecker() {
+  const configuredOrigins = parseConfiguredOrigins(process.env.FRONTEND_ORIGINS)
+  const allowedOrigins =
+    process.env.NODE_ENV === 'production'
+      ? configuredOrigins
+      : [...new Set([...DEFAULT_DEVELOPMENT_ORIGINS, ...configuredOrigins])]
+
+  return (origin: string | undefined, callback: (error: Error | null, allow?: boolean) => void) => {
+    if (!origin) {
+      callback(null, true)
+      return
+    }
+
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true)
+      return
+    }
+
+    if (process.env.NODE_ENV !== 'production' && isDevelopmentOrigin(origin)) {
+      callback(null, true)
+      return
+    }
+
+    logger.warn('Blocked request from disallowed origin.', { origin })
+    callback(null, false)
+  }
+}
 
 export function createApp() {
   const app = express()
@@ -58,10 +87,7 @@ export function createApp() {
 
   app.use(
     cors({
-      origin:
-        process.env.NODE_ENV === 'production'
-          ? ['https://your-domain.com']
-          : [...developmentOrigins],
+      origin: buildCorsOriginChecker(),
       credentials: true,
     }),
   )
@@ -116,7 +142,7 @@ export function createApp() {
   return app
 }
 
-export function startServer(port = Number(process.env.PORT || 3001)) {
+export function startServer(port = Number(process.env.PORT || 3303)) {
   const app = createApp()
   const server = createServer(app)
   initializeWebSocketServer(server)

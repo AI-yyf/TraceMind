@@ -1,8 +1,10 @@
 import {
   createContext,
   useContext,
+  useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type PropsWithChildren,
 } from 'react'
@@ -65,6 +67,35 @@ const defaultTopicWorkbenchState = (): TopicWorkbenchState => ({
 })
 
 const ReadingWorkspaceContext = createContext<ReadingWorkspaceContextValue | null>(null)
+
+function areContextPillsEqual(left: ContextPill[], right: ContextPill[]) {
+  if (left === right) return true
+  if (left.length !== right.length) return false
+
+  return left.every((pill, index) => {
+    const peer = right[index]
+    return (
+      pill.id === peer.id &&
+      pill.kind === peer.kind &&
+      pill.label === peer.label &&
+      pill.description === peer.description &&
+      pill.route === peer.route &&
+      pill.anchorId === peer.anchorId
+    )
+  })
+}
+
+function areTopicWorkbenchStatesEqual(left: TopicWorkbenchState, right: TopicWorkbenchState) {
+  return (
+    left.open === right.open &&
+    left.activeTab === right.activeTab &&
+    left.historyOpen === right.historyOpen &&
+    left.searchEnabled === right.searchEnabled &&
+    left.thinkingEnabled === right.thinkingEnabled &&
+    left.style === right.style &&
+    areContextPillsEqual(left.contextPills, right.contextPills)
+  )
+}
 
 function parseWorkspaceState(value: string | null): ReadingWorkspaceState {
   if (!value) {
@@ -145,65 +176,115 @@ export function ReadingWorkspaceProvider({ children }: PropsWithChildren) {
 
     return parseWorkspaceState(window.sessionStorage.getItem(storageKey))
   })
+  const stateRef = useRef(state)
+
+  useEffect(() => {
+    stateRef.current = state
+  }, [state])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
     window.sessionStorage.setItem(storageKey, JSON.stringify(state))
   }, [state])
 
+  const rememberTrail = useCallback((entry: Omit<ReadingTrailEntry, 'updatedAt'>) => {
+    setState((current) => {
+      const currentTopEntry = current.trail[0]
+      if (
+        currentTopEntry?.id === entry.id &&
+        currentTopEntry.title === entry.title &&
+        currentTopEntry.route === entry.route &&
+        currentTopEntry.kind === entry.kind &&
+        currentTopEntry.topicId === entry.topicId &&
+        currentTopEntry.nodeId === entry.nodeId &&
+        currentTopEntry.paperId === entry.paperId
+      ) {
+        return current
+      }
+
+      const nextEntry: ReadingTrailEntry = {
+        ...entry,
+        updatedAt: new Date().toISOString(),
+      }
+      const withoutCurrent = current.trail.filter((item) => item.id !== entry.id)
+
+      return {
+        ...current,
+        trail: [nextEntry, ...withoutCurrent].slice(0, 8),
+      }
+    })
+  }, [])
+
+  const getTopicWorkbenchState = useCallback((topicId: string) => {
+    return stateRef.current.workbenchByTopic[topicId] ?? defaultTopicWorkbenchState()
+  }, [])
+
+  const patchTopicWorkbenchState = useCallback<
+    ReadingWorkspaceContextValue['patchTopicWorkbenchState']
+  >((topicId, patch) => {
+    setState((current) => {
+      const previous = current.workbenchByTopic[topicId] ?? defaultTopicWorkbenchState()
+      const next =
+        typeof patch === 'function'
+          ? patch(previous)
+          : {
+              ...previous,
+              ...patch,
+            }
+
+      if (areTopicWorkbenchStatesEqual(previous, next)) {
+        return current
+      }
+
+      return {
+        ...current,
+        workbenchByTopic: {
+          ...current.workbenchByTopic,
+          [topicId]: next,
+        },
+      }
+    })
+  }, [])
+
+  const rememberPageScroll = useCallback((key: string, value: number) => {
+    setState((current) => {
+      if (current.pageScroll[key] === value) {
+        return current
+      }
+
+      return {
+        ...current,
+        pageScroll: {
+          ...current.pageScroll,
+          [key]: value,
+        },
+      }
+    })
+  }, [])
+
+  const getPageScroll = useCallback((key: string) => {
+    return typeof stateRef.current.pageScroll[key] === 'number'
+      ? stateRef.current.pageScroll[key]
+      : null
+  }, [])
+
   const value = useMemo<ReadingWorkspaceContextValue>(
     () => ({
       state,
-      rememberTrail(entry) {
-        setState((current) => {
-          const nextEntry: ReadingTrailEntry = {
-            ...entry,
-            updatedAt: new Date().toISOString(),
-          }
-          const withoutCurrent = current.trail.filter((item) => item.id !== entry.id)
-          return {
-            ...current,
-            trail: [nextEntry, ...withoutCurrent].slice(0, 8),
-          }
-        })
-      },
-      getTopicWorkbenchState(topicId) {
-        return state.workbenchByTopic[topicId] ?? defaultTopicWorkbenchState()
-      },
-      patchTopicWorkbenchState(topicId, patch) {
-        setState((current) => {
-          const previous = current.workbenchByTopic[topicId] ?? defaultTopicWorkbenchState()
-          const next =
-            typeof patch === 'function'
-              ? patch(previous)
-              : {
-                  ...previous,
-                  ...patch,
-                }
-
-          return {
-            ...current,
-            workbenchByTopic: {
-              ...current.workbenchByTopic,
-              [topicId]: next,
-            },
-          }
-        })
-      },
-      rememberPageScroll(key, value) {
-        setState((current) => ({
-          ...current,
-          pageScroll: {
-            ...current.pageScroll,
-            [key]: value,
-          },
-        }))
-      },
-      getPageScroll(key) {
-        return typeof state.pageScroll[key] === 'number' ? state.pageScroll[key] : null
-      },
+      rememberTrail,
+      getTopicWorkbenchState,
+      patchTopicWorkbenchState,
+      rememberPageScroll,
+      getPageScroll,
     }),
-    [state],
+    [
+      state,
+      getPageScroll,
+      getTopicWorkbenchState,
+      patchTopicWorkbenchState,
+      rememberPageScroll,
+      rememberTrail,
+    ],
   )
 
   return (

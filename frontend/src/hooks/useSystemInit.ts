@@ -72,7 +72,7 @@ async function checkSystemInit(): Promise<{ status: SystemInitStatus; config: Sy
       return { status: 'error', config }
     }
 
-    if (!hasTopics || !hasModelConfig) {
+    if (!hasTopics) {
       return { status: 'uninitialized', config }
     }
 

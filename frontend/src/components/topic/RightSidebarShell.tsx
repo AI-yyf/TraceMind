@@ -507,13 +507,14 @@ function buildCognitivePrompt(
   entry: TopicCognitiveMemoryEntry,
   translate: (key: string, fallback: string) => string,
 ) {
+  const title = localizeCognitiveEntryTitle(entry.title, translate)
   return renderTemplate(
     translate(
       'workbench.calibrationPromptTemplate',
       'Continue from "{title}" and explain how it should shape the current research mainline: {summary}',
     ),
     {
-      title: clipText(entry.title, 48),
+      title: clipText(title, 48),
       summary: clipText(entry.summary, 180),
     },
   )
@@ -532,6 +533,28 @@ function memorySourceLabel(
 
 function normalizeInlineLabel(value: string) {
   return value.replace(/\s+/gu, ' ').trim().toLocaleLowerCase()
+}
+
+function localizeCognitiveEntryTitle(
+  value: string,
+  translate: (key: string, fallback: string) => string,
+) {
+  const normalized = normalizeInlineLabel(value)
+
+  if (normalized === 'current focus') {
+    return translate('workbench.cognitiveCurrentFocus', 'Current focus')
+  }
+  if (normalized === 'established judgment') {
+    return translate('workbench.cognitiveEstablishedJudgment', 'Established judgment')
+  }
+  if (normalized === 'conversation contract') {
+    return translate('workbench.cognitiveConversationContract', 'Conversation contract')
+  }
+  if (normalized === 'reviewer watchpoint') {
+    return translate('workbench.cognitiveReviewerWatchpoint', 'Reviewer watchpoint')
+  }
+
+  return value
 }
 
 function isGenericReferenceLabel(
@@ -555,7 +578,7 @@ function buildCalibrationActionLabel(
   translate: (key: string, fallback: string) => string,
 ) {
   const sourceLabel = memorySourceLabel(entry.source, translate)
-  const title = clipText(entry.title, 24)
+  const title = clipText(localizeCognitiveEntryTitle(entry.title, translate), 24)
   const summary = clipText(entry.summary, 24)
 
   if (!title) {
@@ -599,7 +622,9 @@ function PulseMemoryLane({
           }`}
         >
           <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 text-[11px] font-medium leading-5 text-black">{entry.title}</div>
+            <div className="min-w-0 text-[11px] font-medium leading-5 text-black">
+              {localizeCognitiveEntryTitle(entry.title, translate)}
+            </div>
             <div className="shrink-0 text-[9px] uppercase tracking-[0.14em] text-black/34">
               {memorySourceLabel(entry.source, translate)}
             </div>
@@ -830,14 +855,14 @@ function WorkbenchPulseCard({
       ) : null}
 
       <PulseMemoryLane
-        title={t('workbench.calibrationPreserve', copy('assistant.calibrationPreserve', 'Will preserve'))}
+        title={t('workbench.calibrationPreserveTitle', copy('assistant.calibrationPreserve', 'Will preserve'))}
         entries={preserveEntries}
         onUsePrompt={onUsePrompt}
         translate={t}
       />
 
       <PulseMemoryLane
-        title={t('workbench.calibrationAdjust', copy('assistant.calibrationAdjust', 'Will adjust'))}
+        title={t('workbench.calibrationAdjustTitle', copy('assistant.calibrationAdjust', 'Will adjust'))}
         entries={adjustEntries}
         onUsePrompt={onUsePrompt}
         tone="accent"

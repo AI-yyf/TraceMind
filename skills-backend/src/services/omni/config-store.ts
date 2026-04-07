@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 
 import { prisma } from '../../lib/prisma'
+import { logger } from '../../utils/logger'
 import { defaultBaseUrlForProvider, inferCapabilities, MODEL_PRESETS, PROVIDER_CATALOG } from './catalog'
 import { SecureStorage, type EncryptedSecretPayload } from './secure-storage'
 import {
@@ -40,6 +41,7 @@ const SLOT_ENV_PREFIX: Record<ModelSlot, string> = {
   language: 'OMNI_LANGUAGE',
   multimodal: 'OMNI_MULTIMODAL',
 }
+const secretRecordCache = new Map<string, { rawValue: string; resolved: { key: string; preview: string } | null }>()
 
 type SecretRecord = EncryptedSecretPayload & {
   provider: string
@@ -339,10 +341,32 @@ async function getSecret(secretRef?: string): Promise<{ key: string; preview: st
   })
   if (!record) return null
 
-  const parsed = JSON.parse(record.value) as SecretRecord
-  return {
-    key: SecureStorage.decrypt(parsed),
-    preview: parsed.preview,
+  const cached = secretRecordCache.get(secretRef)
+  if (cached?.rawValue === record.value) {
+    return cached.resolved
+  }
+
+  try {
+    const parsed = JSON.parse(record.value) as SecretRecord
+    const resolved = {
+      key: SecureStorage.decrypt(parsed),
+      preview: parsed.preview,
+    }
+    secretRecordCache.set(secretRef, {
+      rawValue: record.value,
+      resolved,
+    })
+    return resolved
+  } catch (error) {
+    logger.warn('Model secret could not be decrypted; falling back to an unconfigured slot.', {
+      secretRef,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    secretRecordCache.set(secretRef, {
+      rawValue: record.value,
+      resolved: null,
+    })
+    return null
   }
 }
 
@@ -503,6 +527,7 @@ async function storeSecret(provider: string, apiKey: string): Promise<{ apiKeyRe
     update: { value: JSON.stringify(payload) },
     create: { key: secretKey(apiKeyRef), value: JSON.stringify(payload) },
   })
+  secretRecordCache.delete(apiKeyRef)
 
   return { apiKeyRef, preview: encrypted.preview }
 }
