@@ -10,7 +10,7 @@
  * </LazySection>
  */
 
-import React, { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 interface LazySectionProps {
   children: ReactNode

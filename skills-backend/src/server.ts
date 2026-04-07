@@ -26,6 +26,7 @@ import topicGenRoutes from './routes/topic-gen'
 import topicRoutes from './routes/topics'
 import { logger } from './utils/logger'
 import { initializeWebSocketServer } from './websocket/server'
+import { startPaperMonitorCron } from './services/topics/paper-monitor-cron'
 
 dotenv.config()
 
@@ -125,6 +126,10 @@ export function startServer(port = Number(process.env.PORT || 3001)) {
       logger.info(`Server started on port ${port}`)
       logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`)
       logger.info('WebSocket server ready at /ws')
+
+      // 启动论文监控定时任务（每日凌晨3点）
+      startPaperMonitorCron()
+
       resolve(server)
     })
   })

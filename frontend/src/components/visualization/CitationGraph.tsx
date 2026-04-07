@@ -263,7 +263,7 @@ export const CitationGraph: React.FC<CitationGraphProps> = ({
   };
 
   // 处理拖拽
-  const handleMouseDown = (e: React.MouseEvent, nodeId?: string) => {
+  const handleMouseDown = (_e: React.MouseEvent, nodeId?: string) => {
     if (nodeId) {
       setDragNode(nodeId);
       setNodes(prev =>

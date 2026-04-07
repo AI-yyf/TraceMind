@@ -2,14 +2,11 @@
  * 主题仪表盘组件
  * 
  * 展示主题的研究主线、方法演进、活跃作者等宏观视角
+ * 使用 Tailwind CSS（与项目其他部分一致）
  */
 
 import React from 'react'
-import { Box, Typography, Paper, Chip, Grid, Divider, LinearProgress } from '@mui/material'
-import TimelineIcon from '@mui/icons-material/Timeline'
-import TrendingUpIcon from '@mui/icons-material/TrendingUp'
-import PeopleIcon from '@mui/icons-material/People'
-import LightbulbIcon from '@mui/icons-material/Lightbulb'
+import { TrendingUp, Users, Lightbulb, BarChart3 } from 'lucide-react'
 import type { TopicDashboard as TopicDashboardData } from '@/types/article'
 import { useI18n } from '@/i18n'
 
@@ -18,41 +15,25 @@ interface TopicDashboardProps {
 }
 
 export const TopicDashboard: React.FC<TopicDashboardProps> = ({ dashboard }) => {
-  const { t } = useI18n()
-
   return (
-    <Box sx={{ p: 3 }}>
-      {/* 标题 */}
-      <Typography variant="h5" sx={{ fontWeight: 600, mb: 3 }}>
-        {t('dashboard.title')}
-      </Typography>
-
+    <div className="space-y-6">
       {/* 统计摘要 */}
       <StatsSection dashboard={dashboard} />
-
-      <Divider sx={{ my: 3 }} />
 
       {/* 研究主线 */}
       <ResearchThreadsSection threads={dashboard.researchThreads} />
 
-      <Divider sx={{ my: 3 }} />
-
       {/* 方法演进 */}
       <MethodEvolutionSection evolution={dashboard.methodEvolution} />
-
-      <Divider sx={{ my: 3 }} />
 
       {/* 活跃作者 */}
       <ActiveAuthorsSection authors={dashboard.activeAuthors} />
 
       {/* 关键洞察 */}
       {dashboard.keyInsights.length > 0 && (
-        <>
-          <Divider sx={{ my: 3 }} />
-          <KeyInsightsSection insights={dashboard.keyInsights} />
-        </>
+        <KeyInsightsSection insights={dashboard.keyInsights} />
       )}
-    </Box>
+    </div>
   )
 }
 
@@ -71,26 +52,26 @@ const StatsSection: React.FC<{ dashboard: TopicDashboardData }> = ({ dashboard }
   ]
 
   return (
-    <Paper elevation={0} sx={{ p: 2, bgcolor: 'background.default', borderRadius: 2 }}>
-      <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-        <TimelineIcon fontSize="small" />
-        {t('dashboard.stats.title')}
-      </Typography>
-      <Grid container spacing={2}>
+    <div className="rounded-2xl border border-black/8 bg-[var(--surface-soft)] p-4 md:p-5">
+      <div className="flex items-center gap-2 mb-3">
+        <BarChart3 className="h-4 w-4 text-black/48" />
+        <h3 className="text-sm font-semibold text-black">
+          {t('dashboard.stats.title')}
+        </h3>
+      </div>
+      <div className="grid grid-cols-3 gap-4 md:grid-cols-6">
         {statItems.map((item) => (
-          <Grid item xs={6} sm={4} key={item.label}>
-            <Box sx={{ textAlign: 'center' }}>
-              <Typography variant="h6" sx={{ fontWeight: 600, color: 'primary.main' }}>
-                {item.value}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {item.label}
-              </Typography>
-            </Box>
-          </Grid>
+          <div key={item.label} className="text-center">
+            <div className="text-lg font-semibold text-amber-700">
+              {item.value}
+            </div>
+            <div className="text-[10px] text-black/48 mt-0.5">
+              {item.label}
+            </div>
+          </div>
         ))}
-      </Grid>
-    </Paper>
+      </div>
+    </div>
   )
 }
 
@@ -100,75 +81,75 @@ const ResearchThreadsSection: React.FC<{ threads: TopicDashboardData['researchTh
 
   if (!threads || threads.length === 0) {
     return (
-      <Box>
-        <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-          <TrendingUpIcon fontSize="small" />
-          {t('dashboard.threads.title')}
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
+      <div>
+        <div className="flex items-center gap-2 mb-2">
+          <TrendingUp className="h-4 w-4 text-black/48" />
+          <h3 className="text-sm font-semibold text-black">
+            {t('dashboard.threads.title')}
+          </h3>
+        </div>
+        <p className="text-sm text-black/48">
           {t('dashboard.empty.noThreads')}
-        </Typography>
-      </Box>
+        </p>
+      </div>
     )
   }
 
   return (
-    <Box>
-      <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-        <TrendingUpIcon fontSize="small" />
-        {t('dashboard.threads.title')}
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+    <div>
+      <div className="flex items-center gap-2 mb-2">
+        <TrendingUp className="h-4 w-4 text-black/48" />
+        <h3 className="text-sm font-semibold text-black">
+          {t('dashboard.threads.title')}
+        </h3>
+      </div>
+      <p className="text-xs text-black/48 mb-3">
         {t('dashboard.threads.description')}
-      </Typography>
-      
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-        {threads.map((thread, index) => (
-          <Paper
+      </p>
+
+      <div className="space-y-2">
+        {threads.map((thread) => (
+          <div
             key={thread.nodeId}
-            elevation={0}
-            sx={{
-              p: 2,
-              borderRadius: 2,
-              border: '1px solid',
-              borderColor: thread.isMilestone ? 'primary.main' : 'divider',
-              bgcolor: thread.isMilestone ? 'primary.50' : 'background.paper',
-            }}
+            className={`rounded-xl border p-3 transition ${
+              thread.isMilestone
+                ? 'border-amber-300/60 bg-amber-50/60'
+                : 'border-black/8 bg-white'
+            }`}
           >
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-              <Chip
-                label={`${t('dashboard.threads.stage')} ${thread.stageIndex + 1}`}
-                size="small"
-                color={thread.isMilestone ? 'primary' : 'default'}
-                variant={thread.isMilestone ? 'filled' : 'outlined'}
-              />
+            <div className="flex items-center gap-2 mb-1">
+              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                thread.isMilestone
+                  ? 'bg-amber-600 text-white'
+                  : 'bg-black/[0.06] text-black/58'
+              }`}>
+                {t('dashboard.threads.stage')} {thread.stageIndex + 1}
+              </span>
               {thread.isMilestone && (
-                <Chip
-                  label={t('dashboard.threads.milestone')}
-                  size="small"
-                  color="warning"
-                  icon={<LightbulbIcon fontSize="small" />}
-                />
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                  <Lightbulb className="h-3 w-3" />
+                  {t('dashboard.threads.milestone')}
+                </span>
               )}
-            </Box>
-            <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+            </div>
+            <div className="text-sm font-semibold text-black">
               {thread.nodeTitle}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+            </div>
+            <div className="mt-0.5 text-xs text-black/56">
               {thread.thesis}
-            </Typography>
-            <Box sx={{ display: 'flex', gap: 2, mt: 1 }}>
-              <Typography variant="caption" color="text.secondary">
+            </div>
+            <div className="mt-1 flex gap-3 text-[10px] text-black/48">
+              <span>
                 {thread.paperCount} {t('dashboard.threads.papers')}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
+              </span>
+              <span>
                 {t('dashboard.threads.keyPaper')}: {thread.keyPaperTitle}
-              </Typography>
-            </Box>
-          </Paper>
+              </span>
+            </div>
+          </div>
         ))}
-      </Box>
-    </Box>
+      </div>
+    </div>
   )
 }
 
@@ -178,66 +159,67 @@ const MethodEvolutionSection: React.FC<{ evolution: TopicDashboardData['methodEv
 
   if (!evolution || evolution.length === 0) {
     return (
-      <Box>
-        <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-          <TrendingUpIcon fontSize="small" />
-          {t('dashboard.evolution.title')}
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
+      <div>
+        <div className="flex items-center gap-2 mb-2">
+          <TrendingUp className="h-4 w-4 text-black/48" />
+          <h3 className="text-sm font-semibold text-black">
+            {t('dashboard.evolution.title')}
+          </h3>
+        </div>
+        <p className="text-sm text-black/48">
           {t('dashboard.empty.noEvolution')}
-        </Typography>
-      </Box>
+        </p>
+      </div>
     )
   }
 
-  const getImpactColor = (impact: string) => {
+  const getImpactStyle = (impact: string) => {
     switch (impact) {
-      case 'high': return 'success'
-      case 'medium': return 'warning'
-      case 'low': return 'default'
-      default: return 'default'
+      case 'high': return 'bg-green-100 text-green-700 border-green-200'
+      case 'medium': return 'bg-amber-100 text-amber-700 border-amber-200'
+      default: return 'bg-black/[0.04] text-black/56 border-black/8'
     }
   }
 
   return (
-    <Box>
-      <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-        <TrendingUpIcon fontSize="small" />
-        {t('dashboard.evolution.title')}
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+    <div>
+      <div className="flex items-center gap-2 mb-2">
+        <TrendingUp className="h-4 w-4 text-black/48" />
+        <h3 className="text-sm font-semibold text-black">
+          {t('dashboard.evolution.title')}
+        </h3>
+      </div>
+      <p className="text-xs text-black/48 mb-3">
         {t('dashboard.evolution.description')}
-      </Typography>
+      </p>
 
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+      <div className="space-y-2">
         {evolution.map((item) => (
-          <Paper
+          <div
             key={`${item.paperId}-${item.year}`}
-            elevation={0}
-            sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}
+            className="rounded-xl border border-black/8 bg-white p-3"
           >
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
-              <Chip label={item.year} size="small" color="primary" variant="outlined" />
-              <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
+              <span className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                {item.year}
+              </span>
+              <span className="text-sm font-semibold text-black">
                 {item.methodName}
-              </Typography>
-              <Chip
-                label={t(`dashboard.evolution.impact.${item.impact}`)}
-                size="small"
-                color={getImpactColor(item.impact) as any}
-                variant="outlined"
-              />
-            </Box>
-            <Typography variant="body2" color="text.secondary">
+              </span>
+              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${getImpactStyle(item.impact)}`}>
+                {t(`dashboard.evolution.impact.${item.impact}`)}
+              </span>
+            </div>
+            <div className="text-xs text-black/56">
               {item.contribution}
-            </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+            </div>
+            <div className="mt-0.5 text-[10px] text-black/40">
               {item.paperTitle}
-            </Typography>
-          </Paper>
+            </div>
+          </div>
         ))}
-      </Box>
-    </Box>
+      </div>
+    </div>
   )
 }
 
@@ -247,63 +229,75 @@ const ActiveAuthorsSection: React.FC<{ authors: TopicDashboardData['activeAuthor
 
   if (!authors || authors.length === 0) {
     return (
-      <Box>
-        <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-          <PeopleIcon fontSize="small" />
-          {t('dashboard.authors.title')}
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
+      <div>
+        <div className="flex items-center gap-2 mb-2">
+          <Users className="h-4 w-4 text-black/48" />
+          <h3 className="text-sm font-semibold text-black">
+            {t('dashboard.authors.title')}
+          </h3>
+        </div>
+        <p className="text-sm text-black/48">
           {t('dashboard.empty.noAuthors')}
-        </Typography>
-      </Box>
+        </p>
+      </div>
     )
   }
 
   return (
-    <Box>
-      <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-        <PeopleIcon fontSize="small" />
-        {t('dashboard.authors.title')}
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        {t('dashboard.authors.description')}
-      </Typography>
+    <div>
+      <div className="flex items-center gap-2 mb-2">
+        <Users className="h-4 w-4 text-black/48" />
+          <h3 className="text-sm font-semibold text-black">
+            {t('dashboard.authors.title')}
+          </h3>
+        </div>
+        <p className="text-xs text-black/48 mb-3">
+          {t('dashboard.authors.description')}
+        </p>
 
-      <Grid container spacing={2}>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {authors.map((author) => (
-          <Grid item xs={12} sm={6} key={author.name}>
-            <Paper elevation={0} sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
-              <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                {author.name}
-              </Typography>
-              {author.affiliation && (
-                <Typography variant="caption" color="text.secondary" display="block">
-                  {author.affiliation}
-                </Typography>
-              )}
-              <Box sx={{ display: 'flex', gap: 2, mt: 1 }}>
-                <Typography variant="caption">
-                  {author.paperCount} {t('dashboard.authors.paperCount')}
-                </Typography>
-                <Typography variant="caption">
-                  {author.citationCount} {t('dashboard.authors.citations')}
-                </Typography>
-              </Box>
-              <Box sx={{ mt: 1 }}>
-                <Typography variant="caption" color="text.secondary">
+          <div
+            key={author.name}
+            className="rounded-xl border border-black/8 bg-white p-3"
+          >
+            <div className="text-sm font-semibold text-black">
+              {author.name}
+            </div>
+            {author.affiliation && (
+              <div className="text-[10px] text-black/48 mt-0.5">
+                {author.affiliation}
+              </div>
+            )}
+            <div className="mt-1 flex gap-3 text-[10px] text-black/56">
+              <span>
+                {author.paperCount} {t('dashboard.authors.paperCount')}
+              </span>
+              <span>
+                {author.citationCount} {t('dashboard.authors.citations')}
+              </span>
+            </div>
+            {author.researchFocus.length > 0 && (
+              <div className="mt-1.5">
+                <span className="text-[10px] text-black/40">
                   {t('dashboard.authors.focus')}:
-                </Typography>
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+                </span>
+                <div className="mt-0.5 flex flex-wrap gap-1">
                   {author.researchFocus.map((focus) => (
-                    <Chip key={focus} label={focus} size="small" variant="outlined" sx={{ fontSize: '0.7rem' }} />
+                    <span
+                      key={focus}
+                      className="inline-block rounded-full border border-black/10 px-2 py-0.5 text-[10px] text-black/56"
+                    >
+                      {focus}
+                    </span>
                   ))}
-                </Box>
-              </Box>
-            </Paper>
-          </Grid>
+                </div>
+              </div>
+            )}
+          </div>
         ))}
-      </Grid>
-    </Box>
+      </div>
+    </div>
   )
 }
 
@@ -312,18 +306,20 @@ const KeyInsightsSection: React.FC<{ insights: string[] }> = ({ insights }) => {
   const { t } = useI18n()
 
   return (
-    <Paper elevation={0} sx={{ p: 2, bgcolor: 'info.50', borderRadius: 2, border: '1px solid', borderColor: 'info.200' }}>
-      <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-        <LightbulbIcon fontSize="small" color="info" />
-        {t('dashboard.insights.title')}
-      </Typography>
-      <Box component="ul" sx={{ pl: 2, m: 0 }}>
+    <div className="rounded-2xl border border-blue-200/60 bg-blue-50/50 p-4 md:p-5">
+      <div className="flex items-center gap-2 mb-2">
+        <Lightbulb className="h-4 w-4 text-blue-500" />
+        <h3 className="text-sm font-semibold text-black">
+          {t('dashboard.insights.title')}
+        </h3>
+      </div>
+      <ul className="ml-4 space-y-1">
         {insights.map((insight, index) => (
-          <Typography component="li" key={index} variant="body2" sx={{ mb: 1 }}>
+          <li key={index} className="text-sm text-black/68 list-disc">
             {insight}
-          </Typography>
+          </li>
         ))}
-      </Box>
-    </Paper>
+      </ul>
+    </div>
   )
 }

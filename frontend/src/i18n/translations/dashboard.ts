@@ -4,9 +4,9 @@
  * 支持8种语言：zh, en, ja, ko, de, fr, es, ru
  */
 
-import type { TranslationModule } from '../types'
+import type { TranslationDictionary } from '../types'
 
-const dashboard: TranslationModule = {
+const dashboard: TranslationDictionary = {
   // 仪表盘标题
   'dashboard.title': {
     zh: '研究仪表盘',
@@ -14,11 +14,21 @@ const dashboard: TranslationModule = {
     ja: '研究ダッシュボード',
     ko: '연구 대시보드',
     de: 'Forschungs-Dashboard',
-    fr: 'Tableau de Bord de Recherche',
-    es: 'Panel de Investigación',
-    ru: 'Исследовательская Панель',
+    fr: 'Tableau de bord de recherche',
+    es: 'Panel de investigación',
+    ru: 'Панель исследований',
   },
-  
+  'dashboard.loading': {
+    zh: '加载仪表盘数据…',
+    en: 'Loading dashboard data...',
+    ja: 'ダッシュボードデータを読み込み中...',
+    ko: '대시보드 데이터를 불러오는 중...',
+    de: 'Dashboard-Daten werden geladen...',
+    fr: 'Chargement des données du tableau de bord...',
+    es: 'Cargando datos del panel...',
+    ru: 'Загрузка данных панели...',
+  },
+
   // 研究主线
   'dashboard.threads.title': {
     zh: '研究主线',
@@ -89,6 +99,16 @@ const dashboard: TranslationModule = {
     fr: 'Jalon',
     es: 'Hito',
     ru: 'Веха',
+  },
+  'dashboard.threads.keyPaper': {
+    zh: '关键论文',
+    en: 'Key Paper',
+    ja: '主要論文',
+    ko: '핵심 논문',
+    de: 'Schlüsselarbeit',
+    fr: 'Article clé',
+    es: 'Artículo clave',
+    ru: 'Ключевая работа',
   },
 
   // 方法演进

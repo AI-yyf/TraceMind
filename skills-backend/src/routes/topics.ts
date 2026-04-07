@@ -1,4 +1,4 @@
-import { Router } from 'express'
+﻿import { Router } from 'express'
 
 import { prisma } from '../lib/prisma'
 import { asyncHandler, AppError } from '../middleware/errorHandler'
@@ -523,6 +523,231 @@ router.get(
         world,
         guidance,
         cognitiveMemory,
+      },
+    })
+  }),
+)
+
+router.get(
+  '/:id/dashboard',
+  asyncHandler(async (req, res) => {
+    const { id: topicId } = req.params
+
+    const topic = await prisma.topic.findUnique({
+      where: { id: topicId },
+      select: { id: true, nameZh: true, nameEn: true },
+    })
+
+    if (!topic) {
+      throw new AppError(404, 'Topic not found.')
+    }
+
+    const [nodes, papers] = await Promise.all([
+      prisma.researchNode.findMany({
+        where: { topicId },
+        include: {
+          primaryPaper: {
+            select: {
+              id: true,
+              title: true,
+              titleZh: true,
+              titleEn: true,
+              summary: true,
+              explanation: true,
+              citationCount: true,
+              published: true,
+              tags: true,
+            },
+          },
+          papers: {
+            include: {
+              paper: {
+                select: {
+                  id: true,
+                  title: true,
+                  titleZh: true,
+                  titleEn: true,
+                  summary: true,
+                  explanation: true,
+                  authors: true,
+                  citationCount: true,
+                  published: true,
+                  tags: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: { stageIndex: 'asc' },
+      }),
+      prisma.paper.findMany({
+        where: { topicId },
+        select: {
+          id: true,
+          title: true,
+          titleZh: true,
+          titleEn: true,
+          summary: true,
+          explanation: true,
+          authors: true,
+          citationCount: true,
+          published: true,
+          tags: true,
+        },
+      }),
+    ])
+
+    const parseStringArray = (value: string | null | undefined) => {
+      if (!value) return [] as string[]
+
+      try {
+        const parsed = JSON.parse(value)
+        if (Array.isArray(parsed)) {
+          return parsed
+            .map((item) => {
+              if (typeof item === 'string') return item.trim()
+              if (item && typeof item === 'object' && 'name' in item && typeof item.name === 'string') {
+                return item.name.trim()
+              }
+              return ''
+            })
+            .filter(Boolean)
+        }
+      } catch {
+        // fall through
+      }
+
+      return value
+        .replace(/\uFF0C/gu, ',')
+        .split(/[;,]/u)
+        .map((item) => item.trim())
+        .filter(Boolean)
+    }
+
+    const cleanText = (value: string | null | undefined, maxLength = 200) => {
+      const normalized = value?.replace(/\s+/gu, ' ').trim() ?? ''
+      if (!normalized) return ''
+      return normalized.length <= maxLength ? normalized : `${normalized.slice(0, Math.max(0, maxLength - 3))}...`
+    }
+
+    const paperTitle = (paper: { titleZh: string; titleEn: string | null; title: string }) =>
+      paper.titleZh || paper.titleEn || paper.title
+
+    const totalPapers = papers.length
+    const totalNodes = nodes.length
+    const totalStages = new Set(nodes.map((node) => node.stageIndex)).size
+    const years = papers.map((paper) => new Date(paper.published).getFullYear())
+    const timeSpanYears = years.length > 1 ? Math.max(...years) - Math.min(...years) : 0
+    const avgPapersPerNode = totalNodes > 0 ? Number((totalPapers / totalNodes).toFixed(1)) : 0
+    const citationCoverage =
+      totalPapers > 0
+        ? papers.filter((paper) => (paper.citationCount ?? 0) > 0).length / totalPapers
+        : 0
+
+    const researchThreads = nodes.map((node) => {
+      const nodePapers = node.papers.map((item) => item.paper)
+      const leadPaper = node.primaryPaper ?? nodePapers[0]
+
+      return {
+        stageIndex: node.stageIndex,
+        nodeId: node.id,
+        nodeTitle: node.nodeLabel,
+        thesis: cleanText(node.nodeExplanation || node.nodeSummary, 200),
+        paperCount: nodePapers.length,
+        keyPaperTitle: leadPaper ? paperTitle(leadPaper) : '',
+        isMilestone: (leadPaper?.citationCount ?? 0) >= 200,
+      }
+    })
+
+    const methodEvolution = nodes
+      .flatMap((node) =>
+        node.papers.slice(0, 2).map(({ paper }) => ({
+          year: new Date(paper.published).getFullYear(),
+          methodName: paperTitle(paper).split(/[:：|]/u)[0]?.trim().slice(0, 60) || paperTitle(paper),
+          paperId: paper.id,
+          paperTitle: paperTitle(paper),
+          contribution: cleanText(paper.explanation || paper.summary, 200),
+          impact:
+            (paper.citationCount ?? 0) > 500
+              ? 'high' as const
+              : (paper.citationCount ?? 0) > 100
+                ? 'medium' as const
+                : 'low' as const,
+        })),
+      )
+      .sort((left, right) => left.year - right.year)
+
+    const authorMap = new Map<
+      string,
+      {
+        name: string
+        affiliation: string | null
+        paperCount: number
+        citationCount: number
+        keyPapers: string[]
+        researchFocus: string[]
+      }
+    >()
+
+    for (const paper of papers) {
+      for (const authorName of parseStringArray(paper.authors)) {
+        const existing = authorMap.get(authorName)
+        if (existing) {
+          existing.paperCount += 1
+          existing.citationCount += paper.citationCount ?? 0
+          if (existing.keyPapers.length < 3) existing.keyPapers.push(paperTitle(paper))
+          existing.researchFocus = [...new Set([...existing.researchFocus, ...parseStringArray(paper.tags)])].slice(0, 4)
+          continue
+        }
+
+        authorMap.set(authorName, {
+          name: authorName,
+          affiliation: null,
+          paperCount: 1,
+          citationCount: paper.citationCount ?? 0,
+          keyPapers: [paperTitle(paper)],
+          researchFocus: parseStringArray(paper.tags).slice(0, 4),
+        })
+      }
+    }
+
+    const activeAuthors = Array.from(authorMap.values())
+      .sort((left, right) => right.paperCount - left.paperCount || right.citationCount - left.citationCount)
+      .slice(0, 12)
+
+    const keyInsights = nodes
+      .map((node) => cleanText(node.nodeExplanation || node.nodeSummary, 180))
+      .filter(Boolean)
+      .slice(0, 5)
+
+    const methodKeywords = papers
+      .flatMap((paper) => `${paper.title} ${paper.titleZh} ${paper.titleEn ?? ''} ${paper.tags}`.match(
+        /\b(?:Transformer|CNN|RNN|GAN|Diffusion|LLM|RL|Attention|VAE|BERT|GPT|ViT|CLIP)\b/gi,
+      ) || [])
+    const uniqueMethods = [...new Set(methodKeywords.map((keyword) => keyword.toLowerCase()))]
+
+    res.json({
+      success: true,
+      data: {
+        topicId,
+        topicTitle: topic.nameZh || topic.nameEn || '',
+        researchThreads,
+        methodEvolution,
+        activeAuthors,
+        stats: {
+          totalPapers,
+          totalNodes,
+          totalStages,
+          timeSpanYears,
+          avgPapersPerNode,
+          citationCoverage,
+        },
+        keyInsights,
+        trends: {
+          emergingTopics: [],
+          decliningTopics: [],
+          methodShifts: uniqueMethods.length > 0 ? [`Methods: ${uniqueMethods.join(', ')}`] : [],
+        },
       },
     })
   }),

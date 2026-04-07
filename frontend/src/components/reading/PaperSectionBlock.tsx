@@ -6,9 +6,7 @@
  */
 
 import React, { useState } from 'react'
-import { Box, Typography, Chip, Collapse, IconButton, Divider } from '@mui/material'
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
-import ExpandLessIcon from '@mui/icons-material/ExpandLess'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 import type { PaperSubsection, PaperRoleInNode } from '@/types/article'
 import { useI18n } from '@/i18n'
 
@@ -27,21 +25,28 @@ interface PaperSectionBlockProps {
 }
 
 const ROLE_COLORS: Record<PaperRoleInNode, string> = {
-  origin: '#4CAF50',
-  milestone: '#FF9800',
-  branch: '#2196F3',
-  confluence: '#9C27B0',
-  extension: '#607D8B',
-  baseline: '#795548',
+  origin: '#22c55e',
+  milestone: '#f59e0b',
+  branch: '#3b82f6',
+  confluence: '#a855f7',
+  extension: '#64748b',
+  baseline: '#a16207',
 }
 
-const ROLE_LABELS: Record<PaperRoleInNode, string> = {
-  origin: '源头论文',
-  milestone: '里程碑',
-  branch: '分支点',
-  confluence: '汇流点',
-  extension: '扩展',
-  baseline: '基线',
+const ROLE_LABEL_KEYS: Record<PaperRoleInNode, string> = {
+  origin: 'node.role.origin',
+  milestone: 'node.role.milestone',
+  branch: 'node.role.branch',
+  confluence: 'node.role.confluence',
+  extension: 'node.role.extension',
+  baseline: 'node.role.baseline',
+}
+
+function renderTemplate(template: string, variables: Record<string, string | number>) {
+  return Object.entries(variables).reduce(
+    (output, [key, value]) => output.split(`{${key}}`).join(String(value)),
+    template,
+  )
 }
 
 export const PaperSectionBlock: React.FC<PaperSectionBlockProps> = ({
@@ -75,114 +80,95 @@ export const PaperSectionBlock: React.FC<PaperSectionBlockProps> = ({
     return date.toLocaleDateString('zh-CN', { year: 'numeric', month: 'short' })
   }
 
+  const roleColor = ROLE_COLORS[role]
+
   return (
-    <Box
+    <article
       id={anchorId}
-      component="article"
-      sx={{
-        mb: 6,
-        p: 4,
-        bgcolor: 'background.paper',
-        borderRadius: 2,
-        border: '1px solid',
-        borderColor: 'divider',
-        position: 'relative',
-        '&::before': {
-          content: '""',
-          position: 'absolute',
-          left: 0,
-          top: 0,
-          bottom: 0,
-          width: 4,
-          bgcolor: ROLE_COLORS[role],
-          borderRadius: '2px 0 0 2px',
-        },
-      }}
+      data-paper-id={paperId}
+      className="relative mb-6 rounded-2xl border border-black/8 bg-[#fcfbf9] p-4 md:p-6 shadow-[0_12px_28px_rgba(15,23,42,0.04)]"
     >
+      {/* 左侧角色色条 */}
+      <div
+        className="absolute left-0 top-0 bottom-0 w-1 rounded-l-2xl"
+        style={{ backgroundColor: roleColor }}
+      />
+
       {/* 论文头部 */}
-      <Box sx={{ mb: 3, pl: 2 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-          <Chip
-            label={ROLE_LABELS[role]}
-            size="small"
-            sx={{
-              bgcolor: ROLE_COLORS[role] + '20',
-              color: ROLE_COLORS[role],
-              fontWeight: 600,
-              fontSize: '0.75rem',
-            }}
-          />
-          {citationCount !== null && (
-            <Typography variant="caption" color="text.secondary">
-              {t('node.citations', { count: citationCount })}
-            </Typography>
-          )}
-        </Box>
-
-        <Typography variant="h5" component="h3" sx={{ fontWeight: 600, mb: 1 }}>
-          {title}
-        </Typography>
-        
-        {titleEn && titleEn !== title && (
-          <Typography variant="subtitle1" color="text.secondary" sx={{ mb: 1 }}>
-            {titleEn}
-          </Typography>
-        )}
-
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1 }}>
-          {authors.slice(0, 5).map((author, idx) => (
-            <Typography key={idx} variant="caption" color="text.secondary">
-              {author}{idx < Math.min(authors.length, 5) - 1 ? ',' : ''}
-            </Typography>
-          ))}
-          {authors.length > 5 && (
-            <Typography variant="caption" color="text.secondary">
-              +{authors.length - 5}
-            </Typography>
-          )}
-        </Box>
-
-        <Typography variant="caption" color="text.secondary">
-          {formatDate(publishedAt)}
-        </Typography>
-      </Box>
-
-      <Divider sx={{ my: 2 }} />
-
-      {/* 引言 */}
-      <Box sx={{ mb: 3, pl: 2 }}>
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            cursor: 'pointer',
-          }}
-          onClick={() => toggleSection('introduction')}
-        >
-          <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '1.1rem' }}>
-            {t('node.paper.introduction')}
-          </Typography>
-          <IconButton size="small">
-            {expandedSections.introduction ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-          </IconButton>
-        </Box>
-        <Collapse in={expandedSections.introduction}>
-          <Typography
-            variant="body1"
-            sx={{
-              mt: 1,
-              lineHeight: 1.8,
-              color: 'text.primary',
+      <div className="mb-3 pl-3">
+        <div className="flex items-center gap-2 mb-1">
+          <span
+            className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold"
+            style={{
+              backgroundColor: `${roleColor}20`,
+              color: roleColor,
             }}
           >
+            {t(ROLE_LABEL_KEYS[role])}
+          </span>
+          {citationCount !== null && (
+            <span className="text-xs text-black/48">
+              {renderTemplate(t('node.citations', 'Cited {count} times'), {
+                count: citationCount,
+              })}
+            </span>
+          )}
+        </div>
+
+        <h3 className="text-xl font-semibold text-black md:text-[22px]">
+          {title}
+        </h3>
+
+        {titleEn && titleEn !== title && (
+          <div className="mt-0.5 text-sm text-black/40">
+            {titleEn}
+          </div>
+        )}
+
+        <div className="mt-1 flex flex-wrap gap-x-1">
+          {authors.slice(0, 5).map((author, idx) => (
+            <span key={idx} className="text-xs text-black/48">
+              {author}{idx < Math.min(authors.length, 5) - 1 ? ',' : ''}
+            </span>
+          ))}
+          {authors.length > 5 && (
+            <span className="text-xs text-black/48">
+              +{authors.length - 5}
+            </span>
+          )}
+        </div>
+
+        <div className="mt-0.5 text-xs text-black/48">
+          {formatDate(publishedAt)}
+        </div>
+      </div>
+
+      <div className="border-t border-black/6 my-3" />
+
+      {/* 引言 */}
+      <div className="mb-3 pl-3">
+        <button
+          type="button"
+          className="flex w-full items-center justify-between text-left"
+          onClick={() => toggleSection('introduction')}
+        >
+          <h4 className="text-base font-semibold text-black">
+            {t('node.paper.introduction')}
+          </h4>
+          {expandedSections.introduction
+            ? <ChevronUp className="h-4 w-4 text-black/40" />
+            : <ChevronDown className="h-4 w-4 text-black/40" />
+          }
+        </button>
+        {expandedSections.introduction && (
+          <p className="mt-2 text-sm leading-7 text-black/72">
             {introduction}
-          </Typography>
-        </Collapse>
-      </Box>
+          </p>
+        )}
+      </div>
 
       {/* 8个子节 */}
-      <Box sx={{ pl: 2 }}>
+      <div className="pl-3">
         {subsections.map((subsection, index) => (
           <PaperSubsectionItem
             key={subsection.kind}
@@ -192,40 +178,30 @@ export const PaperSectionBlock: React.FC<PaperSectionBlockProps> = ({
             onToggle={() => toggleSection(subsection.kind)}
           />
         ))}
-      </Box>
+      </div>
 
       {/* 总结 */}
-      <Box sx={{ mt: 3, pl: 2 }}>
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            cursor: 'pointer',
-          }}
+      <div className="mt-3 pl-3">
+        <button
+          type="button"
+          className="flex w-full items-center justify-between text-left"
           onClick={() => toggleSection('conclusion')}
         >
-          <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '1.1rem' }}>
+          <h4 className="text-base font-semibold text-black">
             {t('node.paper.conclusion')}
-          </Typography>
-          <IconButton size="small">
-            {expandedSections.conclusion ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-          </IconButton>
-        </Box>
-        <Collapse in={expandedSections.conclusion}>
-          <Typography
-            variant="body1"
-            sx={{
-              mt: 1,
-              lineHeight: 1.8,
-              color: 'text.primary',
-            }}
-          >
+          </h4>
+          {expandedSections.conclusion
+            ? <ChevronUp className="h-4 w-4 text-black/40" />
+            : <ChevronDown className="h-4 w-4 text-black/40" />
+          }
+        </button>
+        {expandedSections.conclusion && (
+          <p className="mt-2 text-sm leading-7 text-black/72">
             {conclusion}
-          </Typography>
-        </Collapse>
-      </Box>
-    </Box>
+          </p>
+        )}
+      </div>
+    </article>
   )
 }
 
@@ -237,85 +213,72 @@ interface PaperSubsectionItemProps {
   onToggle: () => void
 }
 
+const SUBSECTION_ICONS: Record<string, string> = {
+  background: '📚',
+  problem: '❓',
+  method: '⚙️',
+  experiment: '🧪',
+  results: '📊',
+  contribution: '💡',
+  limitation: '⚠️',
+  significance: '🌟',
+}
+
 const PaperSubsectionItem: React.FC<PaperSubsectionItemProps> = ({
   subsection,
   index,
   expanded,
   onToggle,
 }) => {
-  const SUBSECTION_ICONS: Record<string, string> = {
-    background: '📚',
-    problem: '❓',
-    method: '⚙️',
-    experiment: '🧪',
-    results: '📊',
-    contribution: '💡',
-    limitation: '⚠️',
-    significance: '🌟',
-  }
+  const { t } = useI18n()
 
   return (
-    <Box sx={{ mb: 2 }}>
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          cursor: 'pointer',
-          py: 1,
-          px: 1.5,
-          borderRadius: 1,
-          '&:hover': {
-            bgcolor: 'action.hover',
-          },
-        }}
+    <div className="mb-2">
+      <button
+        type="button"
+        className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left transition hover:bg-black/[0.03]"
         onClick={onToggle}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          <Typography variant="body2" color="text.secondary" sx={{ minWidth: 24 }}>
+        <div className="flex items-center gap-2">
+          <span className="min-w-[20px] text-xs text-black/48">
             {index + 1}.
-          </Typography>
-          <Typography sx={{ fontSize: '1.1rem' }}>{SUBSECTION_ICONS[subsection.kind]}</Typography>
-          <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+          </span>
+          <span className="text-base">{SUBSECTION_ICONS[subsection.kind]}</span>
+          <span className="text-sm font-semibold text-black">
             {subsection.title}
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            ({subsection.wordCount} 字)
-          </Typography>
-        </Box>
-        <IconButton size="small">
-          {expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-        </IconButton>
-      </Box>
+          </span>
+          <span className="text-xs text-black/40">
+            {renderTemplate(t('node.subsection.wordCount', '{count} words'), {
+              count: subsection.wordCount,
+            })}
+          </span>
+        </div>
+        {expanded
+          ? <ChevronUp className="h-4 w-4 text-black/40" />
+          : <ChevronDown className="h-4 w-4 text-black/40" />
+        }
+      </button>
 
-      <Collapse in={expanded}>
-        <Box sx={{ pl: 6, pr: 2, py: 1 }}>
-          <Typography
-            variant="body2"
-            sx={{
-              lineHeight: 1.8,
-              color: 'text.primary',
-              mb: subsection.keyPoints.length > 0 ? 2 : 0,
-            }}
-          >
+      {expanded && (
+        <div className="pl-8 pr-2 py-2">
+          <p className="text-sm leading-7 text-black/72">
             {subsection.content}
-          </Typography>
+          </p>
 
           {subsection.keyPoints.length > 0 && (
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
+            <div className="mt-2 flex flex-wrap gap-1.5">
               {subsection.keyPoints.map((point, idx) => (
-                <Chip
+                <span
                   key={idx}
-                  label={point}
-                  size="small"
-                  variant="outlined"
-                  sx={{ fontSize: '0.75rem' }}
-                />
+                  className="inline-block rounded-full border border-black/10 px-2.5 py-0.5 text-xs text-black/58"
+                >
+                  {point}
+                </span>
               ))}
-            </Box>
+            </div>
           )}
-        </Box>
-      </Collapse>
-    </Box>
+        </div>
+      )}
+    </div>
   )
 }

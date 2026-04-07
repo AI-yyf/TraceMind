@@ -36,6 +36,7 @@ import {
   normalizeStageWindowMonths,
 } from './stage-buckets'
 import { loadTopicStageConfig } from './topic-stage-config'
+import { logger } from '../../utils/logger'
 
 type EvidenceType = 'figure' | 'table' | 'formula'
 
@@ -2960,20 +2961,23 @@ async function buildNodeViewModel(
   }
 
   // 可选：生成增强版文章流（8-Pass深度解析）
-  let enhancedArticleFlow: import('./deep-article-generator').NodeArticleFlowBlock[] | undefined
+  let enhancedArticleFlow: import('./deep-article-generator.js').NodeArticleFlowBlock[] | undefined
   if (enableEnhanced && !quick) {
     try {
-      const { generateNodeEnhancedArticle } = await import('./deep-article-generator')
+      const { generateNodeEnhancedArticle } = await import('./deep-article-generator.js')
       enhancedArticleFlow = await generateNodeEnhancedArticle(nodeId, {
         papers: papers.map(p => ({
           id: p.id,
           title: p.titleZh || p.title,
-          titleEn: p.titleEn,
+          titleEn: p.titleEn ?? undefined,
           authors: typeof p.authors === 'string' ? JSON.parse(p.authors) : p.authors,
-          abstract: p.abstract,
+          summary: p.summary,
+          explanation: p.explanation ?? undefined,
           publishedAt: p.published?.toISOString(),
-          pdfUrl: p.pdfUrl,
-          arxivId: p.arxivId,
+          pdfUrl: p.pdfUrl ?? undefined,
+          originalUrl: p.arxivUrl ?? undefined,
+          citationCount: p.citationCount,
+          coverImage: p.coverPath ?? undefined,
         })),
         nodeContext: {
           title: node.nodeLabel,
@@ -2982,7 +2986,7 @@ async function buildNodeViewModel(
         },
       })
     } catch (err) {
-      logger.warn({ nodeId, err }, 'Failed to generate enhanced article flow')
+      logger.warn('Failed to generate enhanced article flow', { nodeId, err })
       // 失败时保持undefined，使用标准flow
     }
   }
