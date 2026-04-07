@@ -30,6 +30,8 @@ describe('translation registry', () => {
   })
 
   it('serves curated Chinese copy on the core user path', () => {
+    expect(getTranslation('brand.title', 'zh')).toBe('溯知')
+    expect(getTranslation('brand.subtitle', 'zh')).toBe('AI 研究工作台')
     expect(getTranslation('home.create', 'zh')).toBe('创建主题')
     expect(getTranslation('init.title', 'zh')).toBe('系统初始化')
     expect(getTranslation('workbench.guidanceReceiptTitle', 'zh')).toBe('建议回执')

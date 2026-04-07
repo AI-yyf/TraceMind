@@ -70,7 +70,8 @@ router.get('/', asyncHandler(async (req, res) => {
 
 router.get('/:nodeId/view-model', asyncHandler(async (req, res) => {
   const stageWindowMonths = readStageWindowMonths(req.query.stageMonths)
-  const viewModel = await getNodeViewModel(req.params.nodeId, { stageWindowMonths })
+  const enhanced = req.query.enhanced === 'true'
+  const viewModel = await getNodeViewModel(req.params.nodeId, { stageWindowMonths, enhanced })
   res.json({
     success: true,
     data: viewModel

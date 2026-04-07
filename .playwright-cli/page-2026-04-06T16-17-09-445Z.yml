@@ -1,0 +1,175 @@
+- generic [ref=e2]:
+  - button "界面语言 中文" [ref=e6] [cursor=pointer]:
+    - img [ref=e7]
+    - generic [ref=e11]:
+      - generic [ref=e12]: 界面语言
+      - generic [ref=e13]: 中文
+    - img [ref=e14]
+  - generic [ref=e21]:
+    - button "关闭搜索" [ref=e138] [cursor=pointer]
+    - generic [ref=e139]:
+      - generic [ref=e140]:
+        - generic [ref=e141]:
+          - generic [ref=e142]:
+            - generic [ref=e143]: 全局搜索
+            - generic [ref=e144]: 统一检索主题、节点、论文、章节、图表与公式，并支持直接打开、回到主题或加入工作台继续追问。
+          - button "关闭搜索" [ref=e145] [cursor=pointer]:
+            - img [ref=e146]
+        - generic [ref=e149]:
+          - img [ref=e150]
+          - textbox "搜索主题、节点、论文、章节、图表与公式" [active] [ref=e153]
+        - generic [ref=e154]:
+          - button "主题" [ref=e155] [cursor=pointer]
+          - button "节点" [ref=e156] [cursor=pointer]
+          - button "论文" [ref=e157] [cursor=pointer]
+          - button "章节" [ref=e158] [cursor=pointer]
+          - button "图" [ref=e159] [cursor=pointer]
+          - button "表" [ref=e160] [cursor=pointer]
+          - button "公式" [ref=e161] [cursor=pointer]
+      - generic [ref=e162]:
+        - complementary [ref=e163]:
+          - generic [ref=e164]:
+            - generic [ref=e165]:
+              - generic [ref=e166]: 最近搜索
+              - generic [ref=e168]: 你的搜索会按主题记下来，方便回到之前的研究线索。
+            - generic [ref=e169]:
+              - generic [ref=e170]: 推荐起点
+              - generic [ref=e171]:
+                - button "自动驾驶" [ref=e172] [cursor=pointer]:
+                  - img [ref=e173]
+                  - text: 自动驾驶
+                - button "世界模型" [ref=e175] [cursor=pointer]:
+                  - img [ref=e176]
+                  - text: 世界模型
+                - button "具身智能" [ref=e178] [cursor=pointer]:
+                  - img [ref=e179]
+                  - text: 具身智能
+                - button "科研阅读智能体" [ref=e181] [cursor=pointer]:
+                  - img [ref=e182]
+                  - text: 科研阅读智能体
+            - generic [ref=e184]:
+              - generic [ref=e185]:
+                - img [ref=e186]
+                - generic [ref=e188]: Enter
+                - img [ref=e189]
+                - img [ref=e191]
+              - paragraph [ref=e193]: 按 Enter 打开结果，按上下方向键切换候选项。
+            - generic [ref=e194]:
+              - generic [ref=e195]: 全局搜索
+              - generic [ref=e196]:
+                - paragraph [ref=e197]: 搜索 section、figure、table 或 formula 时，可以直接跳到正文锚点。
+                - paragraph [ref=e198]: 结果可以直接带回主题右侧工作台，继续追问而不重新找上下文。
+                - paragraph [ref=e199]: 先筛类型，再按主题收窄，适合快速查多分支主题里的某一跳。
+        - generic [ref=e201]: 输入关键词后，这里会显示按主题、节点、论文和证据分组的结果。
+    - complementary [ref=e22]:
+      - link "溯知 TraceMind" [ref=e23] [cursor=pointer]:
+        - /url: /
+        - generic [ref=e24]: 溯知
+        - generic [ref=e25]: TraceMind
+      - generic [ref=e26]:
+        - link "首页" [ref=e27] [cursor=pointer]:
+          - /url: /
+          - img [ref=e28]
+          - generic [ref=e31]: 首页
+        - link "主题" [ref=e32] [cursor=pointer]:
+          - /url: /manage/topics
+          - img [ref=e33]
+          - generic [ref=e35]: 主题
+        - link "编排" [ref=e36] [cursor=pointer]:
+          - /url: /research
+          - img [ref=e37]
+          - generic [ref=e39]: 编排
+        - link "收藏" [ref=e40] [cursor=pointer]:
+          - /url: /favorites
+          - img [ref=e41]
+          - generic [ref=e43]: 收藏
+        - link "快照" [ref=e44] [cursor=pointer]:
+          - /url: /today
+          - img [ref=e45]
+          - generic [ref=e48]: 快照
+        - link "设置" [ref=e49] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e50]
+          - generic [ref=e53]: 设置
+        - button "搜索" [ref=e54] [cursor=pointer]:
+          - img [ref=e55]
+          - generic [ref=e58]: 搜索
+    - generic [ref=e59]:
+      - main [ref=e60]:
+        - generic [ref=e61]:
+          - link "返回主题" [ref=e62] [cursor=pointer]:
+            - /url: /topic/topic-1?stageMonths=1
+            - img [ref=e63]
+            - text: 返回主题
+          - generic [ref=e65]:
+            - generic [ref=e66]: 2023.06 · 2023.06.20
+            - heading "世界模型的引入" [level=1] [ref=e67]
+            - generic [ref=e68]: 预测与仿真
+            - paragraph [ref=e69]:
+              - text: 端到端范式的根本脆弱性在于其黑盒特性：原始传感器信号直接映射为控制指令，信息在接口处被逐级压缩，误差在级联中放大，模型既无法解释「为何如此驾驶」，也无法在长尾场景中利用物理常识进行推理。
+              - link "《自动驾驶世界模型》" [ref=e70] [cursor=pointer]:
+                - /url: /node/node-2?anchor=paper%3Apaper-2&stageMonths=1
+              - text: 的出现，正是为了回应这一缺陷——它试图在感知与控制之间插入可学习的「内部仿真器」，通过隐空间状态转移赋予系统想象未来的能力。这一动机本... 2023年《自动驾驶世界模型》论文在零架构图、零数学公式、零系统对比的证据结构下，试图建立隐空间状态转移机制，但核心数学形式与边际增益完全无法核实。作为节点概念提出者，它首次将世界模型叙事带入...
+          - generic [ref=e71]:
+            - generic [ref=e72]:
+              - generic [ref=e73]:
+                - generic [ref=e74]: 阶段锁定文章
+                - heading "2023.06" [level=2] [ref=e75]
+                - paragraph [ref=e76]: 这篇节点文章只保留归入 2023.06 的论文、图、表和公式。若主题分阶段节奏发生变化，请去主题管理调整，而不是在阅读面临时改结构。
+              - link "管理主题节奏" [ref=e77] [cursor=pointer]:
+                - /url: /manage/topics
+                - text: 管理主题节奏
+                - img [ref=e78]
+            - generic [ref=e82]:
+              - generic [ref=e83]: "2023.06"
+              - generic [ref=e84]: 1 篇论文
+              - generic [ref=e85]: 0 个图、表和公式
+          - generic [ref=e86]:
+            - generic [ref=e87]:
+              - generic [ref=e88]: 论文操作
+              - paragraph [ref=e89]: 已选 0 篇，可下载 0 篇，可导入 0 篇。
+            - generic [ref=e90]:
+              - button "全选论文" [ref=e91] [cursor=pointer]
+              - button "清空选择" [disabled] [ref=e92]
+              - button "复制导入链接" [disabled] [ref=e93]
+              - button "下载 0 篇 PDF" [disabled] [ref=e94]
+          - article [ref=e95]:
+            - generic [ref=e96]:
+              - heading "先把这个节点的问题、判断和边界说清楚" [level=2] [ref=e97]
+              - paragraph [ref=e99]: 2023年《自动驾驶世界模型》论文在零架构图、零数学公式、零系统对比的证据结构下，试图建立隐空间状态转移机制，但核心数学形式与边际增益完全无法核实。作为节点概念提出者，它首次将世界模型叙事带入自动驾驶，却未能提供可验证的技术锚点，使得「内部仿真器」目前更像一个悬浮在文字中的概念跳板而非可落地的机制突破。 方法机制层面，论文声称构建了一个能够「预测未来场景并辅助决策」的世界模型，但零公式的证据结构使得核心机制的数学形式完全无法核实。...
+            - generic [ref=e101]:
+              - checkbox "选择论文 自动驾驶世界模型" [ref=e103]
+              - generic [ref=e104]:
+                - generic [ref=e105]:
+                  - generic [ref=e106]: 主线论文
+                  - generic [ref=e107]: 2023.06.20
+                - heading "自动驾驶世界模型" [level=2] [ref=e108]
+                - generic [ref=e109]: World Models for Autonomous Driving
+                - paragraph [ref=e110]: 这篇论文首次将世界模型概念引入自动驾驶领域，世界模型能够学习环境的动态特性。
+                - generic [ref=e111]:
+                  - generic [ref=e112]: 论文地址
+                  - link "arxiv.org https://arxiv.org/abs/2306.00001" [ref=e113] [cursor=pointer]:
+                    - /url: https://arxiv.org/abs/2306.00001
+                    - generic [ref=e114]: arxiv.org
+                    - generic [ref=e115]: https://arxiv.org/abs/2306.00001
+                    - img [ref=e116]
+                - generic [ref=e120]:
+                  - link "原始地址" [ref=e121] [cursor=pointer]:
+                    - /url: https://arxiv.org/abs/2306.00001
+                  - link "下载 PDF" [ref=e122] [cursor=pointer]:
+                    - /url: https://arxiv.org/pdf/2306.00001.pdf
+                  - link "跳到 自动驾驶世界模型" [ref=e123] [cursor=pointer]:
+                    - /url: /node/node-2?anchor=paper%3Apaper-2&stageMonths=1
+            - generic [ref=e124]:
+              - heading "自动驾驶世界模型 为什么构成节点主线" [level=2] [ref=e125]
+              - generic [ref=e126]:
+                - paragraph [ref=e127]: 提出了一个用于自动驾驶的世界模型，能够预测未来场景并辅助决策。
+                - paragraph [ref=e128]: 这篇论文首次将世界模型概念引入自动驾驶领域，世界模型能够学习环境的动态特性。
+                - paragraph [ref=e129]: 证据重心：0 张图，0 张表，0 个公式。
+            - generic [ref=e130]:
+              - heading "严厉审稿人会追问什么" [level=2] [ref=e131]
+              - paragraph [ref=e132]: 节点内多篇论文虽然能形成主线，但是否真的彼此推进，仍要严格比较任务设定、评价指标和数据条件。
+              - paragraph [ref=e134]: 部分论文缺少足够的可视化或表格证据，节点整体证据链不够均衡。
+      - button "打开工作台" [ref=e135] [cursor=pointer]:
+        - img [ref=e136]
+        - text: 打开工作台

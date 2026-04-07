@@ -1,0 +1,91 @@
+{
+  "success": true,
+  "data": {
+    "nameZh": "追踪多模态科研智能体如何把规划...",
+    "nameEn": "How Multimodal Scientific Agents Combin...",
+    "keywords": [
+      {
+        "zh": "追踪多模态科研智能体如何把规划",
+        "en": "追踪多模态科研智能体如何把规划"
+      },
+      {
+        "zh": "记忆",
+        "en": "记忆"
+      },
+      {
+        "zh": "证据校准和持续写作整合进同一个研究工作台",
+        "en": "证据校准和持续写作整合进同一个研究工作台"
+      },
+      {
+        "zh": "how",
+        "en": "How"
+      },
+      {
+        "zh": "multimodal",
+        "en": "Multimodal"
+      },
+      {
+        "zh": "scientific",
+        "en": "Scientific"
+      }
+    ],
+    "summary": "Track how multimodal scientific agents combine planning, memory, evidence calibration, and continuous writing in one ... | 追踪多模态科研智能体如何把规划、记忆、证据校准和持续写作整合进同一个研究工作台。",
+    "summaryZh": "追踪多模态科研智能体如何把规划、记忆、证据校准和持续写作整合进同一个研究工作台。",
+    "summaryEn": "Track how multimodal scientific agents combine planning, memory, evidence calibration, and continuous writing in one ...",
+    "recommendedStages": 5,
+    "focusLabel": "How Multimodal Scientific Agents Combin... | 追踪多模态科研智能体如何把规划...",
+    "focusLabelZh": "追踪多模态科研智能体如何把规划...",
+    "focusLabelEn": "How Multimodal Scientific Agents Combin...",
+    "primaryLanguage": "zh",
+    "locales": {
+      "zh": {
+        "name": "追踪多模态科研智能体如何把规划...",
+        "summary": "追踪多模态科研智能体如何把规划、记忆、证据校准和持续写作整合进同一个研究工作台。",
+        "focusLabel": "追踪多模态科研智能体如何把规划...",
+        "description": "追踪多模态科研智能体如何把规划、记忆、证据校准和持续写作整合进同一个研究工作台。"
+      },
+      "en": {
+        "name": "How Multimodal Scientific Agents Combin...",
+        "summary": "Track how multimodal scientific agents combine planning, memory, evidence calibration, and continuous writing in one ...",
+        "focusLabel": "How Multimodal Scientific Agents Combin...",
+        "description": "Track how multimodal scientific agents combine planning, memory, evidence calibration, and continuous writing in one research workbench."
+      },
+      "ja": {
+        "name": "How Multimodal Scientific Agents Combin...",
+        "summary": "追踪多模态科研智能体如何把规划、记忆、证据校准和持续写作整合进同一个研究工作台。",
+        "focusLabel": "How Multimodal Scientific Agents Combin...",
+        "description": "追踪多模态科研智能体如何把规划、记忆、证据校准和持续写作整合进同一个研究工作台。"
+      },
+      "ko": {
+        "name": "How Multimodal Scientific Agents Combin...",
+        "summary": "追踪多模态科研智能体如何把规划、记忆、证据校准和持续写作整合进同一个研究工作台。",
+        "focusLabel": "How Multimodal Scientific Agents Combin...",
+        "description": "追踪多模态科研智能体如何把规划、记忆、证据校准和持续写作整合进同一个研究工作台。"
+      },
+      "de": {
+        "name": "How Multimodal Scientific Agents Combin...",
+        "summary": "追踪多模态科研智能体如何把规划、记忆、证据校准和持续写作整合进同一个研究工作台。",
+        "focusLabel": "How Multimodal Scientific Agents Combin...",
+        "description": "追踪多模态科研智能体如何把规划、记忆、证据校准和持续写作整合进同一个研究工作台。"
+      },
+      "fr": {
+        "name": "How Multimodal Scientific Agents Combin...",
+        "summary": "追踪多模态科研智能体如何把规划、记忆、证据校准和持续写作整合进同一个研究工作台。",
+        "focusLabel": "How Multimodal Scientific Agents Combin...",
+        "description": "追踪多模态科研智能体如何把规划、记忆、证据校准和持续写作整合进同一个研究工作台。"
+      },
+      "es": {
+        "name": "How Multimodal Scientific Agents Combin...",
+        "summary": "追踪多模态科研智能体如何把规划、记忆、证据校准和持续写作整合进同一个研究工作台。",
+        "focusLabel": "How Multimodal Scientific Agents Combin...",
+        "description": "追踪多模态科研智能体如何把规划、记忆、证据校准和持续写作整合进同一个研究工作台。"
+      },
+      "ru": {
+        "name": "How Multimodal Scientific Agents Combin...",
+        "summary": "追踪多模态科研智能体如何把规划、记忆、证据校准和持续写作整合进同一个研究工作台。",
+        "focusLabel": "How Multimodal Scientific Agents Combin...",
+        "description": "追踪多模态科研智能体如何把规划、记忆、证据校准和持续写作整合进同一个研究工作台。"
+      }
+    }
+  }
+}

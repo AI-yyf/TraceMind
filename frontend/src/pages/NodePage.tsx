@@ -8,10 +8,12 @@ import {
   renderInlineArticleText,
 } from '@/components/reading/ArticleInlineText'
 import { ReadingEvidenceBlock } from '@/components/reading/ReadingEvidenceBlock'
+import { PaperSectionBlock } from '@/components/reading/PaperSectionBlock'
 import { RightSidebarShell } from '@/components/topic/RightSidebarShell'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useProductCopy } from '@/hooks/useProductCopy'
 import { useI18n } from '@/i18n'
+import { isLowSignalResearchLine } from '@/utils/researchCopy'
 import type {
   ArticleFlowBlock,
   CitationRef,
@@ -23,6 +25,7 @@ import type {
   SearchResultItem,
   SuggestedAction,
 } from '@/types/alpha'
+import type { NodeArticleFlowBlock, PaperArticleBlock } from '@/types/article'
 import { apiGet, resolveApiAssetUrl } from '@/utils/api'
 import {
   readStageWindowSearchParam,
@@ -110,6 +113,127 @@ function collectNarrativeReferenceIds(texts: Array<string | null | undefined>) {
   }
 
   return Array.from(ids)
+}
+
+function normalizeNarrativeKey(value: string | null | undefined) {
+  return (value ?? '')
+    .normalize('NFKC')
+    .replace(/\s+/gu, ' ')
+    .replace(/[「」『』《》“”"'`]/gu, '')
+    .replace(/[，。！？!?；;：:、]/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim()
+    .toLowerCase()
+}
+
+const LOW_SIGNAL_NODE_NARRATIVE_PATTERNS = [
+  /不是单篇结论/u,
+  /围绕同一问题形成的研究推进/u,
+  /节点级判断不能只停在/u,
+  /节点总结不能只停在/u,
+  /如果读完这个节点后仍然不知道/u,
+  /一个好的节点应该让读者看清/u,
+  /节点级组织仍然不够成功/u,
+  /图、表、公式在这里的意义不是材料很多/u,
+  /this node is not a single-paper conclusion/iu,
+  /node-level judgment cannot stop at/iu,
+  /if readers still cannot tell what each paper did/iu,
+  /a good node should help the reader see/iu,
+]
+
+function sanitizeNarrativeParagraph(value: string | null | undefined) {
+  const paragraph = value?.replace(/\s+/gu, ' ').trim() ?? ''
+  if (!paragraph) return ''
+  if (isLowSignalResearchLine(paragraph)) return ''
+  if (LOW_SIGNAL_NODE_NARRATIVE_PATTERNS.some((pattern) => pattern.test(paragraph))) return ''
+  return paragraph
+}
+
+function isNarrativeDuplicate(existingKeys: Set<string>, nextKey: string) {
+  for (const existing of existingKeys) {
+    if (existing === nextKey) return true
+
+    const overlapLength = Math.min(existing.length, nextKey.length)
+    if (overlapLength >= 24 && (existing.includes(nextKey) || nextKey.includes(existing))) {
+      return true
+    }
+  }
+
+  return false
+}
+
+function dedupeNarrativeParagraphs(
+  values: Array<string | null | undefined>,
+  seenKeys = new Set<string>(),
+) {
+  const output: string[] = []
+
+  for (const value of values) {
+    const paragraph = sanitizeNarrativeParagraph(value)
+    if (!paragraph) continue
+
+    const key = normalizeNarrativeKey(paragraph)
+    if (!key || isNarrativeDuplicate(seenKeys, key)) continue
+
+    seenKeys.add(key)
+    output.push(paragraph)
+  }
+
+  return output
+}
+
+function dedupeNodeFlow(
+  flow: ArticleFlowBlock[],
+  leadParagraphs: string[],
+) : ArticleFlowBlock[] {
+  const seenKeys = new Set(leadParagraphs.map((paragraph) => normalizeNarrativeKey(paragraph)).filter(Boolean))
+  const nextFlow: ArticleFlowBlock[] = []
+
+  for (const block of flow) {
+    if (block.type === 'text' || block.type === 'closing') {
+      const body = dedupeNarrativeParagraphs(block.body, seenKeys)
+      if (body.length === 0) continue
+      nextFlow.push({ ...block, body })
+      continue
+    }
+
+    if (block.type === 'comparison') {
+      const summary = dedupeNarrativeParagraphs([block.summary], seenKeys)[0] ?? ''
+      const points = block.points.reduce<typeof block.points>((entries, point) => {
+        const detail = dedupeNarrativeParagraphs([point.detail], seenKeys)[0] ?? ''
+        if (!detail) return entries
+        entries.push({ ...point, detail })
+        return entries
+      }, [])
+
+      if (!summary && points.length === 0) continue
+
+      nextFlow.push({
+        ...block,
+        summary: summary || points[0]?.detail || '',
+        points: summary ? points : points.slice(1),
+      })
+      continue
+    }
+
+    if (block.type === 'critique') {
+      const summary = dedupeNarrativeParagraphs([block.summary], seenKeys)[0] ?? ''
+      const bullets = dedupeNarrativeParagraphs(block.bullets, seenKeys)
+
+      if (!summary && bullets.length === 0) continue
+
+      nextFlow.push({
+        ...block,
+        summary: summary || bullets[0] || '',
+        bullets: summary ? bullets : bullets.slice(1),
+      })
+      continue
+    }
+
+    nextFlow.push(block)
+  }
+
+  return nextFlow
 }
 
 function buildPaperAnchor(nodeId: string, paperId: string) {
@@ -226,7 +350,14 @@ export function NodePage() {
     () => new Map((viewModel?.evidence ?? []).map((item) => [item.anchorId, item])),
     [viewModel],
   )
-  const flow = viewModel?.article.flow ?? []
+  const leadParagraphs = useMemo(
+    () => dedupeNarrativeParagraphs([viewModel?.headline, viewModel?.standfirst]),
+    [viewModel?.headline, viewModel?.standfirst],
+  )
+  const flow = useMemo(
+    () => dedupeNodeFlow(viewModel?.article.flow ?? [], leadParagraphs),
+    [leadParagraphs, viewModel?.article.flow],
+  )
   const surfaceMetaLine = useMemo(
     () =>
       [viewModel?.stageLabel, viewModel?.article.periodLabel, viewModel?.article.timeRangeLabel]
@@ -326,8 +457,7 @@ export function NodePage() {
   const narrativeReferenceIds = useMemo(
     () =>
       collectNarrativeReferenceIds([
-        viewModel?.headline,
-        viewModel?.standfirst,
+        ...leadParagraphs,
         viewModel?.summary,
         viewModel?.explanation,
         ...flow.flatMap((block) => {
@@ -450,10 +580,15 @@ export function NodePage() {
       renderTemplate(
         t(
           'node.stageScopeSummary',
-          'This node article now keeps only the papers that belong to {stage}. To regroup stages, change the topic cadence from Topic List rather than editing the reading surface.',
+          'This node article keeps only the papers, figures, tables, and formulas that belong to {stage}. If the topic cadence changes, adjust it from Topic Management instead of rewriting the reading surface here.',
         ),
         {
-          stage: viewModel?.stageLabel || surfaceMetaLine || viewModel?.topic.title || '',
+          stage:
+            viewModel?.stageLabel ||
+            viewModel?.article.timeRangeLabel ||
+            surfaceMetaLine ||
+            viewModel?.topic.title ||
+            '',
         },
       ),
     [surfaceMetaLine, t, viewModel],
@@ -611,7 +746,13 @@ export function NodePage() {
         return
       }
 
-      navigate(withStageWindowRoute(`/paper/${nextPaperId}`, stageWindowMonths))
+      const referencedPaper = articleReferenceMap.get(nextPaperId.toLowerCase())
+      navigate(
+        withStageWindowRoute(
+          referencedPaper?.route || `/paper/${nextPaperId}`,
+          stageWindowMonths,
+        ),
+      )
       return
     }
 
@@ -768,12 +909,14 @@ export function NodePage() {
           {viewModel.titleEn ? (
             <div className="mt-3 text-[14px] leading-7 text-black/42">{viewModel.titleEn}</div>
           ) : null}
-          <p className="mt-5 text-[17px] leading-9 text-black/72">
-            {renderInlineArticleText(viewModel.headline, articleReferenceMap, stageWindowMonths)}
-          </p>
-          <p className="mt-5 text-[16px] leading-9 text-black/64">
-            {renderInlineArticleText(viewModel.standfirst, articleReferenceMap, stageWindowMonths)}
-          </p>
+          {leadParagraphs.map((paragraph, index) => (
+            <p
+              key={`${index}:${paragraph}`}
+              className={index === 0 ? 'mt-5 text-[17px] leading-9 text-black/72' : 'mt-5 text-[16px] leading-9 text-black/64'}
+            >
+              {renderInlineArticleText(paragraph, articleReferenceMap, stageWindowMonths)}
+            </p>
+          ))}
         </header>
 
         <section className="mx-auto mt-8 max-w-[920px] rounded-[26px] border border-black/8 bg-[var(--surface-soft)] px-5 py-5">
@@ -894,9 +1037,11 @@ export function NodePage() {
               downloadPdfLabel={t('node.downloadPdf', 'Download PDF')}
               paperAddressLabel={t('node.paperAddress', 'Paper address')}
               selectPaperLabel={t('node.selectPaper', 'Select paper')}
+              jumpToPaperTemplate={t('node.jumpToPaper', 'Jump to {title}')}
               whyItMattersLabel={copy('reading.whyItMatters', t('node.whyItMatters', 'Why it matters:'))}
               referenceMap={articleReferenceMap}
               stageWindowMonths={stageWindowMonths}
+              enhancedFlow={viewModel?.enhancedArticleFlow}
             />
           ))}
         </article>
@@ -918,9 +1063,11 @@ function FlowBlock({
   downloadPdfLabel,
   paperAddressLabel,
   selectPaperLabel,
+  jumpToPaperTemplate,
   whyItMattersLabel,
   referenceMap,
   stageWindowMonths,
+  enhancedFlow,
 }: {
   block: ArticleFlowBlock
   nodeId: string
@@ -932,9 +1079,11 @@ function FlowBlock({
   downloadPdfLabel: string
   paperAddressLabel: string
   selectPaperLabel: string
+  jumpToPaperTemplate: string
   whyItMattersLabel: string
   referenceMap: Map<string, ArticleInlineReference>
   stageWindowMonths: number
+  enhancedFlow?: NodeArticleFlowBlock[]
 }) {
   if (block.type === 'text') {
     return (
@@ -958,6 +1107,32 @@ function FlowBlock({
     const highlighted = activeAnchor === `paper:${block.paperId}`
     const publishedAtLabel = formatPublishedDate(block.publishedAt)
     const sourceLabel = block.originalUrl ? formatExternalLinkLabel(block.originalUrl) : null
+    
+    // 查找增强版论文文章数据
+    const enhancedPaperBlock = enhancedFlow?.find(
+      (b): b is PaperArticleBlock => b.type === 'paper-article' && b.paperId === block.paperId
+    )
+    
+    // 如果有增强版数据，使用PaperSectionBlock组件
+    if (enhancedPaperBlock) {
+      return (
+        <PaperSectionBlock
+          paperId={enhancedPaperBlock.paperId}
+          title={enhancedPaperBlock.title}
+          titleEn={enhancedPaperBlock.titleEn}
+          authors={enhancedPaperBlock.authors}
+          publishedAt={enhancedPaperBlock.publishedAt}
+          citationCount={enhancedPaperBlock.citationCount}
+          role={enhancedPaperBlock.role}
+          introduction={enhancedPaperBlock.introduction}
+          subsections={enhancedPaperBlock.subsections}
+          conclusion={enhancedPaperBlock.conclusion}
+          anchorId={anchorDomId(`paper:${block.paperId}`)}
+        />
+      )
+    }
+    
+    // 否则使用原有简单展示
     return (
       <section
         id={anchorDomId(`paper:${block.paperId}`)}
@@ -1035,7 +1210,7 @@ function FlowBlock({
                 to={withStageWindowRoute(buildPaperAnchor(nodeId, block.paperId), stageWindowMonths)}
                 className="text-black/52 transition hover:text-black"
               >
-                {renderTemplate('§ {title}', { title: block.title })}
+                {renderTemplate(jumpToPaperTemplate, { title: block.title })}
               </Link>
             </div>
           </div>

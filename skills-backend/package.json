@@ -14,6 +14,8 @@
     "db:seed": "tsx src/scripts/seed.ts",
     "scheduler:start": "tsx src/scripts/scheduler-cli.ts",
     "topic:generate": "tsx src/scripts/topic-generate.ts",
+    "topic:reset": "tsx src/scripts/reset-topics.ts",
+    "topic:extract-pdfs": "tsx src/scripts/extract-topic-pdfs.ts",
     "lint": "eslint \"src/**/*.ts\"",
     "type-check": "tsc --noEmit"
   },

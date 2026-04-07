@@ -540,6 +540,285 @@ test('GET /api/model-configs bootstraps both default slots from OMNI_DEFAULT_* p
   }
 })
 
+test('GET /api/model-configs lets research roles inherit a compatible gateway while overriding only role model ids', async () => {
+  const userId = 'test-model-configs-role-env-inheritance'
+  const configKey = `alpha:user-model-config:${userId}`
+  const originalRecord = await prisma.systemConfig.findUnique({
+    where: { key: configKey },
+  })
+  const envKeys = [
+    'OMNI_DEFAULT_PROVIDER',
+    'OMNI_DEFAULT_BASE_URL',
+    'OMNI_DEFAULT_API_KEY',
+    'OMNI_LANGUAGE_MODEL',
+    'OMNI_MULTIMODAL_MODEL',
+    'OMNI_ROLE_NODE_WRITER_MODEL',
+    'OMNI_ROLE_NODE_WRITER_THINKING',
+    'OMNI_ROLE_VISION_READER_MODEL',
+    'OMNI_ROLE_VISION_READER_PARSER',
+  ] as const
+  const originalEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]))
+
+  process.env.OMNI_DEFAULT_PROVIDER = 'openai_compatible'
+  process.env.OMNI_DEFAULT_BASE_URL = 'https://ai.1seey.com/v1'
+  process.env.OMNI_DEFAULT_API_KEY = 'default-env-key'
+  process.env.OMNI_LANGUAGE_MODEL = 'Kimi-K2.5'
+  process.env.OMNI_MULTIMODAL_MODEL = 'Kimi-K2.5'
+  process.env.OMNI_ROLE_NODE_WRITER_MODEL = 'Kimi-K2.5-Writer'
+  process.env.OMNI_ROLE_NODE_WRITER_THINKING = 'on'
+  process.env.OMNI_ROLE_VISION_READER_MODEL = 'Kimi-K2.5-Vision'
+  process.env.OMNI_ROLE_VISION_READER_PARSER = 'native'
+
+  await prisma.systemConfig.deleteMany({
+    where: { key: configKey },
+  })
+
+  try {
+    await withServer(async (origin) => {
+      const getResponse = await fetch(`${origin}/api/model-configs`, {
+        headers: { 'x-alpha-user-id': userId },
+      })
+      assert.equal(getResponse.status, 200)
+
+      const payload = (await getResponse.json()) as {
+        success: boolean
+        data: {
+          config: {
+            roles?: {
+              node_writer?: {
+                provider: string
+                model: string
+                baseUrl?: string
+                apiKeyStatus: 'configured' | 'missing'
+                apiKeyPreview?: string
+                options?: {
+                  thinking?: string
+                }
+              } | null
+              vision_reader?: {
+                provider: string
+                model: string
+                baseUrl?: string
+                apiKeyStatus: 'configured' | 'missing'
+                apiKeyPreview?: string
+                options?: {
+                  parser?: string
+                }
+              } | null
+            }
+          }
+          roles?: {
+            node_writer?: {
+              source: string
+              model: string | null
+            }
+            vision_reader?: {
+              source: string
+              model: string | null
+            }
+          }
+        }
+      }
+
+      assert.equal(payload.success, true)
+      assert.equal(payload.data.config.roles?.node_writer?.provider, 'openai_compatible')
+      assert.equal(payload.data.config.roles?.node_writer?.model, 'Kimi-K2.5-Writer')
+      assert.equal(payload.data.config.roles?.node_writer?.baseUrl, 'https://ai.1seey.com/v1')
+      assert.equal(payload.data.config.roles?.node_writer?.apiKeyStatus, 'configured')
+      assert.equal(payload.data.config.roles?.node_writer?.apiKeyPreview, 'OMNI_DEFAULT_API_KEY (env)')
+      assert.equal(payload.data.config.roles?.node_writer?.options?.thinking, 'on')
+
+      assert.equal(payload.data.config.roles?.vision_reader?.provider, 'openai_compatible')
+      assert.equal(payload.data.config.roles?.vision_reader?.model, 'Kimi-K2.5-Vision')
+      assert.equal(payload.data.config.roles?.vision_reader?.baseUrl, 'https://ai.1seey.com/v1')
+      assert.equal(payload.data.config.roles?.vision_reader?.apiKeyStatus, 'configured')
+      assert.equal(payload.data.config.roles?.vision_reader?.apiKeyPreview, 'OMNI_DEFAULT_API_KEY (env)')
+      assert.equal(payload.data.config.roles?.vision_reader?.options?.parser, 'native')
+
+      assert.equal(payload.data.roles?.node_writer?.source, 'role')
+      assert.equal(payload.data.roles?.node_writer?.model, 'Kimi-K2.5-Writer')
+      assert.equal(payload.data.roles?.vision_reader?.source, 'role')
+      assert.equal(payload.data.roles?.vision_reader?.model, 'Kimi-K2.5-Vision')
+    })
+  } finally {
+    for (const key of envKeys) {
+      const original = originalEnv[key]
+      if (typeof original === 'string') {
+        process.env[key] = original
+      } else {
+        delete process.env[key]
+      }
+    }
+
+    if (originalRecord) {
+      await prisma.systemConfig.upsert({
+        where: { key: configKey },
+        update: { value: originalRecord.value },
+        create: { key: configKey, value: originalRecord.value },
+      })
+    } else {
+      await prisma.systemConfig.deleteMany({
+        where: { key: configKey },
+      })
+    }
+  }
+})
+
+test('GET /api/model-configs lets stored research roles inherit slot secrets and defaults when only role model ids differ', async () => {
+  const userId = 'test-model-configs-stored-role-slot-inheritance'
+  const configKey = `alpha:user-model-config:${userId}`
+  const originalRecord = await prisma.systemConfig.findUnique({
+    where: { key: configKey },
+  })
+
+  try {
+    await withServer(async (origin) => {
+      const saveResponse = await fetch(`${origin}/api/model-configs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-alpha-user-id': userId },
+        body: JSON.stringify({
+          language: {
+            provider: 'openai_compatible',
+            model: 'Kimi-K2.5',
+            baseUrl: 'https://ai.1seey.com/v1',
+            apiKey: 'stored-language-key',
+            providerOptions: {
+              appId: 'suzhi',
+            },
+            options: {
+              thinking: 'off',
+              citations: 'backend',
+              parser: 'backend',
+              maxTokens: 1600,
+            },
+          },
+          multimodal: {
+            provider: 'openai_compatible',
+            model: 'Kimi-K2.5',
+            baseUrl: 'https://ai.1seey.com/v1',
+            apiKey: 'stored-vision-key',
+            providerOptions: {
+              appId: 'suzhi',
+            },
+            options: {
+              thinking: 'off',
+              citations: 'backend',
+              parser: 'backend',
+              maxTokens: 1600,
+            },
+          },
+          roles: {
+            node_writer: {
+              provider: 'openai_compatible',
+              model: 'Kimi-K2.5-Writer',
+              providerOptions: {
+                appId: 'suzhi-node',
+              },
+              options: {
+                thinking: 'on',
+              },
+            },
+            vision_reader: {
+              provider: 'openai_compatible',
+              model: 'Kimi-K2.5-Vision',
+              options: {
+                parser: 'native',
+              },
+            },
+          },
+        }),
+      })
+
+      assert.equal(saveResponse.status, 200)
+
+      const getResponse = await fetch(`${origin}/api/model-configs`, {
+        headers: { 'x-alpha-user-id': userId },
+      })
+      assert.equal(getResponse.status, 200)
+
+      const payload = (await getResponse.json()) as {
+        success: boolean
+        data: {
+          config: {
+            roles?: {
+              node_writer?: {
+                provider: string
+                model: string
+                baseUrl?: string
+                apiKeyStatus: 'configured' | 'missing'
+                apiKeyPreview?: string
+                providerOptions?: { appId?: string }
+                options?: {
+                  thinking?: string
+                  maxTokens?: number
+                }
+              } | null
+              vision_reader?: {
+                provider: string
+                model: string
+                baseUrl?: string
+                apiKeyStatus: 'configured' | 'missing'
+                apiKeyPreview?: string
+                providerOptions?: { appId?: string }
+                options?: {
+                  parser?: string
+                  maxTokens?: number
+                }
+              } | null
+            }
+          }
+          roles?: {
+            node_writer?: {
+              source: string
+              model: string | null
+            }
+            vision_reader?: {
+              source: string
+              model: string | null
+            }
+          }
+        }
+      }
+
+      assert.equal(payload.success, true)
+      assert.equal(payload.data.config.roles?.node_writer?.provider, 'openai_compatible')
+      assert.equal(payload.data.config.roles?.node_writer?.model, 'Kimi-K2.5-Writer')
+      assert.equal(payload.data.config.roles?.node_writer?.baseUrl, 'https://ai.1seey.com/v1')
+      assert.equal(payload.data.config.roles?.node_writer?.apiKeyStatus, 'configured')
+      assert.match(payload.data.config.roles?.node_writer?.apiKeyPreview ?? '', /^stor\*\*\*\*-key$/u)
+      assert.equal(payload.data.config.roles?.node_writer?.providerOptions?.appId, 'suzhi-node')
+      assert.equal(payload.data.config.roles?.node_writer?.options?.thinking, 'on')
+      assert.equal(payload.data.config.roles?.node_writer?.options?.maxTokens, 1600)
+
+      assert.equal(payload.data.config.roles?.vision_reader?.provider, 'openai_compatible')
+      assert.equal(payload.data.config.roles?.vision_reader?.model, 'Kimi-K2.5-Vision')
+      assert.equal(payload.data.config.roles?.vision_reader?.baseUrl, 'https://ai.1seey.com/v1')
+      assert.equal(payload.data.config.roles?.vision_reader?.apiKeyStatus, 'configured')
+      assert.match(payload.data.config.roles?.vision_reader?.apiKeyPreview ?? '', /^stor\*\*\*\*-key$/u)
+      assert.equal(payload.data.config.roles?.vision_reader?.providerOptions?.appId, 'suzhi')
+      assert.equal(payload.data.config.roles?.vision_reader?.options?.parser, 'native')
+      assert.equal(payload.data.config.roles?.vision_reader?.options?.maxTokens, 1600)
+
+      assert.equal(payload.data.roles?.node_writer?.source, 'role')
+      assert.equal(payload.data.roles?.node_writer?.model, 'Kimi-K2.5-Writer')
+      assert.equal(payload.data.roles?.vision_reader?.source, 'role')
+      assert.equal(payload.data.roles?.vision_reader?.model, 'Kimi-K2.5-Vision')
+    })
+  } finally {
+    if (originalRecord) {
+      await prisma.systemConfig.upsert({
+        where: { key: configKey },
+        update: { value: originalRecord.value },
+        create: { key: configKey, value: originalRecord.value },
+      })
+    } else {
+      await prisma.systemConfig.deleteMany({
+        where: { key: configKey },
+      })
+    }
+  }
+})
+
 test('POST /api/model-configs preserves existing slots and roles during partial updates while respecting explicit clears', async () => {
   const userId = 'test-model-configs-partial-updates'
   const configKey = `alpha:user-model-config:${userId}`

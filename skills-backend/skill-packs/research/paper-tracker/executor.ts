@@ -3,6 +3,12 @@ import { prisma } from '../../../shared/db.ts'
 import { researchMemory } from '../../../shared/research-memory.ts'
 import { getTopicDefinition } from '../../../topic-config/index.ts'
 import { omniGateway } from '../../../src/services/omni/gateway.ts'
+import { discoverExternalCandidates, type DiscoveryQuery } from './discovery.ts'
+import {
+  deriveTemporalStageBuckets,
+  normalizeStageWindowMonths,
+} from '../../../src/services/topics/stage-buckets.ts'
+import { loadTopicStageConfig } from '../../../src/services/topics/topic-stage-config.ts'
 
 interface PaperTrackerInput {
   topicId: string
@@ -68,6 +74,12 @@ interface PaperCandidate {
   arxivData?: ArxivPaper
 }
 
+type BootstrapAnchorWindow = {
+  bucketKey: string
+  label: string
+  bucketStart: Date
+}
+
 type LlmPaperEvaluation = {
   verdict: 'admit' | 'reject'
   candidateType: 'direct' | 'branch' | 'transfer'
@@ -99,13 +111,85 @@ type TopicCreationSeed = {
   }
 }
 
+type DiscoveryStageWindow = {
+  currentStageIndex: number
+  targetStageIndex: number
+  windowMonths: number
+  stageLabel: string
+  startDate: Date
+  endDateExclusive: Date
+  searchStartDate: Date
+  searchEndDateExclusive: Date
+  anchorStageIndex: number
+  bootstrapMode: boolean
+  anchorPapers: Array<{
+    paperId: string
+    title: string
+    published: string
+    branchId?: string
+  }>
+  anchorNodes: Array<{
+    nodeId: string
+    title: string
+    summary: string
+    branchId?: string
+  }>
+}
+
 const DISCOVERY_QUERY_LIMIT = 4
+const FALLBACK_BOOTSTRAP_WINDOW_DAYS = 3650
 const DISCOVERY_QUERY_CACHE_TTL_MS = 30 * 60 * 1000
 const PAPER_EVALUATION_CACHE_TTL_MS = 12 * 60 * 60 * 1000
-const DISCOVERY_QUERY_DELAY_MS = 1200
+const DISCOVERY_QUERY_DELAY_MS = 350
+const DISCOVERY_QUERY_CONCURRENCY = 3
 const ARXIV_RATE_LIMIT_COOLDOWN_MS = 15 * 60 * 1000
-const ARXIV_FETCH_TIMEOUT_MS = 15_000
-const OPENALEX_FETCH_TIMEOUT_MS = 15_000
+const ARXIV_UNAVAILABLE_COOLDOWN_MS = 5 * 60 * 1000
+const ARXIV_FETCH_TIMEOUT_MS = 4_500
+const OPENALEX_FETCH_TIMEOUT_MS = 10_000
+const PAPER_EVALUATION_LLM_CONCURRENCY = 2
+const PAPER_EVALUATION_LLM_MAX_CANDIDATES = 3
+
+function startOfUtcMonth(value: Date | string | null | undefined) {
+  const date = value instanceof Date ? value : new Date(value ?? Date.now())
+  if (Number.isNaN(date.getTime())) {
+    return new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1))
+  }
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1))
+}
+
+function addUtcMonths(value: Date, months: number) {
+  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth() + months, 1))
+}
+
+function addUtcDays(value: Date, days: number) {
+  return new Date(
+    Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate() + days),
+  )
+}
+
+function formatStageWindowLabel(startDate: Date, windowMonths: number) {
+  const startYear = startDate.getUTCFullYear()
+  const startMonth = `${startDate.getUTCMonth() + 1}`.padStart(2, '0')
+  if (windowMonths <= 1) {
+    return `${startYear}.${startMonth}`
+  }
+
+  const endDate = addUtcMonths(startDate, windowMonths - 1)
+  const endYear = endDate.getUTCFullYear()
+  const endMonth = `${endDate.getUTCMonth() + 1}`.padStart(2, '0')
+  return `${startYear}.${startMonth}-${endYear}.${endMonth}`
+}
+
+function formatBootstrapWindowLabel(startDate: Date, endDateExclusive: Date) {
+  const inclusiveEnd = addUtcDays(endDateExclusive, -1)
+  const totalMonths = Math.max(
+    1,
+    (inclusiveEnd.getUTCFullYear() - startDate.getUTCFullYear()) * 12 +
+      (inclusiveEnd.getUTCMonth() - startDate.getUTCMonth()) +
+      1,
+  )
+  return `bootstrap ${formatStageWindowLabel(startDate, totalMonths)}`
+}
 
 const ENGLISH_DISCOVERY_STOPWORDS = new Set([
   'a',
@@ -140,6 +224,10 @@ const ENGLISH_DISCOVERY_STOPWORDS = new Set([
   'questions',
   'problem',
   'problems',
+  'include',
+  'includes',
+  'including',
+  'included',
   'stage',
   'stages',
   'create',
@@ -216,6 +304,32 @@ function clipText(value: string | null | undefined, maxLength = 180) {
 
 function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms))
+}
+
+async function mapWithConcurrency<TInput, TOutput>(
+  values: TInput[],
+  limit: number,
+  iteratee: (value: TInput, index: number) => Promise<TOutput>,
+) {
+  if (values.length === 0) {
+    return [] as TOutput[]
+  }
+
+  const concurrency = Math.max(1, Math.min(limit, values.length))
+  const results = new Array<TOutput>(values.length)
+  let nextIndex = 0
+
+  await Promise.all(
+    Array.from({ length: concurrency }, async () => {
+      while (nextIndex < values.length) {
+        const currentIndex = nextIndex
+        nextIndex += 1
+        results[currentIndex] = await iteratee(values[currentIndex], currentIndex)
+      }
+    }),
+  )
+
+  return results
 }
 
 function uniqueNonEmpty(values: Array<string | null | undefined>, limit = 12) {
@@ -351,6 +465,38 @@ function tokenizeSearchText(value: string) {
   return value.toLowerCase().match(/[\p{Letter}\p{Number}]{2,}|[\u4e00-\u9fff]{2,}/gu) ?? []
 }
 
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+}
+
+function textHasToken(text: string, token: string) {
+  if (/[\u4e00-\u9fff]/u.test(token)) {
+    return text.includes(token)
+  }
+
+  return new RegExp(
+    `(?:^|[^\\p{Letter}\\p{Number}])${escapeRegex(token)}(?:$|[^\\p{Letter}\\p{Number}])`,
+    'u',
+  ).test(text)
+}
+
+function textHasPhrase(text: string, phrase: string) {
+  const tokens = tokenizeSearchText(phrase)
+  if (tokens.length === 0) return false
+  if (tokens.length === 1) return textHasToken(text, tokens[0])
+
+  if (tokens.every((token) => /^[a-z0-9]+$/u.test(token))) {
+    return new RegExp(
+      `(?:^|[^\\p{Letter}\\p{Number}])${tokens
+        .map((token) => escapeRegex(token))
+        .join('[\\s-]+')}(?:$|[^\\p{Letter}\\p{Number}])`,
+      'u',
+    ).test(text)
+  }
+
+  return text.includes(phrase.toLowerCase())
+}
+
 function buildQueryPhrases(query: string, limit = 6) {
   const tokens = tokenizeSearchText(query)
   if (tokens.length < 2) return []
@@ -371,29 +517,29 @@ function buildPaperSearchText(paper: ArxivPaper) {
 
 function queryMatchScore(query: string, text: string) {
   const normalizedQuery = query.toLowerCase()
-  if (text.includes(normalizedQuery)) return 1
+  if (textHasPhrase(text, normalizedQuery)) return 1
 
   const tokens = tokenizeSearchText(query)
   if (tokens.length === 0) return 0
 
-  const matched = tokens.filter((token) => text.includes(token)).length
+  const matched = tokens.filter((token) => textHasToken(text, token)).length
   let score = matched / tokens.length
 
   const phrases = buildQueryPhrases(query)
   if (phrases.length > 0) {
-    const matchedPhrases = phrases.filter((phrase) => text.includes(phrase)).length
+    const matchedPhrases = phrases.filter((phrase) => textHasPhrase(text, phrase)).length
     score = score * 0.55 + (matchedPhrases / phrases.length) * 0.45
   }
 
-  if (normalizedQuery.includes('world model') && !text.includes('world model')) {
+  if (normalizedQuery.includes('world model') && !textHasPhrase(text, 'world model')) {
     score *= 0.4
   }
 
   if (
     normalizedQuery.includes('autonomous driving') &&
-    !text.includes('autonomous driving') &&
-    !text.includes('self driving') &&
-    !text.includes('self-driving')
+    !textHasPhrase(text, 'autonomous driving') &&
+    !textHasPhrase(text, 'self driving') &&
+    !textHasPhrase(text, 'self-driving')
   ) {
     score *= 0.7
   }
@@ -443,17 +589,65 @@ function isRateLimitError(error: unknown) {
   return error instanceof Error && /\b429\b/u.test(error.message)
 }
 
+function isArxivUnavailableError(error: unknown) {
+  if (!(error instanceof Error)) return false
+
+  const details = `${error.name} ${error.message}`.toLowerCase()
+  return (
+    details.includes('aborterror') ||
+    details.includes('timed out') ||
+    details.includes('timeout') ||
+    details.includes('etimedout') ||
+    details.includes('fetch failed') ||
+    details.includes('econnreset') ||
+    details.includes('socket hang up')
+  )
+}
+
 async function loadTopicRecord(topicId: string) {
   return (prisma as any).topic.findUnique({
     where: { id: topicId },
-    include: {
+    select: {
+      id: true,
+      nameZh: true,
+      nameEn: true,
+      focusLabel: true,
+      summary: true,
+      description: true,
+      createdAt: true,
       papers: {
+        select: {
+          id: true,
+          title: true,
+          titleZh: true,
+          titleEn: true,
+          summary: true,
+          explanation: true,
+          authors: true,
+          published: true,
+          tags: true,
+          arxivUrl: true,
+          pdfUrl: true,
+        },
         orderBy: { published: 'desc' },
-        take: 20,
       },
       nodes: {
-        orderBy: { updatedAt: 'desc' },
-        take: 20,
+        select: {
+          id: true,
+          stageIndex: true,
+          nodeLabel: true,
+          nodeSubtitle: true,
+          nodeSummary: true,
+          primaryPaperId: true,
+          createdAt: true,
+          updatedAt: true,
+          papers: {
+            select: {
+              paperId: true,
+            },
+          },
+        },
+        orderBy: [{ stageIndex: 'asc' }, { updatedAt: 'asc' }],
       },
       stages: {
         orderBy: { order: 'asc' },
@@ -474,6 +668,154 @@ async function loadTopicCreationSeed(topicId: string): Promise<TopicCreationSeed
     return typeof parsed === 'object' && parsed ? parsed : null
   } catch {
     return null
+  }
+}
+
+async function resolveTrackerStageWindowMonths(
+  topicId: string,
+  requestedWindowMonths?: number,
+) {
+  if (typeof requestedWindowMonths === 'number' && Number.isFinite(requestedWindowMonths)) {
+    return normalizeStageWindowMonths(requestedWindowMonths)
+  }
+
+  const config = await loadTopicStageConfig(topicId)
+  return normalizeStageWindowMonths(config.windowMonths)
+}
+
+function resolveTemporalDiscoveryWindow(args: {
+  topic: NonNullable<TopicRecord>
+  requestedWindowMonths: number
+  requestedStageIndex?: number
+  stageMode?: PaperTrackerInput['stageMode']
+  bootstrapWindowDays?: number
+}) {
+  const windowMonths = normalizeStageWindowMonths(args.requestedWindowMonths)
+  const temporalBuckets = deriveTemporalStageBuckets({
+    papers: args.topic.papers.map((paper: any) => ({
+      id: paper.id,
+      published: paper.published,
+    })),
+    nodes: args.topic.nodes.map((node: any) => ({
+      id: node.id,
+      primaryPaperId: node.primaryPaperId,
+      updatedAt: node.updatedAt,
+      createdAt: node.createdAt,
+      papers: Array.isArray(node.papers)
+        ? node.papers.map((entry: any) => ({ paperId: entry.paperId }))
+        : [],
+    })),
+    windowMonths,
+    fallbackDate: args.topic.createdAt,
+  })
+  const hasObservedPapers = args.topic.papers.length > 0
+
+  if (!hasObservedPapers) {
+    const bootstrapWindowDays = Math.max(
+      FALLBACK_BOOTSTRAP_WINDOW_DAYS,
+      Math.trunc(args.bootstrapWindowDays ?? FALLBACK_BOOTSTRAP_WINDOW_DAYS),
+    )
+    const searchEndDateExclusive = addUtcMonths(startOfUtcMonth(new Date()), 1)
+    const searchStartDate = startOfUtcMonth(addUtcDays(searchEndDateExclusive, -bootstrapWindowDays))
+
+    return {
+      temporalBuckets,
+      window: {
+        currentStageIndex: 0,
+        targetStageIndex: 1,
+        windowMonths,
+        stageLabel: formatBootstrapWindowLabel(searchStartDate, searchEndDateExclusive),
+        startDate: searchStartDate,
+        endDateExclusive: searchEndDateExclusive,
+        searchStartDate,
+        searchEndDateExclusive,
+        anchorStageIndex: 0,
+        bootstrapMode: true,
+        anchorPapers: [],
+        anchorNodes: [],
+      } satisfies DiscoveryStageWindow,
+    }
+  }
+
+  const earliestChronologicalDate = [
+    ...args.topic.papers.map((paper: any) => new Date(paper.published)),
+  ]
+    .filter((date) => !Number.isNaN(date.getTime()))
+    .sort((left, right) => left.getTime() - right.getTime())[0] ?? new Date()
+  const firstStageStart = startOfUtcMonth(earliestChronologicalDate)
+  const latestChronologicalDate =
+    [...args.topic.papers.map((paper: any) => new Date(paper.published))]
+      .filter((date) => !Number.isNaN(date.getTime()))
+      .sort((left, right) => right.getTime() - left.getTime())[0] ?? firstStageStart
+  const latestObservedStart = startOfUtcMonth(latestChronologicalDate)
+  const chronologicalStageCount =
+    Math.floor(
+      ((latestObservedStart.getUTCFullYear() - firstStageStart.getUTCFullYear()) * 12 +
+        (latestObservedStart.getUTCMonth() - firstStageStart.getUTCMonth())) /
+        windowMonths,
+    ) + 1
+  const defaultCurrentStageIndex = args.topic.papers.length > 0 ? chronologicalStageCount : 0
+  const currentStageIndex =
+    typeof args.requestedStageIndex === 'number' && Number.isFinite(args.requestedStageIndex)
+      ? Math.max(0, Math.trunc(args.requestedStageIndex))
+      : defaultCurrentStageIndex
+  const targetStageIndex =
+    (args.stageMode || 'next-stage') === 'next-stage'
+      ? Math.max(1, currentStageIndex + 1)
+      : Math.max(1, currentStageIndex)
+  const stageStart = addUtcMonths(firstStageStart, Math.max(0, targetStageIndex - 1) * windowMonths)
+  const endDateExclusive = addUtcMonths(stageStart, windowMonths)
+  const anchorStageIndex = Math.max(1, Math.min(Math.max(currentStageIndex, 1), targetStageIndex))
+  const anchorStageStart = addUtcMonths(firstStageStart, Math.max(0, anchorStageIndex - 1) * windowMonths)
+  const anchorStageBucketKey = `${anchorStageStart.getUTCFullYear()}-${`${anchorStageStart.getUTCMonth() + 1}`.padStart(2, '0')}-01`
+  const paperById = new Map(args.topic.papers.map((paper: any) => [paper.id, paper]))
+  const anchorPaperIds = Array.from(temporalBuckets.paperAssignments.entries())
+    .filter(([, assignment]) => assignment.bucketKey === anchorStageBucketKey)
+    .map(([paperId]) => paperId)
+  const anchorPapers = (anchorPaperIds.length > 0
+    ? anchorPaperIds.map((paperId) => paperById.get(paperId)).filter(Boolean)
+    : args.topic.papers.slice(0, 6)
+  )
+    .sort(
+      (left: any, right: any) =>
+        new Date(left.published).getTime() - new Date(right.published).getTime(),
+    )
+    .slice(-6)
+    .map((paper: any) => ({
+      paperId: extractArxivId(paper.arxivUrl) || paper.id,
+      title: paper.titleEn || paper.title || paper.titleZh || paper.id,
+      published: new Date(paper.published).toISOString(),
+      branchId: undefined,
+    }))
+  const anchorNodes = args.topic.nodes
+    .filter((node: any) => {
+      const assignment = temporalBuckets.nodeAssignments.get(node.id)
+      return assignment?.bucketKey === anchorStageBucketKey
+    })
+    .slice(0, 8)
+    .map((node: any) => ({
+      nodeId: node.id,
+      title: node.nodeLabel,
+      summary: clipText(node.nodeSummary, 180),
+      branchId: undefined,
+    }))
+
+  return {
+    temporalBuckets,
+    window: {
+      currentStageIndex,
+      targetStageIndex,
+      windowMonths,
+      stageLabel: formatStageWindowLabel(stageStart, windowMonths),
+      startDate: stageStart,
+      endDateExclusive,
+      searchStartDate: stageStart,
+      searchEndDateExclusive: endDateExclusive,
+      anchorStageIndex,
+      bootstrapMode: false,
+      anchorPapers,
+      anchorNodes,
+    } satisfies DiscoveryStageWindow,
   }
 }
 
@@ -507,7 +849,7 @@ function cleanEnglishDiscoverySegment(value: string | null | undefined) {
     normalizeDiscoveryTerm(
       normalized
         .replace(
-          /\b(?:build|create|establish|craft|follow|track|study|research|topic|topics|tracker|tracking|sustained|long-horizon|long horizon|long-term|persistent|distinguish|prioritize|compare|clarify|focus(?:ing)?(?: on)?|separate|between|across|over|while|where|what|which|that|this|these|those|current|next|round|stage|phase|mainline|paper|papers|listing|listings|explicit|judgment|judgments|evidence-aware|evidence|node|nodes|structure|structures|support|supported|advance|advances|advancing)\b/giu,
+          /\b(?:build|create|establish|craft|follow|track|study|research|topic|topics|tracker|tracking|sustained|long-horizon|long horizon|long-term|persistent|distinguish|prioritize|compare|clarify|focus(?:ing)?(?: on)?|separate|between|across|over|while|where|what|which|that|this|these|those|current|next|round|stage|phase|mainline|paper|papers|listing|listings|explicit|judgment|judgments|evidence-aware|evidence|node|nodes|structure|structures|support|supported|advance|advances|advancing|include|includes|including|included)\b/giu,
           ' ',
         )
         .replace(/[()[\]{}"'`]+/gu, ' '),
@@ -731,29 +1073,127 @@ function discoveryTermsOverlap(left: string, right: string) {
   return overlap / Math.max(leftTokens.size, rightTokens.length)
 }
 
+function expandDiscoveryQueryVariants(value: string | null | undefined) {
+  const normalized = normalizeDiscoveryTerm(value)
+  if (!normalized) return []
+
+  const lower = normalized.toLowerCase()
+  const variants = [normalized]
+
+  if (/\bvision[- ]language[- ]action\b/u.test(lower)) {
+    variants.push(normalized.replace(/\bvision[- ]language[- ]action\b/giu, 'VLA'))
+  }
+  if (/\bvla\b/u.test(lower)) {
+    variants.push(normalized.replace(/\bvla\b/giu, 'vision language action'))
+  }
+  if (/\bworld models\b/u.test(lower)) {
+    variants.push(normalized.replace(/\bworld models\b/giu, 'world model'))
+  }
+  if (/\bworld model\b/u.test(lower) && !/\bworld models\b/u.test(lower)) {
+    variants.push(normalized.replace(/\bworld model\b/giu, 'world models'))
+  }
+  if (/\bautonomous driving\b/u.test(lower)) {
+    variants.push(normalized.replace(/\bautonomous driving\b/giu, 'self-driving'))
+    variants.push(normalized.replace(/\bautonomous driving\b/giu, 'driving'))
+  }
+  if (/\bself[- ]driving\b/u.test(lower)) {
+    variants.push(normalized.replace(/\bself[- ]driving\b/giu, 'autonomous driving'))
+  }
+  if (/\bclosed loop\b/u.test(lower)) {
+    variants.push(normalized.replace(/\bclosed loop\b/giu, 'closed-loop'))
+  }
+  if (/\bend to end\b/u.test(lower)) {
+    variants.push(normalized.replace(/\bend to end\b/giu, 'end-to-end'))
+  }
+
+  return uniqueNonEmpty(
+    variants
+      .map((item) => normalizeDiscoveryTerm(item))
+      .filter((item): item is string => Boolean(item) && !isNoisyDiscoveryTerm(item)),
+    6,
+  )
+}
+
+function collectPatternMatchedDiscoveryTerms(
+  values: string[],
+  pattern: RegExp,
+  fallbackLimit = 4,
+) {
+  const matched = uniqueNonEmpty(
+    values.flatMap((value) => {
+      const normalized = normalizeDiscoveryTerm(value)
+      if (!normalized) return []
+      return Array.from(normalized.matchAll(pattern))
+        .map((match) => normalizeDiscoveryTerm(match[0]))
+        .filter((item): item is string => Boolean(item))
+    }),
+    fallbackLimit * 2,
+  ).filter((item) => isExternalDiscoveryQueryCandidate(item))
+
+  return matched.slice(0, fallbackLimit)
+}
+
+function buildDiscoveryPairQueries(args: {
+  leftTerms: string[]
+  rightTerms: string[]
+  limit: number
+}) {
+  const output: string[] = []
+
+  for (const left of args.leftTerms) {
+    const leftVariants = expandDiscoveryQueryVariants(left)
+    for (const right of args.rightTerms) {
+      const rightVariants = expandDiscoveryQueryVariants(right)
+      for (const leftVariant of leftVariants) {
+        for (const rightVariant of rightVariants) {
+          if (discoveryTermsOverlap(leftVariant, rightVariant) >= 0.75) continue
+
+          const combined = normalizeDiscoveryTerm(`${leftVariant} ${rightVariant}`)
+          if (!isExternalDiscoveryQueryCandidate(combined)) continue
+
+          output.push(combined)
+          if (output.length >= args.limit * 3) {
+            return compactDiscoveryTerms(output, args.limit)
+          }
+        }
+      }
+    }
+  }
+
+  return compactDiscoveryTerms(output, args.limit)
+}
+
 function buildDiscoveryQueries(baseAnchor: string, modifierTerms: string[], limit = DISCOVERY_QUERY_LIMIT) {
   const normalizedAnchor = normalizeDiscoveryTerm(baseAnchor)
   const queries: string[] = []
 
-  if (isExternalDiscoveryQueryCandidate(normalizedAnchor)) {
-    queries.push(normalizedAnchor)
+  const anchorVariants = expandDiscoveryQueryVariants(normalizedAnchor)
+  if (anchorVariants.length > 0) {
+    queries.push(...anchorVariants.filter((query) => isExternalDiscoveryQueryCandidate(query)))
   }
 
   for (const modifier of modifierTerms) {
-    const normalizedModifier = normalizeDiscoveryTerm(modifier)
-    if (!isExternalDiscoveryQueryCandidate(normalizedModifier)) continue
+    const modifierVariants = expandDiscoveryQueryVariants(modifier)
+    for (const normalizedModifier of modifierVariants) {
+      if (!isExternalDiscoveryQueryCandidate(normalizedModifier)) continue
 
-    if (normalizedAnchor && discoveryTermsOverlap(normalizedAnchor, normalizedModifier) >= 0.75) {
-      continue
+      if (normalizedAnchor && discoveryTermsOverlap(normalizedAnchor, normalizedModifier) >= 0.75) {
+        continue
+      }
+
+      const combined =
+        normalizedAnchor && normalizedAnchor.length <= 42
+          ? normalizeDiscoveryTerm(`${normalizedModifier} ${normalizedAnchor}`)
+          : normalizedModifier
+      const query =
+        isExternalDiscoveryQueryCandidate(combined) && (combined?.length ?? 0) <= 72
+          ? combined
+          : normalizedModifier
+
+      if (query) {
+        queries.push(query)
+      }
     }
-
-    const combined = normalizedAnchor ? `${normalizedModifier} ${normalizedAnchor}` : normalizedModifier
-    const query =
-      isExternalDiscoveryQueryCandidate(combined) && combined.length <= 72
-        ? combined
-        : normalizedModifier
-
-    queries.push(query)
     if (queries.length >= limit * 2) break
   }
 
@@ -862,7 +1302,7 @@ async function resolveTopicDefinition(topicId: string, topic: NonNullable<TopicR
               4,
             ),
       defaults: {
-        bootstrapWindowDays: 180,
+        bootstrapWindowDays: FALLBACK_BOOTSTRAP_WINDOW_DAYS,
         maxCandidates: 8,
       },
     }
@@ -873,36 +1313,98 @@ function buildDiscoveryPlan(args: {
   topic: NonNullable<TopicRecord>
   topicDef: TopicDefinitionLike
   input: PaperTrackerInput
-  targetStageIndex: number
+  stageWindow: DiscoveryStageWindow
 }) {
-  const anchorPapers = args.topic.papers
-    .slice(0, 5)
-    .map((paper: any) => extractArxivId(paper.arxivUrl) || paper.id)
+  const anchorPapers = args.stageWindow.anchorPapers.map((paper) => paper.paperId)
+  const stageNodeTerms = args.stageWindow.anchorNodes.flatMap((node) => [node.title, node.summary])
+  const anchorPaperTerms = args.stageWindow.anchorPapers.flatMap((paper) => [paper.title])
+  const termPool = prioritizeExternalDiscoveryTerms(
+    [
+      args.topicDef.nameEn,
+      args.topic.nameEn,
+      args.topicDef.focusLabel,
+      args.topic.focusLabel,
+      ...anchorPaperTerms,
+      ...stageNodeTerms,
+      ...args.topicDef.queryTags,
+      ...args.topicDef.problemPreference,
+    ],
+    DISCOVERY_QUERY_LIMIT * 5,
+  )
 
   const baseAnchor = selectDiscoveryAnchor([
     args.topicDef.nameEn,
     args.topic.nameEn,
     args.topicDef.focusLabel,
     args.topic.focusLabel,
+    ...anchorPaperTerms,
+    ...stageNodeTerms,
     ...args.topicDef.queryTags,
   ])
   const modifierTerms = prioritizeExternalDiscoveryTerms(
     [
       ...args.topicDef.problemPreference,
       ...args.topicDef.queryTags,
+      ...stageNodeTerms,
+      ...anchorPaperTerms,
     ],
-    DISCOVERY_QUERY_LIMIT * 2,
+    DISCOVERY_QUERY_LIMIT * 3,
   )
-  const queries = buildDiscoveryQueries(baseAnchor, modifierTerms, DISCOVERY_QUERY_LIMIT)
-
-  const windowMonths =
-    args.input.windowMonths ??
-    Math.max(1, Math.round((args.topicDef.defaults.bootstrapWindowDays || 180) / 30))
+  const domainTerms = collectPatternMatchedDiscoveryTerms(
+    [baseAnchor, ...termPool],
+    /\b(?:autonomous driving|self[- ]driving|driving|robotics?|navigation|embodied ai|embodied agents?)\b/giu,
+    4,
+  )
+  const methodTerms = collectPatternMatchedDiscoveryTerms(
+    [baseAnchor, ...termPool],
+    /\b(?:vision[- ]language[- ]action|vla|world models?|latent world models?|latent dynamics|video generation|foundation models?|diffusion|transformers?|end[- ]to[- ]end)\b/giu,
+    5,
+  )
+  const problemTerms = collectPatternMatchedDiscoveryTerms(
+    termPool,
+    /\b(?:planning|simulation|closed[- ]loop|control|forecasting|trajectory prediction|safety|policy learning|reasoning|action models?)\b/giu,
+    5,
+  )
+  const queries = uniqueNonEmpty(
+    [
+      ...buildDiscoveryQueries(baseAnchor, modifierTerms, DISCOVERY_QUERY_LIMIT + 2),
+      ...buildDiscoveryPairQueries({
+        leftTerms: domainTerms.length > 0 ? domainTerms : termPool.slice(0, 2),
+        rightTerms: methodTerms.length > 0 ? methodTerms : modifierTerms.slice(0, 3),
+        limit: 4,
+      }),
+      ...buildDiscoveryPairQueries({
+        leftTerms: domainTerms.length > 0 ? domainTerms : [baseAnchor],
+        rightTerms: problemTerms.length > 0 ? problemTerms : modifierTerms.slice(0, 3),
+        limit: 3,
+      }),
+      ...buildDiscoveryPairQueries({
+        leftTerms: methodTerms.length > 0 ? methodTerms : modifierTerms.slice(0, 3),
+        rightTerms: problemTerms.length > 0 ? problemTerms : modifierTerms.slice(0, 3),
+        limit: 2,
+      }),
+      ...anchorPaperTerms,
+      ...args.stageWindow.anchorNodes.map((node) => `${node.title} autonomous driving`),
+      ...modifierTerms,
+    ],
+    DISCOVERY_QUERY_LIMIT + 4,
+  )
+  const structuredQueries: DiscoveryQuery[] = queries.map((query, index) => ({
+    query,
+    rationale:
+      index === 0
+        ? `Main stage discovery for ${args.stageWindow.stageLabel}`
+        : `Broaden adjacent evidence for ${args.stageWindow.stageLabel}`,
+    targetProblemIds: args.stageWindow.anchorNodes.map((node) => node.nodeId),
+    targetBranchIds: args.input.branchId ? [args.input.branchId] : [],
+    targetAnchorPaperIds: anchorPapers,
+    focus: index === 0 ? 'problem' : index % 2 === 0 ? 'method' : 'citation',
+  }))
 
   return {
     topicId: args.topic.id,
     branchId: args.input.branchId,
-    stageIndex: args.targetStageIndex,
+    stageIndex: args.stageWindow.targetStageIndex,
     discoveryRounds: 1,
     queries:
       queries.length > 0
@@ -912,8 +1414,17 @@ function buildDiscoveryPlan(args: {
             prioritizeExternalDiscoveryTerms([args.topicDef.focusLabel, args.topic.nameEn], 4),
             2,
           ),
+    discoveryQueries: structuredQueries,
+    stageLabel: args.stageWindow.stageLabel,
     anchorPapers,
-    windowMonths,
+    anchorPaperDetails: args.stageWindow.anchorPapers,
+    anchorNodes: args.stageWindow.anchorNodes,
+    startDate: args.stageWindow.startDate,
+    endDateExclusive: args.stageWindow.endDateExclusive,
+    searchStartDate: args.stageWindow.searchStartDate,
+    searchEndDateExclusive: args.stageWindow.searchEndDateExclusive,
+    bootstrapMode: args.stageWindow.bootstrapMode,
+    windowMonths: args.stageWindow.windowMonths,
     maxCandidates: args.input.maxCandidates || args.topicDef.defaults.maxCandidates || 8,
     discoverySource: args.input.discoverySource || 'external-only',
   }
@@ -1170,90 +1681,152 @@ async function discoverPapers(
   context: SkillContext,
 ) {
   const discovered: ArxivPaper[] = []
-  const seenIds = new Set<string>()
-  const endDate = new Date()
-  const startDate = new Date()
-  startDate.setMonth(startDate.getMonth() - plan.windowMonths)
+  const seenDiscoveryKeys = new Set<string>()
+  const startDate = new Date(plan.startDate)
+  const endDate = new Date(plan.endDateExclusive.getTime() - 1)
+  const queryResults = await mapWithConcurrency(
+    plan.queries.map((query, index) => ({ query, index })),
+    DISCOVERY_QUERY_CONCURRENCY,
+    async ({ query, index }) => {
+      const cacheKey = `${query.toLowerCase()}::${startDate.toISOString().slice(0, 10)}::${endDate.toISOString().slice(0, 10)}::${plan.maxCandidates}`
+      const cached = discoveryQueryCache.get(cacheKey)
+      const cacheFresh =
+        cached && Date.now() - cached.cachedAt <= DISCOVERY_QUERY_CACHE_TTL_MS
 
-  for (const [index, query] of plan.queries.entries()) {
-    const cacheKey = `${query.toLowerCase()}::${startDate.toISOString().slice(0, 10)}::${endDate.toISOString().slice(0, 10)}::${plan.maxCandidates}`
-    const cached = discoveryQueryCache.get(cacheKey)
-    const cacheFresh =
-      cached && Date.now() - cached.cachedAt <= DISCOVERY_QUERY_CACHE_TTL_MS
-
-    if (cacheFresh) {
-      for (const paper of cached.papers) {
-        if (seenIds.has(paper.id)) continue
-        seenIds.add(paper.id)
-        discovered.push(paper)
-      }
-      continue
-    }
-
-    if (Date.now() < arxivRateLimitedUntil) {
-      context.logger.warn('Skipping arXiv query during cooldown window', {
-        query,
-        cooldownUntil: new Date(arxivRateLimitedUntil).toISOString(),
-      })
-    }
-
-    let results: ArxivPaper[] = []
-    try {
-      if (Date.now() >= arxivRateLimitedUntil) {
-        results = await searchArxiv({
+      if (cacheFresh) {
+        return {
+          index,
           query,
-          startDate,
-          endDate,
-          maxResults: Math.max(6, plan.maxCandidates * 2),
+          papers: cached.papers,
+        }
+      }
+
+      if (index > 0) {
+        await sleep(
+          Math.min(index, DISCOVERY_QUERY_CONCURRENCY) *
+            Math.max(80, Math.round(DISCOVERY_QUERY_DELAY_MS / 3)),
+        )
+      }
+
+      if (Date.now() < arxivRateLimitedUntil) {
+        context.logger.warn('Skipping arXiv query during cooldown window', {
+          query,
+          cooldownUntil: new Date(arxivRateLimitedUntil).toISOString(),
         })
       }
-    } catch (error) {
-      if (isRateLimitError(error)) {
-        arxivRateLimitedUntil = Date.now() + ARXIV_RATE_LIMIT_COOLDOWN_MS
-        context.logger.warn('arXiv query rate limited; entering cooldown window', {
-          query,
-          cooldownMs: ARXIV_RATE_LIMIT_COOLDOWN_MS,
-        })
-      } else {
-        context.logger.warn('arXiv query failed', { query, error })
-      }
-    }
 
-    results = filterDiscoveryResults(results, topicDef, plan.queries)
-
-    if (results.length < Math.max(4, Math.ceil(plan.maxCandidates / 2))) {
+      let results: ArxivPaper[] = []
       try {
-        const fallbackResults = await searchOpenAlex({
-          query,
-          startDate,
-          endDate,
-          maxResults: Math.max(6, plan.maxCandidates * 2),
-        })
-        results = mergeDiscoveryResults(results, fallbackResults, topicDef, plan.queries)
-        if (results.length > 0) {
-          context.logger.info('OpenAlex fallback supplied discovery results', {
+        if (Date.now() >= arxivRateLimitedUntil) {
+          results = await searchArxiv({
             query,
-            resultCount: results.length,
+            startDate,
+            endDate,
+            maxResults: Math.max(6, plan.maxCandidates * 2),
           })
         }
-      } catch (fallbackError) {
-        context.logger.warn('OpenAlex fallback failed', { query, error: fallbackError })
+      } catch (error) {
+        if (isRateLimitError(error)) {
+          arxivRateLimitedUntil = Date.now() + ARXIV_RATE_LIMIT_COOLDOWN_MS
+          context.logger.warn('arXiv query rate limited; entering cooldown window', {
+            query,
+            cooldownMs: ARXIV_RATE_LIMIT_COOLDOWN_MS,
+          })
+        } else if (isArxivUnavailableError(error)) {
+          arxivRateLimitedUntil = Date.now() + ARXIV_UNAVAILABLE_COOLDOWN_MS
+          context.logger.warn('arXiv query timed out; entering temporary cooldown window', {
+            query,
+            cooldownMs: ARXIV_UNAVAILABLE_COOLDOWN_MS,
+            error,
+          })
+        } else {
+          context.logger.warn('arXiv query failed', { query, error })
+        }
       }
-    }
 
-    discoveryQueryCache.set(cacheKey, {
-      cachedAt: Date.now(),
-      papers: results,
-    })
+      results = filterDiscoveryResults(results, topicDef, plan.queries)
 
-    for (const paper of results) {
-      if (seenIds.has(paper.id)) continue
-      seenIds.add(paper.id)
+      if (results.length < Math.max(4, Math.ceil(plan.maxCandidates / 2))) {
+        try {
+          const fallbackResults = await searchOpenAlex({
+            query,
+            startDate,
+            endDate,
+            maxResults: Math.max(6, plan.maxCandidates * 2),
+          })
+          results = mergeDiscoveryResults(results, fallbackResults, topicDef, plan.queries)
+          if (results.length > 0) {
+            context.logger.info('OpenAlex fallback supplied discovery results', {
+              query,
+              resultCount: results.length,
+            })
+          }
+        } catch (fallbackError) {
+          context.logger.warn('OpenAlex fallback failed', { query, error: fallbackError })
+        }
+      }
+
+      discoveryQueryCache.set(cacheKey, {
+        cachedAt: Date.now(),
+        papers: results,
+      })
+
+      return {
+        index,
+        query,
+        papers: results,
+      }
+    },
+  )
+
+  for (const result of queryResults.sort((left, right) => left.index - right.index)) {
+    for (const paper of result.papers) {
+      const identityKeys = collectDiscoveryIdentityKeys(paper)
+      if (identityKeys.some((key) => seenDiscoveryKeys.has(key))) continue
+      identityKeys.forEach((key) => seenDiscoveryKeys.add(key))
       discovered.push(paper)
     }
+  }
 
-    if (index < plan.queries.length - 1) {
-      await sleep(DISCOVERY_QUERY_DELAY_MS)
+  if (plan.discoverySource !== 'internal-only' && plan.anchorPaperDetails.length > 0) {
+    try {
+      const externalCandidates = await discoverExternalCandidates({
+        anchors: plan.anchorPaperDetails,
+        queries: plan.discoveryQueries,
+        discoveryRound: 1,
+        maxWindowMonths: plan.windowMonths,
+        maxResultsPerQuery: Math.max(6, plan.maxCandidates),
+        maxTotalCandidates: Math.max(plan.maxCandidates * 3, 18),
+      })
+
+      for (const candidate of externalCandidates) {
+        const publishedAt = new Date(candidate.published)
+        if (Number.isNaN(publishedAt.getTime())) continue
+        if (publishedAt < startDate || publishedAt >= endDate) continue
+
+        const arxivPaper: ArxivPaper = {
+          id: candidate.paperId,
+          title: candidate.title,
+          summary: candidate.abstract,
+          authors: candidate.authors,
+          published: candidate.published,
+          categories: [],
+          primaryCategory: undefined,
+          pdfUrl: candidate.pdfUrl,
+          arxivUrl: candidate.arxivUrl ?? candidate.openAlexId ?? `https://openalex.org/${candidate.paperId}`,
+          discoverySource: candidate.source === 'openalex' ? 'openalex' : 'arxiv-api',
+        }
+
+        const identityKeys = collectDiscoveryIdentityKeys(arxivPaper)
+        if (identityKeys.some((key) => seenDiscoveryKeys.has(key))) continue
+        identityKeys.forEach((key) => seenDiscoveryKeys.add(key))
+        discovered.push(arxivPaper)
+      }
+    } catch (error) {
+      context.logger.warn('Structured external discovery failed', {
+        stageLabel: plan.stageLabel,
+        error,
+      })
     }
   }
 
@@ -1274,9 +1847,96 @@ function buildExistingPaperKeySet(topic: NonNullable<TopicRecord>) {
         paper.id,
         paper.title,
         paper.titleZh,
+        normalizeTitleForDiscoveryKey(paper.title),
+        normalizeTitleForDiscoveryKey(paper.titleZh),
         extractArxivId(paper.arxivUrl),
       ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0),
     ),
+  )
+}
+
+function normalizeTitleForDiscoveryKey(value: string | null | undefined) {
+  return (value ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fff]+/giu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim()
+}
+
+function collectDiscoveryIdentityKeys(paper: {
+  id?: string | null
+  title?: string | null
+  titleZh?: string | null
+  arxivUrl?: string | null
+}) {
+  return uniqueNonEmpty(
+    [
+      paper.id,
+      extractArxivId(paper.arxivUrl),
+      normalizeTitleForDiscoveryKey(paper.title),
+      normalizeTitleForDiscoveryKey(paper.titleZh),
+    ],
+    8,
+  )
+}
+
+const PAPER_EVALUATION_GENERIC_TITLE_TOKENS = new Set([
+  'autonomous',
+  'driving',
+  'self',
+  'world',
+  'model',
+  'models',
+  'vision',
+  'language',
+  'action',
+  'end',
+  'planning',
+  'foundation',
+  'based',
+  'with',
+  'for',
+  'from',
+  'via',
+  'towards',
+  'real',
+  'open',
+  'source',
+  'initial',
+  'survey',
+  'driven',
+])
+
+function extractPaperSpecificTerms(value: string) {
+  return uniqueNonEmpty(
+    tokenizeSearchText(value)
+      .map((token) => token.toLowerCase())
+      .filter(
+        (token) =>
+          token.length >= 4 && !PAPER_EVALUATION_GENERIC_TITLE_TOKENS.has(token),
+      ),
+    8,
+  )
+}
+
+function looksPaperSpecificEvaluationWeak(
+  paper: ArxivPaper,
+  evaluation: LlmPaperEvaluation,
+) {
+  const reason = evaluation.why.toLowerCase()
+  const titleTerms = extractPaperSpecificTerms(paper.title)
+  const reasonHasSpecificTitleTerm = titleTerms.some((token) => reason.includes(token))
+  const genericReason =
+    /\bthe topic is\b/u.test(reason) ||
+    /\bit could help researchers understand the field better\b/u.test(reason) ||
+    /\bmust be exactly as specified\b/u.test(reason) ||
+    /\bperhaps requiring foundational\b/u.test(reason) ||
+    /\bkeyword overlap fallback\b/u.test(reason) ||
+    /^for autonomous driving\b/u.test(reason)
+
+  return (
+    evaluation.confidence <= 0.55 &&
+    (!reasonHasSpecificTitleTerm || genericReason)
   )
 }
 
@@ -1361,6 +2021,15 @@ function parsePaperEvaluationLines(raw: string): LlmPaperEvaluation | null {
   ) as Record<string, string>
 
   if (Object.keys(lineMap).length === 0) return null
+  if (
+    !('verdict' in lineMap) &&
+    !('decision' in lineMap) &&
+    !('status' in lineMap) &&
+    !('candidatetype' in lineMap) &&
+    !('confidence' in lineMap)
+  ) {
+    return null
+  }
 
   const verdict = (lineMap.verdict || lineMap.decision || '').toLowerCase()
   let confidence = normalizeConfidence(lineMap.confidence, Number.NaN)
@@ -1480,12 +2149,8 @@ function looksMetaEvaluation(
   parsed: LlmPaperEvaluation,
   source: ParsedPaperEvaluation['source'],
 ) {
-  if (source !== 'text') {
-    return false
-  }
-
   const combined = `${raw}\n${parsed.why}`.toLowerCase()
-  return (
+  const metaText =
     /\bthe user wants me to classify\b/u.test(combined) ||
     /\bi should classify\b/u.test(combined) ||
     /\bi need to classify\b/u.test(combined) ||
@@ -1495,7 +2160,22 @@ function looksMetaEvaluation(
     /\bactive research topic\b/u.test(combined) ||
     /\bspecific research topic\b/u.test(combined) ||
     /\bthis paper should be evaluated\b/u.test(combined)
-  )
+  const lowSignalReason =
+    parsed.confidence === 0.5 &&
+    (
+      parsed.why.length < 24 ||
+      /\b(?:llm evaluation|classification criteria|rejection criteria|key points|paper title suggests|the paper is titled|the paper introduces|let'?s analyze|citeintent)\b/u.test(
+        combined,
+      ) ||
+      /[*_#`]/u.test(parsed.why) ||
+      /(\b.{18,80}?\b)\s+\1/u.test(parsed.why)
+    )
+
+  if (source === 'text') {
+    return metaText || lowSignalReason
+  }
+
+  return lowSignalReason
 }
 
 function buildPaperEvaluationPrompt(args: {
@@ -1507,8 +2187,8 @@ function buildPaperEvaluationPrompt(args: {
     'Classify whether this paper should enter the active research topic.',
     'Admit papers when they either advance the mainline directly, widen the evidence base, provide a useful comparison, or transfer a nearby method into the topic.',
     'Use candidateType to express weight: direct = core mainline, branch = adjacent but worth retaining, transfer = cross-domain method that may reshape the topic.',
-    'Reject only when the paper is clearly generic, semantically distant, or cannot help the topic in any meaningful way.',
-    'When deciding between branch/transfer and reject, prefer branch/transfer if the paper could still help a researcher understand the field better.',
+    'Reject papers that are only temporally nearby or lexically adjacent but belong to an unrelated domain.',
+    'Transfer is only for papers whose method can clearly be carried into the same research problem, not for generic inspiration.',
     'Return one strict JSON object only with these exact keys:',
     '{"verdict":"admit|reject","candidateType":"direct|branch|transfer","citeIntent":"supporting|contrasting|method-using|background","confidence":0.0,"why":"brief reason"}',
     'If your gateway cannot preserve JSON, output exactly five plain lines using the same keys in key:value form and nothing else.',
@@ -1538,7 +2218,7 @@ function buildPaperEvaluationRepairPrompt(args: {
     'citeIntent:<supporting|contrasting|method-using|background>',
     'confidence:<0.00-1.00>',
     'why:<brief reason>',
-    'If uncertain, prefer branch or transfer over reject when the paper could still enrich the topic.',
+    'If uncertain, prefer reject over admitting an off-topic transfer.',
     '',
     'Original classification brief:',
     args.originalPrompt,
@@ -1563,16 +2243,16 @@ async function requestPaperEvaluationCompletion(args: {
         role: 'system',
         content: repair
           ? 'You are repairing a paper-classifier output. Output exactly five plain key:value lines with the keys verdict, candidateType, citeIntent, confidence, and why. Never mention the user, the task, or your reasoning process.'
-          : 'You are a strict paper classifier. Output valid JSON only with the keys verdict, candidateType, citeIntent, confidence, and why. If JSON is impossible, output exactly five plain key:value lines with those keys and nothing else. Never mention the user, the task, or your reasoning process.',
+          : 'You are a strict paper classifier. Output exactly five plain key:value lines with the keys verdict, candidateType, citeIntent, confidence, and why. Never mention the user, the task, or your reasoning process.',
       },
       {
         role: 'user',
         content: args.prompt,
       },
     ],
-    json: repair ? false : true,
+    json: false,
     temperature: 0,
-    maxTokens: Math.min(args.input.maxTokens ?? (repair ? 160 : 180), repair ? 200 : 240),
+    maxTokens: Math.min(args.input.maxTokens ?? (repair ? 120 : 140), repair ? 160 : 180),
   })
 }
 
@@ -1597,6 +2277,14 @@ async function evaluatePaperWithLLM(args: {
     prompt,
     input: args.input,
   })
+
+  if (response.usedFallback || response.issue) {
+    throw new Error(
+      response.issue
+        ? `${response.issue.code}: ${response.issue.message}`
+        : 'paper evaluation fell back to backend response',
+    )
+  }
 
   const raw = response.text.trim()
   let parsed = parsePaperEvaluation(raw)
@@ -1627,6 +2315,12 @@ async function evaluatePaperWithLLM(args: {
     }
   }
 
+  if (looksPaperSpecificEvaluationWeak(args.paper, parsed.evaluation)) {
+    throw new Error(
+      `Paper evaluation stayed too generic for ${args.paper.title}. response=${clipText(parsed.evaluation.why, 140)}`,
+    )
+  }
+
   paperEvaluationCache.set(cacheKey, {
     cachedAt: Date.now(),
     evaluation: parsed.evaluation,
@@ -1645,6 +2339,11 @@ function calculateSimpleRelevance(
   const matchedQueries = collectMatchedQueries(paper, queries, queries.length)
   const matchBoost =
     queries.length > 0 ? matchedQueries.length / Math.max(1, queries.length) : 0
+  const focusMatchScore = Math.max(
+    queryMatchScore(topicDef.focusLabel, paperText),
+    queryMatchScore(topicDef.nameEn, paperText),
+    queryMatchScore(topicDef.nameZh, paperText),
+  )
   const mainlineTerms = prioritizeExternalDiscoveryTerms(
     [topicDef.focusLabel, ...topicDef.problemPreference],
     6,
@@ -1660,14 +2359,385 @@ function calculateSimpleRelevance(
     0.06 +
     discoveryScore * 0.52 +
     matchBoost * 0.18 +
+    focusMatchScore * 0.12 +
     (strongMainlineHit ? 0.2 : 0) +
     (strongTopicLexicalFit ? 0.16 : 0) +
     (exactTopicHit ? 0.08 : 0)
+  if (strongTopicLexicalFit && exactTopicHit) {
+    score = Math.max(score, 0.74)
+  } else if (strongTopicLexicalFit) {
+    score = Math.max(score, 0.64)
+  } else if (strongMainlineHit && exactTopicHit) {
+    score = Math.max(score, 0.68)
+  }
   if (!strongMainlineHit && !strongTopicLexicalFit) {
     score = Math.min(score, exactTopicHit ? 0.68 : 0.58)
   }
+  if (focusMatchScore < 0.38 && matchedQueries.length === 0 && !strongMainlineHit) {
+    score = Math.min(score, 0.46)
+  }
 
   return Math.min(0.92, score)
+}
+
+const GENERIC_TOPIC_ANCHOR_TOKENS = new Set([
+  'paper',
+  'papers',
+  'research',
+  'model',
+  'models',
+  'method',
+  'methods',
+  'approach',
+  'approaches',
+  'system',
+  'systems',
+  'study',
+  'studies',
+  'analysis',
+  'learning',
+  'deep',
+  'neural',
+  'ai',
+])
+
+function buildTopicAnchorTerms(topicDef: TopicDefinitionLike) {
+  return prioritizeExternalDiscoveryTerms(
+    [topicDef.nameEn, topicDef.nameZh, topicDef.focusLabel, ...topicDef.queryTags],
+    12,
+  ).filter((term) => {
+    const tokens = tokenizeSearchText(term).filter(
+      (token) => !GENERIC_TOPIC_ANCHOR_TOKENS.has(token),
+    )
+    return tokens.length >= 2 || /[\u4e00-\u9fff]{2,}/u.test(term)
+  })
+}
+
+function collectTopicAnchorTokens(topicDef: TopicDefinitionLike) {
+  return uniqueNonEmpty(
+    buildTopicAnchorTerms(topicDef)
+      .flatMap((term) => tokenizeSearchText(term))
+      .filter((token) => !GENERIC_TOPIC_ANCHOR_TOKENS.has(token)),
+    12,
+  )
+}
+
+function buildTopicAdmissionSignals(
+  paper: ArxivPaper,
+  topicDef: TopicDefinitionLike,
+  queries: string[],
+) {
+  const paperText = buildPaperSearchText(paper)
+  const matchedQueries = collectMatchedQueries(paper, queries, queries.length)
+  const discoveryScore = scorePaperDiscoveryFit(paper, topicDef, queries)
+  const mainlineTerms = prioritizeExternalDiscoveryTerms(
+    [topicDef.focusLabel, ...topicDef.problemPreference, ...topicDef.queryTags],
+    12,
+  ).filter((term) => tokenizeSearchText(term).length >= 2)
+  const strongTermHitCount = mainlineTerms.filter((term) => queryMatchScore(term, paperText) >= 0.72).length
+  const anchorTerms = buildTopicAnchorTerms(topicDef)
+  const anchorTermHitCount = anchorTerms.filter((term) => queryMatchScore(term, paperText) >= 0.62).length
+  const anchorTokens = collectTopicAnchorTokens(topicDef)
+  const anchorTokenHitCount = anchorTokens.filter((token) => paperText.includes(token)).length
+  const focusMatchScore = Math.max(
+    queryMatchScore(topicDef.focusLabel, paperText),
+    queryMatchScore(topicDef.nameEn, paperText),
+    queryMatchScore(topicDef.nameZh, paperText),
+  )
+  const hasDrivingSignal = /\bautonomous driving\b|\bself-driving\b|\bself driving\b|\bautonomous vehicles?\b/u.test(
+    paperText,
+  )
+  const hasWorldModelSignal = /\bworld model\b|\bworld models\b/u.test(paperText)
+  const hasWorldModelFamilySignal =
+    hasWorldModelSignal ||
+    /\blatent (?:model|models|dynamics)\b|\boccupancy (?:model|models)\b|\bscene (?:model|models)\b|\bgenerative model\b|\bvideo prediction\b|\bclosed-loop simulation\b|\bsimulation\b|\bforecasting\b/u.test(
+      paperText,
+    )
+  const directTopicLexicalFit =
+    hasWorldModelSignal && hasDrivingSignal
+  const hasTopicAnchor =
+    focusMatchScore >= 0.58 ||
+    anchorTermHitCount >= 1 ||
+    (anchorTokens.length > 0 &&
+      anchorTokenHitCount >= Math.min(anchorTokens.length >= 4 ? 2 : 1, anchorTokens.length))
+
+  return {
+    matchedQueries,
+    discoveryScore,
+    strongTermHitCount,
+    anchorTermHitCount,
+    anchorTokenHitCount,
+    focusMatchScore,
+    hasTopicAnchor,
+    hasDrivingSignal,
+    hasWorldModelSignal,
+    hasWorldModelFamilySignal,
+    directTopicLexicalFit,
+  }
+}
+
+function normalizeCandidateTypeBySignals(
+  candidateType: 'direct' | 'branch' | 'transfer',
+  signals: ReturnType<typeof buildTopicAdmissionSignals>,
+) {
+  if (candidateType === 'direct' && !signals.directTopicLexicalFit) {
+    return signals.hasWorldModelFamilySignal ? 'branch' : 'transfer'
+  }
+
+  if (
+    candidateType === 'branch' &&
+    !signals.hasWorldModelFamilySignal &&
+    signals.anchorTermHitCount < 2 &&
+    signals.strongTermHitCount < 2
+  ) {
+    return 'transfer'
+  }
+
+  return candidateType
+}
+
+function passesTopicAdmissionGuard(args: {
+  paper: ArxivPaper
+  topicDef: TopicDefinitionLike
+  queries: string[]
+  candidateType: 'direct' | 'branch' | 'transfer'
+}) {
+  const signals = buildTopicAdmissionSignals(args.paper, args.topicDef, args.queries)
+
+  if (!signals.hasTopicAnchor) return false
+  if (signals.directTopicLexicalFit) return true
+  if (args.candidateType === 'direct') {
+    return (
+      signals.hasWorldModelFamilySignal &&
+      signals.focusMatchScore >= 0.68 &&
+      (
+        signals.strongTermHitCount >= 2 ||
+        (signals.matchedQueries.length >= 2 && signals.discoveryScore >= 0.7) ||
+        (
+          (signals.hasDrivingSignal || signals.hasWorldModelSignal) &&
+          signals.strongTermHitCount >= 1 &&
+          signals.discoveryScore >= 0.66
+        )
+      )
+    )
+  }
+
+  if (args.candidateType === 'branch') {
+    return (
+      signals.hasWorldModelFamilySignal &&
+      signals.focusMatchScore >= 0.56 &&
+      signals.strongTermHitCount >= 1 &&
+      (
+        signals.matchedQueries.length >= 1 ||
+        signals.discoveryScore >= 0.7 ||
+        signals.hasWorldModelFamilySignal
+      )
+    )
+  }
+
+  return (
+    signals.hasWorldModelFamilySignal &&
+    signals.focusMatchScore >= 0.52 &&
+    signals.strongTermHitCount >= 1 &&
+    signals.matchedQueries.length >= 1 &&
+    signals.discoveryScore >= 0.74
+  )
+}
+
+function enforceTopicAdmissionGuard(args: {
+  candidate: PaperCandidate
+  paper: ArxivPaper
+  topicDef: TopicDefinitionLike
+  queries: string[]
+}) {
+  if (args.candidate.status !== 'admitted') {
+    return args.candidate
+  }
+
+  const signals = buildTopicAdmissionSignals(args.paper, args.topicDef, args.queries)
+  const normalizedCandidateType = normalizeCandidateTypeBySignals(
+    args.candidate.candidateType,
+    signals,
+  )
+  const normalizedCandidate =
+    normalizedCandidateType === args.candidate.candidateType
+      ? args.candidate
+      : {
+          ...args.candidate,
+          candidateType: normalizedCandidateType,
+          citeIntent:
+            normalizedCandidateType === 'direct'
+              ? 'supporting'
+              : normalizedCandidateType === 'branch'
+                ? 'background'
+                : 'method-using',
+          why: clipText(
+            `${args.candidate.why} Reclassified as ${normalizedCandidateType} because the paper does not state an explicit autonomous-driving world-model match strongly enough for the mainline.`,
+            220,
+          ),
+        }
+
+  if (
+    passesTopicAdmissionGuard({
+      paper: args.paper,
+      topicDef: args.topicDef,
+      queries: args.queries,
+      candidateType: normalizedCandidateType,
+    })
+  ) {
+    return normalizedCandidate
+  }
+
+  return {
+    ...normalizedCandidate,
+    status: 'rejected' as const,
+    why: clipText(
+      `${normalizedCandidate.why} Rejected by the topic-domain guard because the title and abstract do not overlap enough with the topic mainline.`,
+      220,
+    ),
+  }
+}
+
+function buildHeuristicCandidate(args: {
+  paper: ArxivPaper
+  confidence: number
+  queryHits: string[]
+  stageIndex: number
+  windowMonths?: number
+  bootstrapMode?: boolean
+}) {
+  const directTopicLexicalFit =
+    /\bworld model\b|\bworld models\b/u.test(
+      `${args.paper.title} ${args.paper.summary}`.toLowerCase(),
+    ) &&
+    /\bautonomous driving\b|\bself-driving\b|\bself driving\b/u.test(
+      `${args.paper.title} ${args.paper.summary}`.toLowerCase(),
+    )
+  const directHeuristicFit =
+    directTopicLexicalFit || (args.queryHits.length >= 2 && args.confidence >= 0.82)
+  const admitted =
+    args.bootstrapMode === true
+      ? directTopicLexicalFit || (args.queryHits.length >= 1 && args.confidence >= 0.52)
+      : directHeuristicFit || (args.queryHits.length >= 1 && args.confidence >= 0.64)
+
+  const candidateType =
+    directHeuristicFit
+      ? 'direct'
+      : args.queryHits.length >= 1 && args.confidence >= 0.6
+        ? 'branch'
+        : 'transfer'
+  const citeIntent =
+    candidateType === 'direct'
+      ? 'supporting'
+      : candidateType === 'branch'
+        ? 'background'
+        : 'method-using'
+
+  const why =
+    args.queryHits.length > 0
+      ? `Heuristic fit from stage-aligned query overlap: ${args.queryHits.join(', ')}.`
+      : directTopicLexicalFit
+        ? 'Heuristic fit from a direct autonomous-driving world-model match.'
+        : 'Heuristic fallback from lexical and temporal relevance.'
+
+  return {
+    paperId: args.paper.id,
+    title: args.paper.title,
+    titleZh: args.paper.titleZh,
+    published: args.paper.published,
+    authors: args.paper.authors,
+    candidateType,
+    confidence: args.confidence,
+    status: admitted ? ('admitted' as const) : ('rejected' as const),
+    why,
+    citeIntent,
+    earliestWindowMonths: args.windowMonths ?? 6,
+    stageIndex: args.stageIndex,
+    queryHits: args.queryHits,
+    discoveryChannels: [args.paper.discoverySource ?? 'arxiv-api'],
+    arxivData: args.paper,
+  } satisfies PaperCandidate
+}
+
+function resolveBootstrapAnchorWindow(
+  candidates: PaperCandidate[],
+  windowMonths?: number,
+): BootstrapAnchorWindow | null {
+  const admitted = candidates.filter((candidate) => candidate.status === 'admitted')
+  if (admitted.length === 0) return null
+
+  const prioritized = admitted.filter((candidate) => candidate.candidateType === 'direct')
+  const sourceCandidates = prioritized.length > 0 ? prioritized : admitted
+  const sourceSeed = [...sourceCandidates]
+    .map((candidate) => ({
+      candidate,
+      publishedAt: new Date(candidate.published),
+    }))
+    .filter((entry) => !Number.isNaN(entry.publishedAt.getTime()))
+    .sort((left, right) => {
+      const timeDiff = left.publishedAt.getTime() - right.publishedAt.getTime()
+      if (timeDiff !== 0) return timeDiff
+      return right.candidate.confidence - left.candidate.confidence
+    })[0]
+
+  if (!sourceSeed) return null
+
+  const assignments = deriveTemporalStageBuckets({
+    papers: admitted.map((candidate) => ({
+      id: candidate.paperId,
+      published: candidate.published,
+    })),
+    windowMonths,
+    fallbackDate: sourceSeed.publishedAt,
+  })
+  const assignment = assignments.paperAssignments.get(sourceSeed.candidate.paperId)
+  if (!assignment) return null
+
+  return {
+    bucketKey: assignment.bucketKey,
+    label: assignment.label,
+    bucketStart: assignment.bucketStart,
+  }
+}
+
+function constrainBootstrapCandidatesToAnchorWindow(
+  candidates: PaperCandidate[],
+  windowMonths?: number,
+) {
+  const anchorWindow = resolveBootstrapAnchorWindow(candidates, windowMonths)
+  if (!anchorWindow) {
+    return {
+      candidates,
+      anchorWindow: null,
+    }
+  }
+
+  const assignments = deriveTemporalStageBuckets({
+    papers: candidates.map((candidate) => ({
+      id: candidate.paperId,
+      published: candidate.published,
+    })),
+    windowMonths,
+    fallbackDate: anchorWindow.bucketStart,
+  })
+
+  return {
+    anchorWindow,
+    candidates: candidates.map((candidate) => {
+      if (candidate.status !== 'admitted') return candidate
+
+      const assignment = assignments.paperAssignments.get(candidate.paperId)
+      if (!assignment || assignment.bucketKey === anchorWindow.bucketKey) {
+        return candidate
+      }
+
+      return {
+        ...candidate,
+        status: 'rejected' as const,
+        why: `${candidate.why} Deferred until ${assignment.label} because bootstrap anchored stage 1 at ${anchorWindow.label}.`,
+      }
+    }),
+  }
 }
 
 function shouldAdmitCandidate(evaluation: {
@@ -1680,18 +2750,11 @@ function shouldAdmitCandidate(evaluation: {
     return true
   }
 
-  if (evaluation.confidence >= 0.72) {
+  if (evaluation.candidateType === 'direct' && evaluation.confidence >= 0.82) {
     return true
   }
 
-  if (
-    evaluation.confidence >= 0.56 &&
-    (evaluation.candidateType === 'branch' ||
-      evaluation.candidateType === 'transfer' ||
-      evaluation.citeIntent === 'background' ||
-      evaluation.citeIntent === 'contrasting' ||
-      evaluation.citeIntent === 'method-using')
-  ) {
+  if (evaluation.candidateType === 'branch' && evaluation.confidence >= 0.78) {
     return true
   }
 
@@ -1706,68 +2769,136 @@ async function evaluateCandidates(args: {
   targetStageIndex: number
   input: PaperTrackerInput
   context: SkillContext
+  bootstrapMode?: boolean
 }) {
   const existingKeys = buildExistingPaperKeySet(args.topic)
-  const candidates: PaperCandidate[] = []
+  const candidateSeeds = args.papers
+    .filter(
+      (paper) =>
+        !existingKeys.has(paper.id) &&
+        !existingKeys.has(paper.title) &&
+        !existingKeys.has(paper.titleZh || ''),
+    )
+    .map((paper) => ({
+      paper,
+      confidence: calculateSimpleRelevance(paper, args.topicDef, args.queries),
+      queryHits: collectMatchedQueries(paper, args.queries),
+    }))
 
-  for (const paper of args.papers) {
-    if (existingKeys.has(paper.id) || existingKeys.has(paper.title) || existingKeys.has(paper.titleZh || '')) {
-      continue
-    }
-
-    try {
-      const evaluation = await evaluatePaperWithLLM({
-        paper,
+  if (args.bootstrapMode) {
+    const heuristicCandidates = candidateSeeds.map((seed) =>
+      enforceTopicAdmissionGuard({
+        candidate: buildHeuristicCandidate({
+          paper: seed.paper,
+          confidence: seed.confidence,
+          queryHits: seed.queryHits,
+          stageIndex: args.targetStageIndex,
+          windowMonths: args.input.windowMonths,
+          bootstrapMode: true,
+        }),
+        paper: seed.paper,
         topicDef: args.topicDef,
-        targetStageIndex: args.targetStageIndex,
-        input: args.input,
-      })
-      const queryHits = collectMatchedQueries(paper, args.queries)
+        queries: args.queries,
+      }),
+    )
 
-      candidates.push({
-        paperId: paper.id,
-        title: paper.title,
-        titleZh: paper.titleZh,
-        published: paper.published,
-        authors: paper.authors,
-        candidateType: evaluation.candidateType,
-        confidence: evaluation.confidence,
-        status: shouldAdmitCandidate(evaluation) ? 'admitted' : 'rejected',
-        why: evaluation.why,
-        citeIntent: evaluation.citeIntent,
-        earliestWindowMonths: args.input.windowMonths ?? 6,
-        stageIndex: args.targetStageIndex,
-        queryHits,
-        discoveryChannels: [paper.discoverySource ?? 'arxiv-api'],
-        arxivData: paper,
-      })
-    } catch (error) {
-      args.context.logger.warn('LLM candidate evaluation failed; using heuristic fallback', {
-        paperId: paper.id,
-        error,
-      })
-
-      const confidence = calculateSimpleRelevance(paper, args.topicDef, args.queries)
-      const queryHits = collectMatchedQueries(paper, args.queries)
-      candidates.push({
-        paperId: paper.id,
-        title: paper.title,
-        titleZh: paper.titleZh,
-        published: paper.published,
-        authors: paper.authors,
-        candidateType: confidence >= 0.72 ? 'direct' : confidence >= 0.56 ? 'branch' : 'transfer',
-        confidence,
-        status: confidence >= 0.56 ? 'admitted' : 'rejected',
-        why: 'Keyword overlap fallback',
-        citeIntent: confidence >= 0.72 ? 'supporting' : 'background',
-        earliestWindowMonths: args.input.windowMonths ?? 6,
-        stageIndex: args.targetStageIndex,
-        queryHits,
-        discoveryChannels: [paper.discoverySource ?? 'arxiv-api'],
-        arxivData: paper,
-      })
-    }
+    heuristicCandidates.sort((left, right) => right.confidence - left.confidence)
+    return heuristicCandidates
   }
+
+  const heuristicCandidates = candidateSeeds
+    .filter((seed) => seed.confidence >= 0.82 && seed.queryHits.length > 0)
+    .map((seed) =>
+      enforceTopicAdmissionGuard({
+        candidate: buildHeuristicCandidate({
+          paper: seed.paper,
+          confidence: seed.confidence,
+          queryHits: seed.queryHits,
+          stageIndex: args.targetStageIndex,
+          windowMonths: args.input.windowMonths,
+        }),
+        paper: seed.paper,
+        topicDef: args.topicDef,
+        queries: args.queries,
+      }),
+    )
+  const llmSeeds = candidateSeeds
+    .filter((seed) => !(seed.confidence >= 0.82 && seed.queryHits.length > 0))
+    .slice(0, PAPER_EVALUATION_LLM_MAX_CANDIDATES)
+  const overflowHeuristicCandidates = candidateSeeds
+    .filter((seed) => !(seed.confidence >= 0.82 && seed.queryHits.length > 0))
+    .slice(PAPER_EVALUATION_LLM_MAX_CANDIDATES)
+    .map((seed) =>
+      enforceTopicAdmissionGuard({
+        candidate: buildHeuristicCandidate({
+          paper: seed.paper,
+          confidence: seed.confidence,
+          queryHits: seed.queryHits,
+          stageIndex: args.targetStageIndex,
+          windowMonths: args.input.windowMonths,
+        }),
+        paper: seed.paper,
+        topicDef: args.topicDef,
+        queries: args.queries,
+      }),
+    )
+  const llmCandidates = await mapWithConcurrency(
+    llmSeeds,
+    PAPER_EVALUATION_LLM_CONCURRENCY,
+    async (seed) => {
+      try {
+        const evaluation = await evaluatePaperWithLLM({
+          paper: seed.paper,
+          topicDef: args.topicDef,
+          targetStageIndex: args.targetStageIndex,
+          input: args.input,
+        })
+
+        return enforceTopicAdmissionGuard({
+          candidate: {
+          paperId: seed.paper.id,
+          title: seed.paper.title,
+          titleZh: seed.paper.titleZh,
+          published: seed.paper.published,
+          authors: seed.paper.authors,
+          candidateType: evaluation.candidateType,
+          confidence: evaluation.confidence,
+          status: shouldAdmitCandidate(evaluation) ? ('admitted' as const) : ('rejected' as const),
+          why: evaluation.why,
+          citeIntent: evaluation.citeIntent,
+          earliestWindowMonths: args.input.windowMonths ?? 6,
+          stageIndex: args.targetStageIndex,
+          queryHits: seed.queryHits,
+          discoveryChannels: [seed.paper.discoverySource ?? 'arxiv-api'],
+          arxivData: seed.paper,
+          } satisfies PaperCandidate,
+          paper: seed.paper,
+          topicDef: args.topicDef,
+          queries: args.queries,
+        })
+      } catch (error) {
+        args.context.logger.warn('LLM candidate evaluation failed; using heuristic fallback', {
+          paperId: seed.paper.id,
+          error,
+        })
+
+        return enforceTopicAdmissionGuard({
+          candidate: buildHeuristicCandidate({
+            paper: seed.paper,
+            confidence: seed.confidence,
+            queryHits: seed.queryHits,
+            stageIndex: args.targetStageIndex,
+            windowMonths: args.input.windowMonths,
+          }),
+          paper: seed.paper,
+          topicDef: args.topicDef,
+          queries: args.queries,
+        })
+      }
+    },
+  )
+
+  const candidates = [...heuristicCandidates, ...llmCandidates, ...overflowHeuristicCandidates]
 
   candidates.sort((left, right) => right.confidence - left.confidence)
   return candidates
@@ -1886,19 +3017,29 @@ export async function executePaperTracker(
     }
 
     const topicDef = await resolveTopicDefinition(params.topicId, topic)
-    const currentStageIndex = params.stageIndex ?? topic.nodes.length
-    const targetStageIndex =
-      (params.stageMode || 'next-stage') === 'next-stage' ? currentStageIndex + 1 : currentStageIndex
+    const requestedWindowMonths = await resolveTrackerStageWindowMonths(
+      params.topicId,
+      params.windowMonths,
+    )
+    const { window: temporalStageWindow } = resolveTemporalDiscoveryWindow({
+      topic,
+      requestedWindowMonths,
+      requestedStageIndex: params.stageIndex,
+      stageMode: params.stageMode,
+      bootstrapWindowDays: topicDef.defaults.bootstrapWindowDays,
+    })
+    const currentStageIndex = temporalStageWindow.currentStageIndex
+    const targetStageIndex = temporalStageWindow.targetStageIndex
 
     const discoveryPlan = buildDiscoveryPlan({
       topic,
       topicDef,
       input: params,
-      targetStageIndex,
+      stageWindow: temporalStageWindow,
     })
 
     const discoveredPapers = await discoverPapers(discoveryPlan, topicDef, context)
-    const candidates = await evaluateCandidates({
+    const evaluatedCandidates = await evaluateCandidates({
       papers: discoveredPapers,
       topic,
       topicDef,
@@ -1906,7 +3047,16 @@ export async function executePaperTracker(
       targetStageIndex,
       input: params,
       context,
+      bootstrapMode: temporalStageWindow.bootstrapMode,
     })
+    const bootstrapConstraint =
+      temporalStageWindow.bootstrapMode
+        ? constrainBootstrapCandidatesToAnchorWindow(
+            evaluatedCandidates,
+            discoveryPlan.windowMonths,
+          )
+        : { candidates: evaluatedCandidates, anchorWindow: null as BootstrapAnchorWindow | null }
+    const candidates = bootstrapConstraint.candidates
     const admittedCandidates = candidates.filter((candidate) => candidate.status === 'admitted')
     const branchDecision = determineBranchAction(candidates, params.allowMerge !== false)
 
@@ -1939,8 +3089,8 @@ export async function executePaperTracker(
           arxiv: discoveredPapers.length,
         },
         timeRange: {
-          start: new Date(Date.now() - discoveryPlan.windowMonths * 30 * 24 * 60 * 60 * 1000).toISOString(),
-          end: new Date().toISOString(),
+          start: discoveryPlan.startDate.toISOString(),
+          end: new Date(discoveryPlan.endDateExclusive.getTime() - 1).toISOString(),
         },
       },
       admittedCandidates,
@@ -1953,7 +3103,7 @@ export async function executePaperTracker(
         status: candidate.status,
       })),
       selectedCandidate: admittedCandidates[0] ?? null,
-      decisionSummary: `Discovered ${discoveredPapers.length} papers and admitted ${admittedCandidates.length} for stage ${targetStageIndex}.`,
+      decisionSummary: `Discovered ${discoveredPapers.length} papers and admitted ${admittedCandidates.length} for stage ${targetStageIndex} (${discoveryPlan.stageLabel}).`,
       branchDecisionRationale: branchDecision.rationale,
       branchAction: branchDecision.action,
       selectedBranch: branchDecision.selectedBranch,
@@ -1965,10 +3115,16 @@ export async function executePaperTracker(
       stageWindowDecision: {
         shouldAdvance: admittedCandidates.length >= 3,
         rationale:
-          admittedCandidates.length >= 3
-            ? 'Enough new evidence was admitted to justify stage advancement.'
-            : 'Keep consolidating the current stage before advancing.',
+          temporalStageWindow.bootstrapMode && bootstrapConstraint.anchorWindow
+            ? `Bootstrap anchored stage 1 at ${bootstrapConstraint.anchorWindow.label}; keep later-window papers for future stages.`
+            : admittedCandidates.length >= 3
+              ? 'Enough new evidence was admitted to justify stage advancement.'
+              : 'Keep consolidating the current stage before advancing.',
       },
+      bootstrapAnchorStage:
+        temporalStageWindow.bootstrapMode && bootstrapConstraint.anchorWindow
+          ? bootstrapConstraint.anchorWindow.label
+          : null,
       topicMemoryPatch: {
         lastDiscoveryAt: new Date().toISOString(),
         currentStage: targetStageIndex,
@@ -2028,8 +3184,20 @@ export const __testing = {
   prioritizeExternalDiscoveryTerms,
   collectMatchedQueries,
   scorePaperDiscoveryFit,
+  calculateSimpleRelevance,
+  buildTopicAdmissionSignals,
+  normalizeCandidateTypeBySignals,
+  buildHeuristicCandidate,
+  resolveBootstrapAnchorWindow,
+  constrainBootstrapCandidatesToAnchorWindow,
+  resolveTemporalDiscoveryWindow,
+  buildDiscoveryPlan,
   parsePaperEvaluationJson,
   parsePaperEvaluationLines,
   inferPaperEvaluationFromText,
   looksMetaEvaluation,
+  looksPaperSpecificEvaluationWeak,
+  isArxivUnavailableError,
+  passesTopicAdmissionGuard,
+  enforceTopicAdmissionGuard,
 }

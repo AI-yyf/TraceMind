@@ -475,6 +475,8 @@ export type NodeArticleViewModel = {
   }
   critique: ReviewerCritique
   evidence: EvidenceExplanation[]
+  /** 增强版文章流（8-Pass深度解析） */
+  enhancedArticleFlow?: import('./article').NodeArticleFlowBlock[]
 }
 
 export type PaperViewModel = PaperArticleViewModel

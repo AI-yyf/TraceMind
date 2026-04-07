@@ -37,7 +37,9 @@ import {
   rebuildNodeViewModel,
   type NodeViewModel,
 } from './alpha-reader'
-import { collectNodeRelatedPaperIds } from './node-paper-association'
+import {
+  scoreRelatedPaperAgainstNode,
+} from './node-paper-association'
 import {
   loadTopicResearchReport,
   sanitizeResearchFacingSummary,
@@ -601,6 +603,36 @@ function uniqueStrings(values: Array<string | null | undefined>, limit = 8, maxL
   }
 
   return output
+}
+
+function pickTopicMapNodePaperIds(args: {
+  nodePaperIds: string[]
+  stageScopedPaperIds?: Set<string> | null
+  readerPaperIds?: string[]
+}) {
+  const scopedReaderPaperIds = uniqueStrings(
+    (args.readerPaperIds ?? []).filter(
+      (paperId) => !args.stageScopedPaperIds || args.stageScopedPaperIds.has(paperId),
+    ),
+    16,
+    80,
+  )
+  if (scopedReaderPaperIds.length > 0) {
+    return scopedReaderPaperIds
+  }
+
+  const scopedNodePaperIds = uniqueStrings(
+    args.nodePaperIds.filter(
+      (paperId) => !args.stageScopedPaperIds || args.stageScopedPaperIds.has(paperId),
+    ),
+    16,
+    80,
+  )
+  if (scopedNodePaperIds.length > 0) {
+    return scopedNodePaperIds
+  }
+
+  return scopedReaderPaperIds
 }
 
 function readStringArray(value: unknown, maxLength = 220) {
@@ -1333,6 +1365,15 @@ function buildTopicMapNodeSummary(args: {
   paperCount: number
   candidates: Array<string | null | undefined>
 }) {
+  const focusLabel = stripTopicTrailingPunctuation(args.nodeTitle) || stripTopicTrailingPunctuation(args.primaryPaperTitle) || '当前节点'
+  const primaryPaperTitle = stripTopicTrailingPunctuation(args.primaryPaperTitle) || focusLabel
+
+  if (args.paperCount > 1) {
+    return clipText(`该节点当前纳入 ${args.paperCount} 篇论文，核心聚焦「${focusLabel}」。`, 118)
+  }
+
+  return clipText(`该节点当前以《${primaryPaperTitle}》为入口，先说明「${focusLabel}」这条问题线。`, 118)
+
   const picked = collectTopicMapCardSentences(args.candidates, 1, 118)[0]
   if (picked) return picked
 
@@ -1356,6 +1397,21 @@ function buildTopicMapNodeExplanation(args: {
   summary: string
   candidates: Array<string | null | undefined>
 }) {
+  const focusLabel = stripTopicTrailingPunctuation(args.nodeTitle) || stripTopicTrailingPunctuation(args.primaryPaperTitle) || '当前节点'
+  const primaryPaperTitle = stripTopicTrailingPunctuation(args.primaryPaperTitle) || focusLabel
+
+  if (args.paperCount > 1) {
+    return clipText(
+      `这一节点把同一时间阶段内与「${focusLabel}」直接相关的 ${args.paperCount} 篇论文放在一起，阅读时先看主线论文，再比较方法、证据和仍未闭合的问题。`,
+      188,
+    )
+  }
+
+  return clipText(
+    `这一节点目前只纳入 1 篇论文，重点是读清《${primaryPaperTitle}》如何定义「${focusLabel}」、采用什么方法，以及证据边界停在什么位置。`,
+    188,
+  )
+
   const summaryKey = normalizeTopicMapCardKey(args.summary)
   const picked = collectTopicMapCardSentences(args.candidates, 3, 160).filter(
     (sentence) => normalizeTopicMapCardKey(sentence) !== summaryKey,
@@ -1458,6 +1514,25 @@ function buildStageResearchEditorial(args: {
   generationContext: TopicGenerationContext
 }) {
   const { stage, previousStageTitle, pipeline, latestResearchReport, generationContext } = args
+  const nodeCount = stage.nodes.length
+  const paperCount = stage.nodes.reduce((count, node) => count + (node.paperCount ?? 0), 0)
+  const focusNodes = uniqueStrings(stage.nodes.map((node) => stripTopicTrailingPunctuation(node.title)), 3, 24)
+  const focusLabel = focusNodes.join('、') || stripTopicTrailingPunctuation(stage.title) || `Stage ${stage.stageIndex}`
+
+  return {
+    summary: clipText(
+      `该阶段当前纳入 ${paperCount} 篇论文、形成 ${nodeCount} 个节点，重点集中在「${focusLabel}」。`,
+      180,
+    ),
+    transition: clipText(
+      previousStageTitle
+        ? `相较上一阶段「${stripTopicTrailingPunctuation(previousStageTitle)}」，这一阶段把同一时间窗内的材料重新收束到「${focusLabel}」，便于继续按阶段阅读。`
+        : `这一阶段从「${focusLabel}」开始整理同一时间窗内的论文与节点，为后续阶段继续扩展主线与支线。`,
+      180,
+    ),
+    stageThesis: clipText(`纳入 ${paperCount} 篇论文，聚焦 ${focusLabel}`, 110),
+  }
+
   const leadNodeLabels = joinQuotedTopicLabels(
     stage.nodes.map((node) => node.title),
     stage.nodes.length > 1 ? 2 : 1,
@@ -1745,7 +1820,7 @@ function buildTopicSuggestedQuestions(args: {
 async function loadTopicResearchSignals(
   topicId: string,
   topic: Awaited<ReturnType<typeof loadTopicForArtifact>>,
-  options?: { quick?: boolean },
+  options?: { quick?: boolean; stageWindowMonths?: number },
 ): Promise<TopicResearchSignals> {
   const quick = options?.quick === true
   const [topicMemory, latestResearchReport, pipelineState, sessionMemory, nodeReaders] = await Promise.all([
@@ -1757,7 +1832,9 @@ async function loadTopicResearchSignals(
       ? Promise.resolve([] as Array<readonly [string, NodeViewModel]>)
       : mapWithConcurrency(topic.nodes, 2, async (node) => {
           try {
-            const viewModel = await rebuildNodeViewModel(node.id)
+            const viewModel = await rebuildNodeViewModel(node.id, {
+              stageWindowMonths: options?.stageWindowMonths,
+            })
             return [node.id, viewModel] as const
           } catch (error) {
             logger.warn('Failed to rebuild node reader artifact while building topic view model.', {
@@ -2686,6 +2763,630 @@ async function loadTopicForArtifact(topicId: string) {
   return topic
 }
 
+type ArtifactTopicRecord = Awaited<ReturnType<typeof loadTopicForArtifact>>
+type ArtifactTopicPaper = ArtifactTopicRecord['papers'][number]
+
+const FALLBACK_NODE_TOPIC_KEYWORDS = new Set([
+  'autonomous driving',
+  'self driving',
+  'self-driving',
+  'world model',
+  'world models',
+  'vision language action',
+  'vla',
+])
+
+type FallbackNodeTheme = {
+  id:
+    | 'survey-agenda'
+    | 'simulation-prediction'
+    | 'pretraining-general'
+    | 'scene-understanding'
+    | 'generative-realworld'
+    | 'diffusion-generation'
+    | 'planning-forecasting'
+    | 'planning-latent'
+    | 'occupancy-vla'
+    | 'occupancy-world'
+    | 'unified-vla'
+    | 'planning-vla'
+    | 'generic-world-model'
+  label: string
+  subtitle: string
+  summaryLead: string
+  priority: number
+  titlePatterns: RegExp[]
+  bodyPatterns?: RegExp[]
+}
+
+const FALLBACK_NODE_THEME_CATALOG: FallbackNodeTheme[] = [
+  {
+    id: 'survey-agenda',
+    label: '综述与研究议程',
+    subtitle: '先收拢赛道边界、方法谱系与未解问题',
+    summaryLead: '用综述或立场论文重新标定驾驶世界模型赛道',
+    priority: 16,
+    titlePatterns: [/\bsurvey\b/iu, /\bposition\b/iu, /\bperspective\b/iu, /\bprospective\b/iu, /\breview\b/iu],
+  },
+  {
+    id: 'occupancy-vla',
+    label: '占用式 VLA 世界模型',
+    subtitle: '把占用表示、语言接口和动作生成接到同一条链上',
+    summaryLead: '让占用建模进入语言-动作闭环',
+    priority: 15,
+    titlePatterns: [/\boccllama\b/iu, /\boccupancy\b/iu, /\blanguage[- ]action\b/iu, /\bvla\b/iu],
+    bodyPatterns: [/\boccupancy\b/iu, /\blanguage\b/iu, /\baction\b/iu, /\bvla\b/iu],
+  },
+  {
+    id: 'planning-vla',
+    label: '世界模型与规划交错耦合',
+    subtitle: '让世界建模与规划步骤在同一体系里轮转',
+    summaryLead: '把世界建模和规划耦合成可迭代闭环',
+    priority: 14,
+    titlePatterns: [/\binterleaved\b/iu, /\bplanning\b/iu, /\bvla\b/iu],
+    bodyPatterns: [/\binterleaved\b/iu, /\bplanning\b/iu, /\blanguage\b/iu, /\baction\b/iu],
+  },
+  {
+    id: 'unified-vla',
+    label: 'VLA 世界模型的隐空间统一',
+    subtitle: '把视觉、语言、动作压进统一潜空间',
+    summaryLead: '尝试把 VLA 世界模型统一到共享潜空间里',
+    priority: 13,
+    titlePatterns: [/\bdriveworld-vla\b/iu, /\bunified\b/iu, /\blatent[- ]space\b/iu, /\bvla\b/iu],
+    bodyPatterns: [/\bunified\b/iu, /\blatent\b/iu, /\blanguage\b/iu, /\baction\b/iu],
+  },
+  {
+    id: 'planning-latent',
+    label: '潜空间规划与强化学习',
+    subtitle: '让潜空间思考直接服务控制与闭环决策',
+    summaryLead: '把潜空间世界模型接到规划与强化学习控制上',
+    priority: 12,
+    titlePatterns: [/\bthink2drive\b/iu, /\blatent\b/iu, /\breinforcement learning\b/iu, /\bthinking\b/iu],
+    bodyPatterns: [/\blatent\b/iu, /\breinforcement\b/iu, /\bcontrol\b/iu, /\bplanning\b/iu],
+  },
+  {
+    id: 'planning-forecasting',
+    label: '多视角预测与规划',
+    subtitle: '让世界模型直接承担未来预测与轨迹规划',
+    summaryLead: '把未来预测和规划能力压到世界模型里',
+    priority: 11,
+    titlePatterns: [/\bforecasting\b/iu, /\bfuture\b/iu, /\bplanning\b/iu, /\bmultiview\b/iu],
+    bodyPatterns: [/\bforecasting\b/iu, /\bplanning\b/iu, /\bfuture\b/iu, /\btrajectory\b/iu],
+  },
+  {
+    id: 'scene-understanding',
+    label: '4D 场景理解世界模型',
+    subtitle: '把时空场景表示预训练成可复用认知底座',
+    summaryLead: '先把动态场景理解能力练成世界模型底座',
+    priority: 10,
+    titlePatterns: [/\bscene understanding\b/iu, /\b4d\b/iu, /\bdriveworld\b/iu],
+    bodyPatterns: [/\bscene understanding\b/iu, /\b4d\b/iu, /\bspatiotemporal\b/iu],
+  },
+  {
+    id: 'pretraining-general',
+    label: '通用预训练世界模型',
+    subtitle: '把驾驶场景压缩成统一、可迁移的基础表示',
+    summaryLead: '把世界模型当成自动驾驶的通用预训练底座',
+    priority: 9,
+    titlePatterns: [/\buniworld\b/iu, /\bpre[- ]training\b/iu, /\bpretraining\b/iu, /\bfoundation\b/iu, /\bgeneral world model\b/iu, /\badriver\b/iu],
+    bodyPatterns: [/\bpre[- ]train/iu, /\bfoundation\b/iu, /\bgeneral world model\b/iu],
+  },
+  {
+    id: 'generative-realworld',
+    label: '真实数据驱动的生成式世界模型',
+    subtitle: '让真实驾驶数据直接驱动场景演化生成',
+    summaryLead: '把真实驾驶数据接入生成式世界模型',
+    priority: 8,
+    titlePatterns: [/\bdrivedreamer\b/iu, /\breal[- ]world[- ]driven\b/iu, /\breal[- ]world[- ]drive\b/iu],
+    bodyPatterns: [/\breal[- ]world\b/iu, /\bgenerative\b/iu, /\bdreamer\b/iu],
+  },
+  {
+    id: 'diffusion-generation',
+    label: '扩散式驾驶世界模型',
+    subtitle: '用扩散生成去学习场景演化与行为先验',
+    summaryLead: '把扩散生成能力引入驾驶世界建模',
+    priority: 7,
+    titlePatterns: [/\bdiffusion\b/iu, /\bgenerative\b/iu, /\bcopilot4d\b/iu],
+    bodyPatterns: [/\bdiffusion\b/iu, /\bgenerative\b/iu],
+  },
+  {
+    id: 'simulation-prediction',
+    label: '仿真与运动预测世界模型',
+    subtitle: '先从数据驱动仿真和行为预测切入世界建模',
+    summaryLead: '从仿真和运动预测起步搭建世界模型',
+    priority: 6,
+    titlePatterns: [/\btrafficbots\b/iu, /\bsimulation\b/iu, /\bmotion prediction\b/iu],
+    bodyPatterns: [/\bsimulation\b/iu, /\bmotion prediction\b/iu, /\bbehavior\b/iu],
+  },
+  {
+    id: 'occupancy-world',
+    label: '3D 占用世界模型',
+    subtitle: '用占用表示追踪场景结构与未来演化',
+    summaryLead: '以 3D 占用表示构建场景世界模型',
+    priority: 5,
+    titlePatterns: [/\boccworld\b/iu, /\boccupancy\b/iu],
+    bodyPatterns: [/\boccupancy\b/iu, /\b3d\b/iu],
+  },
+  {
+    id: 'generic-world-model',
+    label: '驾驶世界模型主线',
+    subtitle: '回到同月核心论文，梳理问题、方法与证据边界',
+    summaryLead: '沿着同月核心论文整理驾驶世界模型主线',
+    priority: 1,
+    titlePatterns: [],
+    bodyPatterns: [],
+  },
+]
+
+function buildFallbackNodeReferenceValues(papers: ArtifactTopicPaper[]) {
+  return papers.flatMap((paper) => [
+    paper.titleZh,
+    paper.titleEn,
+    paper.title,
+    paper.explanation,
+    paper.summary,
+  ])
+}
+
+function buildFallbackNodeHaystack(papers: ArtifactTopicPaper[]) {
+  return normalizeTopicSentence(buildFallbackNodeReferenceValues(papers).join(' '))
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim()
+}
+
+function scoreFallbackNodeTheme(theme: FallbackNodeTheme, papers: ArtifactTopicPaper[]) {
+  const titleHaystack = normalizeTopicSentence(
+    papers.map((paper) => [paper.titleZh, paper.titleEn, paper.title].filter(Boolean).join(' ')).join(' '),
+  )
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim()
+  const fullHaystack = buildFallbackNodeHaystack(papers)
+  const titlePatterns = theme.titlePatterns ?? []
+  const bodyPatterns = theme.bodyPatterns ?? titlePatterns
+  let score = 0
+
+  for (const pattern of titlePatterns) {
+    if (pattern.test(titleHaystack)) score += 4
+  }
+
+  for (const pattern of bodyPatterns) {
+    if (pattern.test(fullHaystack)) score += 2
+  }
+
+  return score
+}
+
+function detectFallbackNodeTheme(papers: ArtifactTopicPaper[]) {
+  const scored = FALLBACK_NODE_THEME_CATALOG.map((theme) => ({
+    theme,
+    score: scoreFallbackNodeTheme(theme, papers),
+  }))
+    .sort((left, right) => right.score - left.score || right.theme.priority - left.theme.priority)
+
+  return scored[0]?.score > 0
+    ? scored[0].theme
+    : FALLBACK_NODE_THEME_CATALOG.find((theme) => theme.id === 'generic-world-model')!
+}
+
+function detectFallbackNodeThemeId(paper: ArtifactTopicPaper) {
+  return detectFallbackNodeTheme([paper]).id
+}
+
+function stripFallbackPaperPrefix(title: string) {
+  const normalized = title.replace(/\s+/gu, ' ').trim()
+  if (!normalized) return ''
+  const segments = normalized.split(':')
+  if (segments.length < 2) return normalized
+  const lead = segments[0]?.trim() ?? ''
+  const remainder = segments.slice(1).join(':').trim()
+  if (!remainder || lead.length > 28) return normalized
+  return remainder
+}
+
+function buildFallbackPaperLeadTitle(paper: ArtifactTopicPaper) {
+  const title = paper.titleZh || paper.titleEn || paper.title
+  return clipText(stripFallbackPaperPrefix(title), 54)
+}
+
+function joinFallbackPaperTitles(papers: ArtifactTopicPaper[], limit = 2) {
+  return papers
+    .slice(0, limit)
+    .map((paper) => `《${buildFallbackPaperLeadTitle(paper)}》`)
+    .join('、')
+}
+
+function formatFallbackNodeKeyword(keyword: string) {
+  const normalized = keyword.trim()
+  if (!normalized) return ''
+  if (/^vision language action$/iu.test(normalized)) return 'VLA'
+  if (/^world models?$/iu.test(normalized)) return '世界模型'
+  if (/^closed loop$/iu.test(normalized)) return '闭环'
+  if (/^end to end$/iu.test(normalized) || /^end-to-end$/iu.test(normalized)) return '端到端'
+  if (/^occupancy$/iu.test(normalized)) return '占用建模'
+  if (/^diffusion$/iu.test(normalized)) return '扩散生成'
+  return normalized
+    .replace(/\bworld models?\b/giu, '世界模型')
+    .replace(/\bautonomous driving\b/giu, '自动驾驶')
+    .replace(/\bself[- ]driving\b/giu, '自动驾驶')
+    .replace(/\bvision language action\b/giu, 'VLA')
+    .replace(/\bclosed[- ]loop\b/giu, '闭环')
+    .replace(/\bend[- ]to[- ]end\b/giu, '端到端')
+    .replace(/\blatent\b/giu, '隐空间')
+    .replace(/\boccupancy\b/giu, '占用')
+    .replace(/\bdiffusion\b/giu, '扩散')
+}
+
+function chooseFallbackPrimaryPaper(papers: ArtifactTopicPaper[]) {
+  return [...papers].sort((left, right) => {
+    const leftKeywords = collectTopicRelationKeywords(buildFallbackNodeReferenceValues([left]), 12)
+    const rightKeywords = collectTopicRelationKeywords(buildFallbackNodeReferenceValues([right]), 12)
+    return (
+      rightKeywords.length - leftKeywords.length ||
+      new Date(left.published).getTime() - new Date(right.published).getTime() ||
+      right.title.length - left.title.length
+    )
+  })[0]
+}
+
+function buildFallbackNodeLabel(papers: ArtifactTopicPaper[]) {
+  const theme = detectFallbackNodeTheme(papers)
+  if (theme.id !== 'generic-world-model') {
+    return clipText(theme.label, 42)
+  }
+
+  const primaryPaper = chooseFallbackPrimaryPaper(papers)
+  const keywords = collectTopicRelationKeywords(buildFallbackNodeReferenceValues(papers), 24).filter(
+    (keyword) => !FALLBACK_NODE_TOPIC_KEYWORDS.has(keyword.toLowerCase()),
+  )
+  const leadKeyword = formatFallbackNodeKeyword(keywords[0] ?? '')
+  const secondaryKeyword = formatFallbackNodeKeyword(
+    keywords.find((keyword) => keyword.toLowerCase() !== (keywords[0] ?? '').toLowerCase()) ?? '',
+  )
+
+  if (leadKeyword && secondaryKeyword) {
+    return clipText(`${leadKeyword} · ${secondaryKeyword}`, 42)
+  }
+  if (leadKeyword) {
+    return clipText(leadKeyword, 42)
+  }
+  return clipText(buildFallbackPaperLeadTitle(primaryPaper), 42)
+}
+
+function buildFallbackNodeSubtitle(papers: ArtifactTopicPaper[]) {
+  const theme = detectFallbackNodeTheme(papers)
+  if (theme.id !== 'generic-world-model') {
+    return clipText(theme.subtitle, 72)
+  }
+
+  const keywords = collectTopicRelationKeywords(buildFallbackNodeReferenceValues(papers), 18).filter(
+    (keyword) => !FALLBACK_NODE_TOPIC_KEYWORDS.has(keyword.toLowerCase()),
+  )
+  const subtitle = keywords.slice(0, 3).map((keyword) => formatFallbackNodeKeyword(keyword)).filter(Boolean)
+  return clipText(subtitle.join(' / '), 72)
+}
+
+function buildFallbackNodeSummary(args: {
+  label: string
+  papers: ArtifactTopicPaper[]
+}) {
+  const fallbackPrimaryPaper = chooseFallbackPrimaryPaper(args.papers)
+  const label = stripTopicTrailingPunctuation(args.label) || '当前节点'
+  const primaryPaperTitle =
+    stripTopicTrailingPunctuation(fallbackPrimaryPaper.titleZh || fallbackPrimaryPaper.title) || label
+
+  if (args.papers.length <= 1) {
+    return clipText(`该节点当前仅纳入 1 篇论文，以《${primaryPaperTitle}》为入口，先说明「${label}」这条问题线。`, 200)
+  }
+
+  return clipText(`该节点当前纳入 ${args.papers.length} 篇同阶段论文，围绕「${label}」比较它们的对象、方法与证据。`, 200)
+
+  const primaryPaper = chooseFallbackPrimaryPaper(args.papers)
+  const theme = detectFallbackNodeTheme(args.papers)
+  if (args.papers.length <= 1) {
+    return clipText(
+      `${theme.summaryLead}。当前这一节点先以《${buildFallbackPaperLeadTitle(primaryPaper)}》为入口，读它如何定义问题、构造世界表示，并把证据边界停在哪一层。`,
+      200,
+    )
+  }
+
+  return clipText(
+    `这一节点把同期 ${args.papers.length} 篇论文收拢到「${args.label}」之下，先用 ${joinFallbackPaperTitles(args.papers)} 建立主线，再比较它们在建模对象、控制闭环或语言接口上的关键分歧。`,
+    200,
+  )
+}
+
+function buildFallbackNodeExplanation(args: {
+  label: string
+  papers: ArtifactTopicPaper[]
+}) {
+  const fallbackPrimaryPaper = chooseFallbackPrimaryPaper(args.papers)
+  const label = stripTopicTrailingPunctuation(args.label) || '当前节点'
+  const primaryPaperTitle =
+    stripTopicTrailingPunctuation(fallbackPrimaryPaper.titleZh || fallbackPrimaryPaper.title) || label
+
+  if (args.papers.length <= 1) {
+    return clipText(`这一节点目前只有 1 篇论文，阅读重点是看《${primaryPaperTitle}》如何界定「${label}」、给出什么证据，以及还有哪些地方没有闭合。`, 220)
+  }
+
+  return clipText(`这一节点把同一阶段内与「${label}」直接相关的 ${args.papers.length} 篇论文放在一起，帮助读者在不跳出阶段边界的前提下看清共同问题与主要分歧。`, 220)
+
+  const primaryPaper = chooseFallbackPrimaryPaper(args.papers)
+  const theme = detectFallbackNodeTheme(args.papers)
+  const firstPaperTitle = primaryPaper.titleZh || primaryPaper.title
+  if (args.papers.length <= 1) {
+    return clipText(
+      primaryPaper.explanation ||
+        `先从「${firstPaperTitle}」读起，用它建立「${args.label}」的起点判断，再沿着论文里的方法设计、实验对象和失败边界去核对这条主线是否站得住。`,
+      220,
+    )
+  }
+
+  return clipText(
+    `当前先用「${firstPaperTitle}」做入口，再把同月问题相近的论文并入这个节点，帮助读者在不跳出阶段边界的前提下，看清「${args.label}」怎样从 ${theme.subtitle.replace(/。$/u, '')}，以及还有哪些证据没有闭合。`,
+    220,
+  )
+}
+
+function refineFallbackNodeThemeCluster(papers: ArtifactTopicPaper[]) {
+  const themeId = detectFallbackNodeThemeId(papers[0]!)
+  const remaining = [...papers].sort(
+    (left, right) =>
+      new Date(left.published).getTime() - new Date(right.published).getTime() ||
+      right.title.length - left.title.length,
+  )
+  const clusters: ArtifactTopicPaper[][] = []
+
+  while (remaining.length > 0) {
+    const anchor = remaining.shift()
+    if (!anchor) break
+
+    const anchorReferenceValues = buildFallbackNodeReferenceValues([anchor])
+    const anchorKeywords = collectTopicRelationKeywords(anchorReferenceValues, 18)
+    const cluster = [anchor]
+    const deferred: ArtifactTopicPaper[] = []
+
+    for (const candidate of remaining) {
+      const relation = scoreRelatedPaperAgainstNode({
+        paper: candidate,
+        keywords: anchorKeywords,
+        referenceValues: anchorReferenceValues,
+      })
+      const sameTheme = detectFallbackNodeThemeId(candidate) === themeId
+      const stronglyRelated =
+        sameTheme &&
+        (relation.score >= 8 ||
+          relation.strongMatchCount >= 2 ||
+          relation.conceptScore >= 4 ||
+          relation.titleMatchCount >= 1 ||
+          relation.matchCount >= 2) ||
+        (relation.conceptMatches.includes('world-model') &&
+          relation.conceptMatches.some((concept) =>
+            ['dynamics', 'generative', 'multimodal', 'language', 'unified'].includes(concept),
+          ))
+
+      if (stronglyRelated) {
+        cluster.push(candidate)
+      } else {
+        deferred.push(candidate)
+      }
+    }
+
+    clusters.push(cluster)
+    remaining.splice(0, remaining.length, ...deferred)
+  }
+
+  return clusters
+}
+
+function synthesizeFallbackNodeClusters(papers: ArtifactTopicPaper[]) {
+  const orderedPapers = [...papers].sort(
+    (left, right) =>
+      new Date(left.published).getTime() - new Date(right.published).getTime() ||
+      right.title.length - left.title.length,
+  )
+  const groups = new Map<string, ArtifactTopicPaper[]>()
+
+  for (const paper of orderedPapers) {
+    const themeId = detectFallbackNodeThemeId(paper)
+    const current = groups.get(themeId) ?? []
+    current.push(paper)
+    groups.set(themeId, current)
+  }
+
+  return Array.from(groups.values()).flatMap((group) => refineFallbackNodeThemeCluster(group))
+}
+
+function isLegacyFallbackNodeLabel(label: string | null | undefined) {
+  const normalized = label?.replace(/\s+/gu, ' ').trim() ?? ''
+  if (!normalized) return false
+  if (!normalized.includes('·')) return false
+
+  const [left, right] = normalized.split('·').map((segment) => segment.trim())
+  if (!left || !right) return false
+
+  const looksLegacySegment = (segment: string) =>
+    /^[a-z0-9-]+(?:\s+[a-z0-9-]+){0,3}$/iu.test(segment) ||
+    /^[a-z0-9-]+(?:\s+[a-z0-9-]+){0,2}\s+[\u4e00-\u9fff]{1,6}$/u.test(segment)
+
+  return looksLegacySegment(left) && looksLegacySegment(right)
+}
+
+function shouldResynthesizeFallbackNodes(
+  topic: ArtifactTopicRecord,
+  stageWindowMonths: number,
+) {
+  if (topic.papers.length === 0) return false
+  if (topic.nodes.length === 0) return true
+
+  const allFallbackNodes = topic.nodes.every((node) => node.status === 'fallback')
+  if (allFallbackNodes) {
+    const temporalBuckets = deriveTemporalStageBuckets({
+      papers: topic.papers.map((paper) => ({
+        id: paper.id,
+        published: paper.published,
+      })),
+      windowMonths: stageWindowMonths,
+      fallbackDate: topic.createdAt,
+    })
+    const assignedStageIndexes = new Set(
+      Array.from(temporalBuckets.paperAssignments.values()).map((assignment) => assignment.stageIndex),
+    )
+    const nodeStageIndexes = new Set(topic.nodes.map((node) => node.stageIndex))
+    const coveredPaperIds = new Set(
+      topic.nodes.flatMap((node) => node.papers.map((paper) => paper.paperId)),
+    )
+
+    if (topic.papers.some((paper) => !coveredPaperIds.has(paper.id))) {
+      return true
+    }
+
+    if (Array.from(assignedStageIndexes).some((stageIndex) => !nodeStageIndexes.has(stageIndex))) {
+      return true
+    }
+  }
+
+  const legacyNodeCount = topic.nodes.filter((node) => isLegacyFallbackNodeLabel(node.nodeLabel)).length
+  if (legacyNodeCount === topic.nodes.length) {
+    return true
+  }
+
+  return (
+    legacyNodeCount >= Math.max(3, Math.ceil(topic.nodes.length * 0.8)) &&
+    topic.nodes.every((node) => node.status === 'active')
+  )
+}
+
+async function syncTopicTemporalStructure(topicId: string, stageWindowMonths: number) {
+  const topic = await loadTopicForArtifact(topicId)
+  const temporalBuckets = deriveTemporalStageBuckets({
+    papers: topic.papers.map((paper) => ({
+      id: paper.id,
+      published: paper.published,
+    })),
+    nodes: topic.nodes.map((node) => ({
+      id: node.id,
+      primaryPaperId: node.primaryPaperId,
+      papers: node.papers.map((item) => ({ paperId: item.paperId })),
+      updatedAt: node.updatedAt,
+      createdAt: node.createdAt,
+    })),
+    windowMonths: stageWindowMonths,
+    fallbackDate: topic.createdAt,
+  })
+
+  await prisma.$transaction(async (tx) => {
+    await tx.topicStage.deleteMany({ where: { topicId } })
+
+    if (temporalBuckets.buckets.length > 0) {
+      await tx.topicStage.createMany({
+        data: temporalBuckets.buckets.map((bucket) => ({
+          topicId,
+          order: bucket.stageIndex,
+          name: bucket.label,
+          nameEn: bucket.labelEn,
+          description: bucket.description,
+          descriptionEn: bucket.descriptionEn,
+        })),
+      })
+    }
+
+    for (const node of topic.nodes) {
+      const nextStageIndex =
+        temporalBuckets.nodeAssignments.get(node.id)?.stageIndex ??
+        temporalBuckets.fallbackAssignment?.stageIndex ??
+        node.stageIndex
+
+      if (nextStageIndex !== node.stageIndex) {
+        await tx.researchNode.update({
+          where: { id: node.id },
+          data: { stageIndex: nextStageIndex },
+        })
+      }
+    }
+  })
+
+  return temporalBuckets
+}
+
+async function ensureFallbackResearchNodesFromPapers(topicId: string, stageWindowMonths: number) {
+  const topic = await loadTopicForArtifact(topicId)
+  if (!shouldResynthesizeFallbackNodes(topic, stageWindowMonths)) {
+    return false
+  }
+
+  const temporalBuckets = deriveTemporalStageBuckets({
+    papers: topic.papers.map((paper) => ({
+      id: paper.id,
+      published: paper.published,
+    })),
+    windowMonths: stageWindowMonths,
+    fallbackDate: topic.createdAt,
+  })
+  const papersByStage = new Map<number, ArtifactTopicPaper[]>()
+
+  for (const paper of [...topic.papers].sort((left, right) => +left.published - +right.published)) {
+    const assignment = temporalBuckets.paperAssignments.get(paper.id) ?? temporalBuckets.fallbackAssignment
+    const stageIndex = assignment?.stageIndex ?? 1
+    const current = papersByStage.get(stageIndex) ?? []
+    current.push(paper)
+    papersByStage.set(stageIndex, current)
+  }
+
+  await prisma.$transaction(async (tx) => {
+    if (topic.nodes.length > 0) {
+      await tx.researchNode.deleteMany({ where: { topicId } })
+    }
+
+    for (const [stageIndex, stagePapers] of papersByStage.entries()) {
+      const clusters = synthesizeFallbackNodeClusters(stagePapers)
+      for (const cluster of clusters) {
+        const primaryPaper = chooseFallbackPrimaryPaper(cluster)
+        const label = buildFallbackNodeLabel(cluster)
+        const subtitle = buildFallbackNodeSubtitle(cluster)
+        const summary = buildFallbackNodeSummary({ label, papers: cluster })
+        const explanation = buildFallbackNodeExplanation({ label, papers: cluster })
+        const node = await tx.researchNode.create({
+          data: {
+            topicId,
+            stageIndex,
+            nodeLabel: label,
+            nodeSubtitle: subtitle || null,
+            nodeSummary: summary,
+            nodeExplanation: explanation,
+            nodeCoverImage: primaryPaper.coverPath ?? null,
+            status: 'fallback',
+            isMergeNode: false,
+            provisional: false,
+            primaryPaperId: primaryPaper.id,
+          },
+        })
+
+        await tx.nodePaper.createMany({
+          data: cluster.map((paper, order) => ({
+            nodeId: node.id,
+            paperId: paper.id,
+            order,
+          })),
+        })
+      }
+    }
+  })
+
+  logger.info('Synthesized fallback research nodes from paper clusters.', {
+    topicId,
+    stageWindowMonths,
+    paperCount: topic.papers.length,
+    stageCount: papersByStage.size,
+    regeneratedExistingNodes: topic.nodes.length > 0,
+  })
+
+  return true
+}
+
 async function loadTopicChatCatalogSource(topicId: string): Promise<TopicChatCatalogSource> {
   const topic = await prisma.topic.findUnique({
     where: { id: topicId },
@@ -2834,7 +3535,14 @@ export async function buildTopicViewModel(
   topicId: string,
   options?: TopicViewModelBuildOptions,
 ): Promise<TopicViewModel> {
-  return buildTopicViewModelResearchAware(topicId, options)
+  const resolvedStageWindowMonths = resolveStageWindowMonths(options?.stageWindowMonths)
+  await syncTopicTemporalStructure(topicId, resolvedStageWindowMonths)
+  await ensureFallbackResearchNodesFromPapers(topicId, resolvedStageWindowMonths)
+  await syncTopicTemporalStructure(topicId, resolvedStageWindowMonths)
+  return buildTopicViewModelResearchAware(topicId, {
+    ...options,
+    stageWindowMonths: resolvedStageWindowMonths,
+  })
 
   const quick = options?.quick === true
   const stageWindowMonths = resolveStageWindowMonths(options?.stageWindowMonths)
@@ -2892,7 +3600,7 @@ export async function buildTopicViewModel(
       const stageDescription =
         stageLocalization?.locales.zh.description ??
         stage?.description ??
-        `${topic.nameZh} 鍦ㄨ繖涓€闃舵寮€濮嬪舰鎴愭洿鏄庣‘鐨勭爺绌跺垎鏀笌浠ｈ〃鑺傜偣銆俙`
+        `${topic.nameZh} 在这一阶段开始形成更明确的研究分支与代表节点。`
 
       return {
         stageIndex,
@@ -3190,12 +3898,12 @@ export async function buildTopicViewModel(
   const localizedTopicTitleEn =
     localization?.topic.locales.en.name ?? topic.nameEn ?? topic.nameZh
   const localizedFocusLabel =
-    localization?.topic.locales.zh.focusLabel ?? topic.focusLabel ?? topic.nameEn ?? '鐮旂┒鐒︾偣'
+    localization?.topic.locales.zh.focusLabel ?? topic.focusLabel ?? topic.nameEn ?? '研究焦点'
   const localizedSummary =
     localization?.topic.locales.zh.summary ??
     topic.summary ??
     topic.description ??
-    '璇ヤ富棰樻鍦ㄧ瓑寰呯敓鎴愭憳瑕併€?'
+    '该主题正在等待生成摘要。'
   const localizedDescription =
     localization?.topic.locales.zh.description ?? topic.description ?? topic.summary ?? ''
 
@@ -3719,7 +4427,10 @@ async function buildTopicViewModelResearchAware(
     loadTopicForArtifact(topicId),
     getTopicLocalization(topicId),
   ])
-  const researchSignals = await loadTopicResearchSignals(topicId, topic, { quick })
+  const researchSignals = await loadTopicResearchSignals(topicId, topic, {
+    quick,
+    stageWindowMonths,
+  })
   const rawPaperById = new Map(topic.papers.map((paper) => [paper.id, paper]))
   const localizedTopicTitle = localization?.topic.locales.zh.name ?? topic.nameZh
   const localizedTopicTitleEn =
@@ -3816,6 +4527,14 @@ async function buildTopicViewModelResearchAware(
       const fullContent = parseJsonValue<Record<string, unknown>>(node.fullContent)
       const fullContentSummary = readFullContentSummary(fullContent)
       const reader = researchSignals.nodeReaderById.get(node.id) ?? null
+      const nodeAssignment = temporalBuckets.nodeAssignments.get(node.id) ?? temporalBuckets.fallbackAssignment
+      const stageScopedPaperIds = nodeAssignment
+        ? new Set(
+            Array.from(temporalBuckets.paperAssignments.entries())
+              .filter(([, assignment]) => assignment.bucketKey === nodeAssignment.bucketKey)
+              .map(([paperId]) => paperId),
+          )
+        : null
       const compactTitle = compactTopicMapNodeTitle({
         nodeTitle: node.nodeLabel,
         nodeSubtitle: node.nodeSubtitle,
@@ -3829,10 +4548,10 @@ async function buildTopicViewModelResearchAware(
             : compactTitle
       const digest = fullContentSummary.oneLine || reader?.headline || node.nodeSummary
       const explanation = reader?.standfirst || node.nodeExplanation || node.nodeSummary
-      const nodeDisplayPaperIds = collectNodeRelatedPaperIds({
-        node,
-        stageTitle,
-        papers: topic.papers,
+      const nodeDisplayPaperIds = pickTopicMapNodePaperIds({
+        nodePaperIds: node.papers.map((item) => item.paperId),
+        stageScopedPaperIds,
+        readerPaperIds: reader?.paperRoles.map((paper) => paper.paperId),
       })
       const coverImage = buildNodeCoverImage({
         node,
@@ -6407,4 +7126,9 @@ export const __testing = {
   looksLikeTopicPromptLeak,
   countPaperEvidence,
   compactTopicChatResearchReport,
+  detectFallbackNodeThemeId,
+  buildFallbackNodeLabel,
+  synthesizeFallbackNodeClusters,
+  isLegacyFallbackNodeLabel,
+  pickTopicMapNodePaperIds,
 }

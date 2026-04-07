@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
-import { catalogTopicMap, paperMap, topicMap } from '@/data/tracker'
+import { catalogTopicMap, getNodeByPaperId, paperMap, topicMap } from '@/data/tracker'
 import type {
   ActiveTopicEntry,
   ArchivedTopicEntry,
@@ -9,6 +9,7 @@ import type {
   TopicPreferenceOverrides,
   TrackerTopic,
 } from '@/types/tracker'
+import { resolvePrimaryReadingRouteForPaper } from '@/utils/readingRoutes'
 
 const DEFAULT_TOPIC_ORDER: TopicId[] = [
   'autonomous-driving',
@@ -226,7 +227,15 @@ function buildSearchItems(): SearchItem[] {
       kind: 'paper',
       title: paper.titleZh || paper.title,
       subtitle: `${paper.authors.slice(0, 3).join(', ')}${paper.authors.length > 3 ? ' 等' : ''}`,
-      href: `/paper/${paper.id}`,
+      href: resolvePrimaryReadingRouteForPaper({
+        paperId: paper.id,
+        route: `/paper/${paper.id}`,
+        nodeRoute: (() => {
+          const paperNode = getNodeByPaperId(paper.id)
+          return paperNode ? `/node/${paperNode.nodeId}` : undefined
+        })(),
+        topicId: paper.topicIds[0],
+      }),
       year: paper.published.slice(0, 4),
       tags: paper.tags.slice(0, 5),
     })

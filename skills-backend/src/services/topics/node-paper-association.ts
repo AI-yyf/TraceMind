@@ -460,7 +460,15 @@ export function collectNodeRelatedPaperIds<TPaper extends AssociationPaperLike>(
   node: AssociationNodeLike
   stageTitle?: string | null
   papers: TPaper[]
+  allowedPaperIds?: Iterable<string> | null
 }) {
+  const allowedPaperIds = args.allowedPaperIds
+    ? new Set(
+        Array.from(args.allowedPaperIds).filter(
+          (paperId): paperId is string => typeof paperId === 'string' && paperId.trim().length > 0,
+        ),
+      )
+    : null
   const directlyMentionedPaperIds = collectMentionedPaperIds([
     args.node.nodeLabel,
     args.node.nodeSubtitle,
@@ -471,7 +479,10 @@ export function collectNodeRelatedPaperIds<TPaper extends AssociationPaperLike>(
     args.node.primaryPaperId,
     ...args.node.papers.map((item) => item.paperId),
     ...directlyMentionedPaperIds,
-  ])
+  ]).filter((paperId) => !allowedPaperIds || allowedPaperIds.has(paperId))
+  const scopedPapers = allowedPaperIds
+    ? args.papers.filter((paper) => allowedPaperIds.has(paper.id))
+    : args.papers
 
   const referenceValues = [
     args.node.nodeLabel,
@@ -487,13 +498,13 @@ export function collectNodeRelatedPaperIds<TPaper extends AssociationPaperLike>(
 
   if (keywords.length === 0) return linkedIds
 
-  const primaryPaper = args.papers.find((paper) => paper.id === args.node.primaryPaperId) ?? null
+  const primaryPaper = scopedPapers.find((paper) => paper.id === args.node.primaryPaperId) ?? null
   const primaryLooksThin =
     linkedIds.length <= 1 &&
     ((primaryPaper?.figures?.length ?? 0) === 0) &&
     !primaryPaper?.coverPath
 
-  const scoredSupplementals = args.papers
+  const scoredSupplementals = scopedPapers
     .filter((paper) => !linkedIds.includes(paper.id))
     .map((paper) => ({
       paperId: paper.id,

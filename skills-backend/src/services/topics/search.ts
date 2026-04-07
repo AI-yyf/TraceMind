@@ -209,12 +209,50 @@ function extractSourceSearchTokens(values: Array<string | null | undefined>) {
   return Array.from(tokens).filter(Boolean)
 }
 
-function sectionRoute(paperId: string, sectionId: string) {
-  return `/paper/${paperId}?anchor=section:${sectionId}`
+function buildNodeSearchRoute(nodeId: string, params: Record<string, string>) {
+  const searchParams = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (!value) continue
+    searchParams.set(key, value)
+  }
+  const query = searchParams.toString()
+  return query ? `/node/${nodeId}?${query}` : `/node/${nodeId}`
 }
 
-function evidenceRoute(paperId: string, type: 'figure' | 'table' | 'formula', id: string) {
-  return `/paper/${paperId}?evidence=${type}:${id}`
+function paperRouteFromLocation(paperId: string, location?: SearchNodeLocation) {
+  if (!location?.nodeId) return `/paper/${paperId}`
+  return buildNodeSearchRoute(location.nodeId, {
+    anchor: `paper:${paperId}`,
+  })
+}
+
+function sectionRoute(
+  paperId: string,
+  sectionId: string,
+  location?: SearchNodeLocation,
+) {
+  if (!location?.nodeId) {
+    return `/paper/${paperId}?anchor=section:${sectionId}`
+  }
+
+  return buildNodeSearchRoute(location.nodeId, {
+    evidence: `section:${sectionId}`,
+  })
+}
+
+function evidenceRoute(
+  paperId: string,
+  type: 'figure' | 'table' | 'formula',
+  id: string,
+  location?: SearchNodeLocation,
+) {
+  if (!location?.nodeId) {
+    return `/paper/${paperId}?evidence=${type}:${id}`
+  }
+
+  return buildNodeSearchRoute(location.nodeId, {
+    evidence: `${type}:${id}`,
+  })
 }
 
 function nodeRoute(nodeId: string) {
@@ -240,6 +278,31 @@ function buildLocationLabel(locations: SearchNodeLocation[]) {
     .join(' · ')
 
   return rest.length > 0 ? `${base} +${rest.length}` : base
+}
+
+function pickNodeChronologyDate(args: {
+  node: {
+    id: string
+    primaryPaperId?: string | null
+    papers: Array<{ paperId: string }>
+    updatedAt: Date
+  }
+  paperPublishedAtById: Map<string, Date>
+  temporalStageBucketStart?: Date
+}) {
+  const linkedPaperDates = Array.from(
+    new Set(
+      [
+        ...(args.node.primaryPaperId ? [args.node.primaryPaperId] : []),
+        ...args.node.papers.map((entry) => entry.paperId),
+      ].filter((paperId): paperId is string => Boolean(paperId)),
+    ),
+  )
+    .map((paperId) => args.paperPublishedAtById.get(paperId) ?? null)
+    .filter((value): value is Date => Boolean(value))
+    .sort((left, right) => +left - +right)
+
+  return linkedPaperDates[0] ?? args.temporalStageBucketStart ?? args.node.updatedAt
 }
 
 function normalizeStageFilterValues(values: string[] | undefined) {
@@ -600,7 +663,6 @@ export async function searchResearchCorpus({
     prisma.researchNode.findMany({
       where: nodeWhere,
       include: {
-        topic: true,
         papers: {
           select: {
             paperId: true,
@@ -629,6 +691,9 @@ export async function searchResearchCorpus({
 
   const topicKeywordMap = await loadTopicKeywordMap(visibleTopics.map((topic) => topic.id))
   const topicTitleMap = new Map(visibleTopics.map((topic) => [topic.id, topic.nameZh]))
+  const paperPublishedAtById = new Map(
+    visiblePapers.map((paper) => [paper.id, paper.published] as const),
+  )
   const temporalStages = deriveTemporalStageBuckets({
     papers: visiblePapers.map((paper) => ({
       id: paper.id,
@@ -648,6 +713,7 @@ export async function searchResearchCorpus({
   for (const node of visibleNodes) {
     const stageLabel =
       temporalStages.nodeAssignments.get(node.id)?.label ?? resolveStageLabelFallback(node.stageIndex)
+    const nodeTopicTitle = topicTitleMap.get(node.topicId) ?? ''
     const location = {
       nodeId: node.id,
       title: node.nodeLabel,
@@ -721,6 +787,12 @@ export async function searchResearchCorpus({
           node.papers.flatMap((entry) => parseJsonArray(entry.paper?.tags)),
         ),
       )
+      const nodeTopicTitle = topicTitleMap.get(node.topicId) ?? ''
+      const nodeChronologyDate = pickNodeChronologyDate({
+        node,
+        paperPublishedAtById,
+        temporalStageBucketStart: temporalStages.nodeAssignments.get(node.id)?.bucketStart,
+      })
       const stageLabel =
         temporalStages.nodeAssignments.get(node.id)?.label ?? resolveStageLabelFallback(node.stageIndex)
       const locationLabel = buildLocationLabel([
@@ -732,22 +804,22 @@ export async function searchResearchCorpus({
           route: nodeRoute(node.id),
         },
       ])
-      const enrichedTags = [...new Set([...tags, node.nodeLabel, stageLabel, node.topic.nameZh])]
+      const enrichedTags = [...new Set([...tags, node.nodeLabel, stageLabel, nodeTopicTitle])]
       const nodeCandidate: SearchCandidate = {
         id: node.id,
         kind: 'node',
         group: 'node',
         title: node.nodeLabel,
-        subtitle: node.nodeSubtitle ?? `${node.topic.nameZh} / 第 ${node.stageIndex} 阶段`,
+        subtitle: node.nodeSubtitle ?? `${nodeTopicTitle} / 第 ${node.stageIndex} 阶段`,
         excerpt: clipText(node.nodeSummary || node.nodeExplanation),
         route: nodeRoute(node.id),
         anchorId: `node:${node.id}`,
         topicId: node.topicId,
-        topicTitle: node.topic.nameZh,
+        topicTitle: nodeTopicTitle,
         tags: enrichedTags,
-        publishedAt: node.updatedAt.toISOString(),
+        publishedAt: nodeChronologyDate.toISOString(),
         stageLabel: `阶段 ${node.stageIndex}`,
-        timeLabel: formatTimeLabel(node.updatedAt),
+        timeLabel: formatTimeLabel(nodeChronologyDate),
         nodeId: node.id,
         nodeTitle: node.nodeLabel,
         nodeRoute: nodeRoute(node.id),
@@ -768,17 +840,17 @@ export async function searchResearchCorpus({
         ],
         matchedFields: collectMatchedFields(normalizedQuery, {
           title: node.nodeLabel,
-          subtitle: `${node.nodeSubtitle ?? ''} ${node.topic.nameZh}`,
+          subtitle: `${node.nodeSubtitle ?? ''} ${nodeTopicTitle}`,
           excerpt: `${node.nodeSummary ?? ''} ${node.nodeExplanation ?? ''}`,
           tags: tags.join(' '),
         }),
         score: 0,
       }
-      nodeCandidate.subtitle = node.nodeSubtitle ?? `${node.topic.nameZh} / ${stageLabel}`
+      nodeCandidate.subtitle = node.nodeSubtitle ?? `${nodeTopicTitle} / ${stageLabel}`
       nodeCandidate.stageLabel = stageLabel
       nodeCandidate.matchedFields = collectMatchedFields(normalizedQuery, {
         title: node.nodeLabel,
-        subtitle: `${node.nodeSubtitle ?? ''} ${node.topic.nameZh} ${locationLabel ?? ''}`,
+        subtitle: `${node.nodeSubtitle ?? ''} ${nodeTopicTitle} ${locationLabel ?? ''}`,
         excerpt: `${node.nodeSummary ?? ''} ${node.nodeExplanation ?? ''}`,
         tags: enrichedTags.join(' '),
       })
@@ -820,7 +892,7 @@ export async function searchResearchCorpus({
         title: paper.titleZh || paper.title,
         subtitle: paper.titleEn ?? paper.title,
         excerpt: clipText(paper.summary || paper.explanation),
-        route: `/paper/${paper.id}`,
+        route: paperRouteFromLocation(paper.id, primaryLocation),
         anchorId: `paper:${paper.id}`,
         topicId: paper.topicId,
         topicTitle: topicTitleMap.get(paper.topicId),
@@ -858,7 +930,7 @@ export async function searchResearchCorpus({
           title: section.editorialTitle || section.sourceSectionTitle,
           subtitle: paper.titleZh || paper.title,
           excerpt: clipText(section.paragraphs),
-          route: sectionRoute(paper.id, section.id),
+          route: sectionRoute(paper.id, section.id, primaryLocation),
           anchorId: `section:${section.id}`,
           topicId: paper.topicId,
           topicTitle: topicTitleMap.get(paper.topicId),
@@ -897,7 +969,7 @@ export async function searchResearchCorpus({
           title: `Figure ${figure.number}`,
           subtitle: paper.titleZh || paper.title,
           excerpt: clipText(`${figure.caption} ${figure.analysis ?? ''}`),
-          route: evidenceRoute(paper.id, 'figure', figure.id),
+          route: evidenceRoute(paper.id, 'figure', figure.id, primaryLocation),
           anchorId: `figure:${figure.id}`,
           topicId: paper.topicId,
           topicTitle: topicTitleMap.get(paper.topicId),
@@ -936,7 +1008,7 @@ export async function searchResearchCorpus({
           title: `Table ${table.number}`,
           subtitle: paper.titleZh || paper.title,
           excerpt: clipText(`${table.caption} ${table.rawText}`),
-          route: evidenceRoute(paper.id, 'table', table.id),
+          route: evidenceRoute(paper.id, 'table', table.id, primaryLocation),
           anchorId: `table:${table.id}`,
           topicId: paper.topicId,
           topicTitle: topicTitleMap.get(paper.topicId),
@@ -975,7 +1047,7 @@ export async function searchResearchCorpus({
           title: `Formula ${formula.number}`,
           subtitle: paper.titleZh || paper.title,
           excerpt: clipText(`${formula.rawText} ${formula.latex}`),
-          route: evidenceRoute(paper.id, 'formula', formula.id),
+          route: evidenceRoute(paper.id, 'formula', formula.id, primaryLocation),
           anchorId: `formula:${formula.id}`,
           topicId: paper.topicId,
           topicTitle: topicTitleMap.get(paper.topicId),

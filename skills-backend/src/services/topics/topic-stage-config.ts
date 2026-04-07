@@ -76,6 +76,17 @@ export async function loadTopicStageConfigMap(topicIds: string[]) {
 }
 
 export async function saveTopicStageConfig(topicId: string, windowMonths: number) {
+  const topicArtifacts = await prisma.topic.findUnique({
+    where: { id: topicId },
+    select: {
+      papers: {
+        select: { id: true },
+      },
+      nodes: {
+        select: { id: true },
+      },
+    },
+  })
   const nextValue: TopicStageConfigState = {
     schemaVersion: TOPIC_STAGE_CONFIG_SCHEMA_VERSION,
     topicId,
@@ -90,12 +101,33 @@ export async function saveTopicStageConfig(topicId: string, windowMonths: number
     fallback: buildFallback(topicId),
     source: 'topic-stage-config',
   })
+  const readerArtifactPrefixes = [
+    ...(topicArtifacts?.papers.map((paper) => `alpha:reader-artifact:paper:${paper.id}`) ?? []),
+    ...(topicArtifacts?.nodes.map((node) => `alpha:reader-artifact:node:${node.id}`) ?? []),
+  ]
 
   await prisma.systemConfig.deleteMany({
     where: {
-      key: {
-        startsWith: `alpha:topic-artifact:${topicId}:window-`,
-      },
+      OR: [
+        {
+          key: {
+            startsWith: `alpha:topic-artifact:${topicId}:window-`,
+          },
+        },
+        ...(
+          readerArtifactPrefixes.length > 0
+            ? readerArtifactPrefixes.map((prefix) => ({
+                key: {
+                  startsWith: prefix,
+                },
+              }))
+            : [
+                {
+                  key: '__never__',
+                },
+              ]
+        ),
+      ],
     },
   })
 

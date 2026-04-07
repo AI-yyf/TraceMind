@@ -4,7 +4,12 @@ import path from 'path'
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, __dirname, '')
-  const proxyTarget = env.VITE_DEV_PROXY_TARGET || env.VITE_API_BASE_URL || 'http://127.0.0.1:3303'
+  const processProxyTarget = process.env.VITE_DEV_PROXY_TARGET || process.env.VITE_API_BASE_URL
+  const proxyTarget =
+    processProxyTarget ||
+    env.VITE_DEV_PROXY_TARGET ||
+    env.VITE_API_BASE_URL ||
+    'http://127.0.0.1:3303'
   const wsTarget = proxyTarget.replace(/^http/iu, 'ws')
 
   return {
@@ -37,10 +42,27 @@ export default defineConfig(({ mode }) => {
       sourcemap: true,
       rollupOptions: {
         output: {
-          manualChunks: {
-            vendor: ['react', 'react-dom', 'react-router-dom'],
-            ui: ['lucide-react', 'framer-motion'],
-            charts: ['recharts'],
+          manualChunks(id) {
+            if (id.includes('node_modules/react-router-dom') || id.includes('node_modules/react-dom') || id.includes('node_modules/react/')) {
+              return 'vendor'
+            }
+
+            if (id.includes('node_modules/lucide-react') || id.includes('node_modules/framer-motion')) {
+              return 'ui'
+            }
+
+            if (id.includes('node_modules/recharts')) {
+              return 'charts'
+            }
+
+            if (
+              id.includes('/src/i18n/') ||
+              id.includes('\\src\\i18n\\')
+            ) {
+              return 'i18n'
+            }
+
+            return undefined
           },
         },
       },

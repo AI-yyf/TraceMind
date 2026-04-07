@@ -52,6 +52,62 @@ router.get('/:id', asyncHandler(async (req, res) => {
   res.json({ success: true, data: paper })
 }))
 
+/**
+ * 获取论文的主节点 - 用于PaperPage重定向
+ * GET /api/papers/:paperId/primary-node
+ */
+router.get('/:paperId/primary-node', asyncHandler(async (req, res) => {
+  const { paperId } = req.params
+  const stageWindowMonths = readStageWindowMonths(req.query.stageMonths)
+
+  // 查找包含该论文的所有节点
+  const nodePapers = await prisma.nodePaper.findMany({
+    where: { paperId },
+    include: {
+      node: {
+        include: {
+          topic: true
+        }
+      }
+    },
+    orderBy: [
+      { node: { stageIndex: 'asc' } },
+      { order: 'asc' }
+    ]
+  })
+
+  if (nodePapers.length === 0) {
+    throw new AppError(404, 'Paper not associated with any node.')
+  }
+
+  // 选择最早的节点作为主节点
+  const primaryNodePaper = nodePapers[0]
+  const primaryNode = primaryNodePaper.node
+
+  // 构建重定向URL
+  const anchorParam = `paper:${paperId}`
+  const stageParam = stageWindowMonths ? `&stageMonths=${stageWindowMonths}` : ''
+  const redirectUrl = `/node/${primaryNode.id}?anchor=${encodeURIComponent(anchorParam)}${stageParam}`
+
+  res.json({
+    success: true,
+    data: {
+      nodeId: primaryNode.id,
+      nodeRoute: `/node/${primaryNode.id}`,
+      topicId: primaryNode.topic?.id,
+      topicRoute: primaryNode.topic ? `/topic/${primaryNode.topic.route || primaryNode.topic.id}` : null,
+      stageIndex: primaryNode.stageIndex,
+      redirectUrl,
+      anchorId: anchorParam,
+      allNodes: nodePapers.map(np => ({
+        nodeId: np.node.id,
+        stageIndex: np.node.stageIndex,
+        nodeTitle: np.node.title
+      }))
+    }
+  })
+}))
+
 router.post('/', asyncHandler(async (req, res) => {
   const paper = await prisma.paper.create({
     data: {

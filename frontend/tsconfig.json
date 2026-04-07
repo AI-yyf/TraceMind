@@ -22,28 +22,5 @@
     }
   },
   "include": ["src"],
-  "exclude": [
-    "src/components/BatchResearchLauncher.tsx",
-    "src/components/OnboardingGuide.tsx",
-    "src/components/PromptTemplateManager.tsx",
-    "src/components/ResearchLauncher.tsx",
-    "src/components/SettingsPanel.tsx",
-    "src/components/TaskScheduler.tsx",
-    "src/components/UI",
-    "src/components/Paper",
-    "src/components/paper",
-    "src/components/visualization",
-    "src/data/topicDisplay.ts",
-    "src/hooks/useConfig.ts",
-    "src/hooks/useDataBridge.ts",
-    "src/hooks/useDataLayer.ts",
-    "src/hooks/useTimelineData.ts",
-    "src/pages/CreateTopicPage.tsx",
-    "src/pages/NodeDetailPage.tsx",
-    "src/pages/PaperPage.tsx",
-    "src/pages/ResearchPage.tsx",
-    "src/pages/TodayPage.tsx",
-    "src/pages/TopicManagerPage.tsx"
-  ],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

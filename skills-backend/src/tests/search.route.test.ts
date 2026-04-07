@@ -60,64 +60,149 @@ test('GET /api/search returns grouped payload in global scope', async () => {
 })
 
 test('GET /api/search includes topic titles for topic-linked results', async () => {
-  await withServer(async (origin) => {
-    const response = await fetch(`${origin}/api/search?q=GAIA&scope=global&limit=20`)
-    assert.equal(response.status, 200)
-
-    const payload = (await response.json()) as {
-      success: boolean
-      data: {
-        facets?: {
-          topics?: Array<{ value: string; label: string; count: number }>
-        }
-        groups: Array<{
-          items: Array<{
-            kind: string
-            topicId?: string
-            topicTitle?: string
-          }>
-        }>
-      }
-    }
-
-    const items = payload.data.groups.flatMap((group) => group.items)
-    const linkedItem = items.find((item) => item.kind === 'paper' && item.topicId)
-
-    assert.ok(linkedItem, 'expected at least one topic-linked search result')
-    assert.equal(typeof linkedItem?.topicTitle, 'string')
-    assert.ok((linkedItem?.topicTitle ?? '').length > 0)
-    assert.ok((payload.data.facets?.topics ?? []).length > 0)
+  const topic = await prisma.topic.create({
+    data: {
+      nameZh: 'GAIA 搜索主题',
+      nameEn: 'GAIA Search Topic',
+      language: 'zh',
+      status: 'active',
+    },
   })
+
+  await prisma.paper.create({
+    data: {
+      topicId: topic.id,
+      title: 'GAIA driving foundation model',
+      titleZh: 'GAIA 驾驶基础模型',
+      titleEn: 'GAIA driving foundation model',
+      authors: JSON.stringify(['GAIA Author']),
+      published: new Date('2026-02-01T00:00:00.000Z'),
+      summary: 'A paper created to validate topic-linked search labels.',
+      explanation: 'The search result should retain the parent topic title.',
+      figurePaths: '[]',
+      tablePaths: '[]',
+      tags: JSON.stringify(['gaia', 'search']),
+      status: 'candidate',
+    },
+  })
+
+  try {
+    await withServer(async (origin) => {
+      const response = await fetch(`${origin}/api/search?q=GAIA&scope=global&limit=20`)
+      assert.equal(response.status, 200)
+
+      const payload = (await response.json()) as {
+        success: boolean
+        data: {
+          facets?: {
+            topics?: Array<{ value: string; label: string; count: number }>
+          }
+          groups: Array<{
+            items: Array<{
+              kind: string
+              topicId?: string
+              topicTitle?: string
+            }>
+          }>
+        }
+      }
+
+      const items = payload.data.groups.flatMap((group) => group.items)
+      const linkedItem = items.find((item) => item.kind === 'paper' && item.topicId === topic.id)
+
+      assert.ok(linkedItem, 'expected at least one topic-linked search result')
+      assert.equal(linkedItem?.topicTitle, 'GAIA 搜索主题')
+      assert.ok((payload.data.facets?.topics ?? []).some((facet) => facet.value === topic.id))
+    })
+  } finally {
+    await prisma.topic.delete({
+      where: { id: topic.id },
+    })
+  }
 })
 
 test('GET /api/search exposes stage and node location details for paper results', async () => {
-  await withServer(async (origin) => {
-    const response = await fetch(`${origin}/api/search?q=GAIA&scope=global&limit=20&stageMonths=3`)
-    assert.equal(response.status, 200)
-
-    const payload = (await response.json()) as {
-      success: boolean
-      data: {
-        groups: Array<{
-          items: Array<{
-            kind: string
-            stageLabel?: string
-            nodeTitle?: string
-            locationLabel?: string
-            relatedNodes?: Array<{ nodeId: string; title: string }>
-          }>
-        }>
-      }
-    }
-
-    const items = payload.data.groups.flatMap((group) => group.items)
-    const paperItem = items.find((item) => item.kind === 'paper' && item.nodeTitle)
-
-    assert.ok(paperItem, 'expected at least one paper result with node location metadata')
-    assert.equal(typeof paperItem?.stageLabel, 'string')
-    assert.equal(typeof paperItem?.locationLabel, 'string')
-    assert.ok((paperItem?.relatedNodes ?? []).length > 0)
+  const topic = await prisma.topic.create({
+    data: {
+      nameZh: 'GAIA 节点定位主题',
+      nameEn: 'GAIA Node Search Topic',
+      language: 'zh',
+      status: 'active',
+    },
   })
+
+  const paper = await prisma.paper.create({
+    data: {
+      topicId: topic.id,
+      title: 'GAIA node grounding paper',
+      titleZh: 'GAIA 节点定位论文',
+      titleEn: 'GAIA node grounding paper',
+      authors: JSON.stringify(['GAIA Locator']),
+      published: new Date('2026-03-09T00:00:00.000Z'),
+      summary: 'A paper created to validate node-linked paper search metadata.',
+      explanation: 'The paper should report both its stage label and node location.',
+      figurePaths: '[]',
+      tablePaths: '[]',
+      tags: JSON.stringify(['gaia', 'node']),
+      status: 'candidate',
+    },
+  })
+
+  const node = await prisma.researchNode.create({
+    data: {
+      topicId: topic.id,
+      stageIndex: 2,
+      nodeLabel: 'GAIA 节点',
+      nodeSubtitle: 'GAIA node',
+      nodeSummary: 'Node summary',
+      nodeExplanation: 'Node explanation',
+      primaryPaperId: paper.id,
+      status: 'provisional',
+      provisional: true,
+    },
+  })
+
+  await prisma.nodePaper.create({
+    data: {
+      nodeId: node.id,
+      paperId: paper.id,
+      order: 1,
+    },
+  })
+
+  try {
+    await withServer(async (origin) => {
+      const response = await fetch(`${origin}/api/search?q=GAIA&scope=global&limit=20&stageMonths=3`)
+      assert.equal(response.status, 200)
+
+      const payload = (await response.json()) as {
+        success: boolean
+        data: {
+          groups: Array<{
+            items: Array<{
+              kind: string
+              stageLabel?: string
+              nodeTitle?: string
+              locationLabel?: string
+              relatedNodes?: Array<{ nodeId: string; title: string }>
+            }>
+          }>
+        }
+      }
+
+      const items = payload.data.groups.flatMap((group) => group.items)
+      const paperItem = items.find((item) => item.kind === 'paper' && item.nodeTitle === 'GAIA 节点')
+
+      assert.ok(paperItem, 'expected at least one paper result with node location metadata')
+      assert.equal(typeof paperItem?.stageLabel, 'string')
+      assert.equal(typeof paperItem?.locationLabel, 'string')
+      assert.ok((paperItem?.relatedNodes ?? []).length > 0)
+    })
+  } finally {
+    await prisma.topic.delete({
+      where: { id: topic.id },
+    })
+  }
 })
 
 test('GET /api/search matches paper locations by author names and arXiv identifiers', async () => {
@@ -373,6 +458,94 @@ test('GET /api/search exposes stage facets and filters topic results by selected
         (januaryPayload.data.facets?.stages ?? []).some((facet) => facet.label === '2026.03'),
         'expected stage facets to remain visible after filtering',
       )
+    })
+  } finally {
+    await prisma.topic.delete({
+      where: { id: topic.id },
+    })
+  }
+})
+
+test('GET /api/search uses node chronology from linked papers instead of node updatedAt', async () => {
+  const topic = await prisma.topic.create({
+    data: {
+      nameZh: '节点时间主题',
+      nameEn: 'Node Chronology Topic',
+      language: 'zh',
+      status: 'active',
+    },
+  })
+
+  const paper = await prisma.paper.create({
+    data: {
+      topicId: topic.id,
+      title: 'Node chronology seed paper',
+      titleZh: '节点时间种子论文',
+      titleEn: 'Node chronology seed paper',
+      authors: JSON.stringify(['Chronology Author']),
+      published: new Date('2024-08-15T00:00:00.000Z'),
+      summary: 'A paper used to verify node search time metadata.',
+      explanation: 'Node search results should reflect the earliest linked paper date, not a later rebuild date.',
+      figurePaths: '[]',
+      tablePaths: '[]',
+      tags: JSON.stringify(['node-chronology']),
+      status: 'candidate',
+    },
+  })
+
+  const node = await prisma.researchNode.create({
+    data: {
+      topicId: topic.id,
+      stageIndex: 1,
+      nodeLabel: 'Chronology node',
+      nodeSubtitle: 'Chronology subtitle',
+      nodeSummary: 'Chronology summary',
+      nodeExplanation: 'Chronology explanation',
+      primaryPaperId: paper.id,
+      status: 'provisional',
+      provisional: true,
+      createdAt: new Date('2024-08-20T00:00:00.000Z'),
+      updatedAt: new Date('2026-04-07T00:00:00.000Z'),
+    },
+  })
+
+  await prisma.nodePaper.create({
+    data: {
+      nodeId: node.id,
+      paperId: paper.id,
+      order: 1,
+    },
+  })
+
+  try {
+    await withServer(async (origin) => {
+      const response = await fetch(
+        `${origin}/api/search?q=${encodeURIComponent('Chronology node')}&scope=topic&topicId=${topic.id}&types=node&stageMonths=1&limit=10`,
+      )
+      assert.equal(response.status, 200)
+
+      const payload = (await response.json()) as {
+        success: boolean
+        data: {
+          groups: Array<{
+            items: Array<{
+              id: string
+              kind: string
+              publishedAt?: string
+              timeLabel?: string
+              stageLabel?: string
+            }>
+          }>
+        }
+      }
+
+      const items = payload.data.groups.flatMap((group) => group.items)
+      const nodeHit = items.find((item) => item.id === node.id && item.kind === 'node')
+
+      assert.ok(nodeHit, 'expected the node to appear in search results')
+      assert.match(nodeHit?.publishedAt ?? '', /^2024-08-15T/u)
+      assert.equal(nodeHit?.timeLabel, '08.15')
+      assert.equal(nodeHit?.stageLabel, '2024.08')
     })
   } finally {
     await prisma.topic.delete({

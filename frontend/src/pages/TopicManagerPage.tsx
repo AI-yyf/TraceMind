@@ -22,6 +22,7 @@ type ManagedTopic = {
   updatedAt: string
   paperCount?: number
   nodeCount?: number
+  stageCount?: number
   localization?: TopicLocalizationPayload | null
   stageConfig?: {
     windowMonths: number
@@ -65,7 +66,26 @@ function formatStatus(status: string, t: (key: string, fallback?: string) => str
   }
 }
 
+function formatMeaningfulDateTime(
+  value: string | null | undefined,
+  language: LanguageCode,
+) {
+  if (!value) return null
+
+  const timestamp = Date.parse(value)
+  if (Number.isNaN(timestamp)) return null
+
+  const date = new Date(timestamp)
+  if (date.getUTCFullYear() <= 2000) return null
+
+  return formatDateTimeByLanguage(timestamp, language)
+}
+
 function formatStageCadence(windowMonths: number, t: (key: string, fallback?: string) => string) {
+  if (windowMonths === 1) {
+    return t('manage.stageCadenceValueSingle', '1 month')
+  }
+
   return renderTemplate(t('manage.stageCadenceValue', '{count} months'), {
     count: windowMonths,
   })
@@ -76,6 +96,7 @@ export function TopicManagerPage() {
   const { t, preference } = useI18n()
   const [topics, setTopics] = useState<ManagedTopic[]>([])
   const [savingStageTopicId, setSavingStageTopicId] = useState<string | null>(null)
+  const [stageWindowDrafts, setStageWindowDrafts] = useState<Record<string, string>>({})
 
   useDocumentTitle(t('manage.title'))
 
@@ -85,7 +106,15 @@ export function TopicManagerPage() {
     fetch(buildApiUrl('/api/topics'))
       .then((response) => response.json())
       .then((payload: { data?: ManagedTopic[] }) => {
-        if (alive) setTopics((payload.data ?? []).filter((topic) => !isRegressionSeedTopic(topic)))
+        if (!alive) return
+
+        const nextTopics = (payload.data ?? []).filter((topic) => !isRegressionSeedTopic(topic))
+        setTopics(nextTopics)
+        setStageWindowDrafts(
+          Object.fromEntries(
+            nextTopics.map((topic) => [topic.id, String(topic.stageConfig?.windowMonths ?? 1)]),
+          ),
+        )
       })
       .catch(() => undefined)
 
@@ -135,9 +164,26 @@ export function TopicManagerPage() {
             : topic,
         ),
       )
+      setStageWindowDrafts((current) => ({
+        ...current,
+        [topicId]: String(payload.data?.windowMonths ?? windowMonths),
+      }))
     } finally {
       setSavingStageTopicId(null)
     }
+  }
+
+  function updateStageDraft(topicId: string, nextValue: string) {
+    setStageWindowDrafts((current) => ({
+      ...current,
+      [topicId]: nextValue.replace(/[^\d]/gu, '').slice(0, 2),
+    }))
+  }
+
+  async function applyStageDraft(topicId: string) {
+    const parsed = Number(stageWindowDrafts[topicId] ?? '')
+    if (!Number.isFinite(parsed)) return
+    await updateStageCadence(topicId, parsed)
   }
 
   return (
@@ -210,6 +256,11 @@ export function TopicManagerPage() {
               )
               const stageWindowMonths = topic.stageConfig?.windowMonths ?? 1
               const saving = savingStageTopicId === topic.id
+              const topicUpdatedAtLabel = formatMeaningfulDateTime(topic.updatedAt, preference.primary)
+              const stageUpdatedAtLabel = formatMeaningfulDateTime(
+                topic.stageConfig?.updatedAt ?? null,
+                preference.primary,
+              )
 
               return (
                 <article
@@ -236,7 +287,10 @@ export function TopicManagerPage() {
                         <span>
                           {topic.nodeCount ?? 0} {t('manage.nodeUnit')}
                         </span>
-                        <span>{formatDateTimeByLanguage(topic.updatedAt, preference.primary)}</span>
+                        <span>
+                          {topic.stageCount ?? 0} {t('manage.stageUnit', 'stages')}
+                        </span>
+                        {topicUpdatedAtLabel ? <span>{topicUpdatedAtLabel}</span> : null}
                       </div>
                     </div>
 
@@ -280,6 +334,19 @@ export function TopicManagerPage() {
                             'This controls the default publication-time bucket used by the topic map and its linked node or paper reading routes. Reading pages stay stable; change cadence here when the research setting truly changes.',
                           )}
                         </p>
+                        {stageUpdatedAtLabel ? (
+                          <div className="mt-2 text-[11px] text-black/44">
+                            {renderTemplate(
+                              t(
+                                'manage.stageCadenceUpdatedAt',
+                                'Last adjusted at {time}',
+                              ),
+                              {
+                                time: stageUpdatedAtLabel,
+                              },
+                            )}
+                          </div>
+                        ) : null}
                       </div>
 
                       {saving ? (
@@ -310,6 +377,32 @@ export function TopicManagerPage() {
                           </button>
                         )
                       })}
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap items-center gap-3">
+                      <label className="text-[12px] text-black/52">
+                        {t('manage.stageCadenceCustomLabel', 'Custom months')}
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={24}
+                        step={1}
+                        value={stageWindowDrafts[topic.id] ?? String(stageWindowMonths)}
+                        onChange={(event) => updateStageDraft(topic.id, event.target.value)}
+                        className="w-24 rounded-full border border-black/10 bg-white px-3 py-2 text-[12px] text-black outline-none transition focus:border-black/28"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void applyStageDraft(topic.id)}
+                        disabled={
+                          saving ||
+                          Number(stageWindowDrafts[topic.id] ?? stageWindowMonths) === stageWindowMonths
+                        }
+                        className="rounded-full border border-black/10 bg-white px-3 py-2 text-[12px] text-black/62 transition hover:border-black/18 hover:text-black disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        {t('manage.stageCadenceApply', 'Apply')}
+                      </button>
                     </div>
                   </section>
                 </article>

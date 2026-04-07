@@ -1345,18 +1345,37 @@ function renderModelsTab(args: {
     ),
   }))
   const localizedTaskById = new Map(localizedTaskRoutingItems.map((item) => [item.id, item] as const))
-  const taskOverrideEntries = Object.entries(args.taskOverridesForm).map(([taskId, override]) => ({
-    taskId: taskId as OmniTaskId,
-    override,
-    label:
-      localizedTaskById.get(taskId as OmniTaskId)?.localizedLabel ??
-      humanizeTaskId(taskId),
-  }))
+  const taskOverrideEntries = Object.entries(args.taskOverridesForm)
+    .map(([taskId, override]) => ({
+      taskId: taskId as OmniTaskId,
+      override,
+      label:
+        localizedTaskById.get(taskId as OmniTaskId)?.localizedLabel ??
+        humanizeTaskId(taskId),
+    }))
+    .sort((left, right) => left.label.localeCompare(right.label))
   const localizedPresets = presets.map((preset) => ({
     ...preset,
     localizedLabel: presetLabel(preset, t),
     localizedDescription: presetDescription(preset, t),
   }))
+  const configuredSlotCount = [args.languageForm, args.multimodalForm].filter(
+    (form) => form.provider && form.model,
+  ).length
+  const customRoleCount = localizedRoleDefinitions.filter((definition) => {
+    const state = args.roleForms[definition.id]
+    return (state?.mode ?? (args.modelConfig?.config.roles?.[definition.id] ? 'custom' : 'default')) === 'custom'
+  }).length
+  const inheritedRoleCount = Math.max(localizedRoleDefinitions.length - customRoleCount, 0)
+  const automaticTaskCount = localizedTaskRoutingItems.filter(
+    (item) =>
+      (args.taskRoutingForm[item.id] ?? 'default') === 'default' &&
+      !args.taskOverridesForm[item.id],
+  ).length
+  const explicitTaskCount = Math.max(
+    localizedTaskRoutingItems.length - automaticTaskCount - taskOverrideEntries.length,
+    0,
+  )
   const minimalSetupSteps = [
     t(
       'studio.models.quickstart.stepDefaults',
@@ -1377,6 +1396,10 @@ function renderModelsTab(args: {
     'OMNI_DEFAULT_API_KEY',
     'OMNI_LANGUAGE_MODEL',
     'OMNI_MULTIMODAL_MODEL',
+  ]
+  const minimalRoleOverrideEnv = [
+    'OMNI_ROLE_NODE_WRITER_MODEL',
+    'OMNI_ROLE_VISION_READER_MODEL',
   ]
 
   function applyPreset(preset: NonNullable<typeof args.modelConfig>['presets'][number]) {
@@ -1414,29 +1437,76 @@ function renderModelsTab(args: {
             ))}
           </div>
 
-          <div className="rounded-[22px] border border-black/8 bg-white px-4 py-4">
-            <div className="text-[11px] uppercase tracking-[0.18em] text-black/34">
-              {t('studio.models.quickstartEnvTitle', 'Shared gateway env')}
+          <div className="grid gap-3">
+            <div className="rounded-[22px] border border-black/8 bg-white px-4 py-4">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-black/34">
+                {t('studio.models.quickstartEnvTitle', 'Shared gateway env')}
+              </div>
+              <p className="mt-2 text-[12px] leading-6 text-black/54">
+                {t(
+                  'studio.models.quickstartEnvDesc',
+                  'If your language and multimodal slots share one compatible gateway, keep the provider, base URL, and API key in shared env vars and only swap the slot model ids when needed.',
+                )}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {minimalSetupEnv.map((entry) => (
+                  <span
+                    key={entry}
+                    className="rounded-full bg-[var(--surface-soft)] px-2.5 py-1 text-[11px] text-black/58"
+                  >
+                    {entry}
+                  </span>
+                ))}
+              </div>
             </div>
-            <p className="mt-2 text-[12px] leading-6 text-black/54">
-              {t(
-                'studio.models.quickstartEnvDesc',
-                'If your language and multimodal slots share one compatible gateway, keep the provider, base URL, and API key in shared env vars and only swap the slot model ids when needed.',
-              )}
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {minimalSetupEnv.map((entry) => (
-                <span
-                  key={entry}
-                  className="rounded-full bg-[var(--surface-soft)] px-2.5 py-1 text-[11px] text-black/58"
-                >
-                  {entry}
-                </span>
-              ))}
+
+            <div className="rounded-[22px] border border-black/8 bg-white px-4 py-4">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-black/34">
+                {t('studio.models.roleEnvTitle', 'Optional role env overrides')}
+              </div>
+              <p className="mt-2 text-[12px] leading-6 text-black/54">
+                {t(
+                  'studio.models.roleEnvDesc',
+                  'Role env vars now inherit provider, base URL, and API key from the preferred default slot, so most of the time you only need to override the role model id.',
+                )}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {minimalRoleOverrideEnv.map((entry) => (
+                  <span
+                    key={entry}
+                    className="rounded-full bg-[var(--surface-soft)] px-2.5 py-1 text-[11px] text-black/58"
+                  >
+                    {entry}
+                  </span>
+                ))}
+              </div>
             </div>
           </div>
         </div>
       </Panel>
+
+      <div className="grid gap-3 md:grid-cols-2 xl:col-span-2 xl:grid-cols-4">
+        <StatCard
+          label={t('studio.models.summarySlotsTitle', 'Default slots')}
+          value={`${configuredSlotCount}/2 ${t('studio.models.summaryConfigured', 'configured')}`}
+          ready={configuredSlotCount === 2}
+        />
+        <StatCard
+          label={t('studio.models.summaryRolesTitle', 'Role inheritance')}
+          value={`${inheritedRoleCount} ${t('studio.models.summaryInherited', 'inherited')} · ${customRoleCount} ${t('studio.models.summaryCustom', 'custom')}`}
+          ready={localizedRoleDefinitions.length === 0 || customRoleCount === 0}
+        />
+        <StatCard
+          label={t('studio.models.summaryRoutingTitle', 'Task routing')}
+          value={`${automaticTaskCount} ${t('studio.models.summaryAutomatic', 'automatic')} · ${explicitTaskCount} ${t('studio.models.summaryExplicit', 'explicit')}`}
+          ready={taskOverrideEntries.length === 0}
+        />
+        <StatCard
+          label={t('studio.models.summaryOverridesTitle', 'Pinned overrides')}
+          value={`${taskOverrideEntries.length} ${t('studio.models.summaryPinned', 'pinned')}`}
+          ready={taskOverrideEntries.length === 0}
+        />
+      </div>
 
       {localizedPresets.length > 0 ? (
         <Panel
@@ -1803,48 +1873,66 @@ function renderModelsTab(args: {
             )
           })}
         </div>
-      </Panel>
-
-      {taskOverrideEntries.length > 0 ? (
-        <Panel
-          className="xl:col-span-2"
-          title={t('studio.models.taskOverridesTitle', 'Advanced Task Overrides')}
-          desc={t(
-            'studio.models.taskOverridesDesc',
-            'These imported or legacy task-level overrides stay active above slot routing until you remove them. Keep them only when one backend task truly needs a pinned provider/model pair.',
-          )}
-          dataTestId="prompt-studio-task-overrides"
-        >
-          <div className="space-y-3">
-            {taskOverrideEntries.map((entry) => (
-              <div
-                key={entry.taskId}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-[20px] bg-[var(--surface-soft)] px-4 py-4"
-              >
-                <div className="min-w-0">
-                  <div className="text-sm font-medium text-black">{entry.label}</div>
-                  <div className="mt-1 text-[12px] leading-6 text-black/52">
-                    {formatConfiguredModel(entry.override?.provider, entry.override?.model, unconfigured)}
-                  </div>
+        {taskOverrideEntries.length > 0 ? (
+          <details
+            className="mt-4 rounded-[22px] border border-amber-200/80 bg-amber-50/70 px-4 py-4"
+            data-testid="prompt-studio-task-overrides"
+          >
+            <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-amber-950">
+                  {t('studio.models.taskOverridesTitle', 'Pinned Task Overrides')}
                 </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    args.setTaskOverridesForm((current) => {
-                      const next = { ...current }
-                      delete next[entry.taskId]
-                      return next
-                    })
-                  }
-                  className="inline-flex items-center rounded-full border border-black/10 bg-white px-3 py-2 text-[12px] font-medium text-black/68 transition hover:border-black/18 hover:text-black"
-                >
-                  {t('studio.models.taskOverridesRemove', 'Remove override')}
-                </button>
+                <div className="mt-1 text-[12px] leading-6 text-amber-900/78">
+                  {taskOverrideEntries.length}{' '}
+                  {t(
+                    'studio.models.taskOverridesSummary',
+                    'legacy task overrides still sit above routing. Expand only when you need to inspect or remove them one by one.',
+                  )}
+                </div>
               </div>
-            ))}
-          </div>
-        </Panel>
-      ) : null}
+              <span className="rounded-full border border-amber-300/80 bg-white px-3 py-1.5 text-[12px] font-medium text-amber-950">
+                {t('studio.models.taskOverridesReview', 'Review overrides')}
+              </span>
+            </summary>
+
+            <div className="mt-4 space-y-3">
+              <div className="text-[12px] leading-6 text-amber-900/78">
+                {t(
+                  'studio.models.taskOverridesDesc',
+                  'Each pinned override is already marked on the task cards above. Use this compact list only for cleanup.',
+                )}
+              </div>
+              {taskOverrideEntries.map((entry) => (
+                <div
+                  key={entry.taskId}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-[20px] bg-white px-4 py-4"
+                >
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-black">{entry.label}</div>
+                    <div className="mt-1 text-[12px] leading-6 text-black/52">
+                      {formatConfiguredModel(entry.override?.provider, entry.override?.model, unconfigured)}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      args.setTaskOverridesForm((current) => {
+                        const next = { ...current }
+                        delete next[entry.taskId]
+                        return next
+                      })
+                    }
+                    className="inline-flex items-center rounded-full border border-black/10 bg-[var(--surface-soft)] px-3 py-2 text-[12px] font-medium text-black/68 transition hover:border-black/18 hover:text-black"
+                  >
+                    {t('studio.models.taskOverridesRemove', 'Remove override')}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </details>
+        ) : null}
+      </Panel>
 
       {args.modelNotice ? (
         <div className="xl:col-span-2 rounded-[24px] bg-amber-50 px-5 py-4 text-sm text-amber-800">

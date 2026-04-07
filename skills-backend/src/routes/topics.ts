@@ -231,6 +231,7 @@ router.get(
           select: {
             papers: true,
             nodes: true,
+            stages: true,
           },
         },
       },
@@ -251,6 +252,7 @@ router.get(
           ...topic,
           paperCount: topic._count.papers,
           nodeCount: topic._count.nodes,
+          stageCount: topic._count.stages,
           localization: localizationMap.get(topic.id) ?? null,
           stageConfig: stageConfig
             ? {

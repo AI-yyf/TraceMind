@@ -41,6 +41,9 @@ type DiscoverExternalCandidatesArgs = {
   maxTotalCandidates?: number
 }
 
+const ARXIV_DISCOVERY_TIMEOUT_MS = 4_500
+const OPENALEX_DISCOVERY_TIMEOUT_MS = 10_000
+
 function normalizeWhitespace(value: string) {
   return value.replace(/\s+/g, ' ').trim()
 }
@@ -317,6 +320,7 @@ async function searchArxiv(query: DiscoveryQuery, maxResults: number, discoveryR
     headers: {
       'User-Agent': 'daily-report-skill/4.0',
     },
+    signal: AbortSignal.timeout(ARXIV_DISCOVERY_TIMEOUT_MS),
   })
   if (!response.ok) {
     throw new Error(`arXiv discovery failed with status ${response.status}.`)
@@ -331,6 +335,7 @@ async function searchOpenAlex(query: DiscoveryQuery, maxResults: number, discove
     headers: {
       'User-Agent': 'daily-report-skill/4.0',
     },
+    signal: AbortSignal.timeout(OPENALEX_DISCOVERY_TIMEOUT_MS),
   })
   if (!response.ok) {
     throw new Error(`OpenAlex search failed with status ${response.status}.`)
@@ -387,6 +392,7 @@ async function fetchOpenAlexWorksByIds(
       headers: {
         'User-Agent': 'daily-report-skill/4.0',
       },
+      signal: AbortSignal.timeout(OPENALEX_DISCOVERY_TIMEOUT_MS),
     })
     if (!response.ok) continue
     const payload = (await response.json()) as Record<string, unknown>
@@ -412,6 +418,7 @@ async function fetchOpenAlexCitingWorks(
     headers: {
       'User-Agent': 'daily-report-skill/4.0',
     },
+    signal: AbortSignal.timeout(OPENALEX_DISCOVERY_TIMEOUT_MS),
   })
   if (!response.ok) return [] as ExternalDiscoveryCandidate[]
   const payload = (await response.json()) as { results?: Array<Record<string, unknown>> }
@@ -458,6 +465,7 @@ async function discoverAnchorNeighborhood(args: {
         headers: {
           'User-Agent': 'daily-report-skill/4.0',
         },
+        signal: AbortSignal.timeout(OPENALEX_DISCOVERY_TIMEOUT_MS),
       },
     )
     if (!response.ok) continue
@@ -511,10 +519,29 @@ export async function discoverExternalCandidates(args: DiscoverExternalCandidate
   const candidateMap = new Map<string, ExternalDiscoveryCandidate>()
 
   for (const query of args.queries.slice(0, 8).filter((item) => item.query.trim().length > 0)) {
-    const [arxivResults, openAlexResults] = await Promise.all([
+    const [arxivResult, openAlexResult] = await Promise.allSettled([
       searchArxiv(query, maxResultsPerQuery, args.discoveryRound),
       searchOpenAlex(query, maxResultsPerQuery, args.discoveryRound),
     ])
+    const arxivResults = arxivResult.status === 'fulfilled' ? arxivResult.value : []
+    const openAlexResults = openAlexResult.status === 'fulfilled' ? openAlexResult.value : []
+
+    if (arxivResult.status === 'rejected') {
+      console.warn('[paper-tracker.discovery] arXiv structured query failed', {
+        query: query.query,
+        reason: arxivResult.reason instanceof Error ? arxivResult.reason.message : String(arxivResult.reason),
+      })
+    }
+
+    if (openAlexResult.status === 'rejected') {
+      console.warn('[paper-tracker.discovery] OpenAlex structured query failed', {
+        query: query.query,
+        reason:
+          openAlexResult.reason instanceof Error
+            ? openAlexResult.reason.message
+            : String(openAlexResult.reason),
+      })
+    }
 
     for (const candidate of [...arxivResults, ...openAlexResults]) {
       if (

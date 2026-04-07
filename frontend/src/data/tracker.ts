@@ -32,6 +32,7 @@ import type {
 import {
   localizeFocusLabel,
 } from '@/utils/researchCopy'
+import { resolvePrimaryReadingRouteForPaper } from '@/utils/readingRoutes'
 
 type CatalogEntry = {
   title: string
@@ -289,7 +290,15 @@ export function buildSearchItems(selectedTopics: TrackerTopic[]) {
       kind: 'paper' as const,
       title: paper.titleZh,
       subtitle: `${paper.title} · ${paper.timelineDigest}`,
-      href: `/paper/${paper.id}${paper.topicIds[0] ? `?theme=${paper.topicIds[0]}` : ''}`,
+      href: resolvePrimaryReadingRouteForPaper({
+        paperId: paper.id,
+        route: `/paper/${paper.id}${paper.topicIds[0] ? `?theme=${paper.topicIds[0]}` : ''}`,
+        nodeRoute: (() => {
+          const paperNode = getNodeByPaperId(paper.id)
+          return paperNode ? `/node/${paperNode.nodeId}` : undefined
+        })(),
+        topicId: paper.topicIds[0],
+      }),
       year: paper.published.slice(0, 4),
       tags: paper.tags,
     })),

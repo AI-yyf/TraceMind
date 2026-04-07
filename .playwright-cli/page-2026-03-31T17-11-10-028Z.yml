@@ -1,0 +1,56 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - link "溯知集 Arxiv Chronicle" [ref=e5] [cursor=pointer]:
+      - /url: /
+      - generic [ref=e6]: 溯知集
+      - generic [ref=e7]: Arxiv Chronicle
+    - generic [ref=e8]:
+      - link "首页" [ref=e9] [cursor=pointer]:
+        - /url: /
+        - img [ref=e10]
+        - generic [ref=e13]: 首页
+      - link "编排" [ref=e14] [cursor=pointer]:
+        - /url: /research
+        - img [ref=e15]
+        - generic [ref=e17]: 编排
+      - link "收藏" [ref=e18] [cursor=pointer]:
+        - /url: /favorites
+        - img [ref=e19]
+        - generic [ref=e21]: 收藏
+      - link "快照" [ref=e22] [cursor=pointer]:
+        - /url: /today
+        - img [ref=e23]
+        - generic [ref=e26]: 快照
+      - link "设置" [ref=e27] [cursor=pointer]:
+        - /url: /settings
+        - img [ref=e28]
+        - generic [ref=e31]: 设置
+      - button "搜索" [ref=e32] [cursor=pointer]:
+        - img [ref=e33]
+        - generic [ref=e36]: 搜索
+    - generic [ref=e37]:
+      - generic [ref=e38]: 主题
+      - link "自动驾驶" [ref=e40] [cursor=pointer]:
+        - /url: /topic/topic-1
+  - main [ref=e42]:
+    - generic [ref=e43]:
+      - generic [ref=e44]:
+        - generic [ref=e45]: 让研究方向有迹可循，不让关键上下文在论文与摘要之间散失。
+        - heading "溯知集" [level=1] [ref=e46]
+        - generic [ref=e47]: Arxiv Chronicle
+        - paragraph [ref=e48]: 我们的初衷，是让研究方向真正有迹可循；我们的目标，是成为每一位研究者理解上下文、辨认主线、看清分支与证据关系的研究知心助手；我们的方法，是把主题、节点、论文、图表、公式和审稿式判断重新编织成可以顺着读下去的连续研究脉络，让你不必在零散摘要和原文之间反复拼图。
+      - generic [ref=e49]:
+        - generic [ref=e50]:
+          - generic [ref=e51]:
+            - generic [ref=e52]: 主题
+            - heading "从这里进入当前研究主线" [level=2] [ref=e53]
+          - button "创建主题" [ref=e54] [cursor=pointer]:
+            - img [ref=e55]
+            - text: 创建主题
+        - link "端到端自动驾驶 自动驾驶世界模型 研究自动驾驶领域中基于世界模型的端到端学习方法" [ref=e57] [cursor=pointer]:
+          - /url: /topic/topic-1
+          - generic [ref=e58]:
+            - generic [ref=e59]: 端到端自动驾驶
+            - heading "自动驾驶世界模型" [level=3] [ref=e60]
+            - paragraph [ref=e61]: 研究自动驾驶领域中基于世界模型的端到端学习方法
+          - img [ref=e63]

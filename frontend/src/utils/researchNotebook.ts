@@ -550,6 +550,132 @@ const NOTEBOOK_COPY_BY_LANGUAGE: Record<NotebookLanguage, NotebookCopy> = {
   ru: { ...NOTEBOOK_COPY.en, ...NOTEBOOK_COPY_OVERRIDES.ru },
 }
 
+// Kept temporarily so the original per-locale export copy remains in source for future curation.
+void NOTEBOOK_COPY_BY_LANGUAGE
+
+const CLEAN_NOTE_KIND_LABELS: Partial<
+  Record<NotebookLanguage, Partial<Record<ResearchNoteKind, string>>>
+> = {
+  zh: {
+    excerpt: '论文摘录',
+    assistant: 'AI 解读',
+    evidence: '证据卡片',
+    node: '节点笔记',
+    paper: '论文笔记',
+    stage: '阶段线索',
+    context: '上下文线索',
+  },
+  de: {
+    assistant: 'KI-Einordnung',
+  },
+}
+
+const CLEAN_ZH_NOTEBOOK_COPY_OVERRIDES: Partial<NotebookCopy> = {
+  generalTopic: '未归类主题',
+  notebookExportTitle: '研究笔记导出',
+  researchDossierTitle: '研究档案',
+  researchHighlightsTitle: '研究重点摘编',
+  multiTopicCollectionTitle: '多主题研究合集',
+  exportedAt: '导出时间',
+  updatedAt: '更新时间',
+  entryCount: '条目数量',
+  savedAt: '保存时间',
+  source: '来源',
+  relatedPaper: '关联论文',
+  summary: '摘要',
+  path: '路径',
+  tags: '标签',
+  unknown: '未知',
+  none: '暂无',
+  stage: '阶段',
+  round: '轮次',
+  yes: '是',
+  no: '否',
+  researchContinuity: '研究连续性',
+  continuityThreads: '连续性线索',
+  globalOpenQuestions: '全局开放问题',
+  trackedContinuity: '持续追踪线索',
+  pendingAnswers: '仍待回答的问题',
+  recentResearchRounds: '最近研究轮次',
+  time: '时间',
+  discoveredPapers: '新发现论文',
+  admittedPapers: '纳入论文',
+  rebuiltContent: '重建内容',
+  advanceNextStage: '是否推进下一阶段',
+  actionLog: '动作记录',
+  unresolvedQuestions: '未决问题',
+  researchWorld: '研究世界',
+  maturity: '成熟度',
+  stagesNodesPapers: '阶段 / 节点 / 论文',
+  establishedClaims: '已建立判断',
+  openQuestions: '开放问题',
+  activeAgenda: '当前议程',
+  critiquesAndDoubts: '批评与疑点',
+  guidanceLedger: '引导账本',
+  activeAcceptedDeferred: '激活 / 接受 / 延后',
+  activeDirectives: '当前指令',
+  effect: '影响',
+  followUp: '后续',
+  topic: '主题',
+  language: '语言',
+  noteEntries: '笔记条目',
+  topicOverview: '主题总览',
+  closingAndJudgment: '收束与判断',
+  currentResearchRound: '当前研究回合',
+  status: '状态',
+  mode: '模式',
+  startedAt: '开始时间',
+  latestUpdatedAt: '最近更新时间',
+  discoveredAdmittedGenerated: '发现 / 纳入 / 生成',
+  keyMovesThisRound: '本轮关键动作',
+  nodeAdjustments: '节点调整',
+  currentOpenQuestions: '当前开放问题',
+  stageMap: '阶段地图',
+  branch: '分支',
+  nodeCount: '节点数',
+  paperCount: '论文数',
+  stageCorrections: '阶段内关键修正',
+  stageQuestions: '阶段仍待回答',
+  nodeDossiers: '节点档案',
+  stageAffiliation: '所属阶段',
+  node: '节点',
+  paper: '论文',
+  figuresTablesFormulas: '图 / 表 / 公式',
+  nodePaperRoles: '节点内论文角色',
+  role: '角色',
+  contribution: '贡献',
+  keyComparisons: '关键比较',
+  nodeBody: '节点正文',
+  critiqueSection: '评价与质疑',
+  keyEvidence: '关键证据',
+  nodeClosing: '节点收束',
+  authors: '作者',
+  linkedNodes: '关联节点',
+  figuresTablesFormulasSections: '图 / 表 / 公式 / 正文段落',
+  paperBody: '论文正文',
+  paperClosing: '论文收束',
+  paperDossiers: '论文档案',
+  notebookAppendix: '研究笔记附录',
+  coveredTopics: '覆盖主题',
+  candidateNotes: '候选笔记',
+  highlightEntries: '重点条目',
+  noteKinds: '涉及类型',
+  topicCount: '主题数',
+  totalNodes: '节点总数',
+  totalPapers: '论文总数',
+}
+
+const CLEAN_NOTEBOOK_COPY_BY_LANGUAGE: Record<NotebookLanguage, NotebookCopy> = {
+  zh: { ...NOTEBOOK_COPY.en, ...CLEAN_ZH_NOTEBOOK_COPY_OVERRIDES },
+  en: NOTEBOOK_COPY.en,
+  ja: NOTEBOOK_COPY.en,
+  ko: NOTEBOOK_COPY.en,
+  de: NOTEBOOK_COPY.en,
+  fr: NOTEBOOK_COPY.en,
+  es: NOTEBOOK_COPY.en,
+  ru: NOTEBOOK_COPY.en,
+}
+
 const DOSSIER_SCHEMA_VERSION = 'topic-research-dossier-v1'
 const BATCH_DOSSIER_SCHEMA_VERSION = 'topic-research-batch-dossier-v1'
 
@@ -583,7 +709,7 @@ function normalizeNotebookLanguage(locale = 'zh-CN'): NotebookLanguage {
 }
 
 function getNotebookCopy(locale = 'zh-CN') {
-  return NOTEBOOK_COPY_BY_LANGUAGE[normalizeNotebookLanguage(locale)]
+  return CLEAN_NOTEBOOK_COPY_BY_LANGUAGE[normalizeNotebookLanguage(locale)]
 }
 
 function getClauseSeparator(locale = 'zh-CN') {
@@ -1034,22 +1160,39 @@ export function normalizeFavoriteExcerpt(value: unknown): FavoriteExcerpt | null
   }
 
   const rawKind = cleanText(record.kind)
+  const topicId = cleanText(record.topicId) || undefined
   const paperId = cleanText(record.paperId)
+  const nodeId = cleanText(record.nodeId) || undefined
+  const anchorId = cleanText(record.anchorId) || undefined
+  const route = cleanText(record.route)
+  const fallbackNodeRoute = nodeId
+    ? `/node/${nodeId}${
+        anchorId
+          ? `?anchor=${encodeURIComponent(anchorId)}`
+          : paperId
+            ? `?anchor=${encodeURIComponent(`paper:${paperId}`)}`
+            : ''
+      }`
+    : undefined
+  const normalizedRoute =
+    route && !(route.startsWith('/paper/') && fallbackNodeRoute)
+      ? route
+      : fallbackNodeRoute || route || (topicId ? `/topic/${topicId}` : paperId ? `/paper/${paperId}` : undefined)
 
   return {
     id,
     kind: isNotebookKind(rawKind) ? rawKind : 'excerpt',
-    topicId: cleanText(record.topicId) || undefined,
+    topicId,
     topicTitle: cleanText(record.topicTitle) || undefined,
     paperId: paperId || undefined,
     paperTitleZh: legacyTitle || undefined,
-    nodeId: cleanText(record.nodeId) || undefined,
+    nodeId,
     nodeTitle: cleanText(record.nodeTitle) || undefined,
     excerptTitle: excerptTitle || legacyTitle,
     paragraphs,
     savedAt: cleanText(record.savedAt) || new Date().toISOString(),
-    route: cleanText(record.route) || (paperId ? `/paper/${paperId}` : undefined),
-    anchorId: cleanText(record.anchorId) || undefined,
+    route: normalizedRoute,
+    anchorId,
     sourceLabel: cleanText(record.sourceLabel) || undefined,
     summary: cleanText(record.summary) || undefined,
     tags: normalizeTags(record.tags),
@@ -1061,7 +1204,7 @@ export function getResearchNoteKindLabel(
   locale = 'zh-CN',
 ) {
   const language = normalizeNotebookLanguage(locale)
-  return NOTE_KIND_LABELS[language][kind ?? 'excerpt']
+  return CLEAN_NOTE_KIND_LABELS[language]?.[kind ?? 'excerpt'] ?? NOTE_KIND_LABELS.en[kind ?? 'excerpt']
 }
 
 export function buildResearchNotePreview(note: FavoriteExcerpt, maxParagraphs = 2) {

@@ -301,7 +301,7 @@ describe('TopicPage stage window controls', () => {
     expect(apiGetMock).toHaveBeenCalledWith('/api/topics/topic-1/view-model?stageMonths=3')
     expect(
       screen.getByText(
-        'Stage cadence is fixed to a 3 months publication window for this topic. Adjust it from Topic List or Research Settings instead of changing the reading surface.',
+        'This topic currently groups stages with a 3 months publication window. Change the cadence from Topic Management; the reading surface stays stable and does not rewrite structure here.',
       ),
     ).toBeVisible()
     expect(screen.getByRole('link', { name: 'Manage topic cadence' })).toHaveAttribute(
@@ -376,7 +376,7 @@ describe('TopicPage stage window controls', () => {
     expect(await screen.findByText('Topic title')).toBeVisible()
     expect(
       screen.getByText(
-        'Stage cadence is fixed to a 1 months publication window for this topic. Adjust it from Topic List or Research Settings instead of changing the reading surface.',
+        'This topic currently groups stages with a 1 month publication window. Change the cadence from Topic Management; the reading surface stays stable and does not rewrite structure here.',
       ),
     ).toBeVisible()
     expect(within(stageMap).queryByText('This stage exists only as a future placeholder.')).not.toBeInTheDocument()

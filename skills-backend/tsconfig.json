@@ -1,10 +1,11 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "commonjs",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "lib": ["ES2022"],
     "outDir": "./dist",
-    "rootDir": "./src",
+    "rootDir": ".",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -13,7 +14,6 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "moduleResolution": "node",
     "allowSyntheticDefaultImports": true,
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
@@ -21,20 +21,27 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
-      "@shared/*": ["../shared/*"]
+      "@shared/*": ["shared/*"],
+      "@engine/*": ["engine/*"],
+      "@runtime/*": ["runtime/*"]
     }
   },
-  "include": ["src/**/*"],
+  "include": [
+    "src/**/*",
+    "shared/**/*",
+    "engine/**/*",
+    "runtime/**/*",
+    "skill-packs/**/*",
+    "topic-config/**/*",
+    "cli.ts"
+  ],
   "exclude": [
     "node_modules",
     "dist",
-    "src/routes/models.ts",
-    "src/routes/pdf.ts",
-    "src/routes/research.ts",
-    "src/routes/tasks.ts",
-    "src/services/enhanced-scheduler.ts",
-    "src/services/scheduler.ts",
-    "src/scripts/**/*",
-    "src/tests/**/*"
+    "scripts/**/*",
+    "tests/**/*",
+    "output/**/*",
+    "uploads/**/*",
+    "prisma/**/*.db"
   ]
 }

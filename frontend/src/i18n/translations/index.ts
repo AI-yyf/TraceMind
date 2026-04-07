@@ -3,16 +3,18 @@ import type { LanguageCode, TranslationDictionary, TranslationRecord } from '../
 import brand from './brand'
 import common from './common'
 import create from './create'
+import dashboard from './dashboard'
 import error from './error'
 import favorites from './favorites'
 import home from './home'
+import mainPath from './main-path'
 import navigation from './navigation'
 import node from './node'
 import paper from './paper'
 import polish from './polish'
 import quality from './quality'
-import qualityMainflow from './quality-mainflow'
 import qualityLongtail from './quality-longtail'
+import qualityMainflow from './quality-mainflow'
 import research from './research'
 import search from './search'
 import settings from './settings'
@@ -20,41 +22,14 @@ import studio from './studio'
 import topic from './topic'
 import workbench from './workbench'
 
-function mergeTranslationModules(...modules: TranslationDictionary[]) {
-  return modules.reduce<TranslationDictionary>((dictionary, module) => {
-    for (const [key, record] of Object.entries(module)) {
-      dictionary[key] = {
-        ...(dictionary[key] ?? {}),
-        ...record,
-      }
-    }
-    return dictionary
-  }, {})
-}
-
-const CORRUPTION_FRAGMENTS = [
-  '\uFFFD',
-  '鈥',
-  '銆?',
-  '锛?',
-  '銉',
-  '瑾',
-  '鞀',
-  '頃',
-  '褍',
-  '袩',
-  '鍒涘缓',
-  '璁剧疆',
-  '鐮旂┒',
-  '鎼滅储',
-  '鍔犺浇',
-  '涓婚',
-  '鏄剧ず',
-  '鍙岃',
-  '閰嶇疆',
-  '鏈',
-  '宸查',
-]
+const LANGUAGE_CODES: LanguageCode[] = ['zh', 'en', 'ja', 'ko', 'de', 'fr', 'es', 'ru']
+const SUSPICIOUS_FRAGMENT_PATTERNS = [
+  /\uFFFD/u,
+  /[鈥銆锛]/u,
+  /鍔犺浇|鐮旂┒|涓婚|璁剧疆|妯″瀷|绯荤粺|鐣岄潰|璇█|涓枃|鑻辨枃|闃舵|鍒涘缓|杩斿洖|鎼滅储|鍏抽棴|璁烘枃|鍒ゆ柇|鏀舵潫/u,
+  /[搿靸氚鞐頃袪褟携鏇閫]{2,}/u,
+] as const
+const SUSPICIOUS_CHAR_RE = /[鈥銆锛鍔鐮璁妯绯鎼鍏鍒杩璇闃浜鏀缁搿靸氚鞐頃袪褟携鏇閫]/gu
 
 function normalizeCandidate(value?: string | null) {
   const text = value?.trim() ?? ''
@@ -65,14 +40,12 @@ export function looksCorruptedTranslation(value?: string | null) {
   const text = normalizeCandidate(value)
   if (!text) return false
 
-  let hits = 0
-  for (const fragment of CORRUPTION_FRAGMENTS) {
-    if (text.includes(fragment)) {
-      hits += fragment.length > 1 ? 2 : 1
-    }
+  if (SUSPICIOUS_FRAGMENT_PATTERNS.some((pattern) => pattern.test(text))) {
+    return true
   }
 
-  return hits >= 2
+  const suspiciousCharCount = text.match(SUSPICIOUS_CHAR_RE)?.length ?? 0
+  return suspiciousCharCount >= 3
 }
 
 export function pickBestLocalizedValue(
@@ -87,6 +60,30 @@ export function pickBestLocalizedValue(
   }
 
   return normalizeCandidate(finalFallback) ?? ''
+}
+
+function mergeTranslationModules(...modules: TranslationDictionary[]) {
+  return modules.reduce<TranslationDictionary>((dictionary, module) => {
+    for (const [key, incomingRecord] of Object.entries(module)) {
+      const nextRecord: TranslationRecord = { ...(dictionary[key] ?? {}) }
+
+      for (const language of LANGUAGE_CODES) {
+        const incomingValue = incomingRecord[language]
+        if (!incomingValue) continue
+
+        const currentValue = nextRecord[language]
+        const incomingIsCorrupted = looksCorruptedTranslation(incomingValue)
+        const currentIsCorrupted = looksCorruptedTranslation(currentValue)
+
+        if (!currentValue || (currentIsCorrupted && !incomingIsCorrupted) || !incomingIsCorrupted) {
+          nextRecord[language] = incomingValue
+        }
+      }
+
+      dictionary[key] = nextRecord
+    }
+    return dictionary
+  }, {})
 }
 
 const TRANSLATIONS: TranslationDictionary = mergeTranslationModules(
@@ -109,6 +106,8 @@ const TRANSLATIONS: TranslationDictionary = mergeTranslationModules(
   quality,
   qualityMainflow,
   qualityLongtail,
+  mainPath,
+  dashboard,
 )
 
 function resolveTranslationRecord(
@@ -120,10 +119,7 @@ function resolveTranslationRecord(
     return fallback || ''
   }
 
-  return pickBestLocalizedValue(
-    [record[language], record.en, record.zh, fallback],
-    fallback || '',
-  )
+  return pickBestLocalizedValue([record[language], record.en, record.zh, fallback], fallback || '')
 }
 
 export default TRANSLATIONS
@@ -148,6 +144,8 @@ export {
   quality,
   qualityMainflow,
   qualityLongtail,
+  mainPath,
+  dashboard,
 }
 
 export function getTranslation(

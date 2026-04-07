@@ -1,5 +1,3 @@
-import { addMonths, differenceInCalendarMonths, format, isValid, startOfMonth } from 'date-fns'
-
 export const DEFAULT_STAGE_WINDOW_MONTHS = 1
 export const MIN_STAGE_WINDOW_MONTHS = 1
 export const MAX_STAGE_WINDOW_MONTHS = 24
@@ -53,18 +51,44 @@ export interface TemporalStageBucketResult {
 function parseDate(value: DateLike) {
   if (!value) return null
   const date = value instanceof Date ? value : new Date(value)
-  return isValid(date) ? date : null
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function startOfUtcMonth(value: DateLike) {
+  const parsed = parseDate(value)
+  if (!parsed) return null
+  return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), 1))
+}
+
+function addUtcMonths(value: Date, months: number) {
+  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth() + months, 1))
+}
+
+function differenceInUtcMonths(left: Date, right: Date) {
+  return (left.getUTCFullYear() - right.getUTCFullYear()) * 12 + (left.getUTCMonth() - right.getUTCMonth())
+}
+
+function formatUtcYearMonth(value: Date) {
+  return `${value.getUTCFullYear()}.${`${value.getUTCMonth() + 1}`.padStart(2, '0')}`
+}
+
+function formatUtcYear(value: Date) {
+  return `${value.getUTCFullYear()}`
+}
+
+function assignmentKey(start: Date) {
+  return `${start.getUTCFullYear()}-${`${start.getUTCMonth() + 1}`.padStart(2, '0')}-01`
 }
 
 function formatTemporalStageLabel(start: Date, windowMonths: number) {
-  const bucketStart = startOfMonth(start)
-  const bucketEnd = addMonths(bucketStart, Math.max(1, windowMonths) - 1)
+  const bucketStart = startOfUtcMonth(start) ?? new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1))
+  const bucketEnd = addUtcMonths(bucketStart, Math.max(1, windowMonths) - 1)
 
   if (windowMonths <= 1) {
-    return format(bucketStart, 'yyyy.MM')
+    return formatUtcYearMonth(bucketStart)
   }
 
-  return `${format(bucketStart, 'yyyy.MM')}-${format(bucketEnd, 'yyyy.MM')}`
+  return `${formatUtcYearMonth(bucketStart)}-${formatUtcYearMonth(bucketEnd)}`
 }
 
 function buildTemporalStageDescription(label: string, windowMonths: number) {
@@ -83,17 +107,13 @@ function buildTemporalStageDescriptionEn(label: string, windowMonths: number) {
   return `Collect the papers and nodes that entered the mainline during ${label} so the topic can be regrouped with an adjustable time bucket.`
 }
 
-function assignmentKey(start: Date) {
-  return format(start, 'yyyy-MM-01')
-}
-
 function buildAssignment(
   start: Date,
   stageIndex: number,
   windowMonths: number,
 ): TemporalStageAssignment {
-  const bucketStart = startOfMonth(start)
-  const bucketEndExclusive = addMonths(bucketStart, windowMonths)
+  const bucketStart = startOfUtcMonth(start) ?? new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1))
+  const bucketEndExclusive = addUtcMonths(bucketStart, windowMonths)
   const label = formatTemporalStageLabel(bucketStart, windowMonths)
 
   return {
@@ -101,7 +121,7 @@ function buildAssignment(
     bucketKey: assignmentKey(bucketStart),
     label,
     labelEn: label,
-    yearLabel: format(bucketStart, 'yyyy'),
+    yearLabel: formatUtcYear(bucketStart),
     dateLabel: label,
     timeLabel: label,
     bucketStart,
@@ -134,11 +154,14 @@ export function deriveTemporalStageBuckets(args: {
     }))
     .filter((paper): paper is { id: string; published: Date } => Boolean(paper.published))
   const anchorDate = paperDates[0]?.published ?? parseDate(args.fallbackDate) ?? new Date()
-  const anchorMonth = startOfMonth(
+  const earliestPaperDate =
     [...paperDates]
       .map((paper) => paper.published)
-      .sort((left, right) => +left - +right)[0] ?? anchorDate,
-  )
+      .sort((left, right) => +left - +right)[0] ?? anchorDate
+  const anchorMonth =
+    startOfUtcMonth(earliestPaperDate) ??
+    startOfUtcMonth(anchorDate) ??
+    new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1))
   const paperById = new Map(paperDates.map((paper) => [paper.id, paper.published]))
   const paperAssignmentsByBucket = new Map<string, string[]>()
   const nodeAssignmentsByBucket = new Map<string, string[]>()
@@ -146,10 +169,10 @@ export function deriveTemporalStageBuckets(args: {
   const nodeAssignments = new Map<string, TemporalStageAssignment>()
 
   const resolveBucketStart = (value: Date) => {
-    const normalized = startOfMonth(value)
-    const monthOffset = differenceInCalendarMonths(normalized, anchorMonth)
+    const normalized = startOfUtcMonth(value) ?? anchorMonth
+    const monthOffset = differenceInUtcMonths(normalized, anchorMonth)
     const bucketOffset = Math.max(0, Math.floor(monthOffset / windowMonths))
-    return addMonths(anchorMonth, bucketOffset * windowMonths)
+    return addUtcMonths(anchorMonth, bucketOffset * windowMonths)
   }
 
   const paperBucketStarts = new Map<string, Date>()
@@ -193,7 +216,7 @@ export function deriveTemporalStageBuckets(args: {
     new Map(
       [...paperAssignmentsByBucket.keys(), ...nodeAssignmentsByBucket.keys()]
         .sort()
-        .map((key) => [key, startOfMonth(new Date(`${key}T00:00:00.000Z`))]),
+        .map((key) => [key, new Date(`${key}T00:00:00.000Z`)]),
     ).values(),
   ).sort((left, right) => +left - +right)
 

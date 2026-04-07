@@ -20,10 +20,10 @@ export type ArticleInlineReferenceToken = {
 }
 
 const INLINE_REFERENCE_RE =
-  /(?<![A-Za-z0-9-])((paper|node)-[a-z0-9-]+)(?:(?:《([^》\n]+)》)|(?:“([^”\n]+)”)|(?:"([^"\n]+)"))?/giu
+  /(?<![A-Za-z0-9-])((paper|node)-[a-z0-9-]+)(?:(?:「([^」\n]+)」)|(?:《([^》\n]+)》)|(?:“([^”\n]+)”)|(?:"([^"\n]+)"))?/giu
 
 function resolveLiteralTitle(match: RegExpMatchArray) {
-  return match[3] ?? match[4] ?? match[5] ?? undefined
+  return match[3] ?? match[4] ?? match[5] ?? match[6] ?? undefined
 }
 
 function referenceLabel(

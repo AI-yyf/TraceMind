@@ -39,6 +39,7 @@ import {
   withOptionalStageWindowQuery,
   withStageWindowRoute,
 } from '@/utils/stageWindow'
+import { buildPaperAnchorRoute, resolvePrimaryReadingRouteForPaper } from '@/utils/readingRoutes'
 
 const MAINLINE_COLOR = '#7d1938'
 const CARD_W = 176
@@ -59,6 +60,7 @@ type DisplayNode = {
   anchorId: string
   route: string
   stageIndex: number
+  paperIds: string[]
   title: string
   titleEn: string
   summary: string
@@ -98,6 +100,61 @@ function cleanStageOverview(value: string | null | undefined) {
     .trim()
 }
 
+function parseSurfacePaperCountClaim(value: string | null | undefined) {
+  const text = value?.replace(/\s+/gu, ' ').trim() ?? ''
+  if (!text) return null
+
+  const match = text.match(/([零〇一二两三四五六七八九十\d]+)\s*篇论文/u)
+  if (!match?.[1]) return null
+  const token = match[1]
+
+  if (/^\d+$/u.test(token)) {
+    return Number.parseInt(token, 10)
+  }
+
+  const digitMap: Record<string, number> = {
+    零: 0,
+    〇: 0,
+    一: 1,
+    二: 2,
+    两: 2,
+    三: 3,
+    四: 4,
+    五: 5,
+    六: 6,
+    七: 7,
+    八: 8,
+    九: 9,
+  }
+
+  if (token === '十') return 10
+  if (token.startsWith('十')) return 10 + (digitMap[token.slice(1)] ?? 0)
+  if (token.endsWith('十')) return (digitMap[token.slice(0, -1)] ?? 1) * 10
+
+  const tenIndex = token.indexOf('十')
+  if (tenIndex >= 0) {
+    return (digitMap[token.slice(0, tenIndex)] ?? 1) * 10 + (digitMap[token.slice(tenIndex + 1)] ?? 0)
+  }
+
+  return digitMap[token] ?? null
+}
+
+function hasSurfaceNarrativeDrift(value: string | null | undefined, paperCount: number) {
+  const text = value?.replace(/\s+/gu, ' ').trim() ?? ''
+  if (!text) return false
+  const claimedPaperCount = parseSurfacePaperCountClaim(text)
+
+  if (
+    typeof claimedPaperCount === 'number' &&
+    paperCount > 0 &&
+    claimedPaperCount !== paperCount
+  ) {
+    return true
+  }
+
+  return paperCount <= 1 && /横跨/u.test(text)
+}
+
 const renderTemplate = (
   template: string,
   variables: Record<string, string | number>,
@@ -116,6 +173,10 @@ function densifyNodeColumns(nodes: DisplayNode[]) {
   }))
 }
 
+function countUniqueDisplayNodePapers(nodes: DisplayNode[]) {
+  return new Set(nodes.flatMap((node) => node.paperIds)).size
+}
+
 function isProcessNarrative(value: string | null | undefined) {
   const text = value?.replace(/\s+/gu, ' ').trim() ?? ''
   if (!text) return false
@@ -132,6 +193,7 @@ function buildContentOnlyClosingParagraphs(
     title: { primary: string; secondary: string }
     overview: string
     nodeCount: number
+    paperCount: number
   }>,
   nodes: DisplayNode[],
   t: Translate,
@@ -154,6 +216,10 @@ function buildContentOnlyClosingParagraphs(
   const lastNode = mainlineNodes[mainlineNodes.length - 1] ?? nodes[nodes.length - 1]
   const branchNodes = nodes.filter((node) => !node.isMainline)
   const stageTrail = uniqueText(stageSections.map((stage) => stage.title.primary), 5)
+  const visibleStageCount =
+    stageSections.filter((stage) => stage.nodeCount > 0 || stage.paperCount > 0).length ||
+    stageSections.length
+  const visiblePaperCount = countUniqueDisplayNodePapers(nodes) || viewModel.stats.paperCount
 
   return uniqueText(
     [
@@ -163,9 +229,9 @@ function buildContentOnlyClosingParagraphs(
           'This topic is currently organized into {stageCount} stages, {nodeCount} nodes, and {paperCount} papers, with the mainline moving from "{firstNode}" to "{lastNode}" so the whole research route can be reviewed on one map.',
         ),
         {
-          stageCount: viewModel.stats.stageCount,
-          nodeCount: viewModel.stats.nodeCount,
-          paperCount: viewModel.stats.paperCount,
+          stageCount: visibleStageCount,
+          nodeCount: nodes.length || viewModel.stats.nodeCount,
+          paperCount: visiblePaperCount,
           firstNode: firstNode?.title ?? viewModel.title,
           lastNode: lastNode?.title ?? viewModel.title,
         },
@@ -228,14 +294,14 @@ function buildNodeSurfaceSummary(title: string, paperCount: number, t: Translate
     ? renderTemplate(
         t(
           'topic.nodeSummaryMany',
-          'Gather {count} related papers around "{title}" and start with the key method thread on this branch.',
+          'This node gathers {count} papers around "{title}" so you can read one problem line instead of a flat paper pile.',
         ),
         { title, count: paperCount },
       )
     : renderTemplate(
         t(
           'topic.nodeSummaryOne',
-          'Use "{title}" to grasp the most important problem framing and method entry for this node.',
+          'This node uses one decisive paper to open "{title}" clearly before the branch expands further.',
         ),
         { title },
       )
@@ -245,7 +311,7 @@ function isLowSignalNodeCardText(value: string | null | undefined) {
   const text = value?.replace(/\s+/gu, ' ').trim() ?? ''
   if (!text) return true
 
-  return /(?:并不是单篇论文结论|围绕同一问题形成的一段研究推进|当前节点主要由一篇论文支撑|跨论文比较还没有真正展开|节点目前仍然依赖|仍然依赖单篇论文|The user wants|Key requirements|single-paper conclusion|cross-paper comparison|related papers to mention|summary context|structure plan)/iu.test(
+  return /(?:并不是单篇论文结论|围绕同一问题形成的一段研究推进|当前节点主要由一篇论文支撑|跨论文比较还没有真正展开|节点目前仍然依赖|仍然依赖单篇论文|该节点当前以《|先说明「|This node currently uses|single-paper conclusion|cross-paper comparison|related papers to mention|summary context|structure plan)/iu.test(
     text,
   )
 }
@@ -263,12 +329,56 @@ function buildNodeCardSummary(args: {
 
   for (const candidate of candidates) {
     const cleaned = sanitizeTopicSurfaceText(candidate, 72)
-    if (cleaned && !isLowSignalNodeCardText(cleaned)) {
+    if (cleaned && !isLowSignalNodeCardText(cleaned) && !hasSurfaceNarrativeDrift(cleaned, args.paperCount)) {
       return cleaned
     }
   }
 
   return buildNodeSurfaceSummary(args.title, args.paperCount, args.t)
+}
+
+function buildStageSurfaceOverview(args: {
+  title: string
+  paperCount: number
+  nodeCount: number
+  nodeTitles: string[]
+  candidates: Array<string | null | undefined>
+  t: Translate
+}) {
+  for (const candidate of args.candidates) {
+    const cleaned = sanitizeTopicSurfaceText(cleanStageOverview(candidate), 96)
+    if (
+      cleaned &&
+      !/^收拢\s+\d{4}\.\d{2}/u.test(cleaned) &&
+      !/^Align\s+\d{4}\.\d{2}/iu.test(cleaned) &&
+      !isLowSignalNodeCardText(cleaned) &&
+      !hasSurfaceNarrativeDrift(cleaned, args.paperCount)
+    ) {
+      return cleaned
+    }
+  }
+
+  const focusTrail = args.nodeTitles.slice(0, 2).join('、')
+
+  if (args.paperCount > 1) {
+    return renderTemplate(
+      args.t('topic.stageOverviewMany', '这一阶段把 {papers} 篇论文收在 {nodes} 个节点里，重点问题线落在「{trail}」。'),
+      {
+        papers: args.paperCount,
+        nodes: args.nodeCount,
+        trail: focusTrail || args.title,
+      },
+    )
+  }
+
+  return renderTemplate(
+    args.t('topic.stageOverviewOne', '这一阶段目前只保留 {papers} 篇论文、{nodes} 个节点，并把「{trail}」作为进入这个时间窗口的起点。'),
+    {
+      papers: args.paperCount,
+      nodes: args.nodeCount,
+      trail: focusTrail || args.title,
+    },
+  )
 }
 
 function findPreferredNodeCover(
@@ -295,93 +405,99 @@ function buildDisplayNodes(viewModel: TopicViewModel, t: Translate): DisplayNode
   if (viewModel.graph?.nodes?.length) {
     return densifyNodeColumns(
       viewModel.graph.nodes.map((node: TopicGraphNode) => {
-      const title = compactTopicSurfaceTitle(node.title || node.primaryPaperTitle, defaultNodeTitle, 34)
-      return {
-        nodeId: node.nodeId,
-        anchorId: node.anchorId,
-        route: node.route,
-        stageIndex: node.stageIndex,
-        title,
-        titleEn: compactTopicSurfaceTitle(
-          node.titleEn || node.title || node.primaryPaperTitle,
-          node.title || 'Research Node',
-          40,
-        ),
-        summary:
-          buildNodeCardSummary({
-            title,
-            paperCount: node.paperCount,
-            summary: node.summary,
-            digest: node.cardEditorial?.digest,
-            explanation: node.explanation,
-            whyNow: node.cardEditorial?.whyNow,
-            t,
-          }),
-        explanation: node.explanation,
-        paperCount: node.paperCount,
-        coverImage: findPreferredNodeCover(
-          node.coverImage || node.coverAsset?.imagePath,
-          node.paperIds ?? [node.primaryPaperId].filter(Boolean),
-          paperCoverMap,
-        ),
-        primaryPaperTitle: node.primaryPaperTitle,
-        primaryPaperId: node.primaryPaperId,
-        branchLabel: node.cardEditorial?.eyebrow || node.branchLabel,
-        branchColor: node.branchColor || MAINLINE_COLOR,
-        isMergeNode: node.isMergeNode,
-        provisional: node.provisional,
-        parentNodeIds: node.parentNodeIds ?? [],
-        column: node.layoutHint?.column ?? 1,
-        row: node.layoutHint?.row ?? node.stageIndex,
-        isMainline: node.layoutHint?.isMainline ?? !node.provisional,
-      }
-    }),
+        const title = compactTopicSurfaceTitle(node.title || node.primaryPaperTitle, defaultNodeTitle, 34)
+        const paperIds = node.paperIds ?? [node.primaryPaperId].filter(Boolean)
+
+        return {
+          nodeId: node.nodeId,
+          anchorId: node.anchorId,
+          route: node.route,
+          stageIndex: node.stageIndex,
+          paperIds,
+          title,
+          titleEn: compactTopicSurfaceTitle(
+            node.titleEn || node.title || node.primaryPaperTitle,
+            node.title || 'Research Node',
+            40,
+          ),
+          summary:
+            buildNodeCardSummary({
+              title,
+              paperCount: node.paperCount,
+              summary: node.summary,
+              digest: node.cardEditorial?.digest,
+              explanation: node.explanation,
+              whyNow: node.cardEditorial?.whyNow,
+              t,
+            }),
+          explanation: node.explanation,
+          paperCount: node.paperCount,
+          coverImage: findPreferredNodeCover(
+            node.coverImage || node.coverAsset?.imagePath,
+            paperIds,
+            paperCoverMap,
+          ),
+          primaryPaperTitle: node.primaryPaperTitle,
+          primaryPaperId: node.primaryPaperId,
+          branchLabel: node.cardEditorial?.eyebrow || node.branchLabel,
+          branchColor: node.branchColor || MAINLINE_COLOR,
+          isMergeNode: node.isMergeNode,
+          provisional: node.provisional,
+          parentNodeIds: node.parentNodeIds ?? [],
+          column: node.layoutHint?.column ?? 1,
+          row: node.layoutHint?.row ?? node.stageIndex,
+          isMainline: node.layoutHint?.isMainline ?? !node.provisional,
+        }
+      }),
     )
   }
   return densifyNodeColumns(
     viewModel.stages.flatMap((stage) =>
       stage.nodes.map((node, index) => {
-      const title = compactTopicSurfaceTitle(node.title || node.primaryPaperTitle, defaultNodeTitle, 34)
-      return {
-        nodeId: node.nodeId,
-        anchorId: node.anchorId,
-        route: node.route,
-        stageIndex: stage.stageIndex,
-        title,
-        titleEn: compactTopicSurfaceTitle(
-          node.titleEn || node.title || node.primaryPaperTitle,
-          node.title || 'Research Node',
-          40,
-        ),
-        summary:
-          buildNodeCardSummary({
-            title,
-            paperCount: node.paperCount,
-            summary: node.summary,
-            digest: node.editorial.digest,
-            explanation: node.explanation,
-            whyNow: node.editorial.whyNow,
-            t,
-          }),
-        explanation: node.explanation,
-        paperCount: node.paperCount,
-        coverImage: findPreferredNodeCover(
-          node.coverImage,
-          node.paperIds ?? [node.primaryPaperId].filter(Boolean),
-          paperCoverMap,
-        ),
-        primaryPaperTitle: node.primaryPaperTitle,
-        primaryPaperId: node.primaryPaperId,
-        branchLabel: node.editorial.eyebrow || node.branchLabel,
-        branchColor: node.branchColor || MAINLINE_COLOR,
-        isMergeNode: node.isMergeNode,
-        provisional: node.provisional,
-        parentNodeIds: [],
-        column: index + 1,
-        row: stage.stageIndex,
-        isMainline: !node.provisional,
-      }
-    }),
+        const title = compactTopicSurfaceTitle(node.title || node.primaryPaperTitle, defaultNodeTitle, 34)
+        const paperIds = node.paperIds ?? [node.primaryPaperId].filter(Boolean)
+
+        return {
+          nodeId: node.nodeId,
+          anchorId: node.anchorId,
+          route: node.route,
+          stageIndex: stage.stageIndex,
+          paperIds,
+          title,
+          titleEn: compactTopicSurfaceTitle(
+            node.titleEn || node.title || node.primaryPaperTitle,
+            node.title || 'Research Node',
+            40,
+          ),
+          summary:
+            buildNodeCardSummary({
+              title,
+              paperCount: node.paperCount,
+              summary: node.summary,
+              digest: node.editorial.digest,
+              explanation: node.explanation,
+              whyNow: node.editorial.whyNow,
+              t,
+            }),
+          explanation: node.explanation,
+          paperCount: node.paperCount,
+          coverImage: findPreferredNodeCover(
+            node.coverImage,
+            paperIds,
+            paperCoverMap,
+          ),
+          primaryPaperTitle: node.primaryPaperTitle,
+          primaryPaperId: node.primaryPaperId,
+          branchLabel: node.editorial.eyebrow || node.branchLabel,
+          branchColor: node.branchColor || MAINLINE_COLOR,
+          isMergeNode: node.isMergeNode,
+          provisional: node.provisional,
+          parentNodeIds: [],
+          column: index + 1,
+          row: stage.stageIndex,
+          isMainline: !node.provisional,
+        }
+      }),
     ),
   )
 }
@@ -426,6 +542,12 @@ function NodeCard({
     t('topic.nodePaperCount', '{count} papers'),
     { count: node.paperCount },
   )
+  const eyebrow =
+    node.isMergeNode
+      ? t('topic.nodeRoleMerge', 'Merge')
+      : node.isMainline
+        ? t('topic.nodeRoleMainline', 'Mainline')
+        : node.branchLabel || t('topic.nodeRoleBranch', 'Branch')
   const roleLabel = node.isMergeNode
     ? t('topic.nodeRoleMerge', 'Merge')
     : !node.isMainline
@@ -482,8 +604,7 @@ function NodeCard({
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-black/34">
-                {!node.isMainline ? <span>{node.branchLabel}</span> : null}
-                <span>{node.primaryPaperTitle || title}</span>
+                <span>{eyebrow}</span>
               </div>
               <div className="mt-2 line-clamp-2 text-[15px] font-semibold leading-[1.3] text-black">
                 {title}
@@ -572,22 +693,31 @@ export function TopicPage() {
             ...(timelineStage ?? {}),
           }),
           displayTitle,
-          overview:
-            sanitizeTopicSurfaceText(
-              cleanStageOverview(
-                stage.editorial.summary ||
-                getStageLocalizedPair(
-                  stage.locales,
-                  'description',
-                  preference,
-                  stage.description,
-                  stage.description,
-                ).primary,
-              ),
-              72,
-            ) || '',
           nodeCount: stage.nodes.length,
           paperCount: stage.nodes.reduce((count, node) => count + (node.paperCount ?? 0), 0),
+          overview: buildStageSurfaceOverview({
+            title: displayTitle || title.primary || stage.title,
+            paperCount: stage.nodes.reduce((count, node) => count + (node.paperCount ?? 0), 0),
+            nodeCount: stage.nodes.length,
+            nodeTitles: stage.nodes.map((node) =>
+              compactTopicSurfaceTitle(
+                node.title || node.primaryPaperTitle,
+                t('topic.nodeDefaultTitle', 'Research node'),
+                28,
+              ),
+            ),
+            candidates: [
+              stage.editorial.summary,
+              getStageLocalizedPair(
+                stage.locales,
+                'description',
+                preference,
+                stage.description,
+                stage.description,
+              ).primary,
+            ],
+            t,
+          }),
           hasNarrativeTitle: Boolean(displayTitle),
         }
       }),
@@ -620,6 +750,27 @@ export function TopicPage() {
 
     return filtered.length > 0 ? filtered : nodes
   }, [displayedStageIndexSet, nodes])
+  const paperRouteMap = useMemo(() => {
+    const entries = new Map<string, string>()
+
+    for (const node of displayedNodes) {
+      for (const paperId of node.paperIds) {
+        if (!entries.has(paperId)) {
+          entries.set(paperId, buildPaperAnchorRoute(node.route, paperId))
+        }
+      }
+    }
+
+    return entries
+  }, [displayedNodes])
+  const visibleMapStats = useMemo(
+    () => ({
+      stageCount: displayedStageSections.length,
+      nodeCount: displayedNodes.length,
+      paperCount: countUniqueDisplayNodePapers(displayedNodes),
+    }),
+    [displayedNodes, displayedStageSections],
+  )
   const nodesByStage = useMemo(
     () =>
       new Map(
@@ -645,9 +796,14 @@ export function TopicPage() {
   const closingParagraphs = useMemo(
     () =>
       viewModel
-        ? buildContentOnlyClosingParagraphs(viewModel, stageSections, nodes, t)
+        ? buildContentOnlyClosingParagraphs(
+            viewModel,
+            displayedStageSections,
+            displayedNodes,
+            t,
+          )
         : [],
-    [nodes, stageSections, t, viewModel],
+    [displayedNodes, displayedStageSections, t, viewModel],
   )
   const suggestedQuestions = useMemo(
     () => {
@@ -676,7 +832,7 @@ export function TopicPage() {
               ),
               anchorId: `stage:${stage.stageIndex}`,
             })),
-            ...nodes.slice(0, 3).map((node) => ({
+            ...displayedNodes.slice(0, 3).map((node) => ({
               id: `node:${node.nodeId}`,
               kind: 'node' as const,
               label: node.title,
@@ -685,7 +841,7 @@ export function TopicPage() {
               anchorId: node.anchorId,
             })),
           ] satisfies ContextPill[]),
-    [displayedStageSections, effectiveStageWindowMonths, nodes, viewModel],
+    [displayedNodes, displayedStageSections, effectiveStageWindowMonths, viewModel],
   )
   const resources = useMemo(
     () =>
@@ -697,18 +853,29 @@ export function TopicPage() {
         description:
           sanitizeTopicSurfaceText(paper.explanation, 180) ||
           sanitizeTopicSurfaceText(paper.summary, 180),
-        route: withStageWindowRoute(paper.route, effectiveStageWindowMonths),
+        route: withStageWindowRoute(
+          paperRouteMap.get(paper.paperId) ??
+            resolvePrimaryReadingRouteForPaper({
+              paperId: paper.paperId,
+              route: paper.route,
+              anchorId: paper.anchorId,
+              topicId: viewModel?.topicId,
+            }),
+          effectiveStageWindowMonths,
+        ),
         anchorId: paper.anchorId,
       })),
-    [effectiveStageWindowMonths, viewModel],
+    [effectiveStageWindowMonths, paperRouteMap, viewModel],
   )
   useDocumentTitle(topicTitle.primary || t('topic.unavailable', 'Topic'))
 
   const stageWindowLabel = useCallback(
     (months: number) =>
-      renderTemplate(t('topic.stageWindowOption', '{count} months'), {
-        count: months,
-      }),
+      months === 1
+        ? t('topic.stageWindowOptionSingle', '1 month')
+        : renderTemplate(t('topic.stageWindowOption', '{count} months'), {
+            count: months,
+          }),
     [t],
   )
   const stageCadenceNote = renderTemplate(
@@ -752,8 +919,48 @@ export function TopicPage() {
   const seedQuestion = (prompt: string) => { openWorkbench(); window.setTimeout(() => window.dispatchEvent(new CustomEvent(TOPIC_QUESTION_SEED_EVENT, { detail: prompt })), 80) }
   const openEvidence = async (anchorId: string) => { const evidence = await apiGet<EvidencePayload>(`/api/evidence/${encodeURIComponent(anchorId)}`); setSelectedEvidence(evidence); const next = new URLSearchParams(searchParams); next.set('evidence', anchorId); next.set('stageMonths', String(effectiveStageWindowMonths)); next.delete('anchor'); setSearchParams(next, { replace: true }) }
   const handleCitation = (citation: CitationRef) => (citation.type === 'figure' || citation.type === 'table' || citation.type === 'formula' || citation.type === 'section') ? void openEvidence(citation.anchorId) : navigate(withStageWindowRoute(citation.route, effectiveStageWindowMonths))
-  const handleSearchResult = (item: SearchResultItem) => { if (item.anchorId && ['section', 'figure', 'table', 'formula'].includes(item.kind) && item.topicId === topicId) return void openEvidence(item.anchorId); if (item.anchorId && item.kind === 'topic' && item.id === topicId) return void focusAnchor(item.anchorId); navigate(withStageWindowRoute(item.route, effectiveStageWindowMonths)) }
-  const handleAction = (action: SuggestedAction) => { if (!viewModel) return; if (action.action === 'navigate' && action.targetId?.startsWith('stage:')) return void focusAnchor(action.targetId); if (action.targetId && /^(section|figure|table|formula):/u.test(action.targetId)) return void openEvidence(action.targetId); if (action.targetId?.startsWith('node:')) { const node = nodes.find((item) => item.nodeId === action.targetId?.replace('node:', '')); if (node) return action.action === 'navigate' ? void navigate(withStageWindowRoute(node.route, effectiveStageWindowMonths)) : void seedQuestion(buildFollowUpPrompt(node.title, t)) } if (action.targetId?.startsWith('paper:')) { const paper = viewModel.papers.find((item) => item.paperId === action.targetId?.replace('paper:', '')); if (paper) return action.action === 'navigate' ? void navigate(withStageWindowRoute(paper.route, effectiveStageWindowMonths)) : void seedQuestion(buildFollowUpPrompt(paper.title, t)) } seedQuestion(action.label) }
+  const handleSearchResult = (item: SearchResultItem) => {
+    if (item.anchorId && ['section', 'figure', 'table', 'formula'].includes(item.kind) && item.topicId === topicId) return void openEvidence(item.anchorId)
+    if (item.anchorId && item.kind === 'topic' && item.id === topicId) return void focusAnchor(item.anchorId)
+    const resolvedRoute =
+      item.kind === 'paper'
+        ? resolvePrimaryReadingRouteForPaper({
+            paperId: item.id,
+            route: item.route,
+            anchorId: item.anchorId,
+            nodeRoute: item.nodeRoute,
+            relatedNodes: item.relatedNodes,
+            topicId: item.topicId ?? topicId,
+          })
+        : item.route
+    navigate(withStageWindowRoute(resolvedRoute, effectiveStageWindowMonths))
+  }
+  const handleAction = (action: SuggestedAction) => {
+    if (!viewModel) return
+    if (action.action === 'navigate' && action.targetId?.startsWith('stage:')) return void focusAnchor(action.targetId)
+    if (action.targetId && /^(section|figure|table|formula):/u.test(action.targetId)) return void openEvidence(action.targetId)
+    if (action.targetId?.startsWith('node:')) {
+      const node = nodes.find((item) => item.nodeId === action.targetId?.replace('node:', ''))
+      if (node) return action.action === 'navigate' ? void navigate(withStageWindowRoute(node.route, effectiveStageWindowMonths)) : void seedQuestion(buildFollowUpPrompt(node.title, t))
+    }
+    if (action.targetId?.startsWith('paper:')) {
+      const paper = viewModel.papers.find((item) => item.paperId === action.targetId?.replace('paper:', ''))
+      if (paper) {
+        const readingRoute =
+          paperRouteMap.get(paper.paperId) ??
+          resolvePrimaryReadingRouteForPaper({
+            paperId: paper.paperId,
+            route: paper.route,
+            anchorId: paper.anchorId,
+            topicId: viewModel.topicId,
+          })
+        return action.action === 'navigate'
+          ? void navigate(withStageWindowRoute(readingRoute, effectiveStageWindowMonths))
+          : void seedQuestion(buildFollowUpPrompt(paper.title, t))
+      }
+    }
+    seedQuestion(action.label)
+  }
 
   if (loading) return <TopicState kind="loading" message={t('topic.generating', 'Generating content...')} />
   if (error) return <TopicState kind="error" message={error.message || t('topic.unavailable', 'Topic unavailable')} onRetry={loadTopic} />
@@ -789,13 +996,19 @@ export function TopicPage() {
 
             <div className="mt-4 flex flex-wrap gap-2">
               <span className="rounded-full bg-[var(--surface-soft)] px-3 py-1.5 text-[10px] text-black/62">
-                {viewModel.stats.stageCount} {t('topic.stages', 'Stages')}
+                {renderTemplate(t('topic.stageWindowVisibleStages', '{count} stages visible'), {
+                  count: visibleMapStats.stageCount,
+                })}
               </span>
               <span className="rounded-full bg-[var(--surface-soft)] px-3 py-1.5 text-[10px] text-black/62">
-                {viewModel.stats.nodeCount} {t('topic.nodes', 'Nodes')}
+                {renderTemplate(t('topic.stageWindowVisibleNodes', '{count} nodes on map'), {
+                  count: visibleMapStats.nodeCount,
+                })}
               </span>
               <span className="rounded-full bg-[var(--surface-soft)] px-3 py-1.5 text-[10px] text-black/62">
-                {viewModel.stats.paperCount} {t('topic.papers', 'Papers')}
+                {renderTemplate(t('topic.stageWindowVisiblePapers', '{count} papers linked'), {
+                  count: visibleMapStats.paperCount || viewModel.stats.paperCount,
+                })}
               </span>
             </div>
 
@@ -821,8 +1034,8 @@ export function TopicPage() {
             </div>
             <div className="rounded-full bg-[var(--surface-soft)] px-3 py-1.5 text-[11px] text-black/54">
               {renderTemplate(t('topic.graphStats', '{stages} stages · {nodes} nodes'), {
-                stages: displayedStageSections.length,
-                nodes: displayedNodes.length,
+                stages: visibleMapStats.stageCount,
+                nodes: visibleMapStats.nodeCount,
               })}
             </div>
           </div>
@@ -854,7 +1067,7 @@ export function TopicPage() {
                     <div className="pointer-events-none absolute bottom-[-26px] left-[38px] top-[104px] hidden w-px bg-[linear-gradient(180deg,rgba(125,25,56,0.22)_0%,rgba(125,25,56,0.04)_100%)] lg:block" />
                   ) : null}
 
-                  <div className="grid gap-5 lg:grid-cols-[284px_minmax(0,1fr)]">
+                  <div className="mx-auto grid max-w-[1120px] gap-4 lg:grid-cols-[248px_minmax(0,1fr)]">
                     <button
                       type="button"
                       id={anchorDomId(`stage:${stage.stageIndex}`)}
@@ -883,16 +1096,11 @@ export function TopicPage() {
                             papers: stage.paperCount,
                           })}
                         </span>
-                        <span className="rounded-full border border-black/8 bg-white px-2.5 py-1">
-                          {renderTemplate(t('topic.stageIndexBadge', 'Stage {stage}'), {
-                            stage: stage.stageIndex,
-                          })}
-                        </span>
                       </div>
                     </button>
 
                     <div className="min-w-0">
-                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                      <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))] xl:[grid-template-columns:repeat(auto-fit,minmax(240px,1fr))]">
                         {stageNodes.map((node) => (
                           <NodeCard
                             key={node.nodeId}

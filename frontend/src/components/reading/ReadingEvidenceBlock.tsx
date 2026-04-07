@@ -100,6 +100,12 @@ function stripEvidenceBody(content: string, quote: string, tableSource: string) 
   return body.replace(/\n{3,}/gu, '\n\n').trim()
 }
 
+function clipEvidenceText(content: string, maxLength = 1600) {
+  const normalized = content.replace(/\r\n/gu, '\n').trim()
+  if (normalized.length <= maxLength) return normalized
+  return `${normalized.slice(0, Math.max(0, maxLength - 3))}...`
+}
+
 export function ReadingEvidenceBlock({
   anchorId,
   evidence,
@@ -118,8 +124,8 @@ export function ReadingEvidenceBlock({
     evidence.type === 'table' ? parseEvidenceTable(evidence.content, evidence.quote) : null
   const bodyText =
     evidence.type === 'table'
-      ? stripEvidenceBody(evidence.content, evidence.quote, tableSource)
-      : evidence.content
+      ? clipEvidenceText(stripEvidenceBody(evidence.content, evidence.quote, tableSource))
+      : clipEvidenceText(evidence.content)
 
   return (
     <figure
@@ -187,7 +193,7 @@ export function ReadingEvidenceBlock({
             </div>
           ) : (
             <pre className="overflow-x-auto whitespace-pre-wrap px-4 py-4 text-[12px] leading-6 text-black/66">
-              {tableSource || evidence.content}
+              {clipEvidenceText(tableSource || evidence.content)}
             </pre>
           )}
         </div>

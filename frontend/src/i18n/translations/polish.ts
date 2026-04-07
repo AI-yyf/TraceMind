@@ -19,7 +19,7 @@ const translations: TranslationDictionary = {
   'common.failed': { zh: '操作失败', en: 'Failed' },
 
   'brand.title': { zh: '溯知', en: 'TraceMind' },
-  'brand.subtitle': { zh: 'AI Research Workbench', en: 'AI Research Workbench' },
+  'brand.subtitle': { zh: 'AI 研究工作台', en: 'AI Research Workbench' },
   'brand.tagline': {
     zh: '让研究变成一条可追踪、可沉淀、可继续推进的认知脉络。',
     en: 'Turn research into a traceable line of thought you can revisit, refine, and extend.',    ja: "Turn research into a traceable line of thought you can revisit, refine, and extend.",
@@ -782,6 +782,32 @@ const translations: TranslationDictionary = {
     es: '{count} roles',
     ru: '{count} ролей',
   },
+  'studio.models.summarySlotsTitle': { zh: '默认槽位', en: 'Default slots' },
+  'studio.models.summaryRolesTitle': { zh: '角色继承', en: 'Role inheritance' },
+  'studio.models.summaryRoutingTitle': { zh: '任务路由', en: 'Task routing' },
+  'studio.models.summaryOverridesTitle': { zh: '固定覆盖', en: 'Pinned overrides' },
+  'studio.models.summaryConfigured': { zh: '已配置', en: 'configured' },
+  'studio.models.summaryInherited': { zh: '继承', en: 'inherited' },
+  'studio.models.summaryCustom': { zh: '自定义', en: 'custom' },
+  'studio.models.summaryAutomatic': { zh: '自动', en: 'automatic' },
+  'studio.models.summaryExplicit': { zh: '显式', en: 'explicit' },
+  'studio.models.summaryPinned': { zh: '个固定覆盖', en: 'pinned' },
+  'studio.models.taskOverridesTitle': { zh: '固定任务覆盖', en: 'Pinned Task Overrides' },
+  'studio.models.taskOverridesSummary': {
+    zh: '个遗留固定覆盖仍会高于路由规则。只有在需要逐条检查或移除时再展开。',
+    en: 'legacy task overrides still sit above routing. Expand only when you need to inspect or remove them one by one.',
+  },
+  'studio.models.taskOverridesDesc': {
+    zh: '每一条固定覆盖都已经在上方任务卡里标出。这里只保留一个紧凑清理列表，避免把模型页拉成第二份路由面板。',
+    en: 'Each pinned override is already marked on the task cards above. Keep this compact list only for cleanup, instead of turning the page into a second routing panel.',
+  },
+  'studio.models.taskOverridesPinnedPreview': { zh: '固定覆盖', en: 'Pinned override' },
+  'studio.models.taskOverridesPinnedHint': {
+    zh: '这个任务仍然被导入或遗留的固定覆盖锁定。修改上方路由，或在这里移除覆盖，才会重新交给工作台编排。',
+    en: 'This task is still pinned to an imported advanced override. Change the routing selector above or remove the override here to hand control back to the workbench.',
+  },
+  'studio.models.taskOverridesReview': { zh: '查看覆盖详情', en: 'Review overrides' },
+  'studio.models.taskOverridesRemove': { zh: '移除覆盖', en: 'Remove override' },
 }
 
 export default translations

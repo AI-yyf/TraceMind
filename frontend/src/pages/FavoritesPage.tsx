@@ -455,9 +455,20 @@ function FavoriteCard({
   removeLabel: string
   onRemove: () => void
 }) {
+  const normalizedRoute = favorite.route?.trim() || undefined
+  const fallbackNodeRoute = favorite.nodeId
+    ? `/node/${favorite.nodeId}${
+        favorite.anchorId
+          ? `?anchor=${encodeURIComponent(favorite.anchorId)}`
+          : favorite.paperId
+            ? `?anchor=${encodeURIComponent(`paper:${favorite.paperId}`)}`
+            : ''
+      }`
+    : undefined
   const openRoute =
-    favorite.route ||
-    (favorite.paperId ? `/paper/${favorite.paperId}` : favorite.topicId ? `/topic/${favorite.topicId}` : undefined)
+    (normalizedRoute?.startsWith('/paper/') && fallbackNodeRoute ? fallbackNodeRoute : normalizedRoute) ||
+    fallbackNodeRoute ||
+    (favorite.topicId ? `/topic/${favorite.topicId}` : undefined)
 
   return (
     <article className="rounded-[26px] border border-black/6 bg-white px-6 py-6 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">

@@ -1,0 +1,116 @@
+- generic [ref=e2]:
+  - button "界面语言 中文" [ref=e6] [cursor=pointer]:
+    - img [ref=e7]
+    - generic [ref=e11]:
+      - generic [ref=e12]: 界面语言
+      - generic [ref=e13]: 中文
+    - img [ref=e14]
+  - generic [ref=e21]:
+    - complementary [ref=e22]:
+      - link "溯知 TraceMind" [ref=e23] [cursor=pointer]:
+        - /url: /
+        - generic [ref=e24]: 溯知
+        - generic [ref=e25]: TraceMind
+      - generic [ref=e26]:
+        - link "首页" [ref=e27] [cursor=pointer]:
+          - /url: /
+          - img [ref=e28]
+          - generic [ref=e31]: 首页
+        - link "主题" [ref=e32] [cursor=pointer]:
+          - /url: /manage/topics
+          - img [ref=e33]
+          - generic [ref=e35]: 主题
+        - link "编排" [ref=e36] [cursor=pointer]:
+          - /url: /research
+          - img [ref=e37]
+          - generic [ref=e39]: 编排
+        - link "收藏" [ref=e40] [cursor=pointer]:
+          - /url: /favorites
+          - img [ref=e41]
+          - generic [ref=e43]: 收藏
+        - link "快照" [ref=e44] [cursor=pointer]:
+          - /url: /today
+          - img [ref=e45]
+          - generic [ref=e48]: 快照
+        - link "设置" [ref=e49] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e50]
+          - generic [ref=e53]: 设置
+        - button "搜索" [ref=e54] [cursor=pointer]:
+          - img [ref=e55]
+          - generic [ref=e58]: 搜索
+    - generic [ref=e59]:
+      - main [ref=e60]:
+        - generic [ref=e61]:
+          - link "返回主题" [ref=e62] [cursor=pointer]:
+            - /url: /topic/topic-1?stageMonths=1
+            - img [ref=e63]
+            - text: 返回主题
+          - generic [ref=e65]:
+            - generic [ref=e66]: 2023.11 · 2023.11.10
+            - heading "统一框架的突破" [level=1] [ref=e307]
+            - generic [ref=e68]: 感知预测规划一体化
+            - paragraph [ref=e308]: 当模块化架构的级联误差与信息压缩成为瓶颈，端到端范式试图以单一神经网络捅破感知、预测与规划的边界。UniAD（Unified Autonomous Driving）的出现，正是这一冲动的集中体现——它声称通过Query-based注意力机制实现特征在任务间的无损流动，将感知检测、运动预测、占据栅格预测与规划整合为单一可微分架构。这一动机本身站得住脚：传... 自动驾驶系统的模块化架构曾被视为工程稳健性的基石：感知模块输出边界框，预测模块推算轨迹，规划模块生成控制指令，信息在接口处被逐级压缩，误差在级联中放大。UniAD（Unified Autono...
+          - generic [ref=e71]:
+            - generic [ref=e72]:
+              - generic [ref=e73]:
+                - generic [ref=e74]: 阶段锁定文章
+                - heading "2023.11" [level=2] [ref=e309]
+                - paragraph [ref=e76]: 这篇节点文章只保留归入 2023.11 的论文、图、表和公式。若主题分阶段节奏发生变化，请去主题管理调整，而不是在阅读面临时改结构。
+              - link "管理主题节奏" [ref=e77] [cursor=pointer]:
+                - /url: /manage/topics
+                - text: 管理主题节奏
+                - img [ref=e78]
+            - generic [ref=e82]:
+              - generic [ref=e310]: "2023.11"
+              - generic [ref=e84]: 1 篇论文
+              - generic [ref=e85]: 0 个图、表和公式
+          - generic [ref=e86]:
+            - generic [ref=e87]:
+              - generic [ref=e88]: 论文操作
+              - paragraph [ref=e89]: 已选 0 篇，可下载 0 篇，可导入 0 篇。
+            - generic [ref=e90]:
+              - button "全选论文" [ref=e91] [cursor=pointer]
+              - button "清空选择" [disabled] [ref=e92]
+              - button "复制导入链接" [disabled] [ref=e93]
+              - button "下载 0 篇 PDF" [disabled] [ref=e94]
+          - article [ref=e95]:
+            - generic [ref=e96]:
+              - heading "先把这个节点的问题、判断和边界说清楚" [level=2] [ref=e97]
+              - paragraph [ref=e311]: 自动驾驶系统的模块化架构曾被视为工程稳健性的基石：感知模块输出边界框，预测模块推算轨迹，规划模块生成控制指令，信息在接口处被逐级压缩，误差在级联中放大。UniAD（Unified Autonomous Driving）的出现，试图以「统一框架」打破这一隔阂，将感知、预测、规划整合为单一端到端模型，通过Query-based注意力机制实现特征在任务间的无损流动。然而，作为Stage 3核心节点的支撑论文，UniAD陷入罕见的结构性证...
+            - generic [ref=e313]:
+              - checkbox "选择论文 UniAD：统一自动驾驶框架" [ref=e315]
+              - generic [ref=e316]:
+                - generic [ref=e317]:
+                  - generic [ref=e318]: 主线论文
+                  - generic [ref=e319]: 2023.11.10
+                - heading "UniAD：统一自动驾驶框架" [level=2] [ref=e320]
+                - generic [ref=e321]: "UniAD: Unified Autonomous Driving"
+                - paragraph [ref=e322]: 这是近年来最具影响力的自动驾驶框架之一，通过设计专门的注意力机制实现对周围环境的联合建模。
+                - generic [ref=e323]:
+                  - generic [ref=e324]: 论文地址
+                  - link "arxiv.org https://arxiv.org/abs/2311.00001" [ref=e325] [cursor=pointer]:
+                    - /url: https://arxiv.org/abs/2311.00001
+                    - generic [ref=e326]: arxiv.org
+                    - generic [ref=e327]: https://arxiv.org/abs/2311.00001
+                    - img [ref=e328]
+                - generic [ref=e332]:
+                  - link "原始地址" [ref=e333] [cursor=pointer]:
+                    - /url: https://arxiv.org/abs/2311.00001
+                  - link "下载 PDF" [ref=e334] [cursor=pointer]:
+                    - /url: https://arxiv.org/pdf/2311.00001.pdf
+                  - link "跳到 UniAD：统一自动驾驶框架" [ref=e335] [cursor=pointer]:
+                    - /url: /node/node-3?anchor=paper%3Apaper-3&stageMonths=1
+            - generic [ref=e336]:
+              - heading "UniAD：统一自动驾驶框架 为什么构成节点主线" [level=2] [ref=e337]
+              - generic [ref=e338]:
+                - paragraph [ref=e339]: 提出了一个统一的自动驾驶框架，整合感知、预测和规划模块。
+                - paragraph [ref=e340]: 这是近年来最具影响力的自动驾驶框架之一，通过设计专门的注意力机制实现对周围环境的联合建模。
+                - paragraph [ref=e341]: 证据重心：0 张图，0 张表，0 个公式。
+            - generic [ref=e130]:
+              - heading "严厉审稿人会追问什么" [level=2] [ref=e131]
+              - paragraph [ref=e132]: 节点内多篇论文虽然能形成主线，但是否真的彼此推进，仍要严格比较任务设定、评价指标和数据条件。
+              - paragraph [ref=e134]: 部分论文缺少足够的可视化或表格证据，节点整体证据链不够均衡。
+      - button "打开工作台" [ref=e135] [cursor=pointer]:
+        - img [ref=e136]
+        - text: 打开工作台

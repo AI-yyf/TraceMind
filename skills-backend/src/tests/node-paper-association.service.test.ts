@@ -181,3 +181,52 @@ test('collectNodeRelatedPaperIds includes papers directly referenced in node pro
   assert.equal(relatedIds.includes('paper-1'), true)
   assert.equal(relatedIds.includes('paper-5'), true)
 })
+
+test('collectNodeRelatedPaperIds respects stage-scoped paper allowlists', () => {
+  const papers = [
+    createPaper({
+      id: 'paper-2',
+      title: 'Autonomous Driving World Models',
+      summary: 'Seed paper for the node.',
+    }),
+    createPaper({
+      id: 'kinematics-paper',
+      title: 'Kinematics-Aware Latent World Models for Autonomous Driving',
+      summary: 'Stage-local supporting paper.',
+      figures: 4,
+      cover: true,
+      publishedAt: '2026-03-05T00:00:00.000Z',
+    }),
+    createPaper({
+      id: 'dynflow-paper',
+      title: 'DynFlowDrive: Flow-Based Dynamic World Modeling for Autonomous Driving',
+      summary: 'Semantically close but outside the active stage bucket.',
+      figures: 5,
+      cover: true,
+      publishedAt: '2026-07-12T00:00:00.000Z',
+    }),
+  ]
+
+  const relatedIds = collectNodeRelatedPaperIds({
+    stageTitle: 'World-model evidence in 2026.03',
+    allowedPaperIds: ['paper-2', 'kinematics-paper'],
+    node: {
+      primaryPaperId: 'paper-2',
+      nodeLabel: 'World-model evidence',
+      nodeSubtitle: 'Latent prediction and dynamics',
+      nodeSummary:
+        'This node should only compare the seed paper against same-stage evidence about latent world modeling.',
+      nodeExplanation:
+        'The later dynflow paper is relevant in content, but it belongs to a later stage and must not leak into this node.',
+      primaryPaper: {
+        title: 'Autonomous Driving World Models',
+        titleZh: '自动驾驶世界模型',
+        titleEn: 'Autonomous Driving World Models',
+      },
+      papers: [{ paperId: 'paper-2' }],
+    },
+    papers,
+  })
+
+  assert.deepEqual(relatedIds, ['paper-2', 'kinematics-paper'])
+})

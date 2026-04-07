@@ -1,0 +1,1644 @@
+- generic [ref=e2]:
+  - button "界面语言 中文" [ref=e6] [cursor=pointer]:
+    - img [ref=e7]
+    - generic [ref=e11]:
+      - generic [ref=e12]: 界面语言
+      - generic [ref=e13]: 中文
+    - img [ref=e14]
+  - generic [ref=e21]:
+    - complementary [ref=e22]:
+      - link "溯知 TraceMind" [ref=e23] [cursor=pointer]:
+        - /url: /
+        - generic [ref=e24]: 溯知
+        - generic [ref=e25]: TraceMind
+      - generic [ref=e26]:
+        - link "首页" [ref=e27] [cursor=pointer]:
+          - /url: /
+          - img [ref=e28]
+          - generic [ref=e31]: 首页
+        - link "主题" [ref=e32] [cursor=pointer]:
+          - /url: /manage/topics
+          - img [ref=e33]
+          - generic [ref=e35]: 主题
+        - link "编排" [ref=e36] [cursor=pointer]:
+          - /url: /research
+          - img [ref=e37]
+          - generic [ref=e39]: 编排
+        - link "收藏" [ref=e40] [cursor=pointer]:
+          - /url: /favorites
+          - img [ref=e41]
+          - generic [ref=e43]: 收藏
+        - link "快照" [ref=e44] [cursor=pointer]:
+          - /url: /today
+          - img [ref=e45]
+          - generic [ref=e48]: 快照
+        - link "设置" [ref=e49] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e50]
+          - generic [ref=e53]: 设置
+        - button "搜索" [ref=e54] [cursor=pointer]:
+          - img [ref=e55]
+          - generic [ref=e58]: 搜索
+    - main [ref=e60]:
+      - generic [ref=e61]: prompt studio
+      - generic [ref=e62]:
+        - generic [ref=e63]:
+          - generic [ref=e64]:
+            - generic [ref=e65]:
+              - generic [ref=e66]: Prompt Studio
+              - heading "设置与内容中枢" [level=1] [ref=e67]
+              - paragraph [ref=e68]: 把模型接入、研究运行时、提示词模板、界面文案和外部 Agent 资产放在同一个工作台里统一管理，确保前端、后端技能和外部代理遵循同一套规则。
+              - generic [ref=e69]:
+                - generic [ref=e70]:
+                  - generic [ref=e71]: 1. 模型接入
+                  - paragraph [ref=e72]: 先接通语言模型和多模态模型，再决定每类任务默认走哪一个槽位。
+                - generic [ref=e73]:
+                  - generic [ref=e74]: 2. 研究编排
+                  - paragraph [ref=e75]: 再调整生成、记忆、修订和研究节奏，让系统能带着连续性持续推进。
+                - generic [ref=e76]:
+                  - generic [ref=e77]: 3. 模板与资产
+                  - paragraph [ref=e78]: 最后处理提示词、界面文案和外部 Agent 资产，避免设置中心变成一页巨型表单。
+            - generic [ref=e79]:
+              - generic [ref=e80]:
+                - button "模型" [ref=e81] [cursor=pointer]
+                - button "链路" [ref=e82] [cursor=pointer]
+                - button "提示词" [ref=e83] [cursor=pointer]
+                - button "固定文案" [ref=e84] [cursor=pointer]
+                - button "Agent 脚手架" [ref=e85] [cursor=pointer]
+              - generic [ref=e86]:
+                - generic [ref=e87]:
+                  - generic [ref=e88]: 当前正在配置
+                  - generic [ref=e89]: 模型
+                  - paragraph [ref=e90]: 先确定默认槽位和研究角色，再补细任务路由，这样这页会清楚告诉你究竟是谁在做事。
+                - generic [ref=e91]: 编辑语言
+                - generic [ref=e92]:
+                  - button "简体中文" [ref=e93] [cursor=pointer]
+                  - button "English" [ref=e94] [cursor=pointer]
+                  - button "日本語" [ref=e95] [cursor=pointer]
+                  - button "한국어" [ref=e96] [cursor=pointer]
+                  - button "Deutsch" [ref=e97] [cursor=pointer]
+                  - button "Français" [ref=e98] [cursor=pointer]
+                  - button "Español" [ref=e99] [cursor=pointer]
+                  - button "Русский" [ref=e100] [cursor=pointer]
+          - generic [ref=e101]:
+            - article [ref=e102]:
+              - generic [ref=e103]: 语言模型
+              - generic [ref=e104]:
+                - generic [ref=e105]: Kimi-K2.5
+                - img [ref=e106]
+            - article [ref=e109]:
+              - generic [ref=e110]: 多模态模型
+              - generic [ref=e111]:
+                - generic [ref=e112]: Kimi-K2.5
+                - img [ref=e113]
+            - article [ref=e116]:
+              - generic [ref=e117]: 提示词模板
+              - generic [ref=e118]:
+                - generic [ref=e119]: 20 模板
+                - img [ref=e120]
+            - article [ref=e123]:
+              - generic [ref=e124]: 界面文案
+              - generic [ref=e125]:
+                - generic [ref=e126]: 378 文案条目
+                - img [ref=e127]
+        - generic [ref=e131]:
+          - article [ref=e132]:
+            - heading "研究角色的最小配置" [level=2] [ref=e133]
+            - paragraph [ref=e134]: 先配置两个默认槽位，让研究角色默认继承；只有确实例外时才单独定制。这样既保留深度角色路由能力，也让工作台保持清晰易懂。
+            - generic [ref=e136]:
+              - generic [ref=e137]:
+                - generic [ref=e138]: 1. 先配置默认语言槽位和默认多模态槽位。
+                - generic [ref=e139]: 2. 让研究角色保持继承模式，除非某个角色确实需要专门模型。
+                - generic [ref=e140]: 3. 只有当某个后端任务需要绕过默认继承路径时，才调整任务路由。
+              - generic [ref=e141]:
+                - generic [ref=e142]:
+                  - generic [ref=e143]: 共享网关环境变量
+                  - paragraph [ref=e144]: 如果语言槽位和多模态槽位共用同一个兼容网关，就把 provider、base URL 和 API key 放进共享环境变量，只在需要时切换各槽位的 model id。
+                  - generic [ref=e145]:
+                    - generic [ref=e146]: OMNI_DEFAULT_PROVIDER
+                    - generic [ref=e147]: OMNI_DEFAULT_BASE_URL
+                    - generic [ref=e148]: OMNI_DEFAULT_API_KEY
+                    - generic [ref=e149]: OMNI_LANGUAGE_MODEL
+                    - generic [ref=e150]: OMNI_MULTIMODAL_MODEL
+                - generic [ref=e151]:
+                  - generic [ref=e152]: 可选角色环境变量覆写
+                  - paragraph [ref=e153]: 研究角色环境变量现在会从首选默认槽位继承 provider、base URL 和 API key，所以大多数时候你只需要覆写该角色的 model id。
+                  - generic [ref=e154]:
+                    - generic [ref=e155]: OMNI_ROLE_NODE_WRITER_MODEL
+                    - generic [ref=e156]: OMNI_ROLE_VISION_READER_MODEL
+          - generic [ref=e157]:
+            - article [ref=e158]:
+              - generic [ref=e159]: 默认槽位
+              - generic [ref=e160]:
+                - generic [ref=e161]: 2/2 已配置
+                - img [ref=e162]
+            - article [ref=e165]:
+              - generic [ref=e166]: 角色继承
+              - generic [ref=e168]: 0 继承 · 8 自定义
+            - article [ref=e170]:
+              - generic [ref=e171]: 任务路由
+              - generic [ref=e173]: 0 自动 · 0 显式
+            - article [ref=e175]:
+              - generic [ref=e176]: 固定覆盖
+              - generic [ref=e178]: 9 个固定覆盖
+          - article [ref=e180]:
+            - heading "预设组合" [level=2] [ref=e181]
+            - paragraph [ref=e182]: 先应用一组干净的提供方搭配，再继续微调下面的槽位细节。
+            - generic [ref=e184]:
+              - 'button "兼容网关 Kimi 双槽位 一个 OpenAI 兼容网关，同时驱动语言与多模态默认槽位，研究角色默认继承，必要时再覆盖。 默认语言槽位: openai_compatible / Kimi-K2.5 默认多模态槽位: openai_compatible / Kimi-K2.5" [ref=e185] [cursor=pointer]':
+                - generic [ref=e186]: 兼容网关 Kimi 双槽位
+                - paragraph [ref=e187]: 一个 OpenAI 兼容网关，同时驱动语言与多模态默认槽位，研究角色默认继承，必要时再覆盖。
+                - generic [ref=e188]:
+                  - generic [ref=e189]: "默认语言槽位: openai_compatible / Kimi-K2.5"
+                  - generic [ref=e190]: "默认多模态槽位: openai_compatible / Kimi-K2.5"
+              - 'button "NVIDIA Integrate 官方 NVIDIA Integrate 组合，高质量文本模型搭配长上下文多模态模型。 默认语言槽位: nvidia / minimaxai/minimax-m2.5 默认多模态槽位: nvidia / moonshotai/kimi-k2.5" [ref=e191] [cursor=pointer]':
+                - generic [ref=e192]: NVIDIA Integrate
+                - paragraph [ref=e193]: 官方 NVIDIA Integrate 组合，高质量文本模型搭配长上下文多模态模型。
+                - generic [ref=e194]:
+                  - generic [ref=e195]: "默认语言槽位: nvidia / minimaxai/minimax-m2.5"
+                  - generic [ref=e196]: "默认多模态槽位: nvidia / moonshotai/kimi-k2.5"
+              - 'button "全球前沿 语言使用 OpenAI，多模态阅读使用 Anthropic，适合全球前沿能力组合。 默认语言槽位: openai / gpt-5.4 默认多模态槽位: anthropic / claude-sonnet-4-0" [ref=e197] [cursor=pointer]':
+                - generic [ref=e198]: 全球前沿
+                - paragraph [ref=e199]: 语言使用 OpenAI，多模态阅读使用 Anthropic，适合全球前沿能力组合。
+                - generic [ref=e200]:
+                  - generic [ref=e201]: "默认语言槽位: openai / gpt-5.4"
+                  - generic [ref=e202]: "默认多模态槽位: anthropic / claude-sonnet-4-0"
+              - 'button "中国最强 顶级国产推理模型加多模态组合。 默认语言槽位: deepseek / deepseek-reasoner 默认多模态槽位: dashscope / qwen3-vl-plus" [ref=e203] [cursor=pointer]':
+                - generic [ref=e204]: 中国最强
+                - paragraph [ref=e205]: 顶级国产推理模型加多模态组合。
+                - generic [ref=e206]:
+                  - generic [ref=e207]: "默认语言槽位: deepseek / deepseek-reasoner"
+                  - generic [ref=e208]: "默认多模态槽位: dashscope / qwen3-vl-plus"
+              - 'button "中国混合 面向中文部署的平衡 GLM 双栈方案。 默认语言槽位: bigmodel / glm-5 默认多模态槽位: bigmodel / glm-4.6v" [ref=e209] [cursor=pointer]':
+                - generic [ref=e210]: 中国混合
+                - paragraph [ref=e211]: 面向中文部署的平衡 GLM 双栈方案。
+                - generic [ref=e212]:
+                  - generic [ref=e213]: "默认语言槽位: bigmodel / glm-5"
+                  - generic [ref=e214]: "默认多模态槽位: bigmodel / glm-4.6v"
+          - article [ref=e215]:
+            - heading "默认语言槽位" [level=2] [ref=e216]
+            - paragraph [ref=e217]: 负责大多数文本研究、主题构建、节点写作和工作台对话。
+            - generic [ref=e219]:
+              - generic [ref=e220]: "已保存密钥: sk-J****CQIN"
+              - combobox [ref=e221]:
+                - option "选择提供方"
+                - option "NVIDIA Integrate"
+                - option "OpenAI-Compatible / Custom" [selected]
+                - option "OpenAI"
+                - option "Anthropic"
+                - option "Google"
+                - option "阿里百炼"
+                - option "智谱"
+                - option "火山方舟"
+                - option "腾讯混元"
+                - option "DeepSeek"
+              - combobox [ref=e222]:
+                - option "选择模型"
+                - option "MiniMax M2.5"
+                - option "Kimi K2.5" [selected]
+                - option "Kimi K2.5"
+                - option "GLM-5"
+                - option "GLM 4.7"
+              - textbox "也可直接输入自定义模型 ID" [ref=e223]: Kimi-K2.5
+              - textbox "Base URL（可选）" [ref=e224]: https://ai.1seey.com/v1
+              - textbox "留空则继续使用已保存的密钥" [ref=e225]
+              - generic [ref=e226]:
+                - generic [ref=e227]:
+                  - generic [ref=e228]: OpenAI-Compatible / Custom
+                  - generic [ref=e229]: custom
+                - paragraph [ref=e230]: "环境变量: OPENAI_API_KEY, OPENROUTER_API_KEY, DASHSCOPE_API_KEY, MOONSHOT_API_KEY"
+                - generic [ref=e231]:
+                  - generic [ref=e232]: custom gateways
+                  - generic [ref=e233]: self-hosted routing
+                  - generic [ref=e234]: OpenAI-compatible proxies
+                - generic [ref=e236]:
+                  - generic [ref=e237]: Compatible API key
+                  - generic [ref=e238]: api-key
+                - generic [ref=e239]:
+                  - generic [ref=e240]:
+                    - generic [ref=e241]: general chat
+                    - generic [ref=e242]: recommended
+                  - generic [ref=e243]:
+                    - generic [ref=e244]: topic chat
+                    - generic [ref=e245]: recommended
+                  - generic [ref=e246]:
+                    - generic [ref=e247]: topic chat vision
+                    - generic [ref=e248]: recommended
+                  - generic [ref=e249]:
+                    - generic [ref=e250]: topic summary
+                    - generic [ref=e251]: recommended
+                  - generic [ref=e252]:
+                    - generic [ref=e253]: document parse
+                    - generic [ref=e254]: recommended
+                  - generic [ref=e255]:
+                    - generic [ref=e256]: figure analysis
+                    - generic [ref=e257]: recommended
+              - generic [ref=e258]:
+                - generic [ref=e259]:
+                  - generic [ref=e260]: Custom Headers (JSON)
+                  - textbox "Custom Headers (JSON) Merged into every OpenAI-compatible request. Use this for gateway routing headers or app attribution." [ref=e261]:
+                    - /placeholder: "{\n  \"HTTP-Referer\": \"https://your-app.example\",\n  \"X-Title\": \"Research Chronicle\"\n}"
+                    - text: "{}"
+                  - generic [ref=e262]: Merged into every OpenAI-compatible request. Use this for gateway routing headers or app attribution.
+                - generic [ref=e263]:
+                  - generic [ref=e264]: Query Params (JSON)
+                  - textbox "Query Params (JSON) Optional query parameters appended to the completion endpoint." [ref=e265]:
+                    - /placeholder: "{\n  \"api-version\": \"2024-12-01-preview\"\n}"
+                    - text: "{}"
+                  - generic [ref=e266]: Optional query parameters appended to the completion endpoint.
+                - generic [ref=e267]:
+                  - generic [ref=e268]: Request Body Overrides (JSON)
+                  - textbox "Request Body Overrides (JSON) Merged into every OpenAI-compatible request body before the core model/messages fields are applied. Use this for provider-specific parameters such as thinking controls." [ref=e269]:
+                    - /placeholder: "{\n  \"thinking\": {\n    \"type\": \"disabled\"\n  },\n  \"max_completion_tokens\": 1024\n}"
+                    - text: "{}"
+                  - generic [ref=e270]: Merged into every OpenAI-compatible request body before the core model/messages fields are applied. Use this for provider-specific parameters such as thinking controls.
+                - generic [ref=e271]:
+                  - generic [ref=e272]: Client Label
+                  - textbox "Client Label A readable client or routing label that some gateways log for observability." [ref=e273]:
+                    - /placeholder: research-chronicle
+                  - generic [ref=e274]: A readable client or routing label that some gateways log for observability.
+                - generic [ref=e275]:
+                  - generic [ref=e276]: Topic Generation Mode
+                  - textbox "Topic Generation Mode Controls the 8-language topic creation path. Use \"native\" for full blueprint plus localization generation, \"patches-only\" to localize via language patches, or \"scaffold\" for deterministic fallback creation." [ref=e277]:
+                    - /placeholder: native
+                    - text: native
+                  - generic [ref=e278]: Controls the 8-language topic creation path. Use "native" for full blueprint plus localization generation, "patches-only" to localize via language patches, or "scaffold" for deterministic fallback creation.
+              - generic [ref=e279]:
+                - generic [ref=e280]:
+                  - generic [ref=e281]: 思考
+                  - combobox "思考" [ref=e282]:
+                    - option "自动"
+                    - option "开启"
+                    - option "关闭" [selected]
+                - generic [ref=e283]:
+                  - generic [ref=e284]: 引用
+                  - combobox "引用" [ref=e285]:
+                    - option "后端" [selected]
+                    - option "原生"
+                - generic [ref=e286]:
+                  - generic [ref=e287]: 解析器
+                  - combobox "解析器" [ref=e288]:
+                    - option "后端" [selected]
+                    - option "原生"
+              - generic [ref=e289]:
+                - generic [ref=e290]:
+                  - generic [ref=e291]: 温度
+                  - spinbutton "温度" [ref=e292]: "0.1"
+                - generic [ref=e293]:
+                  - generic [ref=e294]: 最大输出
+                  - spinbutton "最大输出" [ref=e295]: "1800"
+          - article [ref=e296]:
+            - heading "默认多模态槽位" [level=2] [ref=e297]
+            - paragraph [ref=e298]: 负责 PDF、图片、图表、表格、公式等需要视觉 grounding 的任务。
+            - generic [ref=e300]:
+              - generic [ref=e301]: "已保存密钥: sk-J****CQIN"
+              - combobox [ref=e302]:
+                - option "选择提供方"
+                - option "NVIDIA Integrate"
+                - option "OpenAI-Compatible / Custom" [selected]
+                - option "OpenAI"
+                - option "Anthropic"
+                - option "Google"
+                - option "阿里百炼"
+                - option "智谱"
+                - option "火山方舟"
+                - option "腾讯混元"
+                - option "DeepSeek"
+              - combobox [ref=e303]:
+                - option "选择模型"
+                - option "Kimi K2.5" [selected]
+                - option "Kimi K2.5"
+              - textbox "也可直接输入自定义模型 ID" [ref=e304]: Kimi-K2.5
+              - textbox "Base URL（可选）" [ref=e305]: https://ai.1seey.com/v1
+              - textbox "留空则继续使用已保存的密钥" [ref=e306]
+              - generic [ref=e307]:
+                - generic [ref=e308]:
+                  - generic [ref=e309]: OpenAI-Compatible / Custom
+                  - generic [ref=e310]: custom
+                - paragraph [ref=e311]: "环境变量: OPENAI_API_KEY, OPENROUTER_API_KEY, DASHSCOPE_API_KEY, MOONSHOT_API_KEY"
+                - generic [ref=e312]:
+                  - generic [ref=e313]: custom gateways
+                  - generic [ref=e314]: self-hosted routing
+                  - generic [ref=e315]: OpenAI-compatible proxies
+                - generic [ref=e317]:
+                  - generic [ref=e318]: Compatible API key
+                  - generic [ref=e319]: api-key
+                - generic [ref=e320]:
+                  - generic [ref=e321]:
+                    - generic [ref=e322]: general chat
+                    - generic [ref=e323]: recommended
+                  - generic [ref=e324]:
+                    - generic [ref=e325]: topic chat
+                    - generic [ref=e326]: recommended
+                  - generic [ref=e327]:
+                    - generic [ref=e328]: topic chat vision
+                    - generic [ref=e329]: recommended
+                  - generic [ref=e330]:
+                    - generic [ref=e331]: topic summary
+                    - generic [ref=e332]: recommended
+                  - generic [ref=e333]:
+                    - generic [ref=e334]: document parse
+                    - generic [ref=e335]: recommended
+                  - generic [ref=e336]:
+                    - generic [ref=e337]: figure analysis
+                    - generic [ref=e338]: recommended
+              - generic [ref=e339]:
+                - generic [ref=e340]:
+                  - generic [ref=e341]: Custom Headers (JSON)
+                  - textbox "Custom Headers (JSON) Merged into every OpenAI-compatible request. Use this for gateway routing headers or app attribution." [ref=e342]:
+                    - /placeholder: "{\n  \"HTTP-Referer\": \"https://your-app.example\",\n  \"X-Title\": \"Research Chronicle\"\n}"
+                    - text: "{}"
+                  - generic [ref=e343]: Merged into every OpenAI-compatible request. Use this for gateway routing headers or app attribution.
+                - generic [ref=e344]:
+                  - generic [ref=e345]: Query Params (JSON)
+                  - textbox "Query Params (JSON) Optional query parameters appended to the completion endpoint." [ref=e346]:
+                    - /placeholder: "{\n  \"api-version\": \"2024-12-01-preview\"\n}"
+                    - text: "{}"
+                  - generic [ref=e347]: Optional query parameters appended to the completion endpoint.
+                - generic [ref=e348]:
+                  - generic [ref=e349]: Request Body Overrides (JSON)
+                  - textbox "Request Body Overrides (JSON) Merged into every OpenAI-compatible request body before the core model/messages fields are applied. Use this for provider-specific parameters such as thinking controls." [ref=e350]:
+                    - /placeholder: "{\n  \"thinking\": {\n    \"type\": \"disabled\"\n  },\n  \"max_completion_tokens\": 1024\n}"
+                    - text: "{}"
+                  - generic [ref=e351]: Merged into every OpenAI-compatible request body before the core model/messages fields are applied. Use this for provider-specific parameters such as thinking controls.
+                - generic [ref=e352]:
+                  - generic [ref=e353]: Client Label
+                  - textbox "Client Label A readable client or routing label that some gateways log for observability." [ref=e354]:
+                    - /placeholder: research-chronicle
+                  - generic [ref=e355]: A readable client or routing label that some gateways log for observability.
+                - generic [ref=e356]:
+                  - generic [ref=e357]: Topic Generation Mode
+                  - textbox "Topic Generation Mode Controls the 8-language topic creation path. Use \"native\" for full blueprint plus localization generation, \"patches-only\" to localize via language patches, or \"scaffold\" for deterministic fallback creation." [ref=e358]:
+                    - /placeholder: native
+                    - text: native
+                  - generic [ref=e359]: Controls the 8-language topic creation path. Use "native" for full blueprint plus localization generation, "patches-only" to localize via language patches, or "scaffold" for deterministic fallback creation.
+              - generic [ref=e360]:
+                - generic [ref=e361]:
+                  - generic [ref=e362]: 思考
+                  - combobox "思考" [ref=e363]:
+                    - option "自动"
+                    - option "开启"
+                    - option "关闭" [selected]
+                - generic [ref=e364]:
+                  - generic [ref=e365]: 引用
+                  - combobox "引用" [ref=e366]:
+                    - option "后端" [selected]
+                    - option "原生"
+                - generic [ref=e367]:
+                  - generic [ref=e368]: 解析器
+                  - combobox "解析器" [ref=e369]:
+                    - option "后端" [selected]
+                    - option "原生"
+              - generic [ref=e370]:
+                - generic [ref=e371]:
+                  - generic [ref=e372]: 温度
+                  - spinbutton "温度" [ref=e373]: "0.1"
+                - generic [ref=e374]:
+                  - generic [ref=e375]: 最大输出
+                  - spinbutton "最大输出" [ref=e376]: "1800"
+          - article [ref=e377]:
+            - heading "研究角色" [level=2] [ref=e378]
+            - paragraph [ref=e379]: 多数团队只需要默认语言槽位和多模态槽位。只有在某个研究环节确实需要不同模型时，再启用自定义角色模型。
+            - generic [ref=e380]:
+              - generic [ref=e381]: 默认槽位已经会通过继承为所有角色提供能力。自定义角色模型只适合少数例外场景，比如更强的批评者、更便宜的本地化器或专门的视觉阅读器。
+              - generic [ref=e382]:
+                - generic [ref=e383]:
+                  - generic [ref=e384]:
+                    - generic [ref=e385]:
+                      - generic [ref=e386]: 工作台对话
+                      - paragraph [ref=e387]: 负责右侧栏 grounded 对话、追问和当前主题讨论。
+                    - combobox [ref=e388]:
+                      - option "使用继承的默认配置"
+                      - option "使用自定义角色模型" [selected]
+                  - generic [ref=e389]:
+                    - generic [ref=e390]:
+                      - generic [ref=e391]: 建议槽位
+                      - generic [ref=e392]: 默认语言槽位
+                    - generic [ref=e393]:
+                      - generic [ref=e394]: 当前来源
+                      - generic [ref=e395]: 自定义角色模型
+                    - generic [ref=e396]:
+                      - generic [ref=e397]: 当前模型
+                      - generic [ref=e398]: openai_compatible / Kimi-K2.5
+                  - generic [ref=e399]:
+                    - generic [ref=e400]: 通用对话
+                    - generic [ref=e401]: 主题对话
+                    - generic [ref=e402]: 主题视觉对话
+                  - generic [ref=e404]:
+                    - combobox [ref=e405]:
+                      - option "选择提供方"
+                      - option "NVIDIA Integrate"
+                      - option "OpenAI-Compatible / Custom" [selected]
+                      - option "OpenAI"
+                      - option "Anthropic"
+                      - option "Google"
+                      - option "阿里百炼"
+                      - option "智谱"
+                      - option "火山方舟"
+                      - option "腾讯混元"
+                      - option "DeepSeek"
+                    - combobox [ref=e406]:
+                      - option "选择模型"
+                      - option "MiniMax M2.5"
+                      - option "Kimi K2.5" [selected]
+                      - option "Kimi K2.5"
+                      - option "GLM-5"
+                      - option "GLM 4.7"
+                    - textbox "也可直接输入自定义模型 ID" [ref=e407]: Kimi-K2.5
+                    - textbox "Base URL（可选）" [ref=e408]: https://ai.1seey.com/v1
+                    - textbox "留空则继续使用已保存的密钥" [ref=e409]
+                    - generic [ref=e410]:
+                      - generic [ref=e411]:
+                        - generic [ref=e412]: OpenAI-Compatible / Custom
+                        - generic [ref=e413]: custom
+                      - paragraph [ref=e414]: "环境变量: OPENAI_API_KEY, OPENROUTER_API_KEY, DASHSCOPE_API_KEY, MOONSHOT_API_KEY"
+                      - generic [ref=e415]:
+                        - generic [ref=e416]: custom gateways
+                        - generic [ref=e417]: self-hosted routing
+                        - generic [ref=e418]: OpenAI-compatible proxies
+                      - generic [ref=e420]:
+                        - generic [ref=e421]: Compatible API key
+                        - generic [ref=e422]: api-key
+                      - generic [ref=e423]:
+                        - generic [ref=e424]:
+                          - generic [ref=e425]: general chat
+                          - generic [ref=e426]: recommended
+                        - generic [ref=e427]:
+                          - generic [ref=e428]: topic chat
+                          - generic [ref=e429]: recommended
+                        - generic [ref=e430]:
+                          - generic [ref=e431]: topic chat vision
+                          - generic [ref=e432]: recommended
+                        - generic [ref=e433]:
+                          - generic [ref=e434]: topic summary
+                          - generic [ref=e435]: recommended
+                        - generic [ref=e436]:
+                          - generic [ref=e437]: document parse
+                          - generic [ref=e438]: recommended
+                        - generic [ref=e439]:
+                          - generic [ref=e440]: figure analysis
+                          - generic [ref=e441]: recommended
+                    - generic [ref=e442]:
+                      - generic [ref=e443]:
+                        - generic [ref=e444]: Custom Headers (JSON)
+                        - textbox "Custom Headers (JSON) Merged into every OpenAI-compatible request. Use this for gateway routing headers or app attribution." [ref=e445]:
+                          - /placeholder: "{\n  \"HTTP-Referer\": \"https://your-app.example\",\n  \"X-Title\": \"Research Chronicle\"\n}"
+                          - text: "{}"
+                        - generic [ref=e446]: Merged into every OpenAI-compatible request. Use this for gateway routing headers or app attribution.
+                      - generic [ref=e447]:
+                        - generic [ref=e448]: Query Params (JSON)
+                        - textbox "Query Params (JSON) Optional query parameters appended to the completion endpoint." [ref=e449]:
+                          - /placeholder: "{\n  \"api-version\": \"2024-12-01-preview\"\n}"
+                          - text: "{}"
+                        - generic [ref=e450]: Optional query parameters appended to the completion endpoint.
+                      - generic [ref=e451]:
+                        - generic [ref=e452]: Request Body Overrides (JSON)
+                        - textbox "Request Body Overrides (JSON) Merged into every OpenAI-compatible request body before the core model/messages fields are applied. Use this for provider-specific parameters such as thinking controls." [ref=e453]:
+                          - /placeholder: "{\n  \"thinking\": {\n    \"type\": \"disabled\"\n  },\n  \"max_completion_tokens\": 1024\n}"
+                          - text: "{}"
+                        - generic [ref=e454]: Merged into every OpenAI-compatible request body before the core model/messages fields are applied. Use this for provider-specific parameters such as thinking controls.
+                      - generic [ref=e455]:
+                        - generic [ref=e456]: Client Label
+                        - textbox "Client Label A readable client or routing label that some gateways log for observability." [ref=e457]:
+                          - /placeholder: research-chronicle
+                          - text: suzhi
+                        - generic [ref=e458]: A readable client or routing label that some gateways log for observability.
+                      - generic [ref=e459]:
+                        - generic [ref=e460]: Topic Generation Mode
+                        - textbox "Topic Generation Mode Controls the 8-language topic creation path. Use \"native\" for full blueprint plus localization generation, \"patches-only\" to localize via language patches, or \"scaffold\" for deterministic fallback creation." [ref=e461]:
+                          - /placeholder: native
+                          - text: native
+                        - generic [ref=e462]: Controls the 8-language topic creation path. Use "native" for full blueprint plus localization generation, "patches-only" to localize via language patches, or "scaffold" for deterministic fallback creation.
+                    - generic [ref=e463]:
+                      - generic [ref=e464]:
+                        - generic [ref=e465]: 思考
+                        - combobox "思考" [ref=e466]:
+                          - option "自动" [selected]
+                          - option "开启"
+                          - option "关闭"
+                      - generic [ref=e467]:
+                        - generic [ref=e468]: 引用
+                        - combobox "引用" [ref=e469]:
+                          - option "后端" [selected]
+                          - option "原生"
+                      - generic [ref=e470]:
+                        - generic [ref=e471]: 解析器
+                        - combobox "解析器" [ref=e472]:
+                          - option "后端" [selected]
+                          - option "原生"
+                    - generic [ref=e473]:
+                      - generic [ref=e474]:
+                        - generic [ref=e475]: 温度
+                        - spinbutton "温度" [ref=e476]
+                      - generic [ref=e477]:
+                        - generic [ref=e478]: 最大输出
+                        - spinbutton "最大输出" [ref=e479]
+                - generic [ref=e480]:
+                  - generic [ref=e481]:
+                    - generic [ref=e482]:
+                      - generic [ref=e483]: 主题架构师
+                      - paragraph [ref=e484]: 负责主题创建、结构规划、阶段命名和地图级综合。
+                    - combobox [ref=e485]:
+                      - option "使用继承的默认配置"
+                      - option "使用自定义角色模型" [selected]
+                  - generic [ref=e486]:
+                    - generic [ref=e487]:
+                      - generic [ref=e488]: 建议槽位
+                      - generic [ref=e489]: 默认语言槽位
+                    - generic [ref=e490]:
+                      - generic [ref=e491]: 当前来源
+                      - generic [ref=e492]: 自定义角色模型
+                    - generic [ref=e493]:
+                      - generic [ref=e494]: 当前模型
+                      - generic [ref=e495]: openai_compatible / Kimi-K2.5
+                  - generic [ref=e497]: 主题综述
+                  - generic [ref=e499]:
+                    - combobox [ref=e500]:
+                      - option "选择提供方"
+                      - option "NVIDIA Integrate"
+                      - option "OpenAI-Compatible / Custom" [selected]
+                      - option "OpenAI"
+                      - option "Anthropic"
+                      - option "Google"
+                      - option "阿里百炼"
+                      - option "智谱"
+                      - option "火山方舟"
+                      - option "腾讯混元"
+                      - option "DeepSeek"
+                    - combobox [ref=e501]:
+                      - option "选择模型"
+                      - option "MiniMax M2.5"
+                      - option "Kimi K2.5" [selected]
+                      - option "Kimi K2.5"
+                      - option "GLM-5"
+                      - option "GLM 4.7"
+                    - textbox "也可直接输入自定义模型 ID" [ref=e502]: Kimi-K2.5
+                    - textbox "Base URL（可选）" [ref=e503]: https://ai.1seey.com/v1
+                    - textbox "留空则继续使用已保存的密钥" [ref=e504]
+                    - generic [ref=e505]:
+                      - generic [ref=e506]:
+                        - generic [ref=e507]: OpenAI-Compatible / Custom
+                        - generic [ref=e508]: custom
+                      - paragraph [ref=e509]: "环境变量: OPENAI_API_KEY, OPENROUTER_API_KEY, DASHSCOPE_API_KEY, MOONSHOT_API_KEY"
+                      - generic [ref=e510]:
+                        - generic [ref=e511]: custom gateways
+                        - generic [ref=e512]: self-hosted routing
+                        - generic [ref=e513]: OpenAI-compatible proxies
+                      - generic [ref=e515]:
+                        - generic [ref=e516]: Compatible API key
+                        - generic [ref=e517]: api-key
+                      - generic [ref=e518]:
+                        - generic [ref=e519]:
+                          - generic [ref=e520]: general chat
+                          - generic [ref=e521]: recommended
+                        - generic [ref=e522]:
+                          - generic [ref=e523]: topic chat
+                          - generic [ref=e524]: recommended
+                        - generic [ref=e525]:
+                          - generic [ref=e526]: topic chat vision
+                          - generic [ref=e527]: recommended
+                        - generic [ref=e528]:
+                          - generic [ref=e529]: topic summary
+                          - generic [ref=e530]: recommended
+                        - generic [ref=e531]:
+                          - generic [ref=e532]: document parse
+                          - generic [ref=e533]: recommended
+                        - generic [ref=e534]:
+                          - generic [ref=e535]: figure analysis
+                          - generic [ref=e536]: recommended
+                    - generic [ref=e537]:
+                      - generic [ref=e538]:
+                        - generic [ref=e539]: Custom Headers (JSON)
+                        - textbox "Custom Headers (JSON) Merged into every OpenAI-compatible request. Use this for gateway routing headers or app attribution." [ref=e540]:
+                          - /placeholder: "{\n  \"HTTP-Referer\": \"https://your-app.example\",\n  \"X-Title\": \"Research Chronicle\"\n}"
+                          - text: "{}"
+                        - generic [ref=e541]: Merged into every OpenAI-compatible request. Use this for gateway routing headers or app attribution.
+                      - generic [ref=e542]:
+                        - generic [ref=e543]: Query Params (JSON)
+                        - textbox "Query Params (JSON) Optional query parameters appended to the completion endpoint." [ref=e544]:
+                          - /placeholder: "{\n  \"api-version\": \"2024-12-01-preview\"\n}"
+                          - text: "{}"
+                        - generic [ref=e545]: Optional query parameters appended to the completion endpoint.
+                      - generic [ref=e546]:
+                        - generic [ref=e547]: Request Body Overrides (JSON)
+                        - textbox "Request Body Overrides (JSON) Merged into every OpenAI-compatible request body before the core model/messages fields are applied. Use this for provider-specific parameters such as thinking controls." [ref=e548]:
+                          - /placeholder: "{\n  \"thinking\": {\n    \"type\": \"disabled\"\n  },\n  \"max_completion_tokens\": 1024\n}"
+                          - text: "{}"
+                        - generic [ref=e549]: Merged into every OpenAI-compatible request body before the core model/messages fields are applied. Use this for provider-specific parameters such as thinking controls.
+                      - generic [ref=e550]:
+                        - generic [ref=e551]: Client Label
+                        - textbox "Client Label A readable client or routing label that some gateways log for observability." [ref=e552]:
+                          - /placeholder: research-chronicle
+                          - text: suzhi
+                        - generic [ref=e553]: A readable client or routing label that some gateways log for observability.
+                      - generic [ref=e554]:
+                        - generic [ref=e555]: Topic Generation Mode
+                        - textbox "Topic Generation Mode Controls the 8-language topic creation path. Use \"native\" for full blueprint plus localization generation, \"patches-only\" to localize via language patches, or \"scaffold\" for deterministic fallback creation." [ref=e556]:
+                          - /placeholder: native
+                          - text: native
+                        - generic [ref=e557]: Controls the 8-language topic creation path. Use "native" for full blueprint plus localization generation, "patches-only" to localize via language patches, or "scaffold" for deterministic fallback creation.
+                    - generic [ref=e558]:
+                      - generic [ref=e559]:
+                        - generic [ref=e560]: 思考
+                        - combobox "思考" [ref=e561]:
+                          - option "自动" [selected]
+                          - option "开启"
+                          - option "关闭"
+                      - generic [ref=e562]:
+                        - generic [ref=e563]: 引用
+                        - combobox "引用" [ref=e564]:
+                          - option "后端" [selected]
+                          - option "原生"
+                      - generic [ref=e565]:
+                        - generic [ref=e566]: 解析器
+                        - combobox "解析器" [ref=e567]:
+                          - option "后端" [selected]
+                          - option "原生"
+                    - generic [ref=e568]:
+                      - generic [ref=e569]:
+                        - generic [ref=e570]: 温度
+                        - spinbutton "温度" [ref=e571]
+                      - generic [ref=e572]:
+                        - generic [ref=e573]: 最大输出
+                        - spinbutton "最大输出" [ref=e574]
+                - generic [ref=e575]:
+                  - generic [ref=e576]:
+                    - generic [ref=e577]:
+                      - generic [ref=e578]: 研究裁判
+                      - paragraph [ref=e579]: 负责 thesis 形成、议程设定、矛盾追踪和研究记忆压缩。
+                    - combobox [ref=e580]:
+                      - option "使用继承的默认配置"
+                      - option "使用自定义角色模型" [selected]
+                  - generic [ref=e581]:
+                    - generic [ref=e582]:
+                      - generic [ref=e583]: 建议槽位
+                      - generic [ref=e584]: 默认语言槽位
+                    - generic [ref=e585]:
+                      - generic [ref=e586]: 当前来源
+                      - generic [ref=e587]: 自定义角色模型
+                    - generic [ref=e588]:
+                      - generic [ref=e589]: 当前模型
+                      - generic [ref=e590]: openai_compatible / Kimi-K2.5
+                  - generic [ref=e592]:
+                    - combobox [ref=e593]:
+                      - option "选择提供方"
+                      - option "NVIDIA Integrate"
+                      - option "OpenAI-Compatible / Custom" [selected]
+                      - option "OpenAI"
+                      - option "Anthropic"
+                      - option "Google"
+                      - option "阿里百炼"
+                      - option "智谱"
+                      - option "火山方舟"
+                      - option "腾讯混元"
+                      - option "DeepSeek"
+                    - combobox [ref=e594]:
+                      - option "选择模型"
+                      - option "MiniMax M2.5"
+                      - option "Kimi K2.5" [selected]
+                      - option "Kimi K2.5"
+                      - option "GLM-5"
+                      - option "GLM 4.7"
+                    - textbox "也可直接输入自定义模型 ID" [ref=e595]: Kimi-K2.5
+                    - textbox "Base URL（可选）" [ref=e596]: https://ai.1seey.com/v1
+                    - textbox "留空则继续使用已保存的密钥" [ref=e597]
+                    - generic [ref=e598]:
+                      - generic [ref=e599]:
+                        - generic [ref=e600]: OpenAI-Compatible / Custom
+                        - generic [ref=e601]: custom
+                      - paragraph [ref=e602]: "环境变量: OPENAI_API_KEY, OPENROUTER_API_KEY, DASHSCOPE_API_KEY, MOONSHOT_API_KEY"
+                      - generic [ref=e603]:
+                        - generic [ref=e604]: custom gateways
+                        - generic [ref=e605]: self-hosted routing
+                        - generic [ref=e606]: OpenAI-compatible proxies
+                      - generic [ref=e608]:
+                        - generic [ref=e609]: Compatible API key
+                        - generic [ref=e610]: api-key
+                      - generic [ref=e611]:
+                        - generic [ref=e612]:
+                          - generic [ref=e613]: general chat
+                          - generic [ref=e614]: recommended
+                        - generic [ref=e615]:
+                          - generic [ref=e616]: topic chat
+                          - generic [ref=e617]: recommended
+                        - generic [ref=e618]:
+                          - generic [ref=e619]: topic chat vision
+                          - generic [ref=e620]: recommended
+                        - generic [ref=e621]:
+                          - generic [ref=e622]: topic summary
+                          - generic [ref=e623]: recommended
+                        - generic [ref=e624]:
+                          - generic [ref=e625]: document parse
+                          - generic [ref=e626]: recommended
+                        - generic [ref=e627]:
+                          - generic [ref=e628]: figure analysis
+                          - generic [ref=e629]: recommended
+                    - generic [ref=e630]:
+                      - generic [ref=e631]:
+                        - generic [ref=e632]: Custom Headers (JSON)
+                        - textbox "Custom Headers (JSON) Merged into every OpenAI-compatible request. Use this for gateway routing headers or app attribution." [ref=e633]:
+                          - /placeholder: "{\n  \"HTTP-Referer\": \"https://your-app.example\",\n  \"X-Title\": \"Research Chronicle\"\n}"
+                          - text: "{}"
+                        - generic [ref=e634]: Merged into every OpenAI-compatible request. Use this for gateway routing headers or app attribution.
+                      - generic [ref=e635]:
+                        - generic [ref=e636]: Query Params (JSON)
+                        - textbox "Query Params (JSON) Optional query parameters appended to the completion endpoint." [ref=e637]:
+                          - /placeholder: "{\n  \"api-version\": \"2024-12-01-preview\"\n}"
+                          - text: "{}"
+                        - generic [ref=e638]: Optional query parameters appended to the completion endpoint.
+                      - generic [ref=e639]:
+                        - generic [ref=e640]: Request Body Overrides (JSON)
+                        - textbox "Request Body Overrides (JSON) Merged into every OpenAI-compatible request body before the core model/messages fields are applied. Use this for provider-specific parameters such as thinking controls." [ref=e641]:
+                          - /placeholder: "{\n  \"thinking\": {\n    \"type\": \"disabled\"\n  },\n  \"max_completion_tokens\": 1024\n}"
+                          - text: "{}"
+                        - generic [ref=e642]: Merged into every OpenAI-compatible request body before the core model/messages fields are applied. Use this for provider-specific parameters such as thinking controls.
+                      - generic [ref=e643]:
+                        - generic [ref=e644]: Client Label
+                        - textbox "Client Label A readable client or routing label that some gateways log for observability." [ref=e645]:
+                          - /placeholder: research-chronicle
+                          - text: suzhi
+                        - generic [ref=e646]: A readable client or routing label that some gateways log for observability.
+                      - generic [ref=e647]:
+                        - generic [ref=e648]: Topic Generation Mode
+                        - textbox "Topic Generation Mode Controls the 8-language topic creation path. Use \"native\" for full blueprint plus localization generation, \"patches-only\" to localize via language patches, or \"scaffold\" for deterministic fallback creation." [ref=e649]:
+                          - /placeholder: native
+                          - text: native
+                        - generic [ref=e650]: Controls the 8-language topic creation path. Use "native" for full blueprint plus localization generation, "patches-only" to localize via language patches, or "scaffold" for deterministic fallback creation.
+                    - generic [ref=e651]:
+                      - generic [ref=e652]:
+                        - generic [ref=e653]: 思考
+                        - combobox "思考" [ref=e654]:
+                          - option "自动" [selected]
+                          - option "开启"
+                          - option "关闭"
+                      - generic [ref=e655]:
+                        - generic [ref=e656]: 引用
+                        - combobox "引用" [ref=e657]:
+                          - option "后端" [selected]
+                          - option "原生"
+                      - generic [ref=e658]:
+                        - generic [ref=e659]: 解析器
+                        - combobox "解析器" [ref=e660]:
+                          - option "后端" [selected]
+                          - option "原生"
+                    - generic [ref=e661]:
+                      - generic [ref=e662]:
+                        - generic [ref=e663]: 温度
+                        - spinbutton "温度" [ref=e664]
+                      - generic [ref=e665]:
+                        - generic [ref=e666]: 最大输出
+                        - spinbutton "最大输出" [ref=e667]
+                - generic [ref=e668]:
+                  - generic [ref=e669]:
+                    - generic [ref=e670]:
+                      - generic [ref=e671]: 节点作者
+                      - paragraph [ref=e672]: 负责连续节点文章流、综合判断和解释框架。
+                    - combobox [ref=e673]:
+                      - option "使用继承的默认配置"
+                      - option "使用自定义角色模型" [selected]
+                  - generic [ref=e674]:
+                    - generic [ref=e675]:
+                      - generic [ref=e676]: 建议槽位
+                      - generic [ref=e677]: 默认语言槽位
+                    - generic [ref=e678]:
+                      - generic [ref=e679]: 当前来源
+                      - generic [ref=e680]: 自定义角色模型
+                    - generic [ref=e681]:
+                      - generic [ref=e682]: 当前模型
+                      - generic [ref=e683]: openai_compatible / Kimi-K2.5
+                  - generic [ref=e685]:
+                    - combobox [ref=e686]:
+                      - option "选择提供方"
+                      - option "NVIDIA Integrate"
+                      - option "OpenAI-Compatible / Custom" [selected]
+                      - option "OpenAI"
+                      - option "Anthropic"
+                      - option "Google"
+                      - option "阿里百炼"
+                      - option "智谱"
+                      - option "火山方舟"
+                      - option "腾讯混元"
+                      - option "DeepSeek"
+                    - combobox [ref=e687]:
+                      - option "选择模型"
+                      - option "MiniMax M2.5"
+                      - option "Kimi K2.5" [selected]
+                      - option "Kimi K2.5"
+                      - option "GLM-5"
+                      - option "GLM 4.7"
+                    - textbox "也可直接输入自定义模型 ID" [ref=e688]: Kimi-K2.5
+                    - textbox "Base URL（可选）" [ref=e689]: https://ai.1seey.com/v1
+                    - textbox "留空则继续使用已保存的密钥" [ref=e690]
+                    - generic [ref=e691]:
+                      - generic [ref=e692]:
+                        - generic [ref=e693]: OpenAI-Compatible / Custom
+                        - generic [ref=e694]: custom
+                      - paragraph [ref=e695]: "环境变量: OPENAI_API_KEY, OPENROUTER_API_KEY, DASHSCOPE_API_KEY, MOONSHOT_API_KEY"
+                      - generic [ref=e696]:
+                        - generic [ref=e697]: custom gateways
+                        - generic [ref=e698]: self-hosted routing
+                        - generic [ref=e699]: OpenAI-compatible proxies
+                      - generic [ref=e701]:
+                        - generic [ref=e702]: Compatible API key
+                        - generic [ref=e703]: api-key
+                      - generic [ref=e704]:
+                        - generic [ref=e705]:
+                          - generic [ref=e706]: general chat
+                          - generic [ref=e707]: recommended
+                        - generic [ref=e708]:
+                          - generic [ref=e709]: topic chat
+                          - generic [ref=e710]: recommended
+                        - generic [ref=e711]:
+                          - generic [ref=e712]: topic chat vision
+                          - generic [ref=e713]: recommended
+                        - generic [ref=e714]:
+                          - generic [ref=e715]: topic summary
+                          - generic [ref=e716]: recommended
+                        - generic [ref=e717]:
+                          - generic [ref=e718]: document parse
+                          - generic [ref=e719]: recommended
+                        - generic [ref=e720]:
+                          - generic [ref=e721]: figure analysis
+                          - generic [ref=e722]: recommended
+                    - generic [ref=e723]:
+                      - generic [ref=e724]:
+                        - generic [ref=e725]: Custom Headers (JSON)
+                        - textbox "Custom Headers (JSON) Merged into every OpenAI-compatible request. Use this for gateway routing headers or app attribution." [ref=e726]:
+                          - /placeholder: "{\n  \"HTTP-Referer\": \"https://your-app.example\",\n  \"X-Title\": \"Research Chronicle\"\n}"
+                          - text: "{}"
+                        - generic [ref=e727]: Merged into every OpenAI-compatible request. Use this for gateway routing headers or app attribution.
+                      - generic [ref=e728]:
+                        - generic [ref=e729]: Query Params (JSON)
+                        - textbox "Query Params (JSON) Optional query parameters appended to the completion endpoint." [ref=e730]:
+                          - /placeholder: "{\n  \"api-version\": \"2024-12-01-preview\"\n}"
+                          - text: "{}"
+                        - generic [ref=e731]: Optional query parameters appended to the completion endpoint.
+                      - generic [ref=e732]:
+                        - generic [ref=e733]: Request Body Overrides (JSON)
+                        - textbox "Request Body Overrides (JSON) Merged into every OpenAI-compatible request body before the core model/messages fields are applied. Use this for provider-specific parameters such as thinking controls." [ref=e734]:
+                          - /placeholder: "{\n  \"thinking\": {\n    \"type\": \"disabled\"\n  },\n  \"max_completion_tokens\": 1024\n}"
+                          - text: "{}"
+                        - generic [ref=e735]: Merged into every OpenAI-compatible request body before the core model/messages fields are applied. Use this for provider-specific parameters such as thinking controls.
+                      - generic [ref=e736]:
+                        - generic [ref=e737]: Client Label
+                        - textbox "Client Label A readable client or routing label that some gateways log for observability." [ref=e738]:
+                          - /placeholder: research-chronicle
+                          - text: suzhi
+                        - generic [ref=e739]: A readable client or routing label that some gateways log for observability.
+                      - generic [ref=e740]:
+                        - generic [ref=e741]: Topic Generation Mode
+                        - textbox "Topic Generation Mode Controls the 8-language topic creation path. Use \"native\" for full blueprint plus localization generation, \"patches-only\" to localize via language patches, or \"scaffold\" for deterministic fallback creation." [ref=e742]:
+                          - /placeholder: native
+                          - text: native
+                        - generic [ref=e743]: Controls the 8-language topic creation path. Use "native" for full blueprint plus localization generation, "patches-only" to localize via language patches, or "scaffold" for deterministic fallback creation.
+                    - generic [ref=e744]:
+                      - generic [ref=e745]:
+                        - generic [ref=e746]: 思考
+                        - combobox "思考" [ref=e747]:
+                          - option "自动" [selected]
+                          - option "开启"
+                          - option "关闭"
+                      - generic [ref=e748]:
+                        - generic [ref=e749]: 引用
+                        - combobox "引用" [ref=e750]:
+                          - option "后端" [selected]
+                          - option "原生"
+                      - generic [ref=e751]:
+                        - generic [ref=e752]: 解析器
+                        - combobox "解析器" [ref=e753]:
+                          - option "后端" [selected]
+                          - option "原生"
+                    - generic [ref=e754]:
+                      - generic [ref=e755]:
+                        - generic [ref=e756]: 温度
+                        - spinbutton "温度" [ref=e757]
+                      - generic [ref=e758]:
+                        - generic [ref=e759]: 最大输出
+                        - spinbutton "最大输出" [ref=e760]
+                - generic [ref=e761]:
+                  - generic [ref=e762]:
+                    - generic [ref=e763]:
+                      - generic [ref=e764]: 论文作者
+                      - paragraph [ref=e765]: 负责论文故事化呈现、方法解释和贡献定位。
+                    - combobox [ref=e766]:
+                      - option "使用继承的默认配置"
+                      - option "使用自定义角色模型" [selected]
+                  - generic [ref=e767]:
+                    - generic [ref=e768]:
+                      - generic [ref=e769]: 建议槽位
+                      - generic [ref=e770]: 默认语言槽位
+                    - generic [ref=e771]:
+                      - generic [ref=e772]: 当前来源
+                      - generic [ref=e773]: 自定义角色模型
+                    - generic [ref=e774]:
+                      - generic [ref=e775]: 当前模型
+                      - generic [ref=e776]: openai_compatible / Kimi-K2.5
+                  - generic [ref=e778]:
+                    - combobox [ref=e779]:
+                      - option "选择提供方"
+                      - option "NVIDIA Integrate"
+                      - option "OpenAI-Compatible / Custom" [selected]
+                      - option "OpenAI"
+                      - option "Anthropic"
+                      - option "Google"
+                      - option "阿里百炼"
+                      - option "智谱"
+                      - option "火山方舟"
+                      - option "腾讯混元"
+                      - option "DeepSeek"
+                    - combobox [ref=e780]:
+                      - option "选择模型"
+                      - option "MiniMax M2.5"
+                      - option "Kimi K2.5" [selected]
+                      - option "Kimi K2.5"
+                      - option "GLM-5"
+                      - option "GLM 4.7"
+                    - textbox "也可直接输入自定义模型 ID" [ref=e781]: Kimi-K2.5
+                    - textbox "Base URL（可选）" [ref=e782]: https://ai.1seey.com/v1
+                    - textbox "留空则继续使用已保存的密钥" [ref=e783]
+                    - generic [ref=e784]:
+                      - generic [ref=e785]:
+                        - generic [ref=e786]: OpenAI-Compatible / Custom
+                        - generic [ref=e787]: custom
+                      - paragraph [ref=e788]: "环境变量: OPENAI_API_KEY, OPENROUTER_API_KEY, DASHSCOPE_API_KEY, MOONSHOT_API_KEY"
+                      - generic [ref=e789]:
+                        - generic [ref=e790]: custom gateways
+                        - generic [ref=e791]: self-hosted routing
+                        - generic [ref=e792]: OpenAI-compatible proxies
+                      - generic [ref=e794]:
+                        - generic [ref=e795]: Compatible API key
+                        - generic [ref=e796]: api-key
+                      - generic [ref=e797]:
+                        - generic [ref=e798]:
+                          - generic [ref=e799]: general chat
+                          - generic [ref=e800]: recommended
+                        - generic [ref=e801]:
+                          - generic [ref=e802]: topic chat
+                          - generic [ref=e803]: recommended
+                        - generic [ref=e804]:
+                          - generic [ref=e805]: topic chat vision
+                          - generic [ref=e806]: recommended
+                        - generic [ref=e807]:
+                          - generic [ref=e808]: topic summary
+                          - generic [ref=e809]: recommended
+                        - generic [ref=e810]:
+                          - generic [ref=e811]: document parse
+                          - generic [ref=e812]: recommended
+                        - generic [ref=e813]:
+                          - generic [ref=e814]: figure analysis
+                          - generic [ref=e815]: recommended
+                    - generic [ref=e816]:
+                      - generic [ref=e817]:
+                        - generic [ref=e818]: Custom Headers (JSON)
+                        - textbox "Custom Headers (JSON) Merged into every OpenAI-compatible request. Use this for gateway routing headers or app attribution." [ref=e819]:
+                          - /placeholder: "{\n  \"HTTP-Referer\": \"https://your-app.example\",\n  \"X-Title\": \"Research Chronicle\"\n}"
+                          - text: "{}"
+                        - generic [ref=e820]: Merged into every OpenAI-compatible request. Use this for gateway routing headers or app attribution.
+                      - generic [ref=e821]:
+                        - generic [ref=e822]: Query Params (JSON)
+                        - textbox "Query Params (JSON) Optional query parameters appended to the completion endpoint." [ref=e823]:
+                          - /placeholder: "{\n  \"api-version\": \"2024-12-01-preview\"\n}"
+                          - text: "{}"
+                        - generic [ref=e824]: Optional query parameters appended to the completion endpoint.
+                      - generic [ref=e825]:
+                        - generic [ref=e826]: Request Body Overrides (JSON)
+                        - textbox "Request Body Overrides (JSON) Merged into every OpenAI-compatible request body before the core model/messages fields are applied. Use this for provider-specific parameters such as thinking controls." [ref=e827]:
+                          - /placeholder: "{\n  \"thinking\": {\n    \"type\": \"disabled\"\n  },\n  \"max_completion_tokens\": 1024\n}"
+                          - text: "{}"
+                        - generic [ref=e828]: Merged into every OpenAI-compatible request body before the core model/messages fields are applied. Use this for provider-specific parameters such as thinking controls.
+                      - generic [ref=e829]:
+                        - generic [ref=e830]: Client Label
+                        - textbox "Client Label A readable client or routing label that some gateways log for observability." [ref=e831]:
+                          - /placeholder: research-chronicle
+                          - text: suzhi
+                        - generic [ref=e832]: A readable client or routing label that some gateways log for observability.
+                      - generic [ref=e833]:
+                        - generic [ref=e834]: Topic Generation Mode
+                        - textbox "Topic Generation Mode Controls the 8-language topic creation path. Use \"native\" for full blueprint plus localization generation, \"patches-only\" to localize via language patches, or \"scaffold\" for deterministic fallback creation." [ref=e835]:
+                          - /placeholder: native
+                          - text: native
+                        - generic [ref=e836]: Controls the 8-language topic creation path. Use "native" for full blueprint plus localization generation, "patches-only" to localize via language patches, or "scaffold" for deterministic fallback creation.
+                    - generic [ref=e837]:
+                      - generic [ref=e838]:
+                        - generic [ref=e839]: 思考
+                        - combobox "思考" [ref=e840]:
+                          - option "自动" [selected]
+                          - option "开启"
+                          - option "关闭"
+                      - generic [ref=e841]:
+                        - generic [ref=e842]: 引用
+                        - combobox "引用" [ref=e843]:
+                          - option "后端" [selected]
+                          - option "原生"
+                      - generic [ref=e844]:
+                        - generic [ref=e845]: 解析器
+                        - combobox "解析器" [ref=e846]:
+                          - option "后端" [selected]
+                          - option "原生"
+                    - generic [ref=e847]:
+                      - generic [ref=e848]:
+                        - generic [ref=e849]: 温度
+                        - spinbutton "温度" [ref=e850]
+                      - generic [ref=e851]:
+                        - generic [ref=e852]: 最大输出
+                        - spinbutton "最大输出" [ref=e853]
+                - generic [ref=e854]:
+                  - generic [ref=e855]:
+                    - generic [ref=e856]:
+                      - generic [ref=e857]: 批评者
+                      - paragraph [ref=e858]: 负责审稿式质疑、盲点追踪和反对意见整理。
+                    - combobox [ref=e859]:
+                      - option "使用继承的默认配置"
+                      - option "使用自定义角色模型" [selected]
+                  - generic [ref=e860]:
+                    - generic [ref=e861]:
+                      - generic [ref=e862]: 建议槽位
+                      - generic [ref=e863]: 默认语言槽位
+                    - generic [ref=e864]:
+                      - generic [ref=e865]: 当前来源
+                      - generic [ref=e866]: 自定义角色模型
+                    - generic [ref=e867]:
+                      - generic [ref=e868]: 当前模型
+                      - generic [ref=e869]: openai_compatible / Kimi-K2.5
+                  - generic [ref=e871]:
+                    - combobox [ref=e872]:
+                      - option "选择提供方"
+                      - option "NVIDIA Integrate"
+                      - option "OpenAI-Compatible / Custom" [selected]
+                      - option "OpenAI"
+                      - option "Anthropic"
+                      - option "Google"
+                      - option "阿里百炼"
+                      - option "智谱"
+                      - option "火山方舟"
+                      - option "腾讯混元"
+                      - option "DeepSeek"
+                    - combobox [ref=e873]:
+                      - option "选择模型"
+                      - option "MiniMax M2.5"
+                      - option "Kimi K2.5" [selected]
+                      - option "Kimi K2.5"
+                      - option "GLM-5"
+                      - option "GLM 4.7"
+                    - textbox "也可直接输入自定义模型 ID" [ref=e874]: Kimi-K2.5
+                    - textbox "Base URL（可选）" [ref=e875]: https://ai.1seey.com/v1
+                    - textbox "留空则继续使用已保存的密钥" [ref=e876]
+                    - generic [ref=e877]:
+                      - generic [ref=e878]:
+                        - generic [ref=e879]: OpenAI-Compatible / Custom
+                        - generic [ref=e880]: custom
+                      - paragraph [ref=e881]: "环境变量: OPENAI_API_KEY, OPENROUTER_API_KEY, DASHSCOPE_API_KEY, MOONSHOT_API_KEY"
+                      - generic [ref=e882]:
+                        - generic [ref=e883]: custom gateways
+                        - generic [ref=e884]: self-hosted routing
+                        - generic [ref=e885]: OpenAI-compatible proxies
+                      - generic [ref=e887]:
+                        - generic [ref=e888]: Compatible API key
+                        - generic [ref=e889]: api-key
+                      - generic [ref=e890]:
+                        - generic [ref=e891]:
+                          - generic [ref=e892]: general chat
+                          - generic [ref=e893]: recommended
+                        - generic [ref=e894]:
+                          - generic [ref=e895]: topic chat
+                          - generic [ref=e896]: recommended
+                        - generic [ref=e897]:
+                          - generic [ref=e898]: topic chat vision
+                          - generic [ref=e899]: recommended
+                        - generic [ref=e900]:
+                          - generic [ref=e901]: topic summary
+                          - generic [ref=e902]: recommended
+                        - generic [ref=e903]:
+                          - generic [ref=e904]: document parse
+                          - generic [ref=e905]: recommended
+                        - generic [ref=e906]:
+                          - generic [ref=e907]: figure analysis
+                          - generic [ref=e908]: recommended
+                    - generic [ref=e909]:
+                      - generic [ref=e910]:
+                        - generic [ref=e911]: Custom Headers (JSON)
+                        - textbox "Custom Headers (JSON) Merged into every OpenAI-compatible request. Use this for gateway routing headers or app attribution." [ref=e912]:
+                          - /placeholder: "{\n  \"HTTP-Referer\": \"https://your-app.example\",\n  \"X-Title\": \"Research Chronicle\"\n}"
+                          - text: "{}"
+                        - generic [ref=e913]: Merged into every OpenAI-compatible request. Use this for gateway routing headers or app attribution.
+                      - generic [ref=e914]:
+                        - generic [ref=e915]: Query Params (JSON)
+                        - textbox "Query Params (JSON) Optional query parameters appended to the completion endpoint." [ref=e916]:
+                          - /placeholder: "{\n  \"api-version\": \"2024-12-01-preview\"\n}"
+                          - text: "{}"
+                        - generic [ref=e917]: Optional query parameters appended to the completion endpoint.
+                      - generic [ref=e918]:
+                        - generic [ref=e919]: Request Body Overrides (JSON)
+                        - textbox "Request Body Overrides (JSON) Merged into every OpenAI-compatible request body before the core model/messages fields are applied. Use this for provider-specific parameters such as thinking controls." [ref=e920]:
+                          - /placeholder: "{\n  \"thinking\": {\n    \"type\": \"disabled\"\n  },\n  \"max_completion_tokens\": 1024\n}"
+                          - text: "{}"
+                        - generic [ref=e921]: Merged into every OpenAI-compatible request body before the core model/messages fields are applied. Use this for provider-specific parameters such as thinking controls.
+                      - generic [ref=e922]:
+                        - generic [ref=e923]: Client Label
+                        - textbox "Client Label A readable client or routing label that some gateways log for observability." [ref=e924]:
+                          - /placeholder: research-chronicle
+                          - text: suzhi
+                        - generic [ref=e925]: A readable client or routing label that some gateways log for observability.
+                      - generic [ref=e926]:
+                        - generic [ref=e927]: Topic Generation Mode
+                        - textbox "Topic Generation Mode Controls the 8-language topic creation path. Use \"native\" for full blueprint plus localization generation, \"patches-only\" to localize via language patches, or \"scaffold\" for deterministic fallback creation." [ref=e928]:
+                          - /placeholder: native
+                          - text: native
+                        - generic [ref=e929]: Controls the 8-language topic creation path. Use "native" for full blueprint plus localization generation, "patches-only" to localize via language patches, or "scaffold" for deterministic fallback creation.
+                    - generic [ref=e930]:
+                      - generic [ref=e931]:
+                        - generic [ref=e932]: 思考
+                        - combobox "思考" [ref=e933]:
+                          - option "自动" [selected]
+                          - option "开启"
+                          - option "关闭"
+                      - generic [ref=e934]:
+                        - generic [ref=e935]: 引用
+                        - combobox "引用" [ref=e936]:
+                          - option "后端" [selected]
+                          - option "原生"
+                      - generic [ref=e937]:
+                        - generic [ref=e938]: 解析器
+                        - combobox "解析器" [ref=e939]:
+                          - option "后端" [selected]
+                          - option "原生"
+                    - generic [ref=e940]:
+                      - generic [ref=e941]:
+                        - generic [ref=e942]: 温度
+                        - spinbutton "温度" [ref=e943]
+                      - generic [ref=e944]:
+                        - generic [ref=e945]: 最大输出
+                        - spinbutton "最大输出" [ref=e946]
+                - generic [ref=e947]:
+                  - generic [ref=e948]:
+                    - generic [ref=e949]:
+                      - generic [ref=e950]: 本地化器
+                      - paragraph [ref=e951]: 负责多语改写、语言修补和面向界面的本地化工作。
+                    - combobox [ref=e952]:
+                      - option "使用继承的默认配置"
+                      - option "使用自定义角色模型" [selected]
+                  - generic [ref=e953]:
+                    - generic [ref=e954]:
+                      - generic [ref=e955]: 建议槽位
+                      - generic [ref=e956]: 默认语言槽位
+                    - generic [ref=e957]:
+                      - generic [ref=e958]: 当前来源
+                      - generic [ref=e959]: 自定义角色模型
+                    - generic [ref=e960]:
+                      - generic [ref=e961]: 当前模型
+                      - generic [ref=e962]: openai_compatible / Kimi-K2.5
+                  - generic [ref=e964]:
+                    - combobox [ref=e965]:
+                      - option "选择提供方"
+                      - option "NVIDIA Integrate"
+                      - option "OpenAI-Compatible / Custom" [selected]
+                      - option "OpenAI"
+                      - option "Anthropic"
+                      - option "Google"
+                      - option "阿里百炼"
+                      - option "智谱"
+                      - option "火山方舟"
+                      - option "腾讯混元"
+                      - option "DeepSeek"
+                    - combobox [ref=e966]:
+                      - option "选择模型"
+                      - option "MiniMax M2.5"
+                      - option "Kimi K2.5" [selected]
+                      - option "Kimi K2.5"
+                      - option "GLM-5"
+                      - option "GLM 4.7"
+                    - textbox "也可直接输入自定义模型 ID" [ref=e967]: Kimi-K2.5
+                    - textbox "Base URL（可选）" [ref=e968]: https://ai.1seey.com/v1
+                    - textbox "留空则继续使用已保存的密钥" [ref=e969]
+                    - generic [ref=e970]:
+                      - generic [ref=e971]:
+                        - generic [ref=e972]: OpenAI-Compatible / Custom
+                        - generic [ref=e973]: custom
+                      - paragraph [ref=e974]: "环境变量: OPENAI_API_KEY, OPENROUTER_API_KEY, DASHSCOPE_API_KEY, MOONSHOT_API_KEY"
+                      - generic [ref=e975]:
+                        - generic [ref=e976]: custom gateways
+                        - generic [ref=e977]: self-hosted routing
+                        - generic [ref=e978]: OpenAI-compatible proxies
+                      - generic [ref=e980]:
+                        - generic [ref=e981]: Compatible API key
+                        - generic [ref=e982]: api-key
+                      - generic [ref=e983]:
+                        - generic [ref=e984]:
+                          - generic [ref=e985]: general chat
+                          - generic [ref=e986]: recommended
+                        - generic [ref=e987]:
+                          - generic [ref=e988]: topic chat
+                          - generic [ref=e989]: recommended
+                        - generic [ref=e990]:
+                          - generic [ref=e991]: topic chat vision
+                          - generic [ref=e992]: recommended
+                        - generic [ref=e993]:
+                          - generic [ref=e994]: topic summary
+                          - generic [ref=e995]: recommended
+                        - generic [ref=e996]:
+                          - generic [ref=e997]: document parse
+                          - generic [ref=e998]: recommended
+                        - generic [ref=e999]:
+                          - generic [ref=e1000]: figure analysis
+                          - generic [ref=e1001]: recommended
+                    - generic [ref=e1002]:
+                      - generic [ref=e1003]:
+                        - generic [ref=e1004]: Custom Headers (JSON)
+                        - textbox "Custom Headers (JSON) Merged into every OpenAI-compatible request. Use this for gateway routing headers or app attribution." [ref=e1005]:
+                          - /placeholder: "{\n  \"HTTP-Referer\": \"https://your-app.example\",\n  \"X-Title\": \"Research Chronicle\"\n}"
+                          - text: "{}"
+                        - generic [ref=e1006]: Merged into every OpenAI-compatible request. Use this for gateway routing headers or app attribution.
+                      - generic [ref=e1007]:
+                        - generic [ref=e1008]: Query Params (JSON)
+                        - textbox "Query Params (JSON) Optional query parameters appended to the completion endpoint." [ref=e1009]:
+                          - /placeholder: "{\n  \"api-version\": \"2024-12-01-preview\"\n}"
+                          - text: "{}"
+                        - generic [ref=e1010]: Optional query parameters appended to the completion endpoint.
+                      - generic [ref=e1011]:
+                        - generic [ref=e1012]: Request Body Overrides (JSON)
+                        - textbox "Request Body Overrides (JSON) Merged into every OpenAI-compatible request body before the core model/messages fields are applied. Use this for provider-specific parameters such as thinking controls." [ref=e1013]:
+                          - /placeholder: "{\n  \"thinking\": {\n    \"type\": \"disabled\"\n  },\n  \"max_completion_tokens\": 1024\n}"
+                          - text: "{}"
+                        - generic [ref=e1014]: Merged into every OpenAI-compatible request body before the core model/messages fields are applied. Use this for provider-specific parameters such as thinking controls.
+                      - generic [ref=e1015]:
+                        - generic [ref=e1016]: Client Label
+                        - textbox "Client Label A readable client or routing label that some gateways log for observability." [ref=e1017]:
+                          - /placeholder: research-chronicle
+                          - text: suzhi
+                        - generic [ref=e1018]: A readable client or routing label that some gateways log for observability.
+                      - generic [ref=e1019]:
+                        - generic [ref=e1020]: Topic Generation Mode
+                        - textbox "Topic Generation Mode Controls the 8-language topic creation path. Use \"native\" for full blueprint plus localization generation, \"patches-only\" to localize via language patches, or \"scaffold\" for deterministic fallback creation." [ref=e1021]:
+                          - /placeholder: native
+                          - text: native
+                        - generic [ref=e1022]: Controls the 8-language topic creation path. Use "native" for full blueprint plus localization generation, "patches-only" to localize via language patches, or "scaffold" for deterministic fallback creation.
+                    - generic [ref=e1023]:
+                      - generic [ref=e1024]:
+                        - generic [ref=e1025]: 思考
+                        - combobox "思考" [ref=e1026]:
+                          - option "自动" [selected]
+                          - option "开启"
+                          - option "关闭"
+                      - generic [ref=e1027]:
+                        - generic [ref=e1028]: 引用
+                        - combobox "引用" [ref=e1029]:
+                          - option "后端" [selected]
+                          - option "原生"
+                      - generic [ref=e1030]:
+                        - generic [ref=e1031]: 解析器
+                        - combobox "解析器" [ref=e1032]:
+                          - option "后端" [selected]
+                          - option "原生"
+                    - generic [ref=e1033]:
+                      - generic [ref=e1034]:
+                        - generic [ref=e1035]: 温度
+                        - spinbutton "温度" [ref=e1036]
+                      - generic [ref=e1037]:
+                        - generic [ref=e1038]: 最大输出
+                        - spinbutton "最大输出" [ref=e1039]
+                - generic [ref=e1040]:
+                  - generic [ref=e1041]:
+                    - generic [ref=e1042]:
+                      - generic [ref=e1043]: 视觉阅读器
+                      - paragraph [ref=e1044]: 负责 PDF、图、表、公式和证据的多模态解析。
+                    - combobox [ref=e1045]:
+                      - option "使用继承的默认配置"
+                      - option "使用自定义角色模型" [selected]
+                  - generic [ref=e1046]:
+                    - generic [ref=e1047]:
+                      - generic [ref=e1048]: 建议槽位
+                      - generic [ref=e1049]: 默认多模态槽位
+                    - generic [ref=e1050]:
+                      - generic [ref=e1051]: 当前来源
+                      - generic [ref=e1052]: 自定义角色模型
+                    - generic [ref=e1053]:
+                      - generic [ref=e1054]: 当前模型
+                      - generic [ref=e1055]: openai_compatible / Kimi-K2.5
+                  - generic [ref=e1056]:
+                    - generic [ref=e1057]: 文档解析
+                    - generic [ref=e1058]: 图像与图表分析
+                    - generic [ref=e1059]: 公式识别
+                    - generic [ref=e1060]: 表格抽取
+                    - generic [ref=e1061]: 证据解释器
+                  - generic [ref=e1063]:
+                    - combobox [ref=e1064]:
+                      - option "选择提供方"
+                      - option "NVIDIA Integrate"
+                      - option "OpenAI-Compatible / Custom" [selected]
+                      - option "OpenAI"
+                      - option "Anthropic"
+                      - option "Google"
+                      - option "阿里百炼"
+                      - option "智谱"
+                      - option "火山方舟"
+                      - option "腾讯混元"
+                      - option "DeepSeek"
+                    - combobox [ref=e1065]:
+                      - option "选择模型"
+                      - option "Kimi K2.5" [selected]
+                      - option "Kimi K2.5"
+                    - textbox "也可直接输入自定义模型 ID" [ref=e1066]: Kimi-K2.5
+                    - textbox "Base URL（可选）" [ref=e1067]: https://ai.1seey.com/v1
+                    - textbox "留空则继续使用已保存的密钥" [ref=e1068]
+                    - generic [ref=e1069]:
+                      - generic [ref=e1070]:
+                        - generic [ref=e1071]: OpenAI-Compatible / Custom
+                        - generic [ref=e1072]: custom
+                      - paragraph [ref=e1073]: "环境变量: OPENAI_API_KEY, OPENROUTER_API_KEY, DASHSCOPE_API_KEY, MOONSHOT_API_KEY"
+                      - generic [ref=e1074]:
+                        - generic [ref=e1075]: custom gateways
+                        - generic [ref=e1076]: self-hosted routing
+                        - generic [ref=e1077]: OpenAI-compatible proxies
+                      - generic [ref=e1079]:
+                        - generic [ref=e1080]: Compatible API key
+                        - generic [ref=e1081]: api-key
+                      - generic [ref=e1082]:
+                        - generic [ref=e1083]:
+                          - generic [ref=e1084]: general chat
+                          - generic [ref=e1085]: recommended
+                        - generic [ref=e1086]:
+                          - generic [ref=e1087]: topic chat
+                          - generic [ref=e1088]: recommended
+                        - generic [ref=e1089]:
+                          - generic [ref=e1090]: topic chat vision
+                          - generic [ref=e1091]: recommended
+                        - generic [ref=e1092]:
+                          - generic [ref=e1093]: topic summary
+                          - generic [ref=e1094]: recommended
+                        - generic [ref=e1095]:
+                          - generic [ref=e1096]: document parse
+                          - generic [ref=e1097]: recommended
+                        - generic [ref=e1098]:
+                          - generic [ref=e1099]: figure analysis
+                          - generic [ref=e1100]: recommended
+                    - generic [ref=e1101]:
+                      - generic [ref=e1102]:
+                        - generic [ref=e1103]: Custom Headers (JSON)
+                        - textbox "Custom Headers (JSON) Merged into every OpenAI-compatible request. Use this for gateway routing headers or app attribution." [ref=e1104]:
+                          - /placeholder: "{\n  \"HTTP-Referer\": \"https://your-app.example\",\n  \"X-Title\": \"Research Chronicle\"\n}"
+                          - text: "{}"
+                        - generic [ref=e1105]: Merged into every OpenAI-compatible request. Use this for gateway routing headers or app attribution.
+                      - generic [ref=e1106]:
+                        - generic [ref=e1107]: Query Params (JSON)
+                        - textbox "Query Params (JSON) Optional query parameters appended to the completion endpoint." [ref=e1108]:
+                          - /placeholder: "{\n  \"api-version\": \"2024-12-01-preview\"\n}"
+                          - text: "{}"
+                        - generic [ref=e1109]: Optional query parameters appended to the completion endpoint.
+                      - generic [ref=e1110]:
+                        - generic [ref=e1111]: Request Body Overrides (JSON)
+                        - textbox "Request Body Overrides (JSON) Merged into every OpenAI-compatible request body before the core model/messages fields are applied. Use this for provider-specific parameters such as thinking controls." [ref=e1112]:
+                          - /placeholder: "{\n  \"thinking\": {\n    \"type\": \"disabled\"\n  },\n  \"max_completion_tokens\": 1024\n}"
+                          - text: "{}"
+                        - generic [ref=e1113]: Merged into every OpenAI-compatible request body before the core model/messages fields are applied. Use this for provider-specific parameters such as thinking controls.
+                      - generic [ref=e1114]:
+                        - generic [ref=e1115]: Client Label
+                        - textbox "Client Label A readable client or routing label that some gateways log for observability." [ref=e1116]:
+                          - /placeholder: research-chronicle
+                          - text: suzhi
+                        - generic [ref=e1117]: A readable client or routing label that some gateways log for observability.
+                      - generic [ref=e1118]:
+                        - generic [ref=e1119]: Topic Generation Mode
+                        - textbox "Topic Generation Mode Controls the 8-language topic creation path. Use \"native\" for full blueprint plus localization generation, \"patches-only\" to localize via language patches, or \"scaffold\" for deterministic fallback creation." [ref=e1120]:
+                          - /placeholder: native
+                          - text: native
+                        - generic [ref=e1121]: Controls the 8-language topic creation path. Use "native" for full blueprint plus localization generation, "patches-only" to localize via language patches, or "scaffold" for deterministic fallback creation.
+                    - generic [ref=e1122]:
+                      - generic [ref=e1123]:
+                        - generic [ref=e1124]: 思考
+                        - combobox "思考" [ref=e1125]:
+                          - option "自动" [selected]
+                          - option "开启"
+                          - option "关闭"
+                      - generic [ref=e1126]:
+                        - generic [ref=e1127]: 引用
+                        - combobox "引用" [ref=e1128]:
+                          - option "后端" [selected]
+                          - option "原生"
+                      - generic [ref=e1129]:
+                        - generic [ref=e1130]: 解析器
+                        - combobox "解析器" [ref=e1131]:
+                          - option "后端" [selected]
+                          - option "原生"
+                    - generic [ref=e1132]:
+                      - generic [ref=e1133]:
+                        - generic [ref=e1134]: 温度
+                        - spinbutton "温度" [ref=e1135]
+                      - generic [ref=e1136]:
+                        - generic [ref=e1137]: 最大输出
+                        - spinbutton "最大输出" [ref=e1138]
+          - article [ref=e1139]:
+            - heading "任务路由" [level=2] [ref=e1140]
+            - paragraph [ref=e1141]: 决定每一类后端任务是继续走自动编排、停留在默认槽位，还是转到某个具体研究角色。
+            - generic [ref=e1142]:
+              - generic [ref=e1143]:
+                - generic [ref=e1144]:
+                  - generic [ref=e1145]:
+                    - generic [ref=e1146]:
+                      - generic [ref=e1147]: 通用对话
+                      - generic [ref=e1148]: 脱离主题阅读场景时的兜底助手对话。
+                      - generic [ref=e1149]: "建议: 工作台对话"
+                    - 'combobox "通用对话 脱离主题阅读场景时的兜底助手对话。 建议: 工作台对话 已固定的覆盖模型: openai_compatible / Kimi-K2.5 这个任务仍然被导入的高级覆盖模型固定住。你可以直接改上方路由，或在这里移除覆盖，把控制权交还给工作台。 移除覆盖" [ref=e1150]':
+                      - option "自动"
+                      - option "语言槽位" [selected]
+                      - option "多模态槽位"
+                      - option "工作台对话"
+                      - option "主题架构师"
+                      - option "研究裁判"
+                      - option "节点作者"
+                      - option "论文作者"
+                      - option "批评者"
+                      - option "本地化器"
+                      - option "视觉阅读器"
+                  - generic [ref=e1151]: "已固定的覆盖模型: openai_compatible / Kimi-K2.5"
+                  - generic [ref=e1152]:
+                    - generic [ref=e1153]: 这个任务仍然被导入的高级覆盖模型固定住。你可以直接改上方路由，或在这里移除覆盖，把控制权交还给工作台。
+                    - button "移除覆盖" [ref=e1154] [cursor=pointer]
+                - generic [ref=e1155]:
+                  - generic [ref=e1156]:
+                    - generic [ref=e1157]:
+                      - generic [ref=e1158]: 主题对话
+                      - generic [ref=e1159]: 围绕当前研究主题的 grounded 右侧栏对话。
+                      - generic [ref=e1160]: "建议: 工作台对话"
+                    - 'combobox "主题对话 围绕当前研究主题的 grounded 右侧栏对话。 建议: 工作台对话 已固定的覆盖模型: openai_compatible / Kimi-K2.5 这个任务仍然被导入的高级覆盖模型固定住。你可以直接改上方路由，或在这里移除覆盖，把控制权交还给工作台。 移除覆盖" [ref=e1161]':
+                      - option "自动"
+                      - option "语言槽位" [selected]
+                      - option "多模态槽位"
+                      - option "工作台对话"
+                      - option "主题架构师"
+                      - option "研究裁判"
+                      - option "节点作者"
+                      - option "论文作者"
+                      - option "批评者"
+                      - option "本地化器"
+                      - option "视觉阅读器"
+                  - generic [ref=e1162]: "已固定的覆盖模型: openai_compatible / Kimi-K2.5"
+                  - generic [ref=e1163]:
+                    - generic [ref=e1164]: 这个任务仍然被导入的高级覆盖模型固定住。你可以直接改上方路由，或在这里移除覆盖，把控制权交还给工作台。
+                    - button "移除覆盖" [ref=e1165] [cursor=pointer]
+                - generic [ref=e1166]:
+                  - generic [ref=e1167]:
+                    - generic [ref=e1168]:
+                      - generic [ref=e1169]: 主题视觉对话
+                      - generic [ref=e1170]: 带图片附件和多模态 grounding 的主题对话。
+                      - generic [ref=e1171]: "建议: 工作台对话"
+                    - 'combobox "主题视觉对话 带图片附件和多模态 grounding 的主题对话。 建议: 工作台对话 已固定的覆盖模型: openai_compatible / Kimi-K2.5 这个任务仍然被导入的高级覆盖模型固定住。你可以直接改上方路由，或在这里移除覆盖，把控制权交还给工作台。 移除覆盖" [ref=e1172]':
+                      - option "自动"
+                      - option "语言槽位" [selected]
+                      - option "多模态槽位"
+                      - option "工作台对话"
+                      - option "主题架构师"
+                      - option "研究裁判"
+                      - option "节点作者"
+                      - option "论文作者"
+                      - option "批评者"
+                      - option "本地化器"
+                      - option "视觉阅读器"
+                  - generic [ref=e1173]: "已固定的覆盖模型: openai_compatible / Kimi-K2.5"
+                  - generic [ref=e1174]:
+                    - generic [ref=e1175]: 这个任务仍然被导入的高级覆盖模型固定住。你可以直接改上方路由，或在这里移除覆盖，把控制权交还给工作台。
+                    - button "移除覆盖" [ref=e1176] [cursor=pointer]
+                - generic [ref=e1177]:
+                  - generic [ref=e1178]:
+                    - generic [ref=e1179]:
+                      - generic [ref=e1180]: 主题综述
+                      - generic [ref=e1181]: 负责主题生成、阶段命名、编排判断与收束综合。
+                      - generic [ref=e1182]: "建议: 主题架构师"
+                    - 'combobox "主题综述 负责主题生成、阶段命名、编排判断与收束综合。 建议: 主题架构师 已固定的覆盖模型: openai_compatible / Kimi-K2.5 这个任务仍然被导入的高级覆盖模型固定住。你可以直接改上方路由，或在这里移除覆盖，把控制权交还给工作台。 移除覆盖" [ref=e1183]':
+                      - option "自动"
+                      - option "语言槽位" [selected]
+                      - option "多模态槽位"
+                      - option "工作台对话"
+                      - option "主题架构师"
+                      - option "研究裁判"
+                      - option "节点作者"
+                      - option "论文作者"
+                      - option "批评者"
+                      - option "本地化器"
+                      - option "视觉阅读器"
+                  - generic [ref=e1184]: "已固定的覆盖模型: openai_compatible / Kimi-K2.5"
+                  - generic [ref=e1185]:
+                    - generic [ref=e1186]: 这个任务仍然被导入的高级覆盖模型固定住。你可以直接改上方路由，或在这里移除覆盖，把控制权交还给工作台。
+                    - button "移除覆盖" [ref=e1187] [cursor=pointer]
+                - generic [ref=e1188]:
+                  - generic [ref=e1189]:
+                    - generic [ref=e1190]:
+                      - generic [ref=e1191]: 文档解析
+                      - generic [ref=e1192]: 在证据结构化之前完成 PDF 与页面级解析。
+                      - generic [ref=e1193]: "建议: 视觉阅读器"
+                    - 'combobox "文档解析 在证据结构化之前完成 PDF 与页面级解析。 建议: 视觉阅读器 已固定的覆盖模型: openai_compatible / Kimi-K2.5 这个任务仍然被导入的高级覆盖模型固定住。你可以直接改上方路由，或在这里移除覆盖，把控制权交还给工作台。 移除覆盖" [ref=e1194]':
+                      - option "自动"
+                      - option "语言槽位" [selected]
+                      - option "多模态槽位"
+                      - option "工作台对话"
+                      - option "主题架构师"
+                      - option "研究裁判"
+                      - option "节点作者"
+                      - option "论文作者"
+                      - option "批评者"
+                      - option "本地化器"
+                      - option "视觉阅读器"
+                  - generic [ref=e1195]: "已固定的覆盖模型: openai_compatible / Kimi-K2.5"
+                  - generic [ref=e1196]:
+                    - generic [ref=e1197]: 这个任务仍然被导入的高级覆盖模型固定住。你可以直接改上方路由，或在这里移除覆盖，把控制权交还给工作台。
+                    - button "移除覆盖" [ref=e1198] [cursor=pointer]
+                - generic [ref=e1199]:
+                  - generic [ref=e1200]:
+                    - generic [ref=e1201]:
+                      - generic [ref=e1202]: 图像与图表分析
+                      - generic [ref=e1203]: 负责节点卡配图理解与证据说明。
+                      - generic [ref=e1204]: "建议: 视觉阅读器"
+                    - 'combobox "图像与图表分析 负责节点卡配图理解与证据说明。 建议: 视觉阅读器 已固定的覆盖模型: openai_compatible / Kimi-K2.5 这个任务仍然被导入的高级覆盖模型固定住。你可以直接改上方路由，或在这里移除覆盖，把控制权交还给工作台。 移除覆盖" [ref=e1205]':
+                      - option "自动"
+                      - option "语言槽位" [selected]
+                      - option "多模态槽位"
+                      - option "工作台对话"
+                      - option "主题架构师"
+                      - option "研究裁判"
+                      - option "节点作者"
+                      - option "论文作者"
+                      - option "批评者"
+                      - option "本地化器"
+                      - option "视觉阅读器"
+                  - generic [ref=e1206]: "已固定的覆盖模型: openai_compatible / Kimi-K2.5"
+                  - generic [ref=e1207]:
+                    - generic [ref=e1208]: 这个任务仍然被导入的高级覆盖模型固定住。你可以直接改上方路由，或在这里移除覆盖，把控制权交还给工作台。
+                    - button "移除覆盖" [ref=e1209] [cursor=pointer]
+                - generic [ref=e1210]:
+                  - generic [ref=e1211]:
+                    - generic [ref=e1212]:
+                      - generic [ref=e1213]: 公式识别
+                      - generic [ref=e1214]: 负责公式抽取、规范化和证据块呈现。
+                      - generic [ref=e1215]: "建议: 视觉阅读器"
+                    - 'combobox "公式识别 负责公式抽取、规范化和证据块呈现。 建议: 视觉阅读器 已固定的覆盖模型: openai_compatible / Kimi-K2.5 这个任务仍然被导入的高级覆盖模型固定住。你可以直接改上方路由，或在这里移除覆盖，把控制权交还给工作台。 移除覆盖" [ref=e1216]':
+                      - option "自动"
+                      - option "语言槽位" [selected]
+                      - option "多模态槽位"
+                      - option "工作台对话"
+                      - option "主题架构师"
+                      - option "研究裁判"
+                      - option "节点作者"
+                      - option "论文作者"
+                      - option "批评者"
+                      - option "本地化器"
+                      - option "视觉阅读器"
+                  - generic [ref=e1217]: "已固定的覆盖模型: openai_compatible / Kimi-K2.5"
+                  - generic [ref=e1218]:
+                    - generic [ref=e1219]: 这个任务仍然被导入的高级覆盖模型固定住。你可以直接改上方路由，或在这里移除覆盖，把控制权交还给工作台。
+                    - button "移除覆盖" [ref=e1220] [cursor=pointer]
+                - generic [ref=e1221]:
+                  - generic [ref=e1222]:
+                    - generic [ref=e1223]:
+                      - generic [ref=e1224]: 表格抽取
+                      - generic [ref=e1225]: 负责表格解析与对比证据生成。
+                      - generic [ref=e1226]: "建议: 视觉阅读器"
+                    - 'combobox "表格抽取 负责表格解析与对比证据生成。 建议: 视觉阅读器 已固定的覆盖模型: openai_compatible / Kimi-K2.5 这个任务仍然被导入的高级覆盖模型固定住。你可以直接改上方路由，或在这里移除覆盖，把控制权交还给工作台。 移除覆盖" [ref=e1227]':
+                      - option "自动"
+                      - option "语言槽位" [selected]
+                      - option "多模态槽位"
+                      - option "工作台对话"
+                      - option "主题架构师"
+                      - option "研究裁判"
+                      - option "节点作者"
+                      - option "论文作者"
+                      - option "批评者"
+                      - option "本地化器"
+                      - option "视觉阅读器"
+                  - generic [ref=e1228]: "已固定的覆盖模型: openai_compatible / Kimi-K2.5"
+                  - generic [ref=e1229]:
+                    - generic [ref=e1230]: 这个任务仍然被导入的高级覆盖模型固定住。你可以直接改上方路由，或在这里移除覆盖，把控制权交还给工作台。
+                    - button "移除覆盖" [ref=e1231] [cursor=pointer]
+                - generic [ref=e1232]:
+                  - generic [ref=e1233]:
+                    - generic [ref=e1234]:
+                      - generic [ref=e1235]: 证据解释器
+                      - generic [ref=e1236]: 负责图、表、公式与章节证据的本地化解释。
+                      - generic [ref=e1237]: "建议: 视觉阅读器"
+                    - 'combobox "证据解释器 负责图、表、公式与章节证据的本地化解释。 建议: 视觉阅读器 已固定的覆盖模型: openai_compatible / Kimi-K2.5 这个任务仍然被导入的高级覆盖模型固定住。你可以直接改上方路由，或在这里移除覆盖，把控制权交还给工作台。 移除覆盖" [ref=e1238]':
+                      - option "自动"
+                      - option "语言槽位" [selected]
+                      - option "多模态槽位"
+                      - option "工作台对话"
+                      - option "主题架构师"
+                      - option "研究裁判"
+                      - option "节点作者"
+                      - option "论文作者"
+                      - option "批评者"
+                      - option "本地化器"
+                      - option "视觉阅读器"
+                  - generic [ref=e1239]: "已固定的覆盖模型: openai_compatible / Kimi-K2.5"
+                  - generic [ref=e1240]:
+                    - generic [ref=e1241]: 这个任务仍然被导入的高级覆盖模型固定住。你可以直接改上方路由，或在这里移除覆盖，把控制权交还给工作台。
+                    - button "移除覆盖" [ref=e1242] [cursor=pointer]
+              - group [ref=e1243]:
+                - generic "固定任务覆盖 9 个遗留固定覆盖仍会高于路由规则。只有在需要逐条检查或移除时再展开。 查看覆盖详情" [ref=e1244] [cursor=pointer]:
+                  - generic [ref=e1245]:
+                    - generic [ref=e1246]: 固定任务覆盖
+                    - generic [ref=e1247]: 9 个遗留固定覆盖仍会高于路由规则。只有在需要逐条检查或移除时再展开。
+                  - generic [ref=e1248]: 查看覆盖详情
+          - generic [ref=e1249]:
+            - button "保存模型配置" [ref=e1250] [cursor=pointer]:
+              - img [ref=e1251]
+              - text: 保存模型配置
+            - button "刷新模型状态" [ref=e1255] [cursor=pointer]:
+              - img [ref=e1256]
+              - text: 刷新模型状态

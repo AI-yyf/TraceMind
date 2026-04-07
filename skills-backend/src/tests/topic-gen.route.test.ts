@@ -5,6 +5,7 @@ import test from 'node:test'
 import { prisma } from '../lib/prisma'
 import { __testing } from '../routes/topic-gen'
 import { createApp } from '../server'
+import { enhancedTaskScheduler } from '../services/enhanced-scheduler'
 
 async function withDisabledModelConfig(userId: string, run: () => Promise<void>) {
   const configKey = `alpha:user-model-config:${userId}`
@@ -52,11 +53,61 @@ async function withServer(run: (origin: string) => Promise<void>) {
   try {
     await run(`http://127.0.0.1:${address.port}`)
   } finally {
+    for (const task of enhancedTaskScheduler.getAllTasks()) {
+      enhancedTaskScheduler.removeTask(task.id)
+    }
+
     await new Promise<void>((resolve, reject) => {
+      server.closeAllConnections?.()
       server.close((error) => (error ? reject(error) : resolve()))
     })
   }
 }
+
+test.after(async () => {
+  await prisma.$disconnect()
+})
+
+test('topic generation fallback repair keeps zh source labels grounded when compatible previews drift into english fragments', () => {
+  const fallback = __testing.createFallbackPreview({
+    languageMode: 'zh',
+    sourceLanguage: 'zh',
+    sourceDescription:
+      '围绕自动驾驶 VLA 世界模型建立长期研究主题。重点覆盖自动驾驶中的 vision-language-action 闭环、可用于驾驶决策的世界模型、规划与控制耦合、仿真与数据合成、行动 token 化、记忆与检索、端到端驾驶智能体。',
+    anchorDescriptions: {
+      en: 'Build a sustained research topic around autonomous-driving VLA world models, including vision-language-action closed loops and driving world models.',
+    },
+    descriptionByLanguage: {
+      zh: '围绕自动驾驶 VLA 世界模型建立长期研究主题。重点覆盖自动驾驶中的 vision-language-action 闭环、可用于驾驶决策的世界模型、规划与控制耦合、仿真与数据合成、行动 token 化、记忆与检索、端到端驾驶智能体。',
+      en: 'Build a sustained research topic around autonomous-driving VLA world models, including vision-language-action closed loops and driving world models.',
+    },
+  })
+
+  const repairedPreview = __testing.repairPreviewWithFallback(
+    {
+      ...fallback,
+      nameEn: 'Autonomous Driving VLA World Models, In...',
+      focusLabelZh: 'autonomous-driving',
+      keywords: [
+        { zh: 'autonomous-driving', en: 'Autonomous Driving' },
+        { zh: 'including', en: 'Including' },
+      ],
+      locales: {
+        ...fallback.locales,
+        zh: {
+          ...fallback.locales.zh,
+          focusLabel: 'autonomous-driving',
+        },
+      },
+    },
+    fallback,
+    'zh',
+  )
+
+  assert.equal(repairedPreview.focusLabelZh, fallback.focusLabelZh)
+  assert.equal(repairedPreview.nameEn, fallback.nameEn)
+  assert.equal(repairedPreview.keywords[0]?.zh, fallback.keywords[0]?.zh)
+})
 
 test('POST /api/topic-gen/preview returns a multilingual preview for non-zh source languages', async () => {
   const userId = 'test-topic-gen-preview'
@@ -513,5 +564,44 @@ test('preview fallback descriptions prefer English anchors for third-language lo
   assert.equal(
     description,
     'Track how multimodal scientific agents combine planning, memory, and evidence in one workbench.',
+  )
+})
+
+test('topic generation fallback extracts autonomous driving VLA world models instead of prompt scaffolding', () => {
+  const englishSubject = __testing.extractTopicSubject(
+    'Build a long-horizon topic around autonomous driving VLA world models, covering world models, vision-language-action closed loops, planning and simulation.',
+    'en',
+  )
+  const chineseSubject = __testing.extractTopicSubject(
+    '围绕自动驾驶 VLA 世界模型建立长期研究主题。重点覆盖世界模型、视觉-语言-动作闭环、规划与仿真。',
+    'zh',
+  )
+
+  assert.equal(englishSubject, 'autonomous driving VLA world models')
+  assert.equal(chineseSubject, '自动驾驶 VLA 世界模型')
+})
+
+test('topic generation fallback keeps instruction-heavy Chinese previews grounded and bilingual', () => {
+  const fallback = __testing.createFallbackPreview({
+    languageMode: 'zh',
+    sourceLanguage: 'zh',
+    sourceDescription:
+      '围绕自动驾驶 VLA 世界模型开展长期研究。要求广纳贤文，从源头论文开始，按可调时间窗分期；同一阶段内按问题归纳成节点，覆盖主线与支线，尤其关注世界模型、视觉语言动作统一建模、闭环规划、可泛化驾驶智能、仿真与真实驾驶迁移，以及能够解决这些问题但不一定直接使用 VLA 命名的启发论文。',
+    anchorDescriptions: {},
+    descriptionByLanguage: {
+      zh: '围绕自动驾驶 VLA 世界模型开展长期研究。要求广纳贤文，从源头论文开始，按可调时间窗分期；同一阶段内按问题归纳成节点，覆盖主线与支线，尤其关注世界模型、视觉语言动作统一建模、闭环规划、可泛化驾驶智能、仿真与真实驾驶迁移，以及能够解决这些问题但不一定直接使用 VLA 命名的启发论文。',
+    },
+  })
+
+  assert.equal(fallback.nameZh, '自动驾驶 VLA 世界模型')
+  assert.equal(fallback.nameEn, 'Autonomous Driving VLA World Models')
+  assert.equal(fallback.focusLabelZh, '自动驾驶 VLA 世界模型')
+  assert.equal(fallback.focusLabelEn, 'Autonomous Driving VLA World Models')
+  assert.equal(fallback.keywords.some((keyword) => keyword.zh === '自动驾驶'), true)
+  assert.equal(fallback.keywords.some((keyword) => keyword.zh === 'VLA'), true)
+  assert.equal(fallback.keywords.some((keyword) => keyword.zh === '世界模型'), true)
+  assert.equal(
+    fallback.keywords.some((keyword) => /广纳贤文|围绕自动驾驶|长期研究/u.test(keyword.zh)),
+    false,
   )
 })

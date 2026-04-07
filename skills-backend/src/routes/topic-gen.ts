@@ -268,6 +268,13 @@ interface TopicGenerationInput {
   provider?: 'openai' | 'anthropic'
 }
 
+type FallbackKeywordConcept = {
+  slug: string
+  zh: string
+  en: string
+  patterns: RegExp[]
+}
+
 const TOPIC_PREVIEW_MODEL_TIMEOUT_MS = 4000
 // Some OpenAI-compatible gateways trickle SSE chunks for tens of seconds even on
 // small non-stream requests. Keep preview responsive and fall back quickly.
@@ -284,6 +291,63 @@ const TOPIC_PREVIEW_MAX_TOKENS = 1200
 const TOPIC_PREVIEW_MAX_TOKENS_COMPATIBLE = 1024
 const TOPIC_LOCALIZATION_MAX_TOKENS = 750
 const TOPIC_LOCALIZATION_MAX_TOKENS_COMPATIBLE = 760
+
+const FALLBACK_KEYWORD_CONCEPTS: FallbackKeywordConcept[] = [
+  {
+    slug: 'autonomous-driving',
+    zh: '自动驾驶',
+    en: 'Autonomous Driving',
+    patterns: [/\bautonomous driving\b/iu, /\bself-driving\b/iu, /自动驾驶/u],
+  },
+  {
+    slug: 'vla',
+    zh: 'VLA',
+    en: 'VLA',
+    patterns: [/\bvision-language-action\b/iu, /\bvla\b/iu, /视觉语言动作/u],
+  },
+  {
+    slug: 'world-models',
+    zh: '世界模型',
+    en: 'World Models',
+    patterns: [/\bworld models?\b/iu, /世界模型/u],
+  },
+  {
+    slug: 'closed-loop-planning',
+    zh: '闭环规划',
+    en: 'Closed-Loop Planning',
+    patterns: [/\bclosed[- ]loop\b/iu, /\bplanning[- ]control\b/iu, /闭环规划/u, /规划与控制/u],
+  },
+  {
+    slug: 'simulation',
+    zh: '仿真与数据合成',
+    en: 'Simulation and Synthetic Data',
+    patterns: [/\bsimulation\b/iu, /\bsynthetic data\b/iu, /仿真/u, /数据合成/u],
+  },
+  {
+    slug: 'memory-retrieval',
+    zh: '记忆与检索',
+    en: 'Memory and Retrieval',
+    patterns: [/\bmemory\b/iu, /\bretrieval\b/iu, /记忆/u, /检索/u],
+  },
+  {
+    slug: 'action-tokenization',
+    zh: '行动 Token 化',
+    en: 'Action Tokenization',
+    patterns: [/\baction token(?:ization)?\b/iu, /\btokeni[sz]ation\b/iu, /token 化/u, /token化/u],
+  },
+  {
+    slug: 'driving-agents',
+    zh: '驾驶智能体',
+    en: 'Driving Agents',
+    patterns: [/\bdriving agents?\b/iu, /\bend-to-end driving agents?\b/iu, /驾驶智能体/u, /端到端驾驶智能体/u],
+  },
+]
+
+const TOPIC_KEYWORD_SCAFFOLD_RE =
+  /^(?:围绕|关于|聚焦|关注|重点覆盖|尤其关注|要求|建立|创建|搭建|开展|进行|build|create|establish|craft|follow|track|study|research|topic|focus|covering|including|priorit(?:y|ize|izing))\b/iu
+
+const TOPIC_KEYWORD_NOISE_RE =
+  /(?:长期研究|研究主题|研究追踪|广纳贤文|最终节点页|完整文章|原文跳转|保留图|保留表|保留关键公式|主线|支线|节点|阶段|时间线|时间窗|分期|源头论文|mainline|problem-oriented|stage-local|stage local|time window|publication-time window)/iu
 
 function resolveRequestUserId(req: { header(name: string): string | undefined }) {
   const candidate = req.header('x-alpha-user-id')?.trim()
@@ -365,14 +429,32 @@ function sanitizeTopicText(value: string) {
     .trim()
 }
 
+function looksTooGenericTopicSubject(value: string | null | undefined) {
+  const normalized = sanitizeTopicText(value ?? '').toLowerCase()
+  if (!normalized) return true
+
+  return [
+    'around',
+    'about',
+    'for',
+    'on',
+    'regarding',
+    'topic',
+    'research topic',
+    'research focus',
+    'focus',
+    'study',
+  ].includes(normalized)
+}
+
 function extractEnglishTopicSubject(value: string) {
   const normalized = sanitizeTopicText(value)
   if (!normalized) return ''
 
   let candidate = normalized
   const patterns = [
-    /(?:create|build|establish|craft)\s+(?:a|an)?\s*(?:sustained|long(?:-| )horizon|long-term|persistent)?\s*(?:research\s+)?topic\s+(?:on|about|for)\s+(.+)/iu,
-    /(?:create|build|establish)\s+(?:a|an)?\s*(?:research\s+)?track(?:er)?\s+(?:on|about|for)\s+(.+)/iu,
+    /(?:create|build|establish|craft)\s+(?:a|an)?\s*(?:sustained|long(?:-| )horizon|long-term|persistent)?\s*(?:research\s+)?topic\s+(?:around|on|about|for|regarding)\s+(.+)/iu,
+    /(?:create|build|establish)\s+(?:a|an)?\s*(?:research\s+)?track(?:er)?\s+(?:around|on|about|for|regarding)\s+(.+)/iu,
     /(?:focus(?:ing)? on|track|follow)\s+(.+)/iu,
   ]
 
@@ -386,12 +468,18 @@ function extractEnglishTopicSubject(value: string) {
 
   return sanitizeTopicText(
     candidate
-      .replace(/\bfrom\s+20\d{2}\s+(?:to|-)\s+20\d{2}\b.*$/iu, '')
       .replace(
-        /\b(?:with|while|where|that|prioriti[sz]e|prioriti[sz]ing|distinguish(?:ing)?|focusing on)\b.*$/iu,
+        /^(?:build|create|establish|craft|follow|track)\s+(?:a|an)?\s*(?:sustained|long(?:-| )horizon|long-term|persistent)?\s*(?:research\s+)?(?:topic|track(?:er)?|study)\s+(?:around|on|about|for|regarding)\s+/iu,
         '',
       )
-      .replace(/[.?!].*$/u, ''),
+      .replace(/^(?:around|about|for|on|regarding)\s+/iu, '')
+      .replace(/\bfrom\s+20\d{2}\s+(?:to|-)\s+20\d{2}\b.*$/iu, '')
+      .replace(
+        /\b(?:with|while|where|that|including|covering|ensure|ensuring|prioriti[sz]e|prioriti[sz]ing|distinguish(?:ing)?|focusing on)\b.*$/iu,
+        '',
+      )
+      .replace(/[.?!].*$/u, '')
+      .replace(/[,\s;:]+$/u, ''),
   )
 }
 
@@ -404,6 +492,7 @@ function extractChineseTopicSubject(value: string) {
     /(?:\u8bf7)?(?:\u56f4\u7ed5|\u805a\u7126|\u5173\u6ce8)(.+?)(?:\u5efa\u7acb|\u521b\u5efa|\u642d\u5efa).*(?:\u4e3b\u9898|\u7814\u7a76\u4e3b\u9898|\u7814\u7a76\u8ffd\u8e2a)/u,
     /(?:\u5efa\u7acb|\u521b\u5efa|\u642d\u5efa)(?:\u4e00\u4e2a)?(?:\u5173\u4e8e|\u56f4\u7ed5)?(.+?)(?:\u7684)?(?:\u957f\u671f)?(?:\u7814\u7a76)?(?:\u4e3b\u9898|\u7814\u7a76\u8ffd\u8e2a)/u,
     /(?:\u5173\u4e8e|\u56f4\u7ed5)(.+?)(?:\u7684)?(?:\u7814\u7a76)?(?:\u8ffd\u8e2a|\u4e3b\u9898)/u,
+    /(?:\u56f4\u7ed5)(.+?)(?:\u5f00\u5c55|\u5c55\u5f00|\u8fdb\u884c|\u5efa\u7acb|\u521b\u5efa|\u642d\u5efa)/u,
   ]
 
   for (const pattern of patterns) {
@@ -416,6 +505,11 @@ function extractChineseTopicSubject(value: string) {
 
   return sanitizeTopicText(
     candidate
+      .replace(/^(?:\u56f4\u7ed5|\u805a\u7126|\u5173\u6ce8|\u5173\u4e8e)\s*/u, '')
+      .replace(
+        /(?:\u5efa\u7acb|\u521b\u5efa|\u642d\u5efa).*(?:\u4e3b\u9898|\u7814\u7a76\u4e3b\u9898|\u7814\u7a76\u8ffd\u8e2a).*$/u,
+        '',
+      )
       .replace(/\u4ece?\s*20\d{2}\s*(?:\u5230|-|to)\s*20\d{2}(?:\u5e74)?/u, '')
       .replace(
         /(?:\u91cd\u70b9|\u5e76\u4e14|\u5e76|\u8981\u6c42|\u4e0d\u8981|\u4ee5\u53ca).*$|\b(?:with|that|distinguish(?:ing)?|prioriti[sz]e|focusing on)\b.*$/iu,
@@ -432,13 +526,210 @@ function extractTopicSubject(value: string, language: PromptLanguage) {
 
   if (language === 'zh' || /[\u4e00-\u9fff]/u.test(normalized)) {
     const chinese = extractChineseTopicSubject(normalized)
-    if (chinese) return chinese
+    if (chinese && !looksTooGenericTopicSubject(chinese)) return chinese
   }
 
   const english = extractEnglishTopicSubject(normalized)
-  if (english) return english
+  if (english && !looksTooGenericTopicSubject(english)) return english
 
   return sanitizeTopicText(normalized.replace(/[.。!?！？].*$/u, ''))
+}
+
+function resolveFallbackKeywordConcept(value: string) {
+  const normalized = sanitizeTopicText(value)
+  if (!normalized) return null
+
+  return resolveFallbackKeywordConcepts(normalized)[0] ?? null
+}
+
+function resolveFallbackKeywordConcepts(value: string) {
+  const normalized = sanitizeTopicText(value)
+  if (!normalized) return []
+
+  return FALLBACK_KEYWORD_CONCEPTS
+    .map((concept) => {
+      const matches = concept.patterns
+        .map((pattern) => normalized.search(pattern))
+        .filter((index) => index >= 0)
+
+      if (!matches.length) return null
+      return {
+        concept,
+        index: Math.min(...matches),
+      }
+    })
+    .filter((entry): entry is { concept: FallbackKeywordConcept; index: number } => Boolean(entry))
+    .sort((left, right) => left.index - right.index)
+    .map((entry) => entry.concept)
+}
+
+function keywordLooksUseful(value: string) {
+  const normalized = sanitizeTopicText(value)
+  if (!normalized) return false
+  if (TOPIC_KEYWORD_SCAFFOLD_RE.test(normalized)) return false
+  if (TOPIC_KEYWORD_NOISE_RE.test(normalized)) return false
+  if (looksPromptScaffoldedTopicValue(normalized)) return false
+  if (looksTooGenericTopicSubject(normalized)) return false
+
+  const latinWordCount = (normalized.match(/[a-zA-Z]+/gu) ?? []).length
+  if (!/[\u4e00-\u9fff]/u.test(normalized) && latinWordCount > 5) return false
+  if (/^[\p{Script=Han}]{13,}$/u.test(normalized)) return false
+
+  return true
+}
+
+function cleanKeywordClause(value: string) {
+  return sanitizeTopicText(
+    value
+      .replace(
+        /^(?:围绕|关于|聚焦|关注|重点覆盖|尤其关注|覆盖|包括|涵盖|涉及|建立|创建|搭建|开展|进行|要求)\s*/u,
+        '',
+      )
+      .replace(
+        /^(?:build|create|establish|craft|follow|track|study|research|focus(?:ing)? on|covering|including|prioriti[sz](?:e|ing))\s+/iu,
+        '',
+      )
+      .replace(/^(?:可用于|用于|面向|针对)\S{0,12}?的/u, '')
+      .replace(/^(?:for|toward|towards|about|around|on)\s+/iu, '')
+      .replace(/\b(?:papers?|nodes?|stages?|timeline|research topic)\b.*$/iu, '')
+      .replace(/[，,、;；:.。]+$/u, ''),
+  )
+}
+
+function splitTopicSubjectSegments(subject: string) {
+  const normalized = sanitizeTopicText(subject)
+  if (!normalized) return []
+
+  const segments =
+    normalized.match(
+      /[\p{Script=Han}]{2,12}|[A-Z]{2,10}(?:-[A-Z]{2,10})*|[A-Za-z]+(?:[\s-][A-Za-z]+){0,2}/gu,
+    ) ?? []
+
+  return Array.from(
+    new Set(
+      segments
+        .map((segment) => cleanKeywordClause(segment))
+        .filter((segment) => keywordLooksUseful(segment)),
+    ),
+  )
+}
+
+function extractFocusSegments(value: string, language: PromptLanguage) {
+  const normalized = sanitizeTopicText(value)
+  if (!normalized) return []
+
+  const marker =
+    language === 'zh'
+      ? /(?:重点覆盖|尤其关注|覆盖|包括|涵盖|涉及|关注)(.+)$/u
+      : /\b(?:including|covering|especially|focusing on|prioriti[sz](?:e|ing))\b(.+)$/iu
+  const sentences = normalized
+    .split(/[。！？!?]/u)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean)
+
+  const segments: string[] = []
+  for (const sentence of sentences) {
+    const source = sentence.match(marker)?.[1]?.trim()
+    if (!source) continue
+
+    const clauses = source
+      .split(
+        language === 'zh'
+          ? /[、，,；;]|(?:以及|及|和|与)/u
+          : /,|;|\band\b|\bor\b/iu,
+      )
+      .map((clause) => cleanKeywordClause(clause))
+      .filter((clause) => keywordLooksUseful(clause))
+
+    segments.push(...clauses)
+  }
+
+  return Array.from(new Set(segments))
+}
+
+function buildFallbackKeywordPairs(
+  input: TopicGenerationInput,
+  subjects: {
+    sourceSubject: string
+    zhSubject: string
+    enSubject: string
+  },
+) {
+  const conceptSources = [
+    input.sourceDescription,
+    subjects.sourceSubject,
+    subjects.zhSubject,
+    subjects.enSubject,
+    ...Object.values(input.anchorDescriptions),
+    ...Object.values(input.descriptionByLanguage),
+  ].filter(Boolean)
+
+  const values = [
+    subjects.sourceSubject,
+    subjects.zhSubject,
+    subjects.enSubject,
+    ...splitTopicSubjectSegments(subjects.sourceSubject),
+    ...splitTopicSubjectSegments(subjects.zhSubject),
+    ...splitTopicSubjectSegments(subjects.enSubject),
+    ...extractFocusSegments(pickInputDescription(input, 'zh'), 'zh'),
+    ...extractFocusSegments(pickInputDescription(input, 'en'), 'en'),
+  ].filter(Boolean)
+
+  const pairs: Array<{ key: string; zh: string; en: string }> = []
+  const seen = new Set<string>()
+
+  const pushPair = (value: string) => {
+    const normalized = cleanKeywordClause(value)
+    if (!keywordLooksUseful(normalized)) return
+
+    const concept = resolveFallbackKeywordConcept(normalized)
+    const pair = concept
+      ? { key: concept.slug, zh: concept.zh, en: concept.en }
+      : /[\u4e00-\u9fff]/u.test(normalized)
+        ? { key: normalized.toLowerCase(), zh: normalized, en: normalized }
+        : {
+            key: normalized.toLowerCase(),
+            zh: normalized.toUpperCase() === normalized ? normalized : normalized,
+            en: titleCase(normalized),
+          }
+
+    if (seen.has(pair.key)) return
+    seen.add(pair.key)
+    pairs.push(pair)
+  }
+
+  const pushConcepts = (value: string) => {
+    const concepts = resolveFallbackKeywordConcepts(value)
+    if (!concepts.length) return false
+
+    for (const concept of concepts) {
+      pushPair(concept.zh)
+    }
+
+    return true
+  }
+
+  for (const value of conceptSources) {
+    pushConcepts(value)
+  }
+
+  for (const value of values) {
+    if (pushConcepts(value)) {
+      continue
+    }
+
+    pushPair(value)
+  }
+
+  return pairs.slice(0, 6).map(({ zh, en }) => ({ zh, en }))
+}
+
+function buildFallbackTopicName(keywordPairs: Array<{ zh: string; en: string }>, language: 'zh' | 'en') {
+  const values = keywordPairs
+    .map((pair) => (language === 'zh' ? pair.zh : pair.en))
+    .filter((value) => value && !(language === 'en' && containsHanScript(value)))
+
+  return clipText(values.slice(0, 3).join(' '), language === 'zh' ? 24 : 42)
 }
 
 function collectKeywords(value: string, limit = 6) {
@@ -451,7 +742,9 @@ function collectKeywords(value: string, limit = 6) {
     'the',
     'and',
     'for',
+    'around',
     'with',
+    'including',
     'from',
     'that',
     'this',
@@ -493,6 +786,96 @@ function collectKeywords(value: string, limit = 6) {
   ])
 
   return Array.from(new Set(tokens.filter((token) => !stopwords.has(token)))).slice(0, limit)
+}
+
+function containsHanScript(value: string | null | undefined) {
+  return /[\u4e00-\u9fff]/u.test(value ?? '')
+}
+
+function looksPromptScaffoldedTopicValue(value: string | null | undefined) {
+  const normalized = sanitizeTopicText(value ?? '')
+  if (!normalized) return true
+
+  const lowered = normalized.toLowerCase()
+  return (
+    /^(?:build|create|establish|craft|follow|track)\b/iu.test(normalized) ||
+    /\bresearch topic\b/iu.test(normalized) ||
+    /\bresearch focus\b/iu.test(normalized) ||
+    /\b(?:including|covering)\b/iu.test(normalized) ||
+    /,\s*(?:in|incl|including)\.\.\.$/iu.test(normalized) ||
+    lowered === 'autonomous-driving'
+  )
+}
+
+function shouldPreferFallbackTopicValue(
+  current: string | null | undefined,
+  fallback: string | null | undefined,
+  language: PromptLanguage,
+) {
+  const normalizedFallback = sanitizeTopicText(fallback ?? '')
+  if (!normalizedFallback) return false
+
+  const normalizedCurrent = sanitizeTopicText(current ?? '')
+  if (!normalizedCurrent) return true
+  if (looksTooGenericTopicSubject(normalizedCurrent)) return true
+  if (looksPromptScaffoldedTopicValue(normalizedCurrent)) return true
+
+  if (language === 'zh' && containsHanScript(normalizedFallback) && !containsHanScript(normalizedCurrent)) {
+    return true
+  }
+
+  return false
+}
+
+function previewKeywordsNeedFallback(
+  current: Array<{ zh: string; en: string }>,
+  fallback: Array<{ zh: string; en: string }>,
+  sourceLanguage: PromptLanguage,
+) {
+  if (fallback.length === 0) return false
+  if (current.length === 0) return true
+
+  if (sourceLanguage === 'zh') {
+    const currentHasHan = current.some((keyword) => containsHanScript(keyword.zh))
+    const fallbackHasHan = fallback.some((keyword) => containsHanScript(keyword.zh))
+    if (fallbackHasHan && !currentHasHan) {
+      return true
+    }
+  }
+
+  const weakKeywordCount = current.filter((keyword) => {
+    const candidate = sourceLanguage === 'zh' ? keyword.zh : keyword.en
+    return shouldPreferFallbackTopicValue(candidate, candidate, sourceLanguage)
+  }).length
+
+  return weakKeywordCount >= Math.max(2, Math.ceil(current.length / 2))
+}
+
+function blueprintKeywordsNeedFallback(
+  current: TopicKeyword[],
+  fallback: TopicKeyword[],
+  sourceLanguage: PromptLanguage,
+) {
+  if (fallback.length === 0) return false
+  if (current.length === 0) return true
+
+  if (sourceLanguage === 'zh') {
+    const currentHasHan = current.some((keyword) => containsHanScript(keyword.localized.zh || keyword.zh))
+    const fallbackHasHan = fallback.some((keyword) => containsHanScript(keyword.localized.zh || keyword.zh))
+    if (fallbackHasHan && !currentHasHan) {
+      return true
+    }
+  }
+
+  const weakKeywordCount = current.filter((keyword) => {
+    const candidate =
+      sourceLanguage === 'zh'
+        ? pickNonEmpty(keyword.localized.zh, keyword.zh)
+        : pickNonEmpty(keyword.localized.en, keyword.en)
+    return shouldPreferFallbackTopicValue(candidate, candidate, sourceLanguage)
+  }).length
+
+  return weakKeywordCount >= Math.max(2, Math.ceil(current.length / 2))
 }
 
 function resolvePromptLanguage(language: TopicLanguageMode): PromptLanguage {
@@ -941,22 +1324,32 @@ function createFallbackPreview(input: TopicGenerationInput): TopicPreview {
   const sourceSubject = extractTopicSubject(input.sourceDescription, input.sourceLanguage)
   const zhSubject = extractTopicSubject(zhSource, 'zh')
   const enSubject = extractTopicSubject(enSource, 'en')
-  const descriptions = [sourceSubject, zhSubject, enSubject, ...Object.values(input.descriptionByLanguage)]
-    .filter(Boolean)
-    .join(' ')
-  const keywords = collectKeywords(descriptions)
+  const keywords = buildFallbackKeywordPairs(input, {
+    sourceSubject,
+    zhSubject,
+    enSubject,
+  })
   const sourceSeed = clipText(pickNonEmpty(sourceSubject, input.sourceDescription), 42)
-  const zhSeed = clipText(pickNonEmpty(zhSubject, sourceSubject, sourceSeed), 18)
-  const enSeed = titleCase(clipText(pickNonEmpty(enSubject, sourceSubject, sourceSeed), 42))
+  const zhSeed = clipText(
+    pickNonEmpty(zhSubject, buildFallbackTopicName(keywords, 'zh'), sourceSubject, sourceSeed),
+    18,
+  )
+  const englishSubject = containsHanScript(enSubject) ? '' : enSubject
+  const enSeed = titleCase(
+    clipText(
+      pickNonEmpty(englishSubject, buildFallbackTopicName(keywords, 'en'), sourceSeed),
+      42,
+    ),
+  )
   const stageCount = Math.min(5, Math.max(3, keywords.length >= 4 ? 5 : 4))
   const nameZh = pickNonEmpty(zhSeed, clipText(sourceSeed, 24), '新研究主题')
-  const nameEn = pickNonEmpty(enSeed, titleCase(keywords.slice(0, 3).join(' ') || sourceSeed), 'New Research Topic')
+  const nameEn = pickNonEmpty(enSeed, buildFallbackTopicName(keywords, 'en'), 'New Research Topic')
   const summaryZh = clipText(zhSource, 120)
   const summaryEn = clipText(enSource, 120)
-  const focusLabelZh = pickNonEmpty(clipText(zhSubject, 18), keywords[0], nameZh, '研究焦点')
+  const focusLabelZh = pickNonEmpty(clipText(zhSubject, 18), keywords[0]?.zh, nameZh, '研究焦点')
   const focusLabelEn = pickNonEmpty(
-    titleCase(clipText(enSubject, 42)),
-    titleCase(keywords[0] || ''),
+    titleCase(clipText(englishSubject, 42)),
+    buildFallbackTopicName(keywords, 'en'),
     nameEn,
     'Research Focus',
   )
@@ -994,10 +1387,7 @@ function createFallbackPreview(input: TopicGenerationInput): TopicPreview {
   return previewPayloadSchema.parse({
     nameZh,
     nameEn,
-    keywords: keywords.map((keyword) => ({
-      zh: keyword,
-      en: titleCase(keyword.replace(/[\u4e00-\u9fa5]/gu, '') || keyword),
-    })),
+    keywords,
     summary: `${summaryEn} | ${summaryZh}`,
     summaryZh,
     summaryEn,
@@ -1006,6 +1396,74 @@ function createFallbackPreview(input: TopicGenerationInput): TopicPreview {
     focusLabelZh,
     focusLabelEn,
     primaryLanguage: input.sourceLanguage,
+    locales,
+  })
+}
+
+function repairPreviewWithFallback(
+  preview: TopicPreview,
+  fallback: TopicPreview,
+  sourceLanguage: PromptLanguage,
+): TopicPreview {
+  const fallbackLocales =
+    fallback.locales ??
+    createTopicLocaleMap(() => ({
+      name: '',
+      summary: '',
+      focusLabel: '',
+      description: '',
+    }))
+  const locales = createTopicLocaleMap((language) => {
+    const currentLocale = preview.locales?.[language] ?? fallbackLocales[language]
+    const fallbackLocale = fallbackLocales[language]
+    return {
+      name: shouldPreferFallbackTopicValue(currentLocale?.name, fallbackLocale.name, language)
+        ? fallbackLocale.name
+        : pickNonEmpty(currentLocale?.name, fallbackLocale.name),
+      summary: shouldPreferFallbackTopicValue(currentLocale?.summary, fallbackLocale.summary, language)
+        ? fallbackLocale.summary
+        : pickNonEmpty(currentLocale?.summary, fallbackLocale.summary),
+      focusLabel: shouldPreferFallbackTopicValue(currentLocale?.focusLabel, fallbackLocale.focusLabel, language)
+        ? fallbackLocale.focusLabel
+        : pickNonEmpty(currentLocale?.focusLabel, fallbackLocale.focusLabel),
+      description: shouldPreferFallbackTopicValue(currentLocale?.description, fallbackLocale.description, language)
+        ? fallbackLocale.description
+        : pickNonEmpty(currentLocale?.description, fallbackLocale.description),
+    }
+  })
+
+  const nameZh = shouldPreferFallbackTopicValue(preview.nameZh, fallback.nameZh, 'zh')
+    ? fallback.nameZh
+    : pickNonEmpty(preview.nameZh, locales.zh.name, fallback.nameZh)
+  const nameEn = shouldPreferFallbackTopicValue(preview.nameEn, fallback.nameEn, 'en')
+    ? fallback.nameEn
+    : pickNonEmpty(preview.nameEn, locales.en.name, fallback.nameEn)
+  const summaryZh = shouldPreferFallbackTopicValue(preview.summaryZh, fallback.summaryZh, 'zh')
+    ? fallback.summaryZh
+    : pickNonEmpty(preview.summaryZh, locales.zh.summary, fallback.summaryZh)
+  const summaryEn = shouldPreferFallbackTopicValue(preview.summaryEn, fallback.summaryEn, 'en')
+    ? fallback.summaryEn
+    : pickNonEmpty(preview.summaryEn, locales.en.summary, fallback.summaryEn)
+  const focusLabelZh = shouldPreferFallbackTopicValue(preview.focusLabelZh, fallback.focusLabelZh, 'zh')
+    ? fallback.focusLabelZh
+    : pickNonEmpty(preview.focusLabelZh, locales.zh.focusLabel, fallback.focusLabelZh)
+  const focusLabelEn = shouldPreferFallbackTopicValue(preview.focusLabelEn, fallback.focusLabelEn, 'en')
+    ? fallback.focusLabelEn
+    : pickNonEmpty(preview.focusLabelEn, locales.en.focusLabel, fallback.focusLabelEn)
+
+  return previewPayloadSchema.parse({
+    ...preview,
+    nameZh,
+    nameEn,
+    summaryZh,
+    summaryEn,
+    summary: `${summaryEn} | ${summaryZh}`,
+    focusLabelZh,
+    focusLabelEn,
+    focusLabel: `${focusLabelEn} | ${focusLabelZh}`,
+    keywords: previewKeywordsNeedFallback(preview.keywords, fallback.keywords, sourceLanguage)
+      ? fallback.keywords
+      : preview.keywords,
     locales,
   })
 }
@@ -1582,6 +2040,77 @@ function mergeBlueprint(
   })
 }
 
+function repairBlueprintWithFallback(
+  blueprint: TopicBlueprint,
+  fallback: TopicBlueprint,
+  sourceLanguage: PromptLanguage,
+): TopicBlueprint {
+  const topicLocales = createTopicLocaleMap((language) => {
+    const currentLocale = blueprint.topic.locales[language]
+    const fallbackLocale = fallback.topic.locales[language]
+    return {
+      name: shouldPreferFallbackTopicValue(currentLocale?.name, fallbackLocale.name, language)
+        ? fallbackLocale.name
+        : pickNonEmpty(currentLocale?.name, fallbackLocale.name),
+      summary: shouldPreferFallbackTopicValue(currentLocale?.summary, fallbackLocale.summary, language)
+        ? fallbackLocale.summary
+        : pickNonEmpty(currentLocale?.summary, fallbackLocale.summary),
+      focusLabel: shouldPreferFallbackTopicValue(currentLocale?.focusLabel, fallbackLocale.focusLabel, language)
+        ? fallbackLocale.focusLabel
+        : pickNonEmpty(currentLocale?.focusLabel, fallbackLocale.focusLabel),
+      description: shouldPreferFallbackTopicValue(currentLocale?.description, fallbackLocale.description, language)
+        ? fallbackLocale.description
+        : pickNonEmpty(currentLocale?.description, fallbackLocale.description),
+    }
+  })
+
+  const nameZh = shouldPreferFallbackTopicValue(blueprint.topic.nameZh, fallback.topic.nameZh, 'zh')
+    ? fallback.topic.nameZh
+    : pickNonEmpty(blueprint.topic.nameZh, topicLocales.zh.name, fallback.topic.nameZh)
+  const nameEn = shouldPreferFallbackTopicValue(blueprint.topic.nameEn, fallback.topic.nameEn, 'en')
+    ? fallback.topic.nameEn
+    : pickNonEmpty(blueprint.topic.nameEn, topicLocales.en.name, fallback.topic.nameEn)
+  const summaryZh = shouldPreferFallbackTopicValue(blueprint.topic.summaryZh, fallback.topic.summaryZh, 'zh')
+    ? fallback.topic.summaryZh
+    : pickNonEmpty(blueprint.topic.summaryZh, topicLocales.zh.summary, fallback.topic.summaryZh)
+  const summaryEn = shouldPreferFallbackTopicValue(blueprint.topic.summaryEn, fallback.topic.summaryEn, 'en')
+    ? fallback.topic.summaryEn
+    : pickNonEmpty(blueprint.topic.summaryEn, topicLocales.en.summary, fallback.topic.summaryEn)
+  const focusLabelZh = shouldPreferFallbackTopicValue(
+    blueprint.topic.focusLabelZh,
+    fallback.topic.focusLabelZh,
+    'zh',
+  )
+    ? fallback.topic.focusLabelZh
+    : pickNonEmpty(blueprint.topic.focusLabelZh, topicLocales.zh.focusLabel, fallback.topic.focusLabelZh)
+  const focusLabelEn = shouldPreferFallbackTopicValue(
+    blueprint.topic.focusLabelEn,
+    fallback.topic.focusLabelEn,
+    'en',
+  )
+    ? fallback.topic.focusLabelEn
+    : pickNonEmpty(blueprint.topic.focusLabelEn, topicLocales.en.focusLabel, fallback.topic.focusLabelEn)
+
+  return blueprintSchema.parse({
+    ...blueprint,
+    topic: {
+      ...blueprint.topic,
+      nameZh,
+      nameEn,
+      summaryZh,
+      summaryEn,
+      summary: `${summaryEn} | ${summaryZh}`,
+      focusLabelZh,
+      focusLabelEn,
+      focusLabel: `${focusLabelEn} | ${focusLabelZh}`,
+      keywords: blueprintKeywordsNeedFallback(blueprint.topic.keywords, fallback.topic.keywords, sourceLanguage)
+        ? fallback.topic.keywords
+        : blueprint.topic.keywords,
+      locales: topicLocales,
+    },
+  })
+}
+
 function previewFromBlueprint(blueprint: TopicBlueprint): TopicPreview {
   return previewPayloadSchema.parse({
     nameZh: pickNonEmpty(blueprint.topic.nameZh, blueprint.topic.locales.zh.name),
@@ -1826,7 +2355,9 @@ async function generatePreview(input: TopicGenerationInput, userId?: string) {
     })
   }
 
-  return parsedResult.success ? parsedResult.data : fallback
+  return parsedResult.success
+    ? repairPreviewWithFallback(parsedResult.data, fallback, input.sourceLanguage)
+    : fallback
 }
 
 async function generateBlueprint(
@@ -1895,7 +2426,11 @@ async function generateBlueprint(
     })
   }
 
-  return mergeBlueprint(fallback, parsed)
+  return repairBlueprintWithFallback(
+    mergeBlueprint(fallback, parsed),
+    fallback,
+    input.sourceLanguage,
+  )
 }
 
 async function localizeBlueprint(
@@ -2189,7 +2724,11 @@ export default router
 
 export const __testing = {
   buildTopicGenerationPassProfile,
+  createFallbackPreview,
+  extractTopicSubject,
   pickInputDescription,
   previewNeedsLocaleRepair,
+  repairBlueprintWithFallback,
+  repairPreviewWithFallback,
   resolveTopicGenerationStrategy,
 }

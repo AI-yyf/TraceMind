@@ -4,7 +4,7 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 
 import { I18nProvider } from '@/i18n'
 import type { NodeViewModel, PaperViewModel } from '@/types/alpha'
@@ -44,7 +44,12 @@ vi.mock('@/components/topic/RightSidebarShell', () => ({
 
 const apiGetMock = vi.mocked(apiGet)
 
-function renderWithProviders(node: ReactNode, initialEntry: string, path: string) {
+function renderWithProviders(
+  node: ReactNode,
+  initialEntry: string,
+  path: string,
+  extraRoutes: ReactNode[] = [],
+) {
   localStorage.setItem(
     'arxiv-chronicle-language-preference',
     JSON.stringify({ primary: 'en', secondary: 'zh', mode: 'monolingual' }),
@@ -58,9 +63,20 @@ function renderWithProviders(node: ReactNode, initialEntry: string, path: string
       >
         <Routes>
           <Route path={path} element={node} />
+          {extraRoutes}
         </Routes>
       </MemoryRouter>
     </I18nProvider>,
+  )
+}
+
+function RedirectProbe() {
+  const location = useLocation()
+  return (
+    <div data-testid="paper-redirect-target">
+      <div data-testid="paper-redirect-path">{location.pathname}</div>
+      <div data-testid="paper-redirect-search">{location.search}</div>
+    </div>
   )
 }
 
@@ -110,7 +126,7 @@ function makePaperViewModel(): PaperViewModel {
           id: 'flow-1',
           type: 'text',
           title: 'Lead',
-          body: ['paper-1《Paper title》 appears in node-1 as a core reference.'],
+          body: ['paper-1《Paper title》 appears in node-1「Node title」 as a core reference.'],
         },
         {
           id: 'flow-table',
@@ -146,7 +162,7 @@ function makeNodeViewModel(): NodeViewModel {
     nodeId: 'node-1',
     title: 'Node title',
     titleEn: 'Node title en',
-    headline: 'Node headline',
+    headline: 'Node title builds on paper-1《Paper one》 to establish the mainline.',
     subtitle: 'Node subtitle',
     summary: 'Node summary',
     explanation: 'Node explanation',
@@ -166,7 +182,7 @@ function makeNodeViewModel(): NodeViewModel {
       tableCount: 0,
       formulaCount: 0,
     },
-    standfirst: 'Node standfirst',
+    standfirst: 'If readers still cannot tell what each paper did, the node organization is still not successful.',
     paperRoles: [
       {
         paperId: 'paper-1',
@@ -210,7 +226,7 @@ function makeNodeViewModel(): NodeViewModel {
           id: 'node-intro',
           type: 'text',
           title: 'Lead',
-          body: ['node-1 builds on paper-1《Paper one》 to establish the mainline.'],
+          body: ['node-1「Node title」 builds on paper-1《Paper one》 to establish the mainline.'],
         },
         {
           id: 'paper-break-paper-1',
@@ -253,9 +269,17 @@ function makeNodeViewModel(): NodeViewModel {
             page: 1,
           },
         },
+        {
+          id: 'node-closing',
+          type: 'closing',
+          body: [
+            'A good node should help the reader see the strongest evidence and the remaining gap.',
+            'Meaningful closing point.',
+          ],
+        },
       ],
       sections: [],
-      closing: [],
+      closing: ['Meaningful closing point.'],
     },
     critique: {
       title: 'Critique',
@@ -309,17 +333,14 @@ describe('Reading pages resilience', () => {
     expect(screen.getByText('Stage-locked article')).toBeVisible()
     expect(
       screen.getByText(
-        'This node article now keeps only the papers that belong to 2026.04. To regroup stages, change the topic cadence from Topic List rather than editing the reading surface.',
+        'This node article keeps only the papers, figures, tables, and formulas that belong to 2026.04. If the topic cadence changes, adjust it from Topic Management instead of rewriting the reading surface here.',
       ),
     ).toBeVisible()
     expect(screen.getByRole('link', { name: 'Manage topic cadence' })).toHaveAttribute(
       'href',
       '/manage/topics',
     )
-    expect(screen.getByRole('link', { name: /Node title/ })).toHaveAttribute(
-      'href',
-      '/node/node-1?stageMonths=1',
-    )
+    expect(screen.getByRole('heading', { name: 'Node title' })).toBeVisible()
     expect(screen.getByRole('link', { name: '《Paper one》' })).toHaveAttribute(
       'href',
       '/node/node-1?anchor=paper%3Apaper-1&stageMonths=1',
@@ -345,6 +366,14 @@ describe('Reading pages resilience', () => {
     expect(screen.getByRole('button', { name: 'Download 2 PDFs' })).toBeEnabled()
     expect(screen.getByText('Method')).toBeVisible()
     expect(screen.getByText('0.91')).toBeVisible()
+    expect(screen.getAllByText(/establish the mainline/i).length).toBe(1)
+    expect(
+      screen.queryByText(/If readers still cannot tell what each paper did/i),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByText(/A good node should help the reader see the strongest evidence/i),
+    ).not.toBeInTheDocument()
+    expect(screen.getByText('Meaningful closing point.')).toBeVisible()
   })
 
   it('keeps the node reading surface stable when a sidebar citation evidence request fails', async () => {
@@ -373,7 +402,7 @@ describe('Reading pages resilience', () => {
     expect(screen.getByTestId('node-article-flow')).toHaveTextContent('Paper one contribution')
   })
 
-  it('uses the paper page only as a redirect surface back to the node article', async () => {
+  it('redirects the paper route back into the node article when a related node exists', async () => {
     apiGetMock.mockImplementation(async (path: string) => {
       if (path === '/api/papers/paper-1/view-model') {
         return makePaperViewModel()
@@ -382,34 +411,14 @@ describe('Reading pages resilience', () => {
       throw new Error(`Unexpected GET ${path}`)
     })
 
-    renderWithProviders(<PaperPage />, '/paper/paper-1', '/paper/:paperId')
+    renderWithProviders(<PaperPage />, '/paper/paper-1', '/paper/:paperId', [
+      <Route key="node-probe" path="/node/:nodeId" element={<RedirectProbe />} />,
+    ])
 
-    expect(await screen.findByTestId('paper-redirect')).toBeVisible()
-    expect(screen.getByText('Reading moved')).toBeVisible()
-    expect(
-      screen.getByText(
-        'Paper pages are now treated as a fallback surface. The full explanation, evidence ordering, and critical reading live inside the node article.',
-      ),
-    ).toBeVisible()
-    expect(screen.getByRole('link', { name: 'Back to Topic' })).toHaveAttribute(
-      'href',
-      '/topic/topic-1?stageMonths=1',
-    )
-    expect(screen.getByRole('link', { name: 'Open node article' })).toHaveAttribute(
-      'href',
-      '/node/node-1?anchor=paper%3Apaper-1&stageMonths=1',
-    )
-    expect(screen.getByRole('link', { name: 'Original source' })).toHaveAttribute(
-      'href',
-      'https://arxiv.org/abs/2604.12345',
-    )
-    expect(screen.getByRole('link', { name: 'Download PDF' })).toHaveAttribute(
-      'href',
-      'https://arxiv.org/pdf/2604.12345.pdf',
-    )
-    expect(screen.getByRole('link', { name: /Node title/ })).toHaveAttribute(
-      'href',
-      '/node/node-1?anchor=paper%3Apaper-1&stageMonths=1',
+    expect(await screen.findByTestId('paper-redirect-target')).toBeVisible()
+    expect(screen.getByTestId('paper-redirect-path')).toHaveTextContent('/node/node-1')
+    expect(screen.getByTestId('paper-redirect-search')).toHaveTextContent(
+      '?anchor=paper%3Apaper-1&stageMonths=1',
     )
   })
 

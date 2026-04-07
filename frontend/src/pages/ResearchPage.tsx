@@ -18,7 +18,7 @@ import { formatDateTimeByLanguage } from '@/i18n/locale'
 import type { StageLocaleMap, TopicLocalizationPayload } from '@/types/alpha'
 import { apiGet, buildApiUrl } from '@/utils/api'
 import { getStageLocalizedPair, getTopicLocalizedPair } from '@/utils/topicLocalization'
-import { isRegressionSeedTopic } from '@/utils/topicPresentation'
+import { compactTopicSurfaceTitle, isRegressionSeedTopic } from '@/utils/topicPresentation'
 
 type TopicRecord = {
   id: string
@@ -122,6 +122,7 @@ const defaultStageRounds = Array.from({ length: 5 }, (_, index) => ({
   stageIndex: index + 1,
   rounds: 2,
 }))
+const TASK_ARCHIVE_AFTER_MS = 1000 * 60 * 60 * 48
 
 function renderTemplate(
   template: string,
@@ -183,7 +184,7 @@ function getTaskStatusMeta(
   task: TaskConfig,
   t: (key: string, fallback?: string) => string,
 ) {
-  const status = task.progress?.status ?? (task.enabled ? 'active' : 'paused')
+  const status = getTaskLifecycleStatus(task)
 
   if (status === 'active') {
     return {
@@ -210,6 +211,69 @@ function getTaskStatusMeta(
     label: t('research.statusPaused'),
     tone: 'bg-[var(--surface-soft)] text-black/58',
   }
+}
+
+function getTaskLifecycleStatus(task: TaskConfig) {
+  return task.progress?.status ?? (task.enabled ? 'active' : 'paused')
+}
+
+function getTaskDisplayModeLabel(
+  task: TaskConfig,
+  t: Translate,
+  compact = false,
+) {
+  if (task.action !== 'discover') {
+    return t(task.action === 'refresh' ? 'research.actionRefresh' : 'research.actionSync')
+  }
+
+  if (task.researchMode === 'duration') {
+    return compact
+      ? t('research.modeDurationShort', 'Continuous research')
+      : t('research.modeDuration')
+  }
+
+  return compact
+    ? t('research.modeStageRoundsShort', 'Stage rounds')
+    : t('research.modeStageRounds')
+}
+
+function formatTaskDisplayName(
+  task: TaskConfig,
+  topicLabel: string,
+  t: Translate,
+) {
+  const safeTopic = compactTopicSurfaceTitle(
+    topicLabel || task.progress?.topicName || task.name,
+    t('research.untitledTopic', 'Untitled topic'),
+    30,
+  )
+
+  if (task.action === 'discover') {
+    return renderTemplate(
+      task.researchMode === 'duration'
+        ? t('research.taskDisplayDuration', '{topic} · Continuous research')
+        : t('research.taskDisplayStageRounds', '{topic} · Stage rounds'),
+      { topic: safeTopic },
+    )
+  }
+
+  return renderTemplate(
+    task.action === 'refresh'
+      ? t('research.taskDisplayRefresh', '{topic} · Refresh content')
+      : t('research.taskDisplaySync', '{topic} · Sync status'),
+    { topic: safeTopic },
+  )
+}
+
+function isTaskDormant(task: TaskConfig) {
+  const status = getTaskLifecycleStatus(task)
+  if (status === 'active' || task.enabled) return false
+  if (!task.topicId) return true
+
+  const activityTimestamp = Date.parse(task.progress?.lastRunAt ?? task.progress?.startedAt ?? '')
+  if (Number.isNaN(activityTimestamp)) return true
+
+  return Date.now() - activityTimestamp > TASK_ARCHIVE_AFTER_MS
 }
 
 export function ResearchPage() {
@@ -291,6 +355,26 @@ export function ResearchPage() {
     [selectedTaskId, tasks],
   )
 
+  const topicLabelById = useMemo(
+    () =>
+      new Map(
+        topics.map((topic) => [
+          topic.id,
+          getTopicLocalizedPair(
+            topic.localization,
+            'name',
+            preference,
+            topic.nameZh,
+            topic.nameEn ?? topic.nameZh,
+          ).primary,
+        ]),
+      ),
+    [preference, topics],
+  )
+
+  const formatTaskLabel = (task: TaskConfig) =>
+    formatTaskDisplayName(task, (task.topicId ? topicLabelById.get(task.topicId) : '') ?? '', t)
+
   const visibleTasks = useMemo(() => {
     let filtered =
       selectedTopicIds.length > 0
@@ -308,16 +392,10 @@ export function ResearchPage() {
     const normalizedTaskQuery = taskQuery.trim().toLowerCase()
     if (normalizedTaskQuery) {
       filtered = filtered.filter((task) => {
-        const topic = topics.find((item) => item.id === task.topicId)
-        const topicName = getTopicLocalizedPair(
-          topic?.localization,
-          'name',
-          preference,
-          topic?.nameZh ?? task.progress?.topicName ?? '',
-          topic?.nameEn ?? topic?.nameZh ?? task.progress?.topicName ?? '',
-        ).primary
+        const topicName = (task.topicId ? topicLabelById.get(task.topicId) : '') ?? task.progress?.topicName ?? ''
         const haystack = [
           task.name,
+          formatTaskLabel(task),
           topicName,
           task.progress?.topicName ?? '',
           task.cronExpression,
@@ -333,9 +411,9 @@ export function ResearchPage() {
 
     return [...filtered].sort((left, right) => {
       const leftPriority =
-        left.progress?.status === 'active' ? 0 : left.enabled ? 1 : 2
+        getTaskLifecycleStatus(left) === 'active' ? 0 : left.enabled ? 1 : 2
       const rightPriority =
-        right.progress?.status === 'active' ? 0 : right.enabled ? 1 : 2
+        getTaskLifecycleStatus(right) === 'active' ? 0 : right.enabled ? 1 : 2
 
       if (leftPriority !== rightPriority) return leftPriority - rightPriority
 
@@ -352,12 +430,12 @@ export function ResearchPage() {
 
       return right.id.localeCompare(left.id)
     })
-  }, [preference, selectedTopicIds, taskFilter, taskQuery, tasks, topics])
+  }, [formatTaskLabel, selectedTopicIds, taskFilter, taskQuery, tasks, topicLabelById])
 
   const stats = useMemo(
     () => ({
       taskCount: tasks.length,
-      activeCount: tasks.filter((task) => task.progress?.status === 'active').length,
+      activeCount: tasks.filter((task) => getTaskLifecycleStatus(task) === 'active').length,
       topicCount: new Set(tasks.map((task) => task.topicId).filter(Boolean)).size,
     }),
     [tasks],
@@ -366,19 +444,9 @@ export function ResearchPage() {
   const selectedTopicLabels = useMemo(
     () =>
       selectedTopicIds
-        .map((topicId) => {
-          const topic = topics.find((item) => item.id === topicId)
-          if (!topic) return ''
-          return getTopicLocalizedPair(
-            topic.localization,
-            'name',
-            preference,
-            topic.nameZh,
-            topic.nameEn ?? topic.nameZh,
-          ).primary
-        })
+        .map((topicId) => topicLabelById.get(topicId) ?? '')
         .filter(Boolean),
-    [preference, selectedTopicIds, topics],
+    [selectedTopicIds, topicLabelById],
   )
 
   useEffect(() => {
@@ -720,6 +788,7 @@ export function ResearchPage() {
               onDeleteTask={deleteTask}
               taskDetail={taskDetail}
               detailLoading={detailLoading}
+              formatTaskLabel={formatTaskLabel}
               formatTaskProgress={formatTaskProgress}
               formatRunSummary={formatRunSummary}
             />
@@ -1264,6 +1333,7 @@ function ResearchTaskWorkbenchCard({
   onDeleteTask,
   taskDetail,
   detailLoading,
+  formatTaskLabel,
   formatTaskProgress,
   formatRunSummary,
 }: {
@@ -1287,6 +1357,7 @@ function ResearchTaskWorkbenchCard({
   onDeleteTask: (taskId: string) => Promise<void>
   taskDetail: TaskDetailResponse | null
   detailLoading: boolean
+  formatTaskLabel: (task: TaskConfig) => string
   formatTaskProgress: (task: TaskConfig) => string
   formatRunSummary: (record: TaskDetailResponse['history'][number]) => string
 }) {
@@ -1352,9 +1423,9 @@ function ResearchTaskWorkbenchCard({
             type="button"
             onClick={() => onPanelChange('detail')}
             className="max-w-full truncate rounded-full border border-black/8 bg-white px-3 py-1.5 text-[11px] text-black/64 transition hover:border-black/16 hover:text-black"
-            title={selectedTask.name}
+            title={formatTaskLabel(selectedTask)}
           >
-            {selectedTask.name}
+            {formatTaskLabel(selectedTask)}
           </button>
         ) : (
           <div className="text-[11px] text-black/46">
@@ -1378,6 +1449,7 @@ function ResearchTaskWorkbenchCard({
             selectedTask={selectedTask}
             busyAction={busyAction}
             setSelectedTaskId={setSelectedTaskId}
+            formatTaskLabel={formatTaskLabel}
             onInspectTask={() => onPanelChange('detail')}
             onRunTask={onRunTask}
             onToggleTask={onToggleTask}
@@ -1393,6 +1465,7 @@ function ResearchTaskWorkbenchCard({
             selectedTask={selectedTask}
             taskDetail={taskDetail}
             detailLoading={detailLoading}
+            formatTaskLabel={formatTaskLabel}
             formatTaskProgress={formatTaskProgress}
             formatRunSummary={formatRunSummary}
             embedded
@@ -1416,6 +1489,7 @@ function ResearchTaskQueueCard({
   selectedTask,
   busyAction,
   setSelectedTaskId,
+  formatTaskLabel,
   onInspectTask,
   onRunTask,
   onToggleTask,
@@ -1436,6 +1510,7 @@ function ResearchTaskQueueCard({
   selectedTask: TaskConfig | null
   busyAction: string | null
   setSelectedTaskId: Dispatch<SetStateAction<string>>
+  formatTaskLabel: (task: TaskConfig) => string
   onInspectTask?: (taskId: string) => void
   onRunTask: (taskId: string) => Promise<void>
   onToggleTask: (task: TaskConfig) => Promise<void>
@@ -1449,6 +1524,155 @@ function ResearchTaskQueueCard({
     { id: 'running', label: t('research.queueFilterRunning', 'Running') },
     { id: 'selected', label: t('research.queueFilterSelected', 'Selected topics') },
   ]
+  const primaryTasks = tasks.filter((task) => !isTaskDormant(task) || task.id === selectedTask?.id)
+  const archivedTasks = tasks.filter((task) => isTaskDormant(task) && task.id !== selectedTask?.id)
+  const archiveOpen = primaryTasks.length === 0 || Boolean(taskQuery.trim()) || taskFilter !== 'all'
+
+  const renderTaskCards = (taskList: TaskConfig[], archived = false) =>
+    taskList.map((task) => {
+      const statusMeta = getTaskStatusMeta(task, t)
+      const selected = selectedTask?.id === task.id
+      const lastRun = formatTaskMoment(
+        task.progress?.lastRunAt ?? task.progress?.startedAt ?? null,
+        language,
+      )
+      const modeLabel = getTaskDisplayModeLabel(task, t, true)
+      const displayName = formatTaskLabel(task)
+
+      return (
+        <article
+          key={task.id}
+          className={`rounded-[24px] border px-4 py-4 transition ${
+            selected
+              ? 'border-black bg-black text-white shadow-[0_14px_28px_rgba(15,23,42,0.10)]'
+              : archived
+                ? 'border-black/8 bg-white text-black'
+                : 'border-black/8 bg-[var(--surface-soft)] text-black'
+          }`}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedTaskId(task.id)
+              onInspectTask?.(task.id)
+            }}
+            className="block w-full text-left"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="truncate text-[15px] font-semibold">{displayName}</div>
+                <div
+                  className={`mt-2 text-[12px] leading-6 ${
+                    selected ? 'text-white/76' : 'text-black/56'
+                  }`}
+                >
+                  {formatTaskProgress(task)}
+                </div>
+              </div>
+              <span
+                className={`rounded-full px-3 py-1 text-[11px] ${
+                  selected ? 'bg-white/14 text-white' : statusMeta.tone
+                }`}
+              >
+                {statusMeta.label}
+              </span>
+            </div>
+
+            <div
+              className={`mt-3 flex flex-wrap items-center gap-2 text-[11px] ${
+                selected ? 'text-white/68' : 'text-black/42'
+              }`}
+            >
+              <span className="rounded-full border border-current/15 px-2.5 py-1">
+                {modeLabel}
+              </span>
+              <span className="rounded-full border border-current/15 px-2.5 py-1">
+                {task.cronExpression}
+              </span>
+              <span>
+                {t('research.lastRunLabel', 'Last run')}:
+                {' '}
+                {lastRun ?? t('research.waitingFirstRun')}
+              </span>
+            </div>
+          </button>
+
+          <div className="mt-3.5 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void onRunTask(task.id)}
+              disabled={busyAction === `run:${task.id}`}
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-[11px] transition ${
+                selected
+                  ? 'bg-white text-black hover:bg-white/92'
+                  : 'bg-white text-black/70 hover:text-black'
+              } disabled:cursor-not-allowed disabled:opacity-60`}
+            >
+              {busyAction === `run:${task.id}` ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <PlayCircle className="h-3.5 w-3.5" />
+              )}
+              {t('research.runButton')}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void onToggleTask(task)}
+              disabled={busyAction === `toggle:${task.id}`}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-[11px] transition ${
+                selected
+                  ? 'border-white/20 text-white hover:border-white/34'
+                  : 'border-black/10 text-black/62 hover:text-black'
+              } disabled:cursor-not-allowed disabled:opacity-60`}
+            >
+              {busyAction === `toggle:${task.id}` ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <PauseCircle className="h-3.5 w-3.5" />
+              )}
+              {task.enabled ? t('research.pauseButton') : t('research.resumeButton')}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void onResetTask(task.id)}
+              disabled={busyAction === `reset:${task.id}`}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-[11px] transition ${
+                selected
+                  ? 'border-white/20 text-white hover:border-white/34'
+                  : 'border-black/10 text-black/62 hover:text-black'
+              } disabled:cursor-not-allowed disabled:opacity-60`}
+            >
+              {busyAction === `reset:${task.id}` ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <RotateCcw className="h-3.5 w-3.5" />
+              )}
+              {t('research.resetButton')}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void onDeleteTask(task.id)}
+              disabled={busyAction === `delete:${task.id}`}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-[11px] transition ${
+                selected
+                  ? 'border-white/20 text-white hover:border-white/34'
+                  : 'border-black/10 text-black/62 hover:text-black'
+              } disabled:cursor-not-allowed disabled:opacity-60`}
+            >
+              {busyAction === `delete:${task.id}` ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="h-3.5 w-3.5" />
+              )}
+              {t('research.deleteButton')}
+            </button>
+          </div>
+        </article>
+      )
+    })
 
   return (
     <article
@@ -1527,156 +1751,39 @@ function ResearchTaskQueueCard({
               : t('research.empty')}
           </div>
         ) : (
-          tasks.map((task) => {
-            const statusMeta = getTaskStatusMeta(task, t)
-            const selected = selectedTask?.id === task.id
-            const lastRun = formatTaskMoment(
-              task.progress?.lastRunAt ?? task.progress?.startedAt ?? null,
-              language,
-            )
-            const modeLabel =
-              task.action !== 'discover'
-                ? t(
-                    task.action === 'refresh'
-                      ? 'research.actionRefresh'
-                      : 'research.actionSync',
-                  )
-                : task.researchMode === 'duration'
-                  ? t('research.modeDuration')
-                  : t('research.modeStageRounds')
+          <>
+            {primaryTasks.length > 0 ? (
+              renderTaskCards(primaryTasks)
+            ) : (
+              <div className="rounded-[24px] bg-[var(--surface-soft)] px-4 py-5 text-[13px] leading-7 text-black/56">
+                {t(
+                  'research.queuePrimaryEmpty',
+                  'No active or recent tasks are in the main queue right now. Expand the archived list below if you need older paused tasks.',
+                )}
+              </div>
+            )}
 
-            return (
-              <article
-                key={task.id}
-                className={`rounded-[24px] border px-4 py-4 transition ${
-                  selected
-                    ? 'border-black bg-black text-white shadow-[0_14px_28px_rgba(15,23,42,0.10)]'
-                    : 'border-black/8 bg-[var(--surface-soft)] text-black'
-                }`}
+            {archivedTasks.length > 0 ? (
+              <details
+                open={archiveOpen}
+                className="rounded-[24px] border border-black/8 bg-[var(--surface-soft)] px-4 py-4"
               >
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedTaskId(task.id)
-                    onInspectTask?.(task.id)
-                  }}
-                  className="block w-full text-left"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="truncate text-[15px] font-semibold">{task.name}</div>
-                      <div
-                        className={`mt-2 text-[12px] leading-6 ${
-                          selected ? 'text-white/76' : 'text-black/56'
-                        }`}
-                      >
-                        {formatTaskProgress(task)}
-                      </div>
-                    </div>
-                    <span
-                      className={`rounded-full px-3 py-1 text-[11px] ${
-                        selected ? 'bg-white/14 text-white' : statusMeta.tone
-                      }`}
-                    >
-                      {statusMeta.label}
-                    </span>
-                  </div>
-
-                  <div
-                    className={`mt-3 flex flex-wrap items-center gap-2 text-[11px] ${
-                      selected ? 'text-white/68' : 'text-black/42'
-                    }`}
-                  >
-                    <span className="rounded-full border border-current/15 px-2.5 py-1">
-                      {modeLabel}
-                    </span>
-                    <span className="rounded-full border border-current/15 px-2.5 py-1">
-                      {task.cronExpression}
-                    </span>
-                    <span>
-                      {t('research.lastRunLabel', 'Last run')}:
-                      {' '}
-                      {lastRun ?? t('research.waitingFirstRun')}
-                    </span>
-                  </div>
-                </button>
-
-                <div className="mt-3.5 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void onRunTask(task.id)}
-                    disabled={busyAction === `run:${task.id}`}
-                    className={`inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-[11px] transition ${
-                      selected
-                        ? 'bg-white text-black hover:bg-white/92'
-                        : 'bg-white text-black/70 hover:text-black'
-                    } disabled:cursor-not-allowed disabled:opacity-60`}
-                  >
-                    {busyAction === `run:${task.id}` ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <PlayCircle className="h-3.5 w-3.5" />
-                    )}
-                    {t('research.runButton')}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => void onToggleTask(task)}
-                    disabled={busyAction === `toggle:${task.id}`}
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-[11px] transition ${
-                      selected
-                        ? 'border-white/20 text-white hover:border-white/34'
-                        : 'border-black/10 text-black/62 hover:text-black'
-                    } disabled:cursor-not-allowed disabled:opacity-60`}
-                  >
-                    {busyAction === `toggle:${task.id}` ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <PauseCircle className="h-3.5 w-3.5" />
-                    )}
-                    {task.enabled ? t('research.pauseButton') : t('research.resumeButton')}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => void onResetTask(task.id)}
-                    disabled={busyAction === `reset:${task.id}`}
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-[11px] transition ${
-                      selected
-                        ? 'border-white/20 text-white hover:border-white/34'
-                        : 'border-black/10 text-black/62 hover:text-black'
-                    } disabled:cursor-not-allowed disabled:opacity-60`}
-                  >
-                    {busyAction === `reset:${task.id}` ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <RotateCcw className="h-3.5 w-3.5" />
-                    )}
-                    {t('research.resetButton')}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => void onDeleteTask(task.id)}
-                    disabled={busyAction === `delete:${task.id}`}
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-[11px] transition ${
-                      selected
-                        ? 'border-white/20 text-white hover:border-white/34'
-                        : 'border-black/10 text-black/62 hover:text-black'
-                    } disabled:cursor-not-allowed disabled:opacity-60`}
-                  >
-                    {busyAction === `delete:${task.id}` ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Trash2 className="h-3.5 w-3.5" />
-                    )}
-                    {t('research.deleteButton')}
-                  </button>
-                </div>
-              </article>
-            )
-          })
+                <summary className="cursor-pointer list-none text-[13px] font-medium text-black">
+                  {renderTemplate(
+                    t('research.archivedTasksTitle', 'Archived paused tasks ({count})'),
+                    { count: archivedTasks.length },
+                  )}
+                </summary>
+                <p className="mt-2 text-[12px] leading-6 text-black/50">
+                  {t(
+                    'research.archivedTasksHint',
+                    'Older paused tasks are folded here so the main queue can stay focused on research that is still active or recently touched.',
+                  )}
+                </p>
+                <div className="mt-3 space-y-3">{renderTaskCards(archivedTasks, true)}</div>
+              </details>
+            ) : null}
+          </>
         )}
       </div>
     </article>
@@ -1689,6 +1796,7 @@ function ResearchTaskDetailCard({
   selectedTask,
   taskDetail,
   detailLoading,
+  formatTaskLabel,
   formatTaskProgress,
   formatRunSummary,
   embedded = false,
@@ -1698,6 +1806,7 @@ function ResearchTaskDetailCard({
   selectedTask: TaskConfig | null
   taskDetail: TaskDetailResponse | null
   detailLoading: boolean
+  formatTaskLabel: (task: TaskConfig) => string
   formatTaskProgress: (task: TaskConfig) => string
   formatRunSummary: (record: TaskDetailResponse['history'][number]) => string
   embedded?: boolean
@@ -1735,7 +1844,7 @@ function ResearchTaskDetailCard({
             {t('research.detailEyebrow')}
           </div>
           <h3 className="mt-2 text-[20px] font-semibold text-black">
-            {selectedTask?.name ?? t('research.detailEmptyTitle')}
+            {selectedTask ? formatTaskLabel(selectedTask) : t('research.detailEmptyTitle')}
           </h3>
           <p className="mt-2 text-[13px] leading-7 text-black/56">
             {selectedTask
@@ -1796,9 +1905,7 @@ function ResearchTaskDetailCard({
                   label={t('research.modeLabel')}
                   value={
                     selectedTask.action === 'discover'
-                      ? selectedTask.researchMode === 'duration'
-                        ? t('research.modeDuration')
-                        : t('research.modeStageRounds')
+                      ? getTaskDisplayModeLabel(selectedTask, t, true)
                       : '--'
                   }
                 />

@@ -83,8 +83,72 @@ const DEFAULT_OPTIONS: ExtractionOptions = {
   tableMinRows: 2,
 }
 
+const PDF_MAGIC_HEADER = Buffer.from('%PDF-')
+
 function resolvePdfExtractScriptPath() {
   return path.join(process.cwd(), 'scripts', 'pdf_extract.py')
+}
+
+function normalizePdfBuffer(buffer: Buffer) {
+  let start = 0
+  while (start < buffer.length && /\s/u.test(String.fromCharCode(buffer[start] ?? 0))) {
+    start += 1
+  }
+  return start > 0 ? buffer.subarray(start) : buffer
+}
+
+function isPdfBuffer(buffer: Buffer) {
+  const normalized = normalizePdfBuffer(buffer)
+  return normalized.subarray(0, PDF_MAGIC_HEADER.length).equals(PDF_MAGIC_HEADER)
+}
+
+function parseExtractionStdoutPayload(stdout: string) {
+  const trimmed = stdout.trim()
+  if (!trimmed) {
+    throw new Error('Extractor returned empty stdout.')
+  }
+
+  try {
+    return JSON.parse(trimmed)
+  } catch {
+    const candidateStarts = Array.from(
+      new Set(
+        [trimmed.indexOf('{'), ...Array.from(trimmed.matchAll(/\n\{/gu)).map((match) => match.index + 1)].filter(
+          (index): index is number => index >= 0,
+        ),
+      ),
+    )
+
+    for (const start of candidateStarts) {
+      const candidate = trimmed.slice(start).trim()
+      if (!candidate.startsWith('{')) continue
+
+      try {
+        return JSON.parse(candidate)
+      } catch {
+        continue
+      }
+    }
+  }
+
+  throw new Error('Could not find a valid JSON payload in extractor stdout.')
+}
+
+export async function downloadPdfBufferFromUrl(pdfUrl: string) {
+  const response = await fetch(pdfUrl)
+  if (!response.ok) {
+    throw new Error(`Failed to download PDF: ${response.status} ${response.statusText}`)
+  }
+
+  const pdfBuffer = Buffer.from(await response.arrayBuffer())
+  const contentType = response.headers.get('content-type') ?? ''
+  if (!isPdfBuffer(pdfBuffer)) {
+    throw new Error(
+      `Downloaded resource is not a valid PDF (content-type: ${contentType || 'unknown'}).`,
+    )
+  }
+
+  return pdfBuffer
 }
 
 export async function extractPDFWithPython(
@@ -135,7 +199,7 @@ export async function extractPDFWithPython(
       }
 
       try {
-        const result = JSON.parse(stdout)
+        const result = parseExtractionStdoutPayload(stdout)
 
         if (result.error) {
           reject(new Error(result.error))
@@ -243,12 +307,7 @@ export class PDFExtractor {
     paperTitle: string,
     outputDir: string,
   ): Promise<PDFExtractionResult> {
-    const response = await fetch(pdfUrl)
-    if (!response.ok) {
-      throw new Error(`Failed to download PDF: ${response.status} ${response.statusText}`)
-    }
-
-    const pdfBuffer = Buffer.from(await response.arrayBuffer())
+    const pdfBuffer = await downloadPdfBufferFromUrl(pdfUrl)
     return this.extractFromBuffer(pdfBuffer, paperId, paperTitle, outputDir)
   }
 }
@@ -265,4 +324,10 @@ export function getPDFExtractor(): PDFExtractor {
     globalExtractor = new PDFExtractor()
   }
   return globalExtractor
+}
+
+export const __testing = {
+  isPdfBuffer,
+  parseExtractionStdoutPayload,
+  downloadPdfBufferFromUrl,
 }

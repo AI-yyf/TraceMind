@@ -102,7 +102,16 @@ function roleEnvPrefix(role: ResearchRoleId) {
 
 function getRoleEnvValue(role: ResearchRoleId, key: string) {
   const value = process.env[`${roleEnvPrefix(role)}_${key}`]?.trim()
-  return value ? value : undefined
+  if (value) return value
+  return getSlotEnvValue(preferredSlotForRole(role), key)
+}
+
+function hasRoleEnvOverride(role: ResearchRoleId) {
+  const prefix = `${roleEnvPrefix(role)}_`
+
+  return Object.entries(process.env).some(
+    ([key, value]) => key.startsWith(prefix) && typeof value === 'string' && value.trim().length > 0,
+  )
 }
 
 function normalizeProviderId(value?: string | null): ProviderId | null {
@@ -271,6 +280,44 @@ function sanitizeRoleConfigs(
   return entries.length > 0 ? Object.fromEntries(entries) : undefined
 }
 
+function mergeResolvedOptions(
+  base?: ProviderModelOptions | null,
+  override?: ProviderModelOptions | null,
+): ProviderModelOptions | undefined {
+  const merged: ProviderModelOptions = {
+    thinking: override?.thinking ?? base?.thinking,
+    citations: override?.citations ?? base?.citations,
+    parser: override?.parser ?? base?.parser,
+    temperature: override?.temperature ?? base?.temperature,
+    maxTokens: override?.maxTokens ?? base?.maxTokens,
+  }
+
+  return Object.values(merged).some((value) => value !== undefined) ? merged : undefined
+}
+
+function inheritResolvedRoleConfig(
+  roleConfig: ResolvedProviderModelConfig | null,
+  fallbackSlotConfig: ResolvedProviderModelConfig | null,
+) {
+  if (!roleConfig) return null
+  if (!fallbackSlotConfig) return roleConfig
+  if (roleConfig.provider !== fallbackSlotConfig.provider) return roleConfig
+
+  return {
+    provider: roleConfig.provider,
+    model: roleConfig.model,
+    baseUrl: roleConfig.baseUrl?.trim() || fallbackSlotConfig.baseUrl,
+    apiKeyRef: roleConfig.apiKeyRef ?? fallbackSlotConfig.apiKeyRef,
+    apiKey: roleConfig.apiKey ?? fallbackSlotConfig.apiKey,
+    apiKeyPreview: roleConfig.apiKeyPreview ?? fallbackSlotConfig.apiKeyPreview,
+    providerOptions: normalizeProviderOptions({
+      ...(fallbackSlotConfig.providerOptions ?? {}),
+      ...(roleConfig.providerOptions ?? {}),
+    }),
+    options: mergeResolvedOptions(fallbackSlotConfig.options, roleConfig.options),
+  } satisfies ResolvedProviderModelConfig
+}
+
 async function getRawUserConfig(userId: string): Promise<UserModelConfig | null> {
   const record = await readVersionedSystemConfig<UserModelConfig | null>({
     key: userConfigKey(userId),
@@ -336,7 +383,7 @@ function getSlotEnvSecret(slot: ModelSlot): { key: string; preview: string } | n
 function getRoleEnvSecret(role: ResearchRoleId): { key: string; preview: string } | null {
   const envVar = `${roleEnvPrefix(role)}_API_KEY`
   const value = process.env[envVar]?.trim()
-  if (!value) return null
+  if (!value) return getSlotEnvSecret(preferredSlotForRole(role))
 
   return {
     key: value,
@@ -431,6 +478,8 @@ function getEnvBootstrapSlot(slot: ModelSlot): ResolvedProviderModelConfig | nul
 }
 
 function getEnvBootstrapRole(role: ResearchRoleId): ResolvedProviderModelConfig | null {
+  if (!hasRoleEnvOverride(role)) return null
+
   return getEnvBootstrapConfig({
     getValue: (key) => getRoleEnvValue(role, key),
     getSecret: () => getRoleEnvSecret(role),
@@ -575,12 +624,15 @@ export async function getResolvedUserModelConfig(userId = DEFAULT_USER_ID): Prom
   const multimodalInput = normalizeSlotConfig(raw?.multimodal)
   const envLanguage = getEnvBootstrapSlot('language')
   const envMultimodal = getEnvBootstrapSlot('multimodal')
+  const language = languageInput ? await hydrateSlot(languageInput, 'language') : envLanguage
+  const multimodal = multimodalInput ? await hydrateSlot(multimodalInput, 'multimodal') : envMultimodal
   const roleInputs = normalizeRoleConfigs(raw?.roles)
   const roleEntries = await Promise.all(
     RESEARCH_ROLE_DEFINITIONS.map(async (definition) => {
       const roleInput = roleInputs?.[definition.id]
+      const fallbackSlotConfig = definition.preferredSlot === 'multimodal' ? multimodal : language
       const hydrated = roleInput
-        ? await hydrateSlot(roleInput)
+        ? inheritResolvedRoleConfig(await hydrateSlot(roleInput), fallbackSlotConfig)
         : getEnvBootstrapRole(definition.id)
 
       return [definition.id, hydrated] as const
@@ -594,8 +646,8 @@ export async function getResolvedUserModelConfig(userId = DEFAULT_USER_ID): Prom
       : undefined
 
   return {
-    language: languageInput ? await hydrateSlot(languageInput, 'language') : envLanguage,
-    multimodal: multimodalInput ? await hydrateSlot(multimodalInput, 'multimodal') : envMultimodal,
+    language,
+    multimodal,
     roles,
     taskOverrides: normalizeOverrides(raw?.taskOverrides),
     taskRouting: normalizeTaskRouting(raw?.taskRouting),

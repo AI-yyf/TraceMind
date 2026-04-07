@@ -19,6 +19,7 @@ import { useI18n } from '@/i18n'
 import type { ContextPill, SearchResponse, SearchResultItem } from '@/types/alpha'
 import { apiGet } from '@/utils/api'
 import { cn } from '@/utils/cn'
+import { resolvePrimaryReadingRouteForPaper } from '@/utils/readingRoutes'
 import { isRegressionSeedTopic } from '@/utils/topicPresentation'
 import {
   TOPIC_CONTEXT_ADD_EVENT,
@@ -434,7 +435,18 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
 
   function handleOpen(item: SearchResultItem) {
     rememberQuery(query)
-    const targetRoute = scopedRoute(item.route)
+    const resolvedRoute =
+      item.kind === 'paper'
+        ? resolvePrimaryReadingRouteForPaper({
+            paperId: item.id,
+            route: item.route,
+            anchorId: item.anchorId,
+            nodeRoute: item.nodeRoute,
+            relatedNodes: item.relatedNodes,
+            topicId: item.topicId,
+          })
+        : item.route
+    const targetRoute = scopedRoute(resolvedRoute)
 
     navigate(targetRoute)
     onClose()
