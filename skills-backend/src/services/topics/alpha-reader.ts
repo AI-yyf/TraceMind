@@ -3082,19 +3082,37 @@ export async function getNodeViewModel(
     )
   }
 
-  const viewModel = await resolveReaderArtifact(
-    {
-      kind: 'node',
-      buildFingerprint: buildNodeArtifactFingerprint,
-      buildViewModel: (entityId, buildOptions) =>
-        buildNodeViewModel(entityId, {
-          ...buildOptions,
-          stageWindowMonths: stageWindowRequest.configuredStageWindowMonths,
-          enhanced: options?.enhanced,
-        }),
-    },
-    nodeId,
-  )
+  const nodeDriver: ReaderArtifactDriver<NodeViewModel> = {
+    kind: 'node',
+    buildFingerprint: buildNodeArtifactFingerprint,
+    buildViewModel: (entityId, buildOptions) =>
+      buildNodeViewModel(entityId, {
+        ...buildOptions,
+        stageWindowMonths: stageWindowRequest.configuredStageWindowMonths,
+        enhanced: options?.enhanced,
+      }),
+  }
+
+  let viewModel: NodeViewModel
+
+  if (options?.enhanced) {
+    const [cached, fingerprint] = await Promise.all([
+      readReaderArtifact<NodeViewModel>('node', nodeId),
+      buildNodeArtifactFingerprint(nodeId),
+    ])
+
+    const hasEnhancedCache =
+      cached?.fingerprint === fingerprint &&
+      Array.isArray(cached.viewModel.enhancedArticleFlow) &&
+      cached.viewModel.enhancedArticleFlow.length > 0
+
+    viewModel = hasEnhancedCache
+      ? cached.viewModel
+      : await queueReaderArtifactBuild(nodeDriver, nodeId)
+  } else {
+    viewModel = await resolveReaderArtifact(nodeDriver, nodeId)
+  }
+
   return applyTemporalStageLabelsToNodeViewModel(
     viewModel,
     stageWindowRequest.effectiveStageWindowMonths,

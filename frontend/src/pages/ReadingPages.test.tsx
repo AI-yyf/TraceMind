@@ -6,8 +6,10 @@ import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 
+import { ReadingWorkspaceProvider } from '@/contexts/ReadingWorkspaceContext'
 import { I18nProvider } from '@/i18n'
 import type { NodeViewModel, PaperViewModel } from '@/types/alpha'
+import type { NodeArticleFlowBlock } from '@/types/article'
 import { apiGet } from '@/utils/api'
 import { NodePage } from './NodePage'
 import { PaperPage } from './PaperPage'
@@ -57,15 +59,17 @@ function renderWithProviders(
 
   return render(
     <I18nProvider>
-      <MemoryRouter
-        initialEntries={[initialEntry]}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-      >
-        <Routes>
-          <Route path={path} element={node} />
-          {extraRoutes}
-        </Routes>
-      </MemoryRouter>
+      <ReadingWorkspaceProvider>
+        <MemoryRouter
+          initialEntries={[initialEntry]}
+          future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+        >
+          <Routes>
+            <Route path={path} element={node} />
+            {extraRoutes}
+          </Routes>
+        </MemoryRouter>
+      </ReadingWorkspaceProvider>
     </I18nProvider>,
   )
 }
@@ -157,6 +161,36 @@ function makePaperViewModel(): PaperViewModel {
 }
 
 function makeNodeViewModel(): NodeViewModel {
+  const enhancedArticleFlow: NodeArticleFlowBlock[] = [
+    {
+      type: 'paper-article',
+      id: 'paper-1-article',
+      paperId: 'paper-1',
+      role: 'origin',
+      title: 'Paper one',
+      titleEn: 'Paper one',
+      authors: ['Author'],
+      publishedAt: '2026-04-01T00:00:00.000Z',
+      citationCount: 3,
+      introduction: 'Enhanced introduction for Paper one.',
+      subsections: [
+        {
+          kind: 'method',
+          title: 'Method',
+          titleEn: 'Method',
+          content: 'Enhanced method walkthrough.',
+          wordCount: 42,
+          keyPoints: ['Key method point'],
+          evidenceIds: [],
+        },
+      ],
+      conclusion: 'Enhanced conclusion for Paper one.',
+      totalWordCount: 120,
+      readingTimeMinutes: 1,
+      anchorId: 'paper:paper-1',
+    },
+  ]
+
   return {
     schemaVersion: 'v1',
     nodeId: 'node-1',
@@ -287,6 +321,7 @@ function makeNodeViewModel(): NodeViewModel {
       bullets: ['Bullet'],
     },
     evidence: [],
+    enhancedArticleFlow,
   }
 }
 
@@ -320,7 +355,7 @@ describe('Reading pages resilience', () => {
     })
 
     apiGetMock.mockImplementation(async (path: string) => {
-      if (path === '/api/nodes/node-1/view-model') {
+      if (path === '/api/nodes/node-1/view-model?enhanced=true') {
         return makeNodeViewModel()
       }
 
@@ -345,13 +380,14 @@ describe('Reading pages resilience', () => {
       'href',
       '/node/node-1?anchor=paper%3Apaper-1&stageMonths=1',
     )
-    expect(screen.getAllByRole('link', { name: 'Original source' })[0]).toHaveAttribute(
+    expect(screen.getByRole('heading', { name: 'Paper one' })).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Original source' })).toHaveAttribute(
       'href',
-      'https://arxiv.org/abs/2604.00001',
+      'https://example.com/paper-two',
     )
-    expect(screen.getAllByRole('link', { name: 'Download PDF' })[0]).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Download PDF' })).toHaveAttribute(
       'href',
-      'https://arxiv.org/pdf/2604.00001.pdf',
+      'https://example.com/paper-two.pdf',
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Select all papers' }))
@@ -364,7 +400,11 @@ describe('Reading pages resilience', () => {
     })
 
     expect(screen.getByRole('button', { name: 'Download 2 PDFs' })).toBeEnabled()
-    expect(screen.getByText('Method')).toBeVisible()
+    const methodToggle = screen.getByRole('button', { name: /Method/i })
+    expect(methodToggle).toBeVisible()
+    expect(screen.queryByText('Enhanced method walkthrough.')).not.toBeInTheDocument()
+    fireEvent.click(methodToggle)
+    expect(screen.getByText('Enhanced method walkthrough.')).toBeVisible()
     expect(screen.getByText('0.91')).toBeVisible()
     expect(screen.getAllByText(/establish the mainline/i).length).toBe(1)
     expect(
@@ -378,7 +418,7 @@ describe('Reading pages resilience', () => {
 
   it('keeps the node reading surface stable when a sidebar citation evidence request fails', async () => {
     apiGetMock.mockImplementation(async (path: string) => {
-      if (path === '/api/nodes/node-1/view-model') {
+      if (path === '/api/nodes/node-1/view-model?enhanced=true') {
         return makeNodeViewModel()
       }
 
@@ -399,7 +439,9 @@ describe('Reading pages resilience', () => {
     })
 
     expect(screen.getByTestId('node-reading')).toBeVisible()
-    expect(screen.getByTestId('node-article-flow')).toHaveTextContent('Paper one contribution')
+    expect(screen.getByTestId('node-article-flow')).toHaveTextContent(
+      'Enhanced introduction for Paper one.',
+    )
   })
 
   it('redirects the paper route back into the node article when a related node exists', async () => {

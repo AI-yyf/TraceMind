@@ -241,6 +241,14 @@ function buildPaperAnchor(nodeId: string, paperId: string) {
   return `/node/${nodeId}?anchor=${encodeURIComponent(`paper:${paperId}`)}`
 }
 
+function buildNodeViewModelPath(nodeId: string, stageWindowMonths?: number) {
+  const basePath = withOptionalStageWindowQuery(
+    `/api/nodes/${nodeId}/view-model`,
+    stageWindowMonths,
+  )
+  return `${basePath}${basePath.includes('?') ? '&' : '?'}enhanced=true`
+}
+
 function formatPublishedDate(value?: string) {
   if (!value) return ''
   const date = new Date(value)
@@ -295,7 +303,7 @@ export function NodePage() {
   useEffect(() => {
     let alive = true
     apiGet<NodeViewModel>(
-      withOptionalStageWindowQuery(`/api/nodes/${nodeId}/view-model`, requestedStageWindowMonths),
+      buildNodeViewModelPath(nodeId, requestedStageWindowMonths),
     )
       .then((payload) => {
         if (alive) setViewModel(payload)
