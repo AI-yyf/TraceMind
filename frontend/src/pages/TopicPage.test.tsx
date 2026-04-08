@@ -501,6 +501,7 @@ describe('TopicPage stage window controls', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Research Dashboard' }))
 
+    expect(screen.queryByTestId('topic-stage-map')).not.toBeInTheDocument()
     expect(await screen.findByTestId('topic-dashboard-error')).toBeVisible()
     expect(screen.getByText('Dashboard data is unavailable right now.')).toBeVisible()
 
@@ -511,5 +512,9 @@ describe('TopicPage stage window controls', () => {
     })
     expect(screen.getByTestId('topic-dashboard-panel')).toBeVisible()
     expect(dashboardAttempts).toBe(2)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Research Graph' }))
+
+    expect(await screen.findByTestId('topic-stage-map')).toBeVisible()
   })
 })

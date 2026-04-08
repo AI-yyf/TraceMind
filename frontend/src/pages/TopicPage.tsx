@@ -4,7 +4,9 @@ import { ArrowLeft, Loader2 } from 'lucide-react'
 import { useCallback } from 'react'
 
 import { RightSidebarShell } from '@/components/topic/RightSidebarShell'
+import { TopicClosingSummary } from '@/components/topic/TopicClosingSummary'
 import { TopicDashboardPanel } from '@/components/topic/TopicDashboardPanel'
+import { TopicGraphSection } from '@/components/topic/TopicGraphSection'
 import { TopicSurfaceModeSwitch, type TopicSurfaceMode } from '@/components/topic/TopicSurfaceModeSwitch'
 import {
   TOPIC_WORKBENCH_DESKTOP_RESERVED_SPACE,
@@ -841,6 +843,27 @@ export function TopicPage() {
       ),
     [displayedNodes, displayedStageSections],
   )
+  const graphStages = useMemo(
+    () =>
+      displayedStageSections.map((stage) => ({
+        stageIndex: stage.stageIndex,
+        chronologyLabel:
+          stage.chronologyLabel ||
+          stage.badgeLabel ||
+          `${t('topic.stageLabel', 'Stage')} ${stage.stageIndex}`,
+        badgeLabel: stage.badgeLabel,
+        displayTitle: stage.displayTitle || stage.badgeLabel,
+        overview: stage.overview,
+        countsLabel: renderTemplate(
+          t('topic.stageWindowStageCounts', '{nodes} nodes · {papers} papers'),
+          {
+            nodes: stage.nodeCount,
+            papers: stage.paperCount,
+          },
+        ),
+      })),
+    [displayedStageSections, t],
+  )
   const closingParagraphs = useMemo(
     () =>
       viewModel
@@ -1088,117 +1111,54 @@ export function TopicPage() {
 
         <TopicSurfaceModeSwitch mode={viewMode} onChange={setViewMode} />
 
-        {viewMode === 'dashboard' && (
+        {viewMode === 'dashboard' ? (
           <TopicDashboardPanel
             state={dashboardState}
             onRetry={reloadDashboard}
           />
-        )}
-
-        {/* 研究图谱视图 */}
-        {viewMode === 'graph' && (<>
-        <section className="mt-6 rounded-[30px] border border-black/8 bg-[linear-gradient(180deg,#fdfcf9_0%,#ffffff_100%)] px-4 py-4 shadow-[0_16px_36px_rgba(15,23,42,0.05)] md:px-5">
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <div className="text-[11px] uppercase tracking-[0.24em] text-black/34">{t('topic.nodesEyebrow', 'Topic Nodes')}</div>
-              <h2 className="mt-2 font-display text-[22px] leading-[1.06] text-black">{t('topic.graph', 'Research Graph')}</h2>
-            </div>
-            <div className="rounded-full bg-[var(--surface-soft)] px-3 py-1.5 text-[11px] text-black/54">
-              {renderTemplate(t('topic.graphStats', '{stages} stages · {nodes} nodes'), {
-                stages: visibleMapStats.stageCount,
-                nodes: visibleMapStats.nodeCount,
-              })}
-            </div>
-          </div>
-          <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-black/48">
-            <p className="mt-1.5 max-w-[620px] text-[11px] leading-5 text-black/48">
-              {t(
+        ) : (
+          <>
+            <TopicGraphSection
+              stages={graphStages}
+              activeStageAnchor={highlightedAnchor}
+              graphEyebrow={t('topic.nodesEyebrow', 'Topic Nodes')}
+              graphTitle={t('topic.graph', 'Research Graph')}
+              graphIntro={t(
                 'topic.graphIntro',
                 'Read this map from top to bottom as time, and left to right as parallel exploration inside the same stage. The map stays dense so you can see the whole topic without fighting the canvas.',
               )}
-            </p>
-          </div>
-          <div data-testid="topic-stage-map" className="mt-6 space-y-5">
-            {displayedStageSections.map((stage, index) => {
-              const chronologyText =
-                stage.chronologyLabel || stage.badgeLabel || `${t('topic.stageLabel', 'Stage')} ${stage.stageIndex}`
-              const stageNodes = nodesByStage.get(stage.stageIndex) ?? []
-              const highlighted = highlightedAnchor === `stage:${stage.stageIndex}`
+              graphStatsLabel={renderTemplate(t('topic.graphStats', '{stages} stages · {nodes} nodes'), {
+                stages: visibleMapStats.stageCount,
+                nodes: visibleMapStats.nodeCount,
+              })}
+              stageLabelTemplate={(stageIndex) => `${t('topic.stageLabel', 'Stage')} ${stageIndex}`}
+              getStageDomId={anchorDomId}
+              onFocusStage={focusAnchor}
+              renderStageNodes={(stageIndex) =>
+                (nodesByStage.get(stageIndex) ?? []).map((node) => (
+                  <NodeCard
+                    key={node.nodeId}
+                    node={node}
+                    highlighted={highlightedAnchor === node.anchorId}
+                    language={uiLanguage}
+                    parentTitles={node.parentNodeIds
+                      .map((parentNodeId) => nodeTitleById.get(parentNodeId) ?? parentNodeId)
+                      .filter(Boolean)}
+                    onFocus={() => focusAnchor(node.anchorId)}
+                    stageWindowMonths={effectiveStageWindowMonths}
+                    t={t}
+                  />
+                ))
+              }
+            />
 
-              return (
-                <article
-                  key={stage.stageIndex}
-                  className={`relative overflow-hidden rounded-[30px] border px-5 py-5 transition md:px-6 ${
-                    highlighted
-                      ? 'border-[#d1aa5c]/70 bg-[#fffcf5] shadow-[0_16px_34px_rgba(209,170,92,0.12)]'
-                      : 'border-black/8 bg-white shadow-[0_12px_28px_rgba(15,23,42,0.04)]'
-                  }`}
-                >
-                  {index < displayedStageSections.length - 1 ? (
-                    <div className="pointer-events-none absolute bottom-[-26px] left-[38px] top-[104px] hidden w-px bg-[linear-gradient(180deg,rgba(125,25,56,0.22)_0%,rgba(125,25,56,0.04)_100%)] lg:block" />
-                  ) : null}
-
-                  <div className="mx-auto grid max-w-[1120px] gap-4 lg:grid-cols-[248px_minmax(0,1fr)]">
-                    <button
-                      type="button"
-                      id={anchorDomId(`stage:${stage.stageIndex}`)}
-                      onClick={() => focusAnchor(`stage:${stage.stageIndex}`)}
-                      className="relative overflow-hidden rounded-[24px] border border-black/8 bg-[linear-gradient(180deg,#fcfaf5_0%,#f7f2e7_100%)] px-5 py-5 text-left transition hover:border-black/16"
-                    >
-                      <div className="absolute inset-y-0 left-0 w-1 bg-[rgba(125,25,56,0.72)]" />
-                      <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-black/38">
-                        <span
-                          className={`h-2 w-2 rounded-full ${
-                            highlighted ? 'bg-[#d1aa5c]' : 'bg-[rgba(125,25,56,0.45)]'
-                          }`}
-                        />
-                        <span>{chronologyText}</span>
-                      </div>
-                      <div className="mt-3 text-[20px] font-semibold leading-[1.18] text-black">
-                        {stage.displayTitle || stage.badgeLabel}
-                      </div>
-                      {stage.overview ? (
-                        <p className="mt-3 text-[13px] leading-6 text-black/58">{stage.overview}</p>
-                      ) : null}
-                      <div className="mt-4 flex flex-wrap gap-2 text-[11px] text-black/46">
-                        <span className="rounded-full border border-black/8 bg-white px-2.5 py-1">
-                          {renderTemplate(t('topic.stageWindowStageCounts', '{nodes} nodes · {papers} papers'), {
-                            nodes: stage.nodeCount,
-                            papers: stage.paperCount,
-                          })}
-                        </span>
-                      </div>
-                    </button>
-
-                    <div className="min-w-0">
-                      <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))] xl:[grid-template-columns:repeat(auto-fit,minmax(240px,1fr))]">
-                        {stageNodes.map((node) => (
-                          <NodeCard
-                            key={node.nodeId}
-                            node={node}
-                            highlighted={highlightedAnchor === node.anchorId}
-                            language={uiLanguage}
-                            parentTitles={node.parentNodeIds.map((parentNodeId) => nodeTitleById.get(parentNodeId) ?? parentNodeId).filter(Boolean)}
-                            onFocus={() => focusAnchor(node.anchorId)}
-                            stageWindowMonths={effectiveStageWindowMonths}
-                            t={t}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </article>
-              )
-            })}
-          </div>
-        </section>
-
-        <section className="mt-6 rounded-[28px] border border-black/8 bg-white px-6 py-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)] md:px-8">
-          <div className="text-[11px] uppercase tracking-[0.22em] text-black/34">{t('topic.closingEyebrow', 'Final Summary')}</div>
-          <h2 className="mt-2.5 font-display text-[20px] leading-[1.08] text-black">{t('topic.closingTitle', 'Where This Research Line Stands Now')}</h2>
-          <div className="mt-3.5 max-w-[920px] space-y-2.5">{closingParagraphs.map((paragraph) => <p key={paragraph} className="text-[13px] leading-7 text-black/64">{paragraph}</p>)}</div>
-        </section>
-        </>)}
+            <TopicClosingSummary
+              eyebrow={t('topic.closingEyebrow', 'Final Summary')}
+              title={t('topic.closingTitle', 'Where This Research Line Stands Now')}
+              paragraphs={closingParagraphs}
+            />
+          </>
+        )}
       </div>
       <RightSidebarShell topicId={viewModel.topicId} topicTitle={topicTitle.primary} researchBrief={researchBrief} suggestedQuestions={suggestedQuestions} selectedEvidence={selectedEvidence} contextSuggestions={contextSuggestions} resources={resources} searchStageWindowMonths={effectiveStageWindowMonths} onOpenCitation={handleCitation} onAction={handleAction} onOpenSearchResult={handleSearchResult} />
     </main>
