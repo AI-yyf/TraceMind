@@ -4,13 +4,14 @@ import { ArrowLeft, Loader2 } from 'lucide-react'
 import { useCallback } from 'react'
 
 import { RightSidebarShell } from '@/components/topic/RightSidebarShell'
-import { TopicDashboard } from '@/components/topic/TopicDashboard'
+import { TopicDashboardPanel } from '@/components/topic/TopicDashboardPanel'
+import { TopicSurfaceModeSwitch, type TopicSurfaceMode } from '@/components/topic/TopicSurfaceModeSwitch'
 import {
   TOPIC_WORKBENCH_DESKTOP_RESERVED_SPACE,
   isTopicWorkbenchDesktopViewport,
 } from '@/components/topic/workbench-layout'
 import { usePageScrollRestoration, useReadingWorkspace } from '@/contexts/ReadingWorkspaceContext'
-import type { TopicDashboard as TopicDashboardData } from '@/types/article'
+import { useTopicDashboardData } from '@/hooks/useTopicDashboardData'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useI18n } from '@/i18n'
 import type {
@@ -655,8 +656,7 @@ export function TopicPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [viewModel, setViewModel] = useState<TopicViewModel | null>(null)
   const [researchBrief, setResearchBrief] = useState<TopicResearchBrief | null>(null)
-  const [dashboardData, setDashboardData] = useState<TopicDashboardData | null>(null)
-  const [viewMode, setViewMode] = useState<'graph' | 'dashboard'>('graph')
+  const [viewMode, setViewMode] = useState<TopicSurfaceMode>('graph')
   const [selectedEvidence, setSelectedEvidence] = useState<EvidencePayload | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
@@ -935,6 +935,15 @@ export function TopicPage() {
       window: stageWindowLabel(effectiveStageWindowMonths),
     },
   )
+  const dashboardUnavailableMessage = t(
+    'dashboard.errorMessage',
+    'Dashboard data is unavailable right now.',
+  )
+  const { state: dashboardState, reload: reloadDashboard } = useTopicDashboardData(
+    topicId,
+    viewMode,
+    dashboardUnavailableMessage,
+  )
 
   const loadTopic = useCallback(() => {
     setLoading(true)
@@ -961,12 +970,6 @@ export function TopicPage() {
       .finally(() => setLoading(false))
   }, [requestedStageWindowMonths, topicId])
   useEffect(() => { loadTopic() }, [loadTopic])
-  useEffect(() => {
-    // 延迟加载 dashboard 数据，不阻塞主页面
-    apiGet<{ success: boolean; data: TopicDashboardData }>(`/api/topics/${topicId}/dashboard`)
-      .then(res => { if (res?.success && res.data) setDashboardData(res.data) })
-      .catch(() => { /* dashboard 加载失败不影响主页面 */ })
-  }, [topicId])
   useEffect(() => { const evidenceAnchor = searchParams.get('evidence'); if (!evidenceAnchor) { setSelectedEvidence(null); return } let alive = true; apiGet<EvidencePayload>(`/api/evidence/${encodeURIComponent(evidenceAnchor)}`).then((payload) => { if (alive) setSelectedEvidence(payload) }).catch(() => { if (alive) setSelectedEvidence(null) }); return () => { alive = false } }, [searchParams])
   useEffect(() => { const anchorId = searchParams.get('anchor') || searchParams.get('evidence'); if (!anchorId) return; const element = document.getElementById(anchorDomId(anchorId)); if (!element) return; window.setTimeout(() => element.scrollIntoView({ behavior: 'smooth', block: 'center' }), 120) }, [searchParams, viewModel])
   useEffect(() => { const onRebuild = () => { void apiPost(withOptionalStageWindowQuery(`/api/topics/${topicId}/rebuild`, requestedStageWindowMonths), {}).finally(() => loadTopic()) }; window.addEventListener(TOPIC_REBUILD_EVENT, onRebuild); return () => window.removeEventListener(TOPIC_REBUILD_EVENT, onRebuild) }, [loadTopic, requestedStageWindowMonths, topicId])
@@ -1083,44 +1086,13 @@ export function TopicPage() {
           </div>
         </header>
 
-        {/* 视图切换标签 */}
-        <div className="mt-5 flex gap-2">
-          <button
-            type="button"
-            onClick={() => setViewMode('graph')}
-            className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-              viewMode === 'graph'
-                ? 'bg-black text-white'
-                : 'bg-[var(--surface-soft)] text-black/58 hover:text-black'
-            }`}
-          >
-            {t('topic.graph', 'Research Graph')}
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('dashboard')}
-            className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-              viewMode === 'dashboard'
-                ? 'bg-black text-white'
-                : 'bg-[var(--surface-soft)] text-black/58 hover:text-black'
-            }`}
-          >
-            {t('dashboard.title', 'Research Dashboard')}
-          </button>
-        </div>
+        <TopicSurfaceModeSwitch mode={viewMode} onChange={setViewMode} />
 
-        {/* 仪表盘视图 */}
         {viewMode === 'dashboard' && (
-          <section className="mt-5 rounded-[30px] border border-black/8 bg-white p-4 shadow-[0_16px_36px_rgba(15,23,42,0.05)] md:p-6">
-            {dashboardData ? (
-              <TopicDashboard dashboard={dashboardData} />
-            ) : (
-              <div className="flex items-center gap-3 py-12 text-center text-sm text-black/48">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                {t('dashboard.loading', 'Loading dashboard data...')}
-              </div>
-            )}
-          </section>
+          <TopicDashboardPanel
+            state={dashboardState}
+            onRetry={reloadDashboard}
+          />
         )}
 
         {/* 研究图谱视图 */}

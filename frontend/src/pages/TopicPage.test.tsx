@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import '@testing-library/jest-dom/vitest'
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -273,6 +273,43 @@ function makeResearchBrief(): TopicResearchBrief {
   } as unknown as TopicResearchBrief
 }
 
+function makeDashboardResponse() {
+  return {
+    success: true,
+    data: {
+      topicId: 'topic-1',
+      topicTitle: 'Topic title',
+      researchThreads: [
+        {
+          stageIndex: 0,
+          nodeId: 'node-1',
+          nodeTitle: 'Node title',
+          thesis: 'Mainline thesis',
+          paperCount: 1,
+          keyPaperTitle: 'Paper title',
+          isMilestone: true,
+        },
+      ],
+      methodEvolution: [],
+      activeAuthors: [],
+      stats: {
+        totalPapers: 1,
+        totalNodes: 1,
+        totalStages: 1,
+        timeSpanYears: 1,
+        avgPapersPerNode: 1,
+        citationCoverage: 1,
+      },
+      keyInsights: ['Insight one'],
+      trends: {
+        emergingTopics: [],
+        decliningTopics: [],
+        methodShifts: [],
+      },
+    },
+  }
+}
+
 describe('TopicPage stage window controls', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -432,5 +469,47 @@ describe('TopicPage stage window controls', () => {
 
     expect(await screen.findByText('Topic title')).toBeVisible()
     expect(screen.getByRole('main')).toHaveStyle({ paddingRight: '416px' })
+  })
+
+  it('loads dashboard lazily and supports retry after a dashboard fetch failure', async () => {
+    let dashboardAttempts = 0
+
+    apiGetMock.mockImplementation(async (path: string) => {
+      if (path.startsWith('/api/topics/topic-1/view-model')) {
+        return makeTopicViewModel(3)
+      }
+
+      if (path === '/api/topics/topic-1/research-brief') {
+        return makeResearchBrief()
+      }
+
+      if (path === '/api/topics/topic-1/dashboard') {
+        dashboardAttempts += 1
+        if (dashboardAttempts === 1) {
+          throw new Error('dashboard offline')
+        }
+        return makeDashboardResponse()
+      }
+
+      throw new Error(`Unexpected GET ${path}`)
+    })
+
+    renderWithProviders(<TopicPage />, '/topic/topic-1?stageMonths=3', '/topic/:topicId')
+
+    expect(await screen.findByText('Topic title')).toBeVisible()
+    expect(apiGetMock).not.toHaveBeenCalledWith('/api/topics/topic-1/dashboard')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Research Dashboard' }))
+
+    expect(await screen.findByTestId('topic-dashboard-error')).toBeVisible()
+    expect(screen.getByText('Dashboard data is unavailable right now.')).toBeVisible()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Insight one')).toBeVisible()
+    })
+    expect(screen.getByTestId('topic-dashboard-panel')).toBeVisible()
+    expect(dashboardAttempts).toBe(2)
   })
 })
