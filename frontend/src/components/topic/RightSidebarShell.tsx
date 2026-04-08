@@ -6,6 +6,7 @@ import { AssistantEmptyState } from './AssistantEmptyState'
 import { AssistantHeader } from './AssistantHeader'
 import { ContextTray } from './ContextTray'
 import { ConversationThread } from './ConversationThread'
+import { CurrentReadingFocusCard } from './CurrentReadingFocusCard'
 import { GuidanceLedgerCard } from './GuidanceLedgerCard'
 import { GroundedComposer } from './GroundedComposer'
 import { NotebookPanel } from './NotebookPanel'
@@ -19,7 +20,7 @@ import {
   TOPIC_WORKBENCH_DESKTOP_WIDTH,
   isTopicWorkbenchDesktopViewport,
 } from './workbench-layout'
-import { useReadingWorkspace } from '@/contexts/ReadingWorkspaceContext'
+import { type ReadingTrailEntry, useReadingWorkspace } from '@/contexts/ReadingWorkspaceContext'
 import { useFavorites } from '@/hooks'
 import { useProductCopy } from '@/hooks/useProductCopy'
 import { useI18n } from '@/i18n'
@@ -178,6 +179,21 @@ function buildPillFromSearch(item: SearchResultItem): ContextPill {
     description: item.excerpt,
     route: item.route,
     anchorId: item.anchorId,
+  }
+}
+
+function buildPillFromTrailEntry(entry: ReadingTrailEntry): ContextPill {
+  return {
+    id: entry.id,
+    kind: entry.kind === 'topic' ? 'anchor' : entry.kind,
+    label: entry.title,
+    description:
+      entry.kind === 'paper'
+        ? 'Current paper locus'
+        : entry.kind === 'node'
+          ? 'Current node locus'
+          : 'Current topic locus',
+    route: entry.route,
   }
 }
 
@@ -1102,6 +1118,10 @@ export function RightSidebarShell({
         .sort((left, right) => Date.parse(right.savedAt) - Date.parse(left.savedAt)),
     [favorites, topicId],
   )
+  const currentReadingEntry = useMemo(
+    () => readingWorkspaceState.trail.find((entry) => entry.topicId === topicId) ?? null,
+    [readingWorkspaceState.trail, topicId],
+  )
   const readingPathEntries = useMemo(
     () =>
       readingWorkspaceState.trail
@@ -1115,6 +1135,10 @@ export function RightSidebarShell({
           kind: entry.kind,
         })),
     [readingWorkspaceState.trail, topicId],
+  )
+  const implicitFocusPill = useMemo(
+    () => (currentReadingEntry ? buildPillFromTrailEntry(currentReadingEntry) : null),
+    [currentReadingEntry],
   )
 
   const starterPrompt = copy(
@@ -1763,9 +1787,17 @@ export function RightSidebarShell({
       120,
     )
 
+    const explicitContextItems = implicitFocusPill
+      ? contextPills.filter((item) => item.id !== implicitFocusPill.id)
+      : contextPills
+    const focusBlock = implicitFocusPill
+      ? `Current reading focus:\n- ${implicitFocusPill.label}${
+          implicitFocusPill.description ? `: ${implicitFocusPill.description}` : ''
+        }\n\n`
+      : ''
     const contextBlock =
-      contextPills.length > 0
-        ? `Workbench context:\n${contextPills
+      explicitContextItems.length > 0
+        ? `Workbench context:\n${explicitContextItems
             .map(
               (item) =>
                 `- ${item.label}${item.description ? `: ${item.description}` : ''}`,
@@ -1777,7 +1809,7 @@ export function RightSidebarShell({
       const data = await apiPost<TopicChatResponse, { question: string }>(
         `/api/topics/${topicId}/chat`,
         {
-          question: `${contextBlock}${trimmed}\n\nWorkbench controls:\nresponse_style=${style}\nreasoning=${thinkingEnabled ? 'enabled' : 'disabled'}\nretrieval=${searchEnabled ? 'enabled' : 'disabled'}`,
+          question: `${focusBlock}${contextBlock}${trimmed}\n\nWorkbench controls:\nresponse_style=${style}\nreasoning=${thinkingEnabled ? 'enabled' : 'disabled'}\nretrieval=${searchEnabled ? 'enabled' : 'disabled'}`,
         },
       )
 
@@ -1963,6 +1995,11 @@ export function RightSidebarShell({
                   starting={researchStarting || researchLoading}
                   stopping={researchStopping}
                   onUsePrompt={setQuestion}
+                />
+
+                <CurrentReadingFocusCard
+                  entry={currentReadingEntry}
+                  onNavigate={(route) => navigate(route)}
                 />
 
                 <ReadingPathCard

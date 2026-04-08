@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 
+import { useReadingWorkspace } from '@/contexts/ReadingWorkspaceContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useProductCopy } from '@/hooks/useProductCopy'
 import { useI18n } from '@/i18n'
@@ -15,9 +16,11 @@ import {
 
 export function PaperPage() {
   const { paperId = '' } = useParams<{ paperId: string }>()
+  const location = useLocation()
   const [searchParams] = useSearchParams()
   const [viewModel, setViewModel] = useState<PaperViewModel | null>(null)
   const [loading, setLoading] = useState(true)
+  const { rememberTrail } = useReadingWorkspace()
   const { copy } = useProductCopy()
   const { t } = useI18n()
   const requestedStageWindowMonths = useMemo(
@@ -74,6 +77,25 @@ export function PaperPage() {
       alive = false
     }
   }, [paperId, requestedStageWindowMonths])
+
+  useEffect(() => {
+    if (!viewModel) return
+
+    rememberTrail({
+      id: `paper:${viewModel.paperId}`,
+      kind: 'paper',
+      topicId: viewModel.topic.topicId,
+      paperId: viewModel.paperId,
+      title: viewModel.title,
+      route: primaryNodeRoute ?? `${location.pathname}${location.search}`,
+    })
+  }, [
+    location.pathname,
+    location.search,
+    primaryNodeRoute,
+    rememberTrail,
+    viewModel,
+  ])
 
   if (loading) {
     return (

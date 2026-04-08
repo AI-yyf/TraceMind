@@ -462,6 +462,16 @@ describe('Reading pages resilience', () => {
     expect(screen.getByTestId('paper-redirect-search')).toHaveTextContent(
       '?anchor=paper%3Apaper-1&stageMonths=1',
     )
+
+    await waitFor(() => {
+      const stored = JSON.parse(sessionStorage.getItem('reading-workspace:v1') ?? '{}') as {
+        trail?: Array<{ id: string; title: string; route: string }>
+      }
+      expect(stored.trail?.some((entry) => entry.id === 'paper:paper-1')).toBe(true)
+      expect(stored.trail?.find((entry) => entry.id === 'paper:paper-1')?.route).toBe(
+        '/node/node-1?anchor=paper%3Apaper-1&stageMonths=1',
+      )
+    })
   })
 
   it('shows the paper unavailable state when the paper view model request fails', async () => {

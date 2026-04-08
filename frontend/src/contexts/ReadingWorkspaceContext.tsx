@@ -13,7 +13,7 @@ import type { ContextPill, TopicWorkbenchTab } from '@/types/alpha'
 
 type WorkbenchStyle = 'brief' | 'balanced' | 'deep'
 
-type ReadingTrailEntry = {
+export type ReadingTrailEntry = {
   id: string
   kind: 'topic' | 'node' | 'paper'
   topicId?: string

@@ -141,4 +141,69 @@ describe('RightSidebarShell failure recovery', () => {
       expect(screen.queryByTestId('topic-workbench-open')).not.toBeInTheDocument()
     })
   })
+
+  it('keeps the current reading focus visible and injects it into chat grounding by default', async () => {
+    sessionStorage.setItem(
+      'reading-workspace:v1',
+      JSON.stringify({
+        trail: [
+          {
+            id: 'node:node-1',
+            kind: 'node',
+            topicId: 'topic-1',
+            nodeId: 'node-1',
+            title: 'Node focus',
+            route: '/node/node-1?stageMonths=1',
+            updatedAt: '2026-04-08T00:00:00.000Z',
+          },
+        ],
+        pageScroll: {},
+        workbenchByTopic: {
+          'topic-1': {
+            open: true,
+            activeTab: 'assistant',
+            historyOpen: false,
+            searchEnabled: true,
+            thinkingEnabled: true,
+            style: 'balanced',
+            contextPills: [],
+          },
+        },
+      }),
+    )
+    apiPostMock.mockResolvedValueOnce({
+      messageId: 'assistant-1',
+      answer: 'Grounded answer.',
+      citations: [],
+      suggestedActions: [],
+    })
+
+    renderWithProviders(
+      <RightSidebarShell
+        topicId="topic-1"
+        topicTitle="Reliability topic"
+        suggestedQuestions={[]}
+        selectedEvidence={null}
+        onOpenCitation={vi.fn()}
+        onAction={vi.fn()}
+        onOpenSearchResult={vi.fn()}
+      />,
+    )
+
+    expect(await screen.findByTestId('current-reading-focus')).toHaveTextContent('Node focus')
+
+    fireEvent.change(screen.getByTestId('assistant-composer-input'), {
+      target: { value: 'Explain the current judgment.' },
+    })
+    fireEvent.click(screen.getByTestId('assistant-send-button'))
+
+    await waitFor(() => {
+      expect(apiPostMock).toHaveBeenCalledWith(
+        '/api/topics/topic-1/chat',
+        expect.objectContaining({
+          question: expect.stringContaining('Current reading focus:\n- Node focus: Current node locus'),
+        }),
+      )
+    })
+  })
 })
