@@ -269,7 +269,7 @@ export function NodePage() {
   const { nodeId = '' } = useParams<{ nodeId: string }>()
   const location = useLocation()
   const navigate = useNavigate()
-  const { rememberTrail } = useReadingWorkspace()
+  const { rememberTrail, patchTopicSurfaceState } = useReadingWorkspace()
   const [searchParams, setSearchParams] = useSearchParams()
   const [viewModel, setViewModel] = useState<NodeViewModel | null>(null)
   const [selectedEvidence, setSelectedEvidence] = useState<EvidencePayload | null>(null)
@@ -288,6 +288,16 @@ export function NodePage() {
   )
   const stageWindowMonths = viewModel?.stageWindowMonths ?? requestedStageWindowMonths ?? 1
   const hasFocusAnchor = Boolean(searchParams.get('anchor') || searchParams.get('evidence'))
+  const topicReturnRoute = useMemo(
+    () =>
+      viewModel
+        ? withStageWindowRoute(
+            `/topic/${viewModel.topic.topicId}?anchor=${encodeURIComponent(`node:${viewModel.nodeId}`)}`,
+            stageWindowMonths,
+          )
+        : null,
+    [stageWindowMonths, viewModel],
+  )
 
   usePageScrollRestoration(`node:${nodeId}:stage:${stageWindowMonths}`, {
     skipInitialRestore: hasFocusAnchor,
@@ -321,8 +331,19 @@ export function NodePage() {
   }, [nodeId, requestedStageWindowMonths])
 
   useEffect(() => {
-    if (!viewModel) return
+    if (!viewModel || !topicReturnRoute) return
 
+    patchTopicSurfaceState(viewModel.topic.topicId, (current) => ({
+      ...current,
+      mode: 'graph',
+    }))
+    rememberTrail({
+      id: `topic:${viewModel.topic.topicId}`,
+      kind: 'topic',
+      topicId: viewModel.topic.topicId,
+      title: viewModel.topic.title,
+      route: topicReturnRoute,
+    })
     rememberTrail({
       id: `node:${viewModel.nodeId}`,
       kind: 'node',
@@ -331,7 +352,14 @@ export function NodePage() {
       title: viewModel.title,
       route: `${location.pathname}${location.search}`,
     })
-  }, [location.pathname, location.search, rememberTrail, viewModel])
+  }, [
+    location.pathname,
+    location.search,
+    patchTopicSurfaceState,
+    rememberTrail,
+    topicReturnRoute,
+    viewModel,
+  ])
 
   useEffect(() => {
     const evidenceAnchor = searchParams.get('evidence')
@@ -861,9 +889,19 @@ export function NodePage() {
         return
       }
 
+      if (viewModel && item.kind === 'topic' && item.topicId === viewModel.topic.topicId && item.anchorId) {
+        navigate(
+          withStageWindowRoute(
+            `/topic/${viewModel.topic.topicId}?anchor=${encodeURIComponent(item.anchorId)}`,
+            stageWindowMonths,
+          ),
+        )
+        return
+      }
+
       navigate(withStageWindowRoute(item.route, stageWindowMonths))
     },
-    [focusAnchor, navigate, nodeId, openEvidence, papers, stageWindowMonths],
+    [focusAnchor, navigate, nodeId, openEvidence, papers, stageWindowMonths, viewModel],
   )
 
   const sidebarShell = viewModel ? (
@@ -924,7 +962,7 @@ export function NodePage() {
     >
       <div className="mx-auto max-w-[980px]">
         <Link
-          to={withStageWindowRoute(viewModel.topic.route, stageWindowMonths)}
+          to={topicReturnRoute ?? withStageWindowRoute(viewModel.topic.route, stageWindowMonths)}
           className="inline-flex items-center gap-2 text-sm text-black/54 transition hover:text-black"
         >
           <ArrowLeft className="h-4 w-4" />

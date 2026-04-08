@@ -353,6 +353,19 @@ describe('Reading pages resilience', () => {
         writeText: clipboardWriteText,
       },
     })
+    sessionStorage.setItem(
+      'reading-workspace:v1',
+      JSON.stringify({
+        trail: [],
+        pageScroll: {},
+        workbenchByTopic: {},
+        topicSurfaceByTopic: {
+          'topic-1': {
+            mode: 'dashboard',
+          },
+        },
+      }),
+    )
 
     apiGetMock.mockImplementation(async (path: string) => {
       if (path === '/api/nodes/node-1/view-model?enhanced=true') {
@@ -374,6 +387,10 @@ describe('Reading pages resilience', () => {
     expect(screen.getByRole('link', { name: 'Manage topic cadence' })).toHaveAttribute(
       'href',
       '/manage/topics',
+    )
+    expect(screen.getByRole('link', { name: 'Back to Topic' })).toHaveAttribute(
+      'href',
+      '/topic/topic-1?anchor=node%3Anode-1&stageMonths=1',
     )
     expect(screen.getByRole('heading', { name: 'Node title' })).toBeVisible()
     expect(screen.getByRole('link', { name: '《Paper one》' })).toHaveAttribute(
@@ -414,6 +431,17 @@ describe('Reading pages resilience', () => {
       screen.queryByText(/A good node should help the reader see the strongest evidence/i),
     ).not.toBeInTheDocument()
     expect(screen.getByText('Meaningful closing point.')).toBeVisible()
+
+    await waitFor(() => {
+      const stored = JSON.parse(sessionStorage.getItem('reading-workspace:v1') ?? '{}') as {
+        topicSurfaceByTopic?: Record<string, { mode: string }>
+        trail?: Array<{ id: string; route: string }>
+      }
+      expect(stored.topicSurfaceByTopic?.['topic-1']?.mode).toBe('graph')
+      expect(stored.trail?.find((entry) => entry.id === 'topic:topic-1')?.route).toBe(
+        '/topic/topic-1?anchor=node%3Anode-1&stageMonths=1',
+      )
+    })
   })
 
   it('keeps the node reading surface stable when a sidebar citation evidence request fails', async () => {
