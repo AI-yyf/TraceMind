@@ -6,6 +6,7 @@ import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
+import { ReadingWorkspaceProvider } from '@/contexts/ReadingWorkspaceContext'
 import { I18nProvider } from '@/i18n'
 import type { TopicResearchBrief, TopicViewModel } from '@/types/alpha'
 import { apiGet } from '@/utils/api'
@@ -34,14 +35,16 @@ function renderWithProviders(node: ReactNode, initialEntry: string, path: string
 
   return render(
     <I18nProvider>
-      <MemoryRouter
-        initialEntries={[initialEntry]}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-      >
-        <Routes>
-          <Route path={path} element={node} />
-        </Routes>
-      </MemoryRouter>
+      <ReadingWorkspaceProvider>
+        <MemoryRouter
+          initialEntries={[initialEntry]}
+          future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+        >
+          <Routes>
+            <Route path={path} element={node} />
+          </Routes>
+        </MemoryRouter>
+      </ReadingWorkspaceProvider>
     </I18nProvider>,
   )
 }
@@ -273,6 +276,7 @@ function makeResearchBrief(): TopicResearchBrief {
 describe('TopicPage stage window controls', () => {
   beforeEach(() => {
     localStorage.clear()
+    sessionStorage.clear()
     apiGetMock.mockReset()
   })
 
@@ -385,5 +389,48 @@ describe('TopicPage stage window controls', () => {
       'href',
       '/node/node-1?stageMonths=1',
     )
+  })
+
+  it('reserves desktop space for the right workbench when the drawer is already open', async () => {
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      writable: true,
+      value: 1440,
+    })
+    sessionStorage.setItem(
+      'reading-workspace:v1',
+      JSON.stringify({
+        trail: [],
+        pageScroll: {},
+        workbenchByTopic: {
+          'topic-1': {
+            open: true,
+            activeTab: 'assistant',
+            historyOpen: false,
+            searchEnabled: true,
+            thinkingEnabled: true,
+            style: 'balanced',
+            contextPills: [],
+          },
+        },
+      }),
+    )
+
+    apiGetMock.mockImplementation(async (path: string) => {
+      if (path.startsWith('/api/topics/topic-1/view-model')) {
+        return makeTopicViewModel(3)
+      }
+
+      if (path === '/api/topics/topic-1/research-brief') {
+        return makeResearchBrief()
+      }
+
+      throw new Error(`Unexpected GET ${path}`)
+    })
+
+    renderWithProviders(<TopicPage />, '/topic/topic-1?stageMonths=3', '/topic/:topicId')
+
+    expect(await screen.findByText('Topic title')).toBeVisible()
+    expect(screen.getByRole('main')).toHaveStyle({ paddingRight: '416px' })
   })
 })

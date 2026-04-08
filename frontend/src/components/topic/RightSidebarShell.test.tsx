@@ -6,6 +6,7 @@ import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
+import { ReadingWorkspaceProvider } from '@/contexts/ReadingWorkspaceContext'
 import { I18nProvider } from '@/i18n'
 import { ApiError, apiGet, apiPost } from '@/utils/api'
 import { RightSidebarShell } from './RightSidebarShell'
@@ -31,14 +32,16 @@ function renderWithProviders(node: ReactNode) {
 
   return render(
     <I18nProvider>
-      <MemoryRouter
-        initialEntries={['/topic/topic-1']}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-      >
-        <Routes>
-          <Route path="/topic/:topicId" element={node} />
-        </Routes>
-      </MemoryRouter>
+      <ReadingWorkspaceProvider>
+        <MemoryRouter
+          initialEntries={['/topic/topic-1']}
+          future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+        >
+          <Routes>
+            <Route path="/topic/:topicId" element={node} />
+          </Routes>
+        </MemoryRouter>
+      </ReadingWorkspaceProvider>
     </I18nProvider>,
   )
 }
@@ -46,6 +49,7 @@ function renderWithProviders(node: ReactNode) {
 describe('RightSidebarShell failure recovery', () => {
   beforeEach(() => {
     localStorage.clear()
+    sessionStorage.clear()
     apiGetMock.mockReset()
     apiPostMock.mockReset()
     Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
@@ -116,5 +120,25 @@ describe('RightSidebarShell failure recovery', () => {
       screen.getByText('Context is ready for the next question'),
     ).toBeInTheDocument()
     expect(screen.queryByText('Preparing the answer')).not.toBeInTheDocument()
+  })
+
+  it('re-renders immediately when the workbench is opened from the floating launcher', async () => {
+    renderWithProviders(
+      <RightSidebarShell
+        topicId="topic-1"
+        topicTitle="Reliability topic"
+        suggestedQuestions={[]}
+        selectedEvidence={null}
+        onOpenCitation={vi.fn()}
+        onAction={vi.fn()}
+        onOpenSearchResult={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(await screen.findByTestId('topic-workbench-open'))
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('topic-workbench-open')).not.toBeInTheDocument()
+    })
   })
 })

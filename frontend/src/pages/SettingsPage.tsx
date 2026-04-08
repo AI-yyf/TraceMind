@@ -16,6 +16,7 @@ import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useI18n } from '@/i18n'
 import type { ModelCapabilitySummary, PromptStudioBundle } from '@/types/alpha'
 import { apiGet } from '@/utils/api'
+import { fetchModelCapabilitySummary } from '@/utils/omniRuntimeCache'
 
 type SettingsFocusTab = 'models' | 'pipeline' | 'prompts' | 'copy' | 'agents'
 
@@ -162,7 +163,7 @@ export function SettingsPage() {
     setError(null)
 
     Promise.all([
-      apiGet<ModelCapabilitySummary>('/api/model-capabilities'),
+      fetchModelCapabilitySummary(),
       apiGet<PromptStudioBundle>('/api/prompt-templates/studio'),
     ])
       .then(([nextCapabilities, nextBundle]) => {

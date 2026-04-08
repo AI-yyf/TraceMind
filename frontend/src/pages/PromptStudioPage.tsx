@@ -35,6 +35,12 @@ import type {
 } from '@/types/alpha'
 import { apiGet, apiPost, buildApiUrl } from '@/utils/api'
 import {
+  fetchModelCapabilitySummary,
+  fetchModelConfigResponse,
+  invalidateModelCapabilitySummary,
+  invalidateModelConfigResponse,
+} from '@/utils/omniRuntimeCache'
+import {
   MODEL_CONFIG_UPDATED_EVENT,
   PROMPT_STUDIO_UPDATED_EVENT,
 } from '@/utils/workbench-events'
@@ -709,8 +715,8 @@ export function PromptStudioPage() {
   const loadModels = useCallback(async () => {
     try {
       const [configResponse, capabilityResponse] = await Promise.all([
-        apiGet<ModelConfigResponse>('/api/model-configs'),
-        apiGet<ModelCapabilitySummary>('/api/model-capabilities'),
+        fetchModelConfigResponse(),
+        fetchModelCapabilitySummary(),
       ])
       setModelConfig(configResponse)
       setCapabilities(capabilityResponse)
@@ -858,6 +864,8 @@ export function PromptStudioPage() {
         '/api/model-configs',
         payload,
       )
+      invalidateModelCapabilitySummary()
+      invalidateModelConfigResponse()
       await loadModels()
       window.dispatchEvent(new CustomEvent(MODEL_CONFIG_UPDATED_EVENT, { detail: response.slots }))
       setLanguageForm((current) => ({ ...current, apiKey: '' }))

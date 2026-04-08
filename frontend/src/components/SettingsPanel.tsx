@@ -5,8 +5,14 @@ import { AlertTriangle, CheckCircle2, Clock3, KeyRound, Layers3, MessageSquare, 
 import { useConfig } from '@/hooks/useConfig'
 import type { ModelCapabilitySummary, ModelConfigResponse, ModelConfigSaveResponse, OmniIssue, UserModelConfig } from '@/types/alpha'
 import type { AppConfig } from '@/types/config'
+import {
+  fetchModelCapabilitySummary,
+  fetchModelConfigResponse,
+  invalidateModelCapabilitySummary,
+  invalidateModelConfigResponse,
+} from '@/utils/omniRuntimeCache'
 import { MODEL_CONFIG_UPDATED_EVENT } from '@/utils/workbench-events'
-import { apiGet, apiPost, buildApiUrl } from '@/utils/api'
+import { apiPost, buildApiUrl } from '@/utils/api'
 import { cn } from '@/utils/cn'
 import { TaskScheduler } from './TaskScheduler'
 
@@ -46,7 +52,7 @@ export function SettingsPanel({ isOpen, onClose }: { isOpen: boolean; onClose: (
     if (!isOpen) return
     let alive = true
 
-    Promise.all([apiGet<ModelConfigResponse>('/api/model-configs'), apiGet<ModelCapabilitySummary>('/api/model-capabilities')])
+    Promise.all([fetchModelConfigResponse(), fetchModelCapabilitySummary()])
       .then(([configResponse, capabilityResponse]) => {
         if (!alive) return
         setModelConfig(configResponse)
@@ -116,8 +122,10 @@ export function SettingsPanel({ isOpen, onClose }: { isOpen: boolean; onClose: (
       } satisfies UserModelConfig
 
       const response = await apiPost<ModelConfigSaveResponse, UserModelConfig>('/api/model-configs', payload)
-      setCapabilities(await apiGet<ModelCapabilitySummary>('/api/model-capabilities'))
-      setModelConfig(await apiGet<ModelConfigResponse>('/api/model-configs'))
+      invalidateModelCapabilitySummary()
+      invalidateModelConfigResponse()
+      setCapabilities(await fetchModelCapabilitySummary({ force: true }))
+      setModelConfig(await fetchModelConfigResponse({ force: true }))
       setLanguageForm((current) => ({ ...current, apiKey: '' }))
       setMultimodalForm((current) => ({ ...current, apiKey: '' }))
       setModelNotice(response.validationIssues?.[0] ?? null)

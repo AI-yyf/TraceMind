@@ -5,8 +5,9 @@ import { useNavigate } from 'react-router-dom'
 import { useProductCopy } from '@/hooks/useProductCopy'
 import { useI18n } from '@/i18n'
 import type { ModelCapabilitySummary, PromptLanguageCode } from '@/types/alpha'
-import { apiGet, apiPost } from '@/utils/api'
+import { apiPost } from '@/utils/api'
 import { cn } from '@/utils/cn'
+import { fetchModelCapabilitySummary } from '@/utils/omniRuntimeCache'
 import {
   TOPIC_LANGUAGE_LABELS,
   TOPIC_SOURCE_PLACEHOLDERS,
@@ -74,7 +75,7 @@ export function TopicBuilderDialog({
     if (!open) return
 
     let alive = true
-    void apiGet<ModelCapabilitySummary>('/api/model-capabilities')
+    void fetchModelCapabilitySummary()
       .then((payload) => {
         if (alive) setModelStatus(payload)
       })

@@ -5,8 +5,9 @@ import { AlertTriangle, ArrowLeft, CheckCircle2, ChevronDown, Languages, Loader2
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useI18n } from '@/i18n'
 import type { ModelCapabilitySummary, PromptLanguageCode } from '@/types/alpha'
-import { ApiError, apiGet, apiPost } from '@/utils/api'
+import { ApiError, apiPost } from '@/utils/api'
 import { cn } from '@/utils/cn'
+import { fetchModelCapabilitySummary } from '@/utils/omniRuntimeCache'
 import {
   TOPIC_LANGUAGE_LABELS,
   TOPIC_SOURCE_PLACEHOLDERS,
@@ -151,7 +152,7 @@ export function CreateTopicPage() {
   useEffect(() => {
     let alive = true
 
-    apiGet<ModelCapabilitySummary>('/api/model-capabilities')
+    fetchModelCapabilitySummary()
       .then((payload) => {
         if (alive) setCapabilities(payload)
       })

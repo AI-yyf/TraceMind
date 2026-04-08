@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { apiGet } from '@/utils/api'
+import { fetchModelConfigResponse } from '@/utils/omniRuntimeCache'
 
 export type SystemInitStatus = 'checking' | 'uninitialized' | 'ready' | 'error'
 
@@ -38,12 +39,7 @@ async function checkSystemInit(): Promise<{ status: SystemInitStatus; config: Sy
 
     let hasModelConfig = false
     try {
-      const modelConfig = await apiGet<{
-        config?: {
-          language?: unknown | null
-          multimodal?: unknown | null
-        }
-      }>('/api/model-configs')
+      const modelConfig = await fetchModelConfigResponse()
       hasModelConfig = Boolean(modelConfig.config?.language || modelConfig.config?.multimodal)
     } catch {
       hasModelConfig = false

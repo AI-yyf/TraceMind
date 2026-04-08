@@ -15,6 +15,10 @@ import { ResearchSessionCard } from './ResearchSessionCard'
 import { ResourcesPanel } from './ResourcesPanel'
 import { SearchPanel } from './SearchPanel'
 import { SidebarToolTabs } from './SidebarToolTabs'
+import {
+  TOPIC_WORKBENCH_DESKTOP_WIDTH,
+  isTopicWorkbenchDesktopViewport,
+} from './workbench-layout'
 import { useReadingWorkspace } from '@/contexts/ReadingWorkspaceContext'
 import { useFavorites } from '@/hooks'
 import { useProductCopy } from '@/hooks/useProductCopy'
@@ -45,6 +49,13 @@ import {
   apiGet,
   apiPost,
 } from '@/utils/api'
+import {
+  fetchModelCapabilitySummary,
+  fetchTopicResearchBrief,
+  invalidateModelCapabilitySummary,
+  invalidateTopicResearchBrief,
+  primeTopicResearchBrief,
+} from '@/utils/omniRuntimeCache'
 import {
   buildNotebookJson,
   buildNotebookMarkdown,
@@ -986,7 +997,7 @@ export function RightSidebarShell({
   const scrollBodyRef = useRef<HTMLDivElement | null>(null)
   const [isDesktopViewport, setIsDesktopViewport] = useState(() => {
     if (typeof window === 'undefined') return true
-    return window.innerWidth >= 1024
+    return isTopicWorkbenchDesktopViewport(window.innerWidth)
   })
   const [assistantState, setAssistantState] = useState<AssistantState>('empty')
   const [modelStatus, setModelStatus] = useState<ModelCapabilitySummary | null>(null)
@@ -1005,7 +1016,8 @@ export function RightSidebarShell({
     const thread = createThread()
     return { currentThreadId: thread.id, threads: [thread] }
   })
-  const workbenchState = getTopicWorkbenchState(topicId)
+  const workbenchState =
+    readingWorkspaceState.workbenchByTopic[topicId] ?? getTopicWorkbenchState(topicId)
   const { open, activeTab, historyOpen, contextPills, searchEnabled, thinkingEnabled, style } =
     workbenchState
   const setOpen = useCallback(
@@ -1176,13 +1188,11 @@ export function RightSidebarShell({
   )
 
   const loadResearchSession = useCallback(
-    async (silent = false) => {
+    async (silent = false, force = false) => {
       if (!silent) setResearchLoading(true)
 
       try {
-        const data = await apiGet<TopicResearchBrief>(
-          `/api/topics/${topicId}/research-brief`,
-        )
+        const data = await fetchTopicResearchBrief(topicId, { force })
         setResearchBriefState(data)
         setResearchSession(data.session)
         setResearchBriefError(null)
@@ -1266,7 +1276,8 @@ export function RightSidebarShell({
     try {
       await apiPost<TopicResearchSessionState>(`/api/topics/${topicId}/research-session/stop`, {})
       setResearchBriefError(null)
-      await loadResearchSession(true)
+      invalidateTopicResearchBrief(topicId)
+      await loadResearchSession(true, true)
     } finally {
       setResearchStopping(false)
     }
@@ -1277,7 +1288,7 @@ export function RightSidebarShell({
 
     const load = async () => {
       try {
-        const response = await apiGet<ModelCapabilitySummary>('/api/model-capabilities')
+        const response = await fetchModelCapabilitySummary()
         if (alive) setModelStatus(response)
       } catch {
         if (alive) setModelStatus(null)
@@ -1286,7 +1297,16 @@ export function RightSidebarShell({
 
     void load()
 
-    const onUpdate = () => void load()
+    const onUpdate = () => {
+      invalidateModelCapabilitySummary()
+      void fetchModelCapabilitySummary({ force: true })
+        .then((response) => {
+          if (alive) setModelStatus(response)
+        })
+        .catch(() => {
+          if (alive) setModelStatus(null)
+        })
+    }
     window.addEventListener(MODEL_CONFIG_UPDATED_EVENT, onUpdate)
 
     return () => {
@@ -1318,6 +1338,7 @@ export function RightSidebarShell({
 
   useEffect(() => {
     if (!researchBrief || researchBrief.topicId !== topicId) return
+    primeTopicResearchBrief(researchBrief)
     setResearchBriefState(researchBrief)
     setResearchSession(researchBrief.session)
     setResearchBriefError(null)
@@ -1339,14 +1360,15 @@ export function RightSidebarShell({
   }, [searchParams, setSearchParams])
 
   useEffect(() => {
+    if (researchBrief?.topicId === topicId) return
     void loadResearchSession()
-  }, [loadResearchSession])
+  }, [loadResearchSession, researchBrief, topicId])
 
   useEffect(() => {
     if (!researchSession?.active && researchSession?.report?.status !== 'running') return
 
     const timer = window.setInterval(() => {
-      void loadResearchSession(true)
+      void loadResearchSession(true, true)
     }, 15000)
 
     return () => window.clearInterval(timer)
@@ -1496,7 +1518,8 @@ export function RightSidebarShell({
   }, [])
 
   useEffect(() => {
-    const syncViewport = () => setIsDesktopViewport(window.innerWidth >= 1024)
+    const syncViewport = () =>
+      setIsDesktopViewport(isTopicWorkbenchDesktopViewport(window.innerWidth))
     syncViewport()
     window.addEventListener('resize', syncViewport)
     return () => window.removeEventListener('resize', syncViewport)
@@ -1781,7 +1804,8 @@ export function RightSidebarShell({
       if (data.workbenchAction) {
         await handleWorkbenchAction(data.workbenchAction)
       } else if (data.guidanceReceipt) {
-        await loadResearchSession(true)
+        invalidateTopicResearchBrief(topicId)
+        await loadResearchSession(true, true)
       }
     } catch (error) {
       const apiError = error instanceof ApiError ? error : null
@@ -1847,6 +1871,14 @@ export function RightSidebarShell({
             ? 'translate-x-0 opacity-100'
             : 'pointer-events-none invisible translate-x-8 opacity-0'
         }`}
+        style={
+          isDesktopViewport
+            ? {
+                width: `${TOPIC_WORKBENCH_DESKTOP_WIDTH}px`,
+                maxWidth: `${TOPIC_WORKBENCH_DESKTOP_WIDTH}px`,
+              }
+            : undefined
+        }
       >
         <div data-testid="topic-workbench" className="absolute left-0 top-0 h-px w-px" aria-hidden="true" />
         <AssistantHeader

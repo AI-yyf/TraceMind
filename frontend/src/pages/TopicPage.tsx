@@ -5,6 +5,10 @@ import { useCallback } from 'react'
 
 import { RightSidebarShell } from '@/components/topic/RightSidebarShell'
 import { TopicDashboard } from '@/components/topic/TopicDashboard'
+import {
+  TOPIC_WORKBENCH_DESKTOP_RESERVED_SPACE,
+  isTopicWorkbenchDesktopViewport,
+} from '@/components/topic/workbench-layout'
 import { usePageScrollRestoration, useReadingWorkspace } from '@/contexts/ReadingWorkspaceContext'
 import type { TopicDashboard as TopicDashboardData } from '@/types/article'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
@@ -20,6 +24,7 @@ import type {
   TopicViewModel,
 } from '@/types/alpha'
 import { apiGet, apiPost, resolveApiAssetUrl } from '@/utils/api'
+import { fetchTopicResearchBrief, primeTopicResearchBrief } from '@/utils/omniRuntimeCache'
 import { isLowSignalResearchLine } from '@/utils/researchCopy'
 import {
   compactTopicSurfaceTitle,
@@ -646,7 +651,7 @@ export function TopicPage() {
   const location = useLocation()
   const navigate = useNavigate()
   const { t, preference } = useI18n()
-  const { rememberTrail } = useReadingWorkspace()
+  const { rememberTrail, state: readingWorkspaceState } = useReadingWorkspace()
   const [searchParams, setSearchParams] = useSearchParams()
   const [viewModel, setViewModel] = useState<TopicViewModel | null>(null)
   const [researchBrief, setResearchBrief] = useState<TopicResearchBrief | null>(null)
@@ -655,14 +660,26 @@ export function TopicPage() {
   const [selectedEvidence, setSelectedEvidence] = useState<EvidencePayload | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
+  const [isDesktopViewport, setIsDesktopViewport] = useState(() => {
+    if (typeof window === 'undefined') return true
+    return isTopicWorkbenchDesktopViewport(window.innerWidth)
+  })
   const highlightedAnchor = searchParams.get('anchor')
   const uiLanguage = preference.primary as UiLanguage
+  const workbenchOpen = readingWorkspaceState.workbenchByTopic[topicId]?.open ?? false
   const requestedStageWindowMonths = useMemo(
     () => readStageWindowSearchParam(searchParams),
     [searchParams],
   )
   const effectiveStageWindowMonths = viewModel?.stageConfig?.windowMonths ?? requestedStageWindowMonths ?? 1
   const hasFocusAnchor = Boolean(searchParams.get('anchor') || searchParams.get('evidence'))
+  const pageShellStyle = useMemo<CSSProperties | undefined>(
+    () =>
+      isDesktopViewport && workbenchOpen
+        ? { paddingRight: `${TOPIC_WORKBENCH_DESKTOP_RESERVED_SPACE}px` }
+        : undefined,
+    [isDesktopViewport, workbenchOpen],
+  )
   usePageScrollRestoration(`topic:${topicId}:stage:${effectiveStageWindowMonths}`, {
     skipInitialRestore: hasFocusAnchor,
   })
@@ -680,6 +697,16 @@ export function TopicPage() {
       route: `${location.pathname}${location.search}`,
     })
   }, [location.pathname, location.search, rememberTrail, topicTitle.primary, viewModel])
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+
+    const syncViewport = () =>
+      setIsDesktopViewport(isTopicWorkbenchDesktopViewport(window.innerWidth))
+
+    syncViewport()
+    window.addEventListener('resize', syncViewport)
+    return () => window.removeEventListener('resize', syncViewport)
+  }, [])
   const topicStandfirst = useMemo(
     () =>
       uniqueText(
@@ -919,11 +946,14 @@ export function TopicPage() {
 
     Promise.all([
       apiGet<TopicViewModel>(topicViewPath),
-      apiGet<TopicResearchBrief>(`/api/topics/${topicId}/research-brief`).catch(() => null),
+      fetchTopicResearchBrief(topicId).catch(() => null),
     ])
       .then(([data, brief]) => {
         setViewModel(data)
         setResearchBrief(brief)
+        if (brief) {
+          primeTopicResearchBrief(brief)
+        }
       })
       .catch((nextError) =>
         setError(nextError instanceof Error ? nextError : new Error(String(nextError))),
@@ -1002,7 +1032,7 @@ export function TopicPage() {
   )
 
   return (
-    <main className="px-4 pb-24 pt-8 md:px-6 xl:px-10">
+    <main className="px-4 pb-24 pt-8 md:px-6 xl:px-10" style={pageShellStyle}>
       <div className="mx-auto max-w-[1460px]">
         <Link to="/" className="inline-flex items-center gap-2 text-sm text-black/54 transition hover:text-black">
           <ArrowLeft className="h-4 w-4" />
