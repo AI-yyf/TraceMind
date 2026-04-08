@@ -206,4 +206,87 @@ describe('RightSidebarShell failure recovery', () => {
       )
     })
   })
+
+  it('shows a stable empty research intel state when the topic has no durable backend intel yet', async () => {
+    apiGetMock.mockImplementation(async (path: string) => {
+      if (path === '/api/model-capabilities') {
+        throw new Error('model capabilities unavailable')
+      }
+
+      if (path === '/api/topics/topic-1/research-brief') {
+        return {
+          topicId: 'topic-1',
+          session: {
+            task: null,
+            progress: null,
+            report: null,
+            active: false,
+            strategy: {
+              cycleDelayMs: 0,
+              stageStallLimit: 0,
+              reportPasses: 0,
+              currentStageStalls: 0,
+            },
+          },
+          pipeline: {
+            updatedAt: null,
+            lastRun: null,
+            currentStage: null,
+            recentHistory: [],
+            globalOpenQuestions: [],
+            continuityThreads: [],
+            subjectFocus: {
+              nodeId: null,
+              paperIds: [],
+              stageIndex: null,
+              relatedHistory: [],
+              relatedNodeActions: [],
+            },
+          },
+          sessionMemory: {
+            updatedAt: null,
+            initializedAt: null,
+            lastCompactedAt: null,
+            summary: {
+              currentFocus: '',
+              continuity: '',
+              establishedJudgments: [],
+              openQuestions: [],
+              researchMomentum: [],
+              conversationStyle: '',
+              lastResearchMove: '',
+              lastUserIntent: '',
+            },
+            recentEvents: [],
+          },
+          world: null,
+          guidance: null,
+          cognitiveMemory: null,
+        } as any
+      }
+
+      throw new Error(`Unexpected GET ${path}`)
+    })
+
+    renderWithProviders(
+      <RightSidebarShell
+        topicId="topic-1"
+        topicTitle="Reliability topic"
+        suggestedQuestions={[]}
+        selectedEvidence={null}
+        onOpenCitation={vi.fn()}
+        onAction={vi.fn()}
+        onOpenSearchResult={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(await screen.findByTestId('topic-workbench-open'))
+    expect(await screen.findByTestId('topic-research-intel-empty')).toBeVisible()
+    expect(screen.getByText('No persistent intel yet')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'This topic already has a live workbench, but the backend has not written a stable thesis, absorbed guidance, or calibration memory here yet.',
+      ),
+    ).toBeVisible()
+  })
 })

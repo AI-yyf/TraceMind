@@ -39,18 +39,23 @@ export function AssistantEmptyState({
   const { t } = useI18n()
   const workbenchText = (copyId: string, key: string, fallback: string) =>
     copy(copyId, t(key, fallback))
+  const worldSummary = brief?.world?.summary
+  const worldAgenda = brief?.world?.agenda ?? []
+  const worldQuestions = brief?.world?.questions ?? []
+  const sessionSummary = brief?.sessionMemory?.summary
+  const guidanceSummary = brief?.guidance?.summary
 
   const currentLine =
-    brief?.world.summary.currentFocus ||
-    brief?.world.summary.thesis ||
-    brief?.sessionMemory.summary.currentFocus ||
+    worldSummary?.currentFocus ||
+    worldSummary?.thesis ||
+    sessionSummary?.currentFocus ||
     ''
   const latestDirective =
-    brief?.guidance.latestApplication?.summary ||
-    brief?.guidance.summary.latestDirective ||
+    brief?.guidance?.latestApplication?.summary ||
+    guidanceSummary?.latestDirective ||
     ''
   const agendaPrompts = uniqueStrings(
-    brief?.world.agenda
+    worldAgenda
       .slice(0, 2)
       .map((item) => item.suggestedPrompt || item.title) ?? [],
     2,
@@ -63,18 +68,18 @@ export function AssistantEmptyState({
   const metricChips = [
     renderTemplate(
       t('workbench.emptyDirectiveCount', '{count} active directives'),
-      { count: brief?.guidance.summary.activeDirectiveCount ?? 0 },
+      { count: guidanceSummary?.activeDirectiveCount ?? 0 },
     ),
     renderTemplate(
       t('workbench.emptyAgendaCount', '{count} agenda items'),
-      { count: brief?.world.agenda.length ?? 0 },
+      { count: worldAgenda.length },
     ),
     renderTemplate(
       t('workbench.emptyQuestionCount', '{count} open questions'),
       {
         count:
-          brief?.world.questions.length ??
-          brief?.pipeline.globalOpenQuestions.length ??
+          worldQuestions.length ||
+          brief?.pipeline?.globalOpenQuestions.length ||
           0,
       },
     ),

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Loader2, MessageSquare, RotateCcw } from 'lucide-react'
+import { MessageSquare } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { AssistantEmptyState } from './AssistantEmptyState'
@@ -11,6 +11,7 @@ import { GuidanceLedgerCard } from './GuidanceLedgerCard'
 import { GroundedComposer } from './GroundedComposer'
 import { NotebookPanel } from './NotebookPanel'
 import { ReadingPathCard } from './ReadingPathCard'
+import { ResearchIntelPanel } from './ResearchIntelPanel'
 import { ResearchWorldCard } from './ResearchWorldCard'
 import { ResearchSessionCard } from './ResearchSessionCard'
 import { ResourcesPanel } from './ResourcesPanel'
@@ -926,55 +927,6 @@ function WorkbenchPulseCard({
         </div>
       ) : null}
     </section>
-  )
-}
-
-function ResearchIntelStateCard({
-  loading = false,
-  message,
-  onRetry,
-}: {
-  loading?: boolean
-  message: string
-  onRetry?: () => void
-}) {
-  const { copy } = useProductCopy()
-  const { t } = useI18n()
-
-  return (
-    <article
-      data-testid={loading ? 'topic-research-intel-loading' : 'topic-research-intel-error'}
-      className={`rounded-[16px] border px-3 py-3 ${
-        loading
-          ? 'border-black/6 bg-white/78 text-black/58'
-          : 'border-amber-200/90 bg-[linear-gradient(180deg,#fffaf3_0%,#ffffff_100%)] text-black/62'
-      }`}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-[10px] uppercase tracking-[0.18em] text-black/34">
-            {loading
-              ? t('workbench.researchIntelLoadingTitle', 'Refreshing research intel')
-              : t('workbench.researchIntelErrorTitle', 'Research intel unavailable')}
-          </div>
-          <p className="mt-1.5 text-[11px] leading-5">{message}</p>
-        </div>
-
-        {loading ? <Loader2 className="mt-0.5 h-4 w-4 animate-spin text-black/38" /> : null}
-      </div>
-
-      {!loading && onRetry ? (
-        <button
-          type="button"
-          data-testid="topic-research-intel-retry"
-          onClick={onRetry}
-          className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-black/8 bg-white px-2.5 py-1 text-[10px] text-black/62 transition hover:border-black/14 hover:text-black"
-        >
-          <RotateCcw className="h-3.5 w-3.5" />
-          {t('workbench.researchIntelRetry', copy('assistant.researchIntelRetry', 'Retry'))}
-        </button>
-      ) : null}
-    </article>
   )
 }
 
@@ -2007,62 +1959,28 @@ export function RightSidebarShell({
                   onNavigate={(route) => navigate(route)}
                 />
 
-                {researchLoading || researchBriefError || hasResearchIntel ? (
-                  <section
-                    data-testid="topic-research-intel"
-                    className="rounded-[18px] border border-black/8 bg-[var(--surface-soft)] px-3 py-3"
-                  >
-                    <div className="max-w-[30ch]">
-                      <div className="text-[10px] uppercase tracking-[0.2em] text-black/34">
-                        {t('workbench.researchIntelEyebrow', 'Research intel')}
-                      </div>
-                      <p className="mt-1 text-[11px] leading-5 text-black/56">
-                        {t(
-                          'workbench.researchIntelDek',
-                          'The thesis, latest absorbed guidance, and current calibration stay visible here instead of collapsing into chat history.',
-                        )}
-                      </p>
-                    </div>
+                <ResearchIntelPanel
+                  loading={researchLoading}
+                  errorMessage={researchBriefError}
+                  ready={hasResearchIntel}
+                  onRetry={() => void loadResearchSession()}
+                  onUsePrompt={setQuestion}
+                >
+                  <GuidanceLedgerCard
+                    guidance={researchBriefState?.guidance ?? null}
+                    onUsePrompt={setQuestion}
+                  />
 
-                    <div className="mt-3 space-y-2">
-                      {researchLoading && !hasResearchIntel ? (
-                        <ResearchIntelStateCard
-                          loading
-                          message={t(
-                            'workbench.researchIntelLoadingMessage',
-                            'Pulling the latest thesis, absorbed guidance, and calibration notes from the backend.',
-                          )}
-                        />
-                      ) : null}
+                  <ResearchWorldCard
+                    world={researchBriefState?.world ?? null}
+                    onUsePrompt={setQuestion}
+                  />
 
-                      {researchBriefError ? (
-                        <ResearchIntelStateCard
-                          message={researchBriefError}
-                          onRetry={() => void loadResearchSession()}
-                        />
-                      ) : null}
-
-                      {hasResearchIntel ? (
-                        <>
-                          <GuidanceLedgerCard
-                            guidance={researchBriefState?.guidance ?? null}
-                            onUsePrompt={setQuestion}
-                          />
-
-                          <ResearchWorldCard
-                            world={researchBriefState?.world ?? null}
-                            onUsePrompt={setQuestion}
-                          />
-
-                          <WorkbenchPulseCard
-                            brief={researchBriefState}
-                            onUsePrompt={setQuestion}
-                          />
-                        </>
-                      ) : null}
-                    </div>
-                  </section>
-                ) : null}
+                  <WorkbenchPulseCard
+                    brief={researchBriefState}
+                    onUsePrompt={setQuestion}
+                  />
+                </ResearchIntelPanel>
 
                 {currentThread.messages.length === 0 ? (
                   <AssistantEmptyState
