@@ -517,4 +517,43 @@ describe('TopicPage stage window controls', () => {
 
     expect(await screen.findByTestId('topic-stage-map')).toBeVisible()
   })
+
+  it('restores the persisted topic surface mode from reading workspace state', async () => {
+    sessionStorage.setItem(
+      'reading-workspace:v1',
+      JSON.stringify({
+        trail: [],
+        pageScroll: {},
+        workbenchByTopic: {},
+        topicSurfaceByTopic: {
+          'topic-1': {
+            mode: 'dashboard',
+          },
+        },
+      }),
+    )
+
+    apiGetMock.mockImplementation(async (path: string) => {
+      if (path.startsWith('/api/topics/topic-1/view-model')) {
+        return makeTopicViewModel(3)
+      }
+
+      if (path === '/api/topics/topic-1/research-brief') {
+        return makeResearchBrief()
+      }
+
+      if (path === '/api/topics/topic-1/dashboard') {
+        return makeDashboardResponse()
+      }
+
+      throw new Error(`Unexpected GET ${path}`)
+    })
+
+    renderWithProviders(<TopicPage />, '/topic/topic-1?stageMonths=3', '/topic/:topicId')
+
+    expect(await screen.findByText('Topic title')).toBeVisible()
+    expect(await screen.findByTestId('topic-dashboard-panel')).toBeVisible()
+    expect(screen.queryByTestId('topic-stage-map')).not.toBeInTheDocument()
+    expect(screen.getByText('Insight one')).toBeVisible()
+  })
 })

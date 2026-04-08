@@ -12,7 +12,10 @@ import {
   TOPIC_WORKBENCH_DESKTOP_RESERVED_SPACE,
   isTopicWorkbenchDesktopViewport,
 } from '@/components/topic/workbench-layout'
-import { usePageScrollRestoration, useReadingWorkspace } from '@/contexts/ReadingWorkspaceContext'
+import {
+  usePageScrollRestoration,
+  useReadingWorkspace,
+} from '@/contexts/ReadingWorkspaceContext'
 import { useTopicDashboardData } from '@/hooks/useTopicDashboardData'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useI18n } from '@/i18n'
@@ -654,11 +657,15 @@ export function TopicPage() {
   const location = useLocation()
   const navigate = useNavigate()
   const { t, preference } = useI18n()
-  const { rememberTrail, state: readingWorkspaceState } = useReadingWorkspace()
+  const {
+    rememberTrail,
+    state: readingWorkspaceState,
+    getTopicSurfaceState,
+    patchTopicSurfaceState,
+  } = useReadingWorkspace()
   const [searchParams, setSearchParams] = useSearchParams()
   const [viewModel, setViewModel] = useState<TopicViewModel | null>(null)
   const [researchBrief, setResearchBrief] = useState<TopicResearchBrief | null>(null)
-  const [viewMode, setViewMode] = useState<TopicSurfaceMode>('graph')
   const [selectedEvidence, setSelectedEvidence] = useState<EvidencePayload | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
@@ -669,6 +676,9 @@ export function TopicPage() {
   const highlightedAnchor = searchParams.get('anchor')
   const uiLanguage = preference.primary as UiLanguage
   const workbenchOpen = readingWorkspaceState.workbenchByTopic[topicId]?.open ?? false
+  const topicSurfaceState =
+    readingWorkspaceState.topicSurfaceByTopic[topicId] ?? getTopicSurfaceState(topicId)
+  const viewMode = topicSurfaceState.mode as TopicSurfaceMode
   const requestedStageWindowMonths = useMemo(
     () => readStageWindowSearchParam(searchParams),
     [searchParams],
@@ -681,6 +691,14 @@ export function TopicPage() {
         ? { paddingRight: `${TOPIC_WORKBENCH_DESKTOP_RESERVED_SPACE}px` }
         : undefined,
     [isDesktopViewport, workbenchOpen],
+  )
+  const setViewMode = useCallback(
+    (next: TopicSurfaceMode | ((current: TopicSurfaceMode) => TopicSurfaceMode)) =>
+      patchTopicSurfaceState(topicId, (current) => ({
+        ...current,
+        mode: typeof next === 'function' ? next(current.mode as TopicSurfaceMode) : next,
+      })),
+    [patchTopicSurfaceState, topicId],
   )
   usePageScrollRestoration(`topic:${topicId}:stage:${effectiveStageWindowMonths}`, {
     skipInitialRestore: hasFocusAnchor,

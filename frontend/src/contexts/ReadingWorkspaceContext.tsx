@@ -12,6 +12,7 @@ import {
 import type { ContextPill, TopicWorkbenchTab } from '@/types/alpha'
 
 type WorkbenchStyle = 'brief' | 'balanced' | 'deep'
+export type TopicSurfaceModePreference = 'graph' | 'dashboard'
 
 export type ReadingTrailEntry = {
   id: string
@@ -34,9 +35,14 @@ type TopicWorkbenchState = {
   contextPills: ContextPill[]
 }
 
+type TopicSurfaceState = {
+  mode: TopicSurfaceModePreference
+}
+
 type ReadingWorkspaceState = {
   trail: ReadingTrailEntry[]
   workbenchByTopic: Record<string, TopicWorkbenchState>
+  topicSurfaceByTopic: Record<string, TopicSurfaceState>
   pageScroll: Record<string, number>
 }
 
@@ -49,6 +55,13 @@ type ReadingWorkspaceContextValue = {
     patch:
       | Partial<TopicWorkbenchState>
       | ((current: TopicWorkbenchState) => TopicWorkbenchState),
+  ) => void
+  getTopicSurfaceState: (topicId: string) => TopicSurfaceState
+  patchTopicSurfaceState: (
+    topicId: string,
+    patch:
+      | Partial<TopicSurfaceState>
+      | ((current: TopicSurfaceState) => TopicSurfaceState),
   ) => void
   rememberPageScroll: (key: string, value: number) => void
   getPageScroll: (key: string) => number | null
@@ -64,6 +77,10 @@ const defaultTopicWorkbenchState = (): TopicWorkbenchState => ({
   thinkingEnabled: true,
   style: 'balanced',
   contextPills: [],
+})
+
+const defaultTopicSurfaceState = (): TopicSurfaceState => ({
+  mode: 'graph',
 })
 
 const ReadingWorkspaceContext = createContext<ReadingWorkspaceContextValue | null>(null)
@@ -97,11 +114,16 @@ function areTopicWorkbenchStatesEqual(left: TopicWorkbenchState, right: TopicWor
   )
 }
 
+function areTopicSurfaceStatesEqual(left: TopicSurfaceState, right: TopicSurfaceState) {
+  return left.mode === right.mode
+}
+
 function parseWorkspaceState(value: string | null): ReadingWorkspaceState {
   if (!value) {
     return {
       trail: [],
       workbenchByTopic: {},
+      topicSurfaceByTopic: {},
       pageScroll: {},
     }
   }
@@ -143,6 +165,22 @@ function parseWorkspaceState(value: string | null): ReadingWorkspaceState {
               }),
             )
           : {},
+      topicSurfaceByTopic:
+        parsed.topicSurfaceByTopic && typeof parsed.topicSurfaceByTopic === 'object'
+          ? Object.fromEntries(
+              Object.entries(parsed.topicSurfaceByTopic).map(([topicId, rawState]) => {
+                const record = rawState as Partial<TopicSurfaceState> | null | undefined
+                return [
+                  topicId,
+                  {
+                    ...defaultTopicSurfaceState(),
+                    ...record,
+                    mode: record?.mode === 'dashboard' ? 'dashboard' : 'graph',
+                  },
+                ]
+              }),
+            )
+          : {},
       pageScroll:
         parsed.pageScroll && typeof parsed.pageScroll === 'object'
           ? Object.fromEntries(
@@ -159,6 +197,7 @@ function parseWorkspaceState(value: string | null): ReadingWorkspaceState {
     return {
       trail: [],
       workbenchByTopic: {},
+      topicSurfaceByTopic: {},
       pageScroll: {},
     }
   }
@@ -170,6 +209,7 @@ export function ReadingWorkspaceProvider({ children }: PropsWithChildren) {
       return {
         trail: [],
         workbenchByTopic: {},
+        topicSurfaceByTopic: {},
         pageScroll: {},
       }
     }
@@ -246,6 +286,37 @@ export function ReadingWorkspaceProvider({ children }: PropsWithChildren) {
     })
   }, [])
 
+  const getTopicSurfaceState = useCallback((topicId: string) => {
+    return stateRef.current.topicSurfaceByTopic[topicId] ?? defaultTopicSurfaceState()
+  }, [])
+
+  const patchTopicSurfaceState = useCallback<
+    ReadingWorkspaceContextValue['patchTopicSurfaceState']
+  >((topicId, patch) => {
+    setState((current) => {
+      const previous = current.topicSurfaceByTopic[topicId] ?? defaultTopicSurfaceState()
+      const next =
+        typeof patch === 'function'
+          ? patch(previous)
+          : {
+              ...previous,
+              ...patch,
+            }
+
+      if (areTopicSurfaceStatesEqual(previous, next)) {
+        return current
+      }
+
+      return {
+        ...current,
+        topicSurfaceByTopic: {
+          ...current.topicSurfaceByTopic,
+          [topicId]: next,
+        },
+      }
+    })
+  }, [])
+
   const rememberPageScroll = useCallback((key: string, value: number) => {
     setState((current) => {
       if (current.pageScroll[key] === value) {
@@ -274,13 +345,17 @@ export function ReadingWorkspaceProvider({ children }: PropsWithChildren) {
       rememberTrail,
       getTopicWorkbenchState,
       patchTopicWorkbenchState,
+      getTopicSurfaceState,
+      patchTopicSurfaceState,
       rememberPageScroll,
       getPageScroll,
     }),
     [
       state,
       getPageScroll,
+      getTopicSurfaceState,
       getTopicWorkbenchState,
+      patchTopicSurfaceState,
       patchTopicWorkbenchState,
       rememberPageScroll,
       rememberTrail,
