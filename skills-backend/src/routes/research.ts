@@ -12,11 +12,12 @@ import { executePaperTracker } from '../../skill-packs/research/paper-tracker/ex
 import { executeContentGenesis } from '../../skill-packs/research/content-genesis-v2/executor'
 import { executeOrchestrator } from '../../skill-packs/research/orchestrator/executor'
 import type { SkillContext } from '../../engine/contracts'
+import { setSession, getSession, getAllSessions, SessionData } from '../lib/redis'
 
 const router = Router()
 
-// 研究会话存储（内存中，生产环境应使用 Redis）
-const sessions = new Map()
+// Session key prefix for Redis storage
+const SESSION_KEY_PREFIX = 'research:session:'
 
 // 创建 Skill 上下文
 function createSkillContext(sessionId: string): SkillContext {
@@ -65,7 +66,8 @@ router.post('/sessions', asyncHandler(async (req, res) => {
     createdAt: new Date().toISOString()
   }
 
-  sessions.set(sessionId, session)
+  // Store session in Redis with 24-hour TTL
+  await setSession(SESSION_KEY_PREFIX + sessionId, session, 86400)
 
   // 保存到数据库
   await prisma.researchSession.create({
@@ -94,10 +96,10 @@ router.post('/sessions', asyncHandler(async (req, res) => {
 router.get('/sessions/:id', asyncHandler(async (req, res) => {
   const { id } = req.params
   
-  // 优先从内存获取
-  let session = sessions.get(id)
+  // 优先从Redis获取
+  let session = await getSession(SESSION_KEY_PREFIX + id)
   
-  // 内存中没有则从数据库获取
+  // Redis中没有则从数据库获取
   if (!session) {
     const dbSession = await prisma.researchSession.findUnique({
       where: { id }
@@ -116,17 +118,35 @@ router.get('/sessions/:id', asyncHandler(async (req, res) => {
 
 // 获取所有会话
 router.get('/sessions', asyncHandler(async (req, res) => {
+  // Get sessions from Redis (active sessions within TTL)
+  const redisSessions = await getAllSessions('research:session:*')
+  
+  // Also get from database for historical sessions
   const dbSessions = await prisma.researchSession.findMany({
     orderBy: { createdAt: 'desc' },
     take: 50
   })
 
-  const sessions = dbSessions.map(s => ({
-    ...s,
-    topicIds: JSON.parse(s.topicIds),
-    logs: JSON.parse(s.logs),
-    results: JSON.parse(s.results || '{}')
-  }))
+  // Merge Redis sessions with database sessions (Redis has fresher data)
+  const sessionsMap = new Map()
+  
+  // Add database sessions first
+  for (const s of dbSessions) {
+    sessionsMap.set(s.id, {
+      ...s,
+      topicIds: JSON.parse(s.topicIds),
+      logs: JSON.parse(s.logs),
+      results: JSON.parse(s.results || '{}')
+    })
+  }
+  
+  // Override with Redis sessions (they have fresher state)
+  for (const [key, session] of redisSessions) {
+    const id = key.replace(SESSION_KEY_PREFIX, '')
+    sessionsMap.set(id, session)
+  }
+
+  const sessions = Array.from(sessionsMap.values())
 
   res.json({ success: true, data: sessions })
 }))
@@ -135,7 +155,7 @@ router.get('/sessions', asyncHandler(async (req, res) => {
 router.post('/sessions/:id/stop', asyncHandler(async (req, res) => {
   const { id } = req.params
   
-  const session = sessions.get(id)
+  const session = await getSession(SESSION_KEY_PREFIX + id)
   if (!session) {
     throw new AppError(404, '会话不存在')
   }
@@ -154,6 +174,9 @@ router.post('/sessions/:id/stop', asyncHandler(async (req, res) => {
       logs: JSON.stringify(session.logs)
     }
   })
+
+  // Update session in Redis
+  await setSession(SESSION_KEY_PREFIX + id, session, 86400)
 
   broadcastResearchError(id, '研究会话被用户停止')
 
@@ -400,6 +423,9 @@ async function updateSessionProgress(
     }
   })
 
+  // Update session in Redis
+  await setSession(SESSION_KEY_PREFIX + session.id, session, 86400)
+
   context.logger.info(message)
 }
 
@@ -430,6 +456,9 @@ async function finalizeSession(session: any, context: SkillContext) {
       results: JSON.stringify(session.results)
     }
   })
+
+  // Update session in Redis
+  await setSession(SESSION_KEY_PREFIX + session.id, session, 86400)
 
   broadcastResearchComplete(session.id, {
     message: summaryMessage,
@@ -468,6 +497,9 @@ async function handleSessionError(session: any, error: any, context: SkillContex
       error: errorMessage
     }
   })
+
+  // Update session in Redis
+  await setSession(SESSION_KEY_PREFIX + session.id, session, 86400)
 
   broadcastResearchError(session.id, errorMessage)
 

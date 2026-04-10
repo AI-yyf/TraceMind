@@ -125,12 +125,14 @@ model ResearchNode {
 
   topic          Topic  @relation(fields: [topicId], references: [id], onDelete: Cascade)
   primaryPaperId String
-  primaryPaper   Paper  @relation("PrimaryPaper", fields: [primaryPaperId], references: [id])
+  primaryPaper   Paper  @relation("PrimaryPaper", fields: [primaryPaperId], references: [id], onDelete: SetNull)
 
-  papers     NodePaper[]
-  fullContent String?
+   papers     NodePaper[]
+   fullContent      String?
+   fullArticleFlow  String?
+   editorialPromptHash String?
 
-  @@index([topicId])
+   @@index([topicId])
   @@index([stageIndex])
   @@map("research_nodes")
 }
@@ -257,7 +259,53 @@ model TaskMapping {
   modelId          String
   fallbackModelId  String?
 
-  config ModelConfig @relation(fields: [modelId], references: [modelId])
+  config ModelConfig @relation(fields: [modelId], references: [modelId], onDelete: Cascade)
 
   @@map("task_mappings")
+}
+
+// 研究管线状态
+model ResearchPipelineState {
+  id        String   @id @default(uuid())
+  topicId   String   @unique
+  state     String   // JSON
+  updatedAt DateTime @updatedAt
+
+  @@index([topicId])
+  @@map("research_pipeline_states")
+}
+
+// 研究世界快照
+model ResearchWorldSnapshot {
+  id          String   @id @default(uuid())
+  topicId     String   @unique
+  world       String   // JSON
+  fingerprint String?  // hash
+  updatedAt   DateTime @updatedAt
+
+  @@index([topicId])
+  @@map("research_world_snapshots")
+}
+
+// 主题会话记忆
+model TopicSessionMemory {
+  id        String   @id @default(uuid())
+  topicId   String   @unique
+  events    String   // JSON
+  summary   String?  // JSON
+  updatedAt DateTime @updatedAt
+
+  @@index([topicId])
+  @@map("topic_session_memories")
+}
+
+// 主题指导指令账本
+model TopicGuidanceLedger {
+  id         String   @id @default(uuid())
+  topicId    String   @unique
+  directives String   // JSON
+  updatedAt  DateTime @updatedAt
+
+  @@index([topicId])
+  @@map("topic_guidance_ledgers")
 }

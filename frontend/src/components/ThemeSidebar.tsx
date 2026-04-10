@@ -74,6 +74,7 @@ export function ThemeSidebar({ onSearchClick }: ThemeSidebarProps) {
               <Link
                 key={item.to}
                 to={item.to}
+                data-onboarding={item.to === '/settings' ? 'settings' : undefined}
                 className={cn(
                   'flex w-full flex-col items-center gap-1 rounded-[18px] px-2 py-3 text-[10px] transition',
                   active ? 'bg-black text-white' : 'text-black/52 hover:bg-black/[0.03] hover:text-black',
@@ -90,6 +91,7 @@ export function ThemeSidebar({ onSearchClick }: ThemeSidebarProps) {
             <button
               type="button"
               onClick={onSearchClick}
+              data-onboarding="global-search"
               className="flex w-full flex-col items-center gap-1 rounded-[18px] px-2 py-3 text-[10px] text-black/52 transition hover:bg-black/[0.03] hover:text-black"
               aria-label={navText('nav.search', 'Search')}
             >

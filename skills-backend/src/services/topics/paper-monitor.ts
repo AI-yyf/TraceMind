@@ -318,12 +318,27 @@ async function generateUpdateSuggestions(
     paper.suggestedNodeId = bestNode.id
     const existing = suggestions.find((item) => item.nodeId === bestNode.id)
 
-    if (existing) {
+if (existing) {
       existing.affectedPapers.push(paper.paperId)
       existing.suggestedChanges.push({
         type: 'add_paper',
-        description: `娣诲姞璁烘枃锛?{paper.title}`,
+        description: `添加论文：${paper.title}`,
       })
+      continue
+    }
+
+    suggestions.push({
+      nodeId: bestNode.id,
+      nodeTitle: bestNode.nodeLabel,
+      reason: '发现与该节点高度相关的新论文',
+      affectedPapers: [paper.paperId],
+      suggestedChanges: [
+        {
+          type: 'add_paper',
+          description: `添加论文：${paper.title}`,
+        },
+      ],
+    })
       continue
     }
 
@@ -341,16 +356,16 @@ async function generateUpdateSuggestions(
     })
   }
 
-  const newNodeCandidates = newPapers.filter((item) => item.suggestedAction === 'create_new_node')
+const newNodeCandidates = newPapers.filter((item) => item.suggestedAction === 'create_new_node')
   if (newNodeCandidates.length > 0) {
     suggestions.push({
       nodeId: 'new',
-      nodeTitle: '寤鸿鏂板缓鑺傜偣',
-      reason: `鍙戠幇 ${newNodeCandidates.length} 绡囬珮浠峰€煎€欓€夎鏂囷紝鍊煎緱鍗曠嫭璺熻繘`,
+      nodeTitle: '建议新建节点',
+      reason: `发现 ${newNodeCandidates.length} 篇高价值候选论文，值得单独追踪`,
       affectedPapers: newNodeCandidates.map((item) => item.paperId),
       suggestedChanges: newNodeCandidates.map((item) => ({
         type: 'restructure',
-        description: `涓恒€?{item.title}銆嬪垱寤烘柊鑺傜偣`,
+        description: `为「${item.title}」创建新节点`,
       })),
     })
   }

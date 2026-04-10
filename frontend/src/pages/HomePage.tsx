@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { ArrowRight, Plus } from 'lucide-react'
 
 import { TopicBuilderDialog } from '@/components/TopicBuilderDialog'
+import { OnboardingTour } from '@/components/OnboardingTour'
 import { getTopicDisplay } from '@/data/topicDisplay'
 import { useTopicRegistry } from '@/hooks'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
@@ -142,6 +143,7 @@ export function HomePage() {
 
   return (
     <>
+      <OnboardingTour />
       <TopicBuilderDialog open={builderOpen} onClose={closeBuilder} />
 
       <main className="px-4 pb-24 pt-10 md:px-6 xl:px-10">
@@ -172,6 +174,7 @@ export function HomePage() {
               <button
                 type="button"
                 onClick={() => setBuilderOpen(true)}
+                data-onboarding="create-topic"
                 className="inline-flex shrink-0 items-center gap-2 rounded-full border border-black/10 bg-white px-4 py-2.5 text-sm text-black/68 transition hover:border-black/18 hover:text-black"
               >
                 <Plus className="h-4 w-4" />

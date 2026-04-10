@@ -77,6 +77,15 @@
 
 支持对论文中的图片、表格、公式进行深度分析，提取关键信息，辅助理解研究方法与结论。
 
+### 🎯 新用户引导 | Onboarding Tour
+
+首次访问自动显示交互式引导流程，帮助新用户快速上手：
+- 5 步引导覆盖核心功能
+- 支持跳过、重播
+- 8 语言本地化
+
+> Interactive onboarding tour auto-shows on first visit, helping new users get started quickly with 5 guided steps covering core features.
+
 ### 🔧 灵活的多模态配置 | Flexible Multimodal Configuration
 
 支持多种大模型 API 配置：
@@ -280,10 +289,64 @@ npm test
 | 前端 | React 18, TypeScript, Vite, TailwindCSS, MUI, React Router, i18next |
 | 后端 | Node.js, Express, TypeScript, Prisma ORM |
 | 数据库 | SQLite (开发) / PostgreSQL (生产) |
+| 缓存 | Redis (可选，用于会话持久化) |
 | 实时通信 | WebSocket |
 | AI 模型 | OpenAI GPT-4V, Anthropic Claude 3, Google Gemini, Ollama |
 | PDF 处理 | PyMuPDF, pdf-extract |
 | 搜索 | Semantic Scholar API |
+
+---
+
+## 🐳 Docker 部署 | Docker Deployment
+
+### 快速启动 | Quick Start
+
+```bash
+# 克隆仓库
+git clone https://github.com/yourusername/tracemind.git
+cd tracemind
+
+# 创建环境变量文件
+cp skills-backend/.env.example .env
+# 编辑 .env 填入你的 API Key
+
+# 构建并启动所有服务
+docker-compose up --build -d
+
+# 查看日志
+docker-compose logs -f
+
+# 停止服务
+docker-compose down
+```
+
+### 服务说明 | Services
+
+| 服务 | 端口 | 说明 |
+|------|------|------|
+| frontend | 80 | Nginx 静态文件服务 + API 代理 |
+| backend | 3303 | Express API 服务 (内部) |
+| postgres | 5432 | PostgreSQL 数据库 (内部) |
+| redis | 6379 | Redis 缓存 (内部) |
+
+### 环境变量 | Environment Variables
+
+```env
+# 数据库
+POSTGRES_USER=tracemind
+POSTGRES_PASSWORD=tracemind123
+POSTGRES_DB=tracemind
+
+# Redis (可选)
+REDIS_URL=redis://redis:6379
+REDIS_ENABLED=true
+
+# AI Provider API Keys
+OPENAI_API_KEY=sk-xxxxx
+ANTHROPIC_API_KEY=sk-ant-xxxxx
+GOOGLE_API_KEY=xxxxx
+S2_API_KEY=xxxxx
+```
 
 ---
 
