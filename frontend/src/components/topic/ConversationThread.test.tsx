@@ -70,7 +70,9 @@ describe('ConversationThread guidance receipts', () => {
     expect(screen.getByTestId('guidance-receipt')).toHaveTextContent('Next run')
     expect(screen.getByTestId('guidance-receipt')).toHaveTextContent('Accepted')
     expect(screen.getByTestId('guidance-receipt')).toHaveTextContent('You raised')
-    expect(screen.getByTestId('guidance-receipt')).toHaveTextContent('I will handle')
+    expect(screen.getByTestId('guidance-receipt')).toHaveTextContent(
+      'The next run will stay on RLHF alternatives before widening the topic again.',
+    )
   })
 
   it('shows the receipt CTA and seeds the composer prompt without auto-sending', () => {

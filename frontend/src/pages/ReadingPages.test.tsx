@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import JSZip from 'jszip'
+import { saveAs } from 'file-saver'
 
 import { ReadingWorkspaceProvider } from '@/contexts/ReadingWorkspaceContext'
 import { I18nProvider } from '@/i18n'
@@ -22,8 +24,22 @@ vi.mock('@/utils/api', async () => {
   }
 })
 
+vi.mock('file-saver', () => ({
+  saveAs: vi.fn(),
+}))
+
 vi.mock('@/components/topic/RightSidebarShell', () => ({
-  RightSidebarShell: ({ onOpenCitation }: { onOpenCitation: (citation: { anchorId: string; type: 'figure'; route: string; label: string; quote: string }) => void }) => (
+  RightSidebarShell: ({
+    onOpenCitation,
+  }: {
+    onOpenCitation: (citation: {
+      anchorId: string
+      type: 'figure'
+      route: string
+      label: string
+      quote: string
+    }) => void
+  }) => (
     <div data-testid="sidebar-shell-stub">
       <button
         type="button"
@@ -45,6 +61,7 @@ vi.mock('@/components/topic/RightSidebarShell', () => ({
 }))
 
 const apiGetMock = vi.mocked(apiGet)
+const saveAsMock = vi.mocked(saveAs)
 
 function renderWithProviders(
   node: ReactNode,
@@ -130,7 +147,7 @@ function makePaperViewModel(): PaperViewModel {
           id: 'flow-1',
           type: 'text',
           title: 'Lead',
-          body: ['paper-1《Paper title》 appears in node-1「Node title」 as a core reference.'],
+          body: ['paper-1《Paper title》 appears in node-1《Node title》 as a core reference.'],
         },
         {
           id: 'flow-table',
@@ -172,6 +189,8 @@ function makeNodeViewModel(): NodeViewModel {
       authors: ['Author'],
       publishedAt: '2026-04-01T00:00:00.000Z',
       citationCount: 3,
+      originalUrl: 'https://example.com/paper-one',
+      pdfUrl: 'https://example.com/paper-one.pdf',
       introduction: 'Enhanced introduction for Paper one.',
       subsections: [
         {
@@ -188,6 +207,53 @@ function makeNodeViewModel(): NodeViewModel {
       totalWordCount: 120,
       readingTimeMinutes: 1,
       anchorId: 'paper:paper-1',
+    },
+    {
+      type: 'paper-transition',
+      id: 'paper-transition-1-2',
+      fromPaperId: 'paper-1',
+      fromPaperTitle: 'Paper one',
+      toPaperId: 'paper-2',
+      toPaperTitle: 'Paper two',
+      content: 'Paper two extends the same line with a broader evidence surface.',
+      transitionType: 'scope-broaden',
+      anchorId: 'transition-paper-1-paper-2',
+    },
+    {
+      type: 'paper-article',
+      id: 'paper-2-article',
+      paperId: 'paper-2',
+      role: 'extension',
+      title: 'Paper two',
+      titleEn: 'Paper two',
+      authors: ['Author', 'Author Two'],
+      publishedAt: '2026-04-02T00:00:00.000Z',
+      citationCount: 1,
+      originalUrl: 'https://example.com/paper-two',
+      pdfUrl: 'https://example.com/paper-two.pdf',
+      introduction: 'Enhanced introduction for Paper two.',
+      subsections: [
+        {
+          kind: 'results',
+          title: 'Results',
+          titleEn: 'Results',
+          content: 'Enhanced results walkthrough for Paper two.',
+          wordCount: 46,
+          keyPoints: ['Key results point'],
+          evidenceIds: [],
+        },
+      ],
+      conclusion: 'Enhanced conclusion for Paper two.',
+      totalWordCount: 126,
+      readingTimeMinutes: 1,
+      anchorId: 'paper:paper-2',
+    },
+    {
+      type: 'closing',
+      id: 'node-closing-enhanced',
+      title: 'Conclusion',
+      content: 'Meaningful closing point.',
+      keyTakeaways: ['The node now reads as one continuous article.'],
     },
   ]
 
@@ -216,7 +282,8 @@ function makeNodeViewModel(): NodeViewModel {
       tableCount: 0,
       formulaCount: 0,
     },
-    standfirst: 'If readers still cannot tell what each paper did, the node organization is still not successful.',
+    standfirst:
+      'If readers still cannot tell what each paper did, the node organization is still not successful.',
     paperRoles: [
       {
         paperId: 'paper-1',
@@ -227,12 +294,14 @@ function makeNodeViewModel(): NodeViewModel {
         publishedAt: '2026-04-01T00:00:00.000Z',
         role: 'Core paper',
         contribution: 'Paper one contribution',
+        authors: ['Author'],
+        citationCount: 3,
         figuresCount: 1,
         tablesCount: 0,
         formulasCount: 0,
         coverImage: null,
-        originalUrl: 'https://arxiv.org/abs/2604.00001',
-        pdfUrl: 'https://arxiv.org/pdf/2604.00001.pdf',
+        originalUrl: 'https://example.com/paper-one',
+        pdfUrl: 'https://example.com/paper-one.pdf',
       },
       {
         paperId: 'paper-2',
@@ -243,6 +312,8 @@ function makeNodeViewModel(): NodeViewModel {
         publishedAt: '2026-04-02T00:00:00.000Z',
         role: 'Supporting paper',
         contribution: 'Paper two contribution',
+        authors: ['Author', 'Author Two'],
+        citationCount: 1,
         figuresCount: 0,
         tablesCount: 0,
         formulasCount: 0,
@@ -260,7 +331,7 @@ function makeNodeViewModel(): NodeViewModel {
           id: 'node-intro',
           type: 'text',
           title: 'Lead',
-          body: ['node-1「Node title」 builds on paper-1《Paper one》 to establish the mainline.'],
+          body: ['node-1《Node title》 builds on paper-1《Paper one》 to establish the mainline.'],
         },
         {
           id: 'paper-break-paper-1',
@@ -272,8 +343,8 @@ function makeNodeViewModel(): NodeViewModel {
           contribution: 'Paper one contribution',
           route: '/paper/paper-1',
           publishedAt: '2026-04-01T00:00:00.000Z',
-          originalUrl: 'https://arxiv.org/abs/2604.00001',
-          pdfUrl: 'https://arxiv.org/pdf/2604.00001.pdf',
+          originalUrl: 'https://example.com/paper-one',
+          pdfUrl: 'https://example.com/paper-one.pdf',
         },
         {
           id: 'paper-break-paper-2',
@@ -346,13 +417,16 @@ describe('Reading pages resilience', () => {
     expect(await screen.findByText('Node unavailable')).toBeInTheDocument()
   })
 
-  it('renders paper source links and supports batch import actions on the node page', async () => {
-    const clipboardWriteText = vi.fn().mockResolvedValue(undefined)
-    Object.assign(navigator, {
-      clipboard: {
-        writeText: clipboardWriteText,
-      },
-    })
+  it('renders a continuous node article with a paper bundle, references, and batch PDF download', async () => {
+    const fetchMock = vi.fn(async () => ({
+      blob: async () => new Blob(['pdf-bytes'], { type: 'application/pdf' }),
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const zipFileSpy = vi.spyOn(JSZip.prototype, 'file')
+    const zipGenerateSpy = vi.spyOn(JSZip.prototype, 'generateAsync').mockResolvedValue(
+      new Blob(['zip-bytes'], { type: 'application/zip' }),
+    )
+
     sessionStorage.setItem(
       'reading-workspace:v1',
       JSON.stringify({
@@ -378,16 +452,8 @@ describe('Reading pages resilience', () => {
     renderWithProviders(<NodePage />, '/node/node-1', '/node/:nodeId')
 
     expect(await screen.findByTestId('node-reading')).toBeVisible()
-    expect(screen.getByText('Stage-locked article')).toBeVisible()
-    expect(
-      screen.getByText(
-        'This node article keeps only the papers, figures, tables, and formulas that belong to 2026.04. If the topic cadence changes, adjust it from Topic Management instead of rewriting the reading surface here.',
-      ),
-    ).toBeVisible()
-    expect(screen.getByRole('link', { name: 'Manage topic cadence' })).toHaveAttribute(
-      'href',
-      '/manage/topics',
-    )
+    expect(screen.queryByText('Stage-locked article')).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Manage topic cadence' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Back to Topic' })).toHaveAttribute(
       'href',
       '/topic/topic-1?anchor=node%3Anode-1&stageMonths=1',
@@ -397,51 +463,75 @@ describe('Reading pages resilience', () => {
       'href',
       '/node/node-1?anchor=paper%3Apaper-1&stageMonths=1',
     )
-    expect(screen.getByRole('heading', { name: 'Paper one' })).toBeVisible()
-    expect(screen.getByRole('link', { name: 'Original source' })).toHaveAttribute(
-      'href',
-      'https://example.com/paper-two',
-    )
-    expect(screen.getByRole('link', { name: 'Download PDF' })).toHaveAttribute(
-      'href',
-      'https://example.com/paper-two.pdf',
-    )
+
+    const articleFlow = screen.getByTestId('node-article-flow')
+    expect(within(articleFlow).getByText('Enhanced introduction for Paper one.')).toBeVisible()
+    expect(
+      within(articleFlow).queryByRole('link', { name: 'Original source' }),
+    ).not.toBeInTheDocument()
+    expect(within(articleFlow).queryByRole('link', { name: 'Download PDF' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('node-paper-bundle-trigger'))
+    const paperBundle = await screen.findByTestId('node-paper-bundle')
+    expect(within(paperBundle).getByText('Paper bundle')).toBeVisible()
 
     fireEvent.click(screen.getByRole('button', { name: 'Select all papers' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Copy import links' }))
+    const downloadButton = screen.getByRole('button', { name: 'Download 2 PDFs' })
+    expect(downloadButton).toBeEnabled()
+    fireEvent.click(downloadButton)
 
     await waitFor(() => {
-      expect(clipboardWriteText).toHaveBeenCalledWith(
-        ['https://arxiv.org/abs/2604.00001', 'https://example.com/paper-two'].join('\n'),
-      )
+      expect(fetchMock).toHaveBeenCalledTimes(2)
     })
 
-    expect(screen.getByRole('button', { name: 'Download 2 PDFs' })).toBeEnabled()
-    const methodToggle = screen.getByRole('button', { name: /Method/i })
-    expect(methodToggle).toBeVisible()
-    expect(screen.queryByText('Enhanced method walkthrough.')).not.toBeInTheDocument()
-    fireEvent.click(methodToggle)
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      'https://example.com/paper-one.pdf',
+    )
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      'https://example.com/paper-two.pdf',
+    )
+    expect(zipFileSpy).toHaveBeenCalledTimes(2)
+    expect(zipGenerateSpy).toHaveBeenCalledTimes(1)
+    expect(saveAsMock).toHaveBeenCalledTimes(1)
+
     expect(screen.getByText('Enhanced method walkthrough.')).toBeVisible()
-    expect(screen.getByText('0.91')).toBeVisible()
-    expect(screen.getAllByText(/establish the mainline/i).length).toBe(1)
+    expect(screen.getByText('Paper two extends the same line with a broader evidence surface.')).toBeVisible()
+    expect(screen.getByText('Enhanced results walkthrough for Paper two.')).toBeVisible()
+    expect(screen.getByText('Meaningful closing point.')).toBeVisible()
+    expect(screen.getByText('The node now reads as one continuous article.')).toBeVisible()
+    const referencesHeading = screen.getByRole('heading', { name: 'Reference List' })
+    expect(referencesHeading).toBeVisible()
+    const referencesFooter = referencesHeading.closest('footer')
+    expect(referencesFooter).not.toBeNull()
+    const referencesList = within(referencesFooter!).getByRole('list')
+    expect(
+      within(referencesList).getAllByRole('link', { name: 'Download PDF' }).length,
+    ).toBe(2)
+    expect(
+      within(referencesList).getAllByRole('link', { name: 'Original source' }).length,
+    ).toBe(2)
     expect(
       screen.queryByText(/If readers still cannot tell what each paper did/i),
     ).not.toBeInTheDocument()
     expect(
-      screen.queryByText(/A good node should help the reader see the strongest evidence/i),
+      screen.queryByText(
+        'A good node should help the reader see the strongest evidence and the remaining gap.',
+      ),
     ).not.toBeInTheDocument()
-    expect(screen.getByText('Meaningful closing point.')).toBeVisible()
 
     await waitFor(() => {
       const stored = JSON.parse(sessionStorage.getItem('reading-workspace:v1') ?? '{}') as {
-        topicSurfaceByTopic?: Record<string, { mode: string }>
         trail?: Array<{ id: string; route: string }>
       }
-      expect(stored.topicSurfaceByTopic?.['topic-1']?.mode).toBe('graph')
       expect(stored.trail?.find((entry) => entry.id === 'topic:topic-1')?.route).toBe(
         '/topic/topic-1?anchor=node%3Anode-1&stageMonths=1',
       )
     })
+
+    zipFileSpy.mockRestore()
+    zipGenerateSpy.mockRestore()
+    vi.unstubAllGlobals()
   })
 
   it('keeps the node reading surface stable when a sidebar citation evidence request fails', async () => {
@@ -503,8 +593,8 @@ describe('Reading pages resilience', () => {
   })
 
   it('shows the paper unavailable state when the paper view model request fails', async () => {
-    apiGetMock.mockImplementation(async (path: string) => {
-      throw new Error(`Unexpected GET ${path}`)
+    apiGetMock.mockImplementation(async () => {
+      throw new Error('paper fetch failed')
     })
 
     renderWithProviders(<PaperPage />, '/paper/paper-1', '/paper/:paperId')

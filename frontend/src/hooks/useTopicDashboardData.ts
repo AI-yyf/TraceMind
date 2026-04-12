@@ -2,12 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import type { TopicDashboard as TopicDashboardData } from '@/types/article'
 import { ApiError, apiGet } from '@/utils/api'
-import type { TopicSurfaceMode } from '@/components/topic/TopicSurfaceModeSwitch'
-
-type TopicDashboardResponse = {
-  success: boolean
-  data: TopicDashboardData
-}
+import { withOptionalStageWindowQuery } from '@/utils/stageWindow'
 
 export type TopicDashboardLoadState =
   | { status: 'idle' | 'loading'; data: null; error: null }
@@ -22,8 +17,9 @@ const idleState: TopicDashboardLoadState = {
 
 export function useTopicDashboardData(
   topicId: string,
-  mode: TopicSurfaceMode,
+  enabled: boolean,
   fallbackErrorMessage: string,
+  stageWindowMonths?: number | null,
 ) {
   const [state, setState] = useState<TopicDashboardLoadState>(idleState)
   const [requestKey, setRequestKey] = useState(0)
@@ -31,20 +27,21 @@ export function useTopicDashboardData(
   useEffect(() => {
     setState(idleState)
     setRequestKey(0)
-  }, [topicId])
+  }, [stageWindowMonths, topicId])
 
   useEffect(() => {
-    if (mode !== 'dashboard' || !topicId) return
-    if (state.status === 'ready' || state.status === 'loading') return
+    if (!enabled || !topicId) return
 
     let alive = true
     setState({ status: 'loading', data: null, error: null })
 
-    apiGet<TopicDashboardResponse>(`/api/topics/${topicId}/dashboard`)
+    apiGet<TopicDashboardData>(
+      withOptionalStageWindowQuery(`/api/topics/${topicId}/dashboard`, stageWindowMonths),
+    )
       .then((response) => {
         if (!alive) return
-        if (response?.success && response.data) {
-          setState({ status: 'ready', data: response.data, error: null })
+        if (response) {
+          setState({ status: 'ready', data: response, error: null })
           return
         }
 
@@ -66,7 +63,7 @@ export function useTopicDashboardData(
     return () => {
       alive = false
     }
-  }, [fallbackErrorMessage, mode, requestKey, topicId])
+  }, [enabled, fallbackErrorMessage, requestKey, stageWindowMonths, topicId])
 
   const reload = useCallback(() => {
     setState(idleState)

@@ -1,4 +1,4 @@
-import { type Dispatch, type SetStateAction, useEffect, useMemo, useState } from 'react'
+import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   ArrowRight,
@@ -372,8 +372,11 @@ export function ResearchPage() {
     [preference, topics],
   )
 
-  const formatTaskLabel = (task: TaskConfig) =>
-    formatTaskDisplayName(task, (task.topicId ? topicLabelById.get(task.topicId) : '') ?? '', t)
+  const formatTaskLabel = useCallback(
+    (task: TaskConfig) =>
+      formatTaskDisplayName(task, (task.topicId ? topicLabelById.get(task.topicId) : '') ?? '', t),
+    [t, topicLabelById],
+  )
 
   const visibleTasks = useMemo(() => {
     let filtered =

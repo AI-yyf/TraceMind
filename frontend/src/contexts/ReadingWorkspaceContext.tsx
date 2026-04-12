@@ -1,6 +1,4 @@
 import {
-  createContext,
-  useContext,
   useCallback,
   useEffect,
   useMemo,
@@ -9,63 +7,25 @@ import {
   type PropsWithChildren,
 } from 'react'
 
-import type { ContextPill, TopicWorkbenchTab } from '@/types/alpha'
+import type { ContextPill } from '@/types/alpha'
+import {
+  ReadingWorkspaceContext,
+  type ReadingTrailEntry,
+  type ReadingWorkspaceContextValue,
+  type ReadingWorkspaceState,
+  type TopicSurfaceState,
+  type TopicWorkbenchState,
+} from './readingWorkspaceShared'
 
-type WorkbenchStyle = 'brief' | 'balanced' | 'deep'
-export type TopicSurfaceModePreference = 'graph' | 'dashboard'
-
-export type ReadingTrailEntry = {
-  id: string
-  kind: 'topic' | 'node' | 'paper'
-  topicId?: string
-  nodeId?: string
-  paperId?: string
-  title: string
-  route: string
-  updatedAt: string
-}
-
-type TopicWorkbenchState = {
-  open: boolean
-  activeTab: TopicWorkbenchTab
-  historyOpen: boolean
-  searchEnabled: boolean
-  thinkingEnabled: boolean
-  style: WorkbenchStyle
-  contextPills: ContextPill[]
-}
-
-type TopicSurfaceState = {
-  mode: TopicSurfaceModePreference
-}
-
-type ReadingWorkspaceState = {
-  trail: ReadingTrailEntry[]
-  workbenchByTopic: Record<string, TopicWorkbenchState>
-  topicSurfaceByTopic: Record<string, TopicSurfaceState>
-  pageScroll: Record<string, number>
-}
-
-type ReadingWorkspaceContextValue = {
-  state: ReadingWorkspaceState
-  rememberTrail: (entry: Omit<ReadingTrailEntry, 'updatedAt'>) => void
-  getTopicWorkbenchState: (topicId: string) => TopicWorkbenchState
-  patchTopicWorkbenchState: (
-    topicId: string,
-    patch:
-      | Partial<TopicWorkbenchState>
-      | ((current: TopicWorkbenchState) => TopicWorkbenchState),
-  ) => void
-  getTopicSurfaceState: (topicId: string) => TopicSurfaceState
-  patchTopicSurfaceState: (
-    topicId: string,
-    patch:
-      | Partial<TopicSurfaceState>
-      | ((current: TopicSurfaceState) => TopicSurfaceState),
-  ) => void
-  rememberPageScroll: (key: string, value: number) => void
-  getPageScroll: (key: string) => number | null
-}
+export type {
+  ReadingTrailEntry,
+  ReadingWorkspaceContextValue,
+  ReadingWorkspaceState,
+  TopicSurfaceModePreference,
+  TopicSurfaceState,
+  TopicWorkbenchState,
+  WorkbenchStyle,
+} from './readingWorkspaceShared'
 
 const storageKey = 'reading-workspace:v1'
 
@@ -82,8 +42,6 @@ const defaultTopicWorkbenchState = (): TopicWorkbenchState => ({
 const defaultTopicSurfaceState = (): TopicSurfaceState => ({
   mode: 'graph',
 })
-
-const ReadingWorkspaceContext = createContext<ReadingWorkspaceContextValue | null>(null)
 
 function areContextPillsEqual(left: ContextPill[], right: ContextPill[]) {
   if (left === right) return true
@@ -367,44 +325,4 @@ export function ReadingWorkspaceProvider({ children }: PropsWithChildren) {
       {children}
     </ReadingWorkspaceContext.Provider>
   )
-}
-
-export function useReadingWorkspace() {
-  const context = useContext(ReadingWorkspaceContext)
-  if (!context) {
-    throw new Error('useReadingWorkspace must be used within ReadingWorkspaceProvider')
-  }
-  return context
-}
-
-export function usePageScrollRestoration(
-  pageKey: string,
-  options?: {
-    enabled?: boolean
-    skipInitialRestore?: boolean
-  },
-) {
-  const { rememberPageScroll, getPageScroll } = useReadingWorkspace()
-  const enabled = options?.enabled ?? true
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || !enabled) return
-
-    if (!options?.skipInitialRestore) {
-      const saved = getPageScroll(pageKey)
-      if (typeof saved === 'number' && saved > 0) {
-        window.requestAnimationFrame(() => {
-          window.scrollTo({ top: saved, behavior: 'auto' })
-        })
-      }
-    }
-
-    const onScroll = () => rememberPageScroll(pageKey, window.scrollY)
-    window.addEventListener('scroll', onScroll, { passive: true })
-
-    return () => {
-      rememberPageScroll(pageKey, window.scrollY)
-      window.removeEventListener('scroll', onScroll)
-    }
-  }, [enabled, getPageScroll, options?.skipInitialRestore, pageKey, rememberPageScroll])
 }

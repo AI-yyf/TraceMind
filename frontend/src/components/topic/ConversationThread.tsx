@@ -114,7 +114,7 @@ export function ConversationThread({
   const { t } = useI18n()
 
   return (
-    <div data-testid="conversation-thread" className="space-y-5">
+    <div data-testid="conversation-thread" className="space-y-3">
       {messages.map((message) => {
         const assistant = message.role === 'assistant'
         const guidanceReceipt = assistant ? message.guidanceReceipt ?? null : null
@@ -124,12 +124,12 @@ export function ConversationThread({
 
         return (
           <div key={message.id} className={`flex ${assistant ? 'justify-start' : 'justify-end'}`}>
-            <article className={`max-w-[88%] ${assistant ? 'items-start' : 'items-end'} flex flex-col`}>
+            <article className={`max-w-[92%] ${assistant ? 'items-start' : 'items-end'} flex flex-col`}>
               <div
-                className={`rounded-[24px] px-4 py-4 text-[14px] leading-7 shadow-[0_10px_24px_rgba(15,23,42,0.04)] ${
+                className={`rounded-[16px] px-3 py-2.5 text-[13px] leading-6 shadow-[0_4px_14px_rgba(15,23,42,0.04)] ${
                   assistant
                     ? guidanceReceipt
-                      ? 'border border-sky-200/70 bg-white text-black/74'
+                      ? 'border border-sky-200/60 bg-white text-black/74'
                       : 'bg-[var(--surface-soft)] text-black/74'
                     : 'bg-black text-white'
                 }`}
@@ -139,7 +139,7 @@ export function ConversationThread({
 
               {message.notice ? (
                 <div
-                  className={`mt-3 rounded-[18px] px-4 py-3 text-[12px] leading-6 ${
+                  className={`mt-2 rounded-[14px] px-3 py-2 text-[11px] leading-5 ${
                     assistant ? 'bg-amber-50 text-amber-900' : 'bg-white/10 text-white/88'
                   }`}
                 >
@@ -149,21 +149,26 @@ export function ConversationThread({
               ) : null}
 
               {guidanceReceipt ? (
-                <div
+                <details
                   data-testid="guidance-receipt"
-                  className="mt-3 rounded-[20px] border border-sky-200/80 bg-[linear-gradient(180deg,#f7fbff_0%,#ffffff_100%)] px-4 py-3 text-[12px] leading-6 text-black/72 shadow-[0_10px_24px_rgba(14,116,144,0.08)]"
+                  className="mt-2 rounded-[16px] border border-sky-200/70 bg-white px-3 py-2.5 text-[11px] leading-5 text-black/72"
                 >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-[10px] uppercase tracking-[0.16em] text-black/36">
-                      {t('workbench.guidanceReceiptTitle', 'Guidance receipt')}
+                  <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-black/36">
+                        {t('workbench.guidanceReceiptTitle', 'Guidance receipt')}
+                      </div>
+                      <p className="mt-1 text-[11px] leading-5 text-black/62">
+                        {guidanceReceipt.summary}
+                      </p>
                     </div>
 
                     <span className="rounded-full border border-black/8 bg-white/88 px-2.5 py-1 text-[10px] text-black/48">
                       {guidanceStatusLabel(guidanceReceipt.status, t)}
                     </span>
-                  </div>
+                  </summary>
 
-                  <div className="mt-2 space-y-2.5">
+                  <div className="mt-2 space-y-2">
                     <ReceiptRow label={t('workbench.guidanceReceiptRaised', 'You raised')}>
                       <div className="flex flex-wrap items-center gap-2">
                         <span
@@ -177,10 +182,6 @@ export function ConversationThread({
                           {guidanceReceipt.scopeLabel}
                         </span>
                       </div>
-                    </ReceiptRow>
-
-                    <ReceiptRow label={t('workbench.guidanceReceiptHandling', 'I will handle')}>
-                      <p className="text-[12px] leading-6 text-black/68">{guidanceReceipt.summary}</p>
                     </ReceiptRow>
 
                     {retainedJudgment ? (
@@ -206,23 +207,23 @@ export function ConversationThread({
                       type="button"
                       data-testid="guidance-receipt-cta"
                       onClick={() => onUsePrompt(guidanceReceipt.promptHint)}
-                      className="mt-3 inline-flex rounded-full bg-black px-3 py-1.5 text-[11px] font-medium text-white transition hover:bg-black/88"
+                      className="mt-2 inline-flex rounded-full bg-black px-2.5 py-1 text-[10px] font-medium text-white transition hover:bg-black/88"
                     >
                       {t('workbench.guidancePromptCta', 'Continue from this')}
                     </button>
                   ) : null}
-                </div>
+                </details>
               ) : null}
 
               {message.citations && message.citations.length > 0 ? (
-                <div className="mt-3 flex flex-wrap gap-2">
+                <div className="mt-2 flex flex-wrap gap-1.5">
                   {message.citations.map((citation) => (
                     <button
                       key={citation.anchorId}
                       type="button"
                       data-testid="assistant-citation"
                       onClick={() => onOpenCitation(citation)}
-                      className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-[11px] text-black/64 transition hover:border-black/18 hover:text-black"
+                      className="rounded-full border border-black/10 bg-white px-2.5 py-1 text-[10px] text-black/64 transition hover:border-black/18 hover:text-black"
                     >
                       {citation.label}
                     </button>
@@ -231,13 +232,13 @@ export function ConversationThread({
               ) : null}
 
               {message.suggestedActions && message.suggestedActions.length > 0 ? (
-                <div className="mt-3 flex flex-wrap gap-2">
+                <div className="mt-2 flex flex-wrap gap-1.5">
                   {message.suggestedActions.map((action) => (
                     <button
                       key={`${message.id}-${action.label}`}
                       type="button"
                       onClick={() => onAction(action)}
-                      className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-[11px] text-black/58 transition hover:border-black/18 hover:text-black"
+                      className="rounded-full border border-black/10 bg-white px-2.5 py-1 text-[10px] text-black/58 transition hover:border-black/18 hover:text-black"
                     >
                       {action.label}
                     </button>
@@ -246,11 +247,11 @@ export function ConversationThread({
               ) : null}
 
               {assistant && onSaveMessage ? (
-                <div className="mt-3 flex flex-wrap gap-2">
+                <div className="mt-2 flex flex-wrap gap-1.5">
                   <button
                     type="button"
                     onClick={() => onSaveMessage(message)}
-                    className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-[11px] text-black/58 transition hover:border-black/18 hover:text-black"
+                    className="rounded-full border border-black/10 bg-white px-2.5 py-1 text-[10px] text-black/58 transition hover:border-black/18 hover:text-black"
                   >
                     {t('workbench.saveMessage', 'Save to notes')}
                   </button>
@@ -272,9 +273,9 @@ function ReceiptRow({
   children: ReactNode
 }) {
   return (
-    <div className="rounded-[16px] bg-white/72 px-3 py-2.5">
+    <div className="rounded-[12px] bg-[var(--surface-soft)] px-2.5 py-2">
       <div className="text-[10px] uppercase tracking-[0.16em] text-black/34">{label}</div>
-      <div className="mt-1.5">{children}</div>
+      <div className="mt-1">{children}</div>
     </div>
   )
 }

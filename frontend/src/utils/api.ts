@@ -69,9 +69,23 @@ export function buildWsUrl(path = '/ws') {
 
 export function resolveApiAssetUrl(path?: string | null) {
   if (!path) return null
+  // Already absolute URL or data URI
   if (/^(https?:|data:)/iu.test(path)) return path
+  // Absolute Windows path - invalid for web
   if (/^[a-z]:[\\/]/iu.test(path)) return null
-  return buildApiUrl(path.startsWith('/') ? path : `/${path.replace(/^\.?[\\/]/u, '')}`)
+
+  // Normalize Windows backslashes to forward slashes
+  let normalizedPath = path.replace(/\\/gu, '/')
+
+  // Remove leading ./ or / or \
+  normalizedPath = normalizedPath.replace(/^\.?[/\\]/u, '')
+
+  // Add /uploads prefix if path starts with images/ (PDF extraction output)
+  if (normalizedPath.startsWith('images/')) {
+    normalizedPath = `uploads/${normalizedPath}`
+  }
+
+  return buildApiUrl(normalizedPath.startsWith('/') ? normalizedPath : `/${normalizedPath}`)
 }
 
 async function parseErrorResponse(response: Response): Promise<ApiErrorResponse> {
@@ -163,4 +177,16 @@ export async function apiGetWithRetry<T>(
   }
 
   throw lastError ?? new Error('Request failed')
+}
+
+export async function apiPatch<T, B = unknown>(path: string, body: B): Promise<T> {
+  const response = await fetch(buildApiUrl(path), {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  })
+
+  return handleResponse<T>(response)
 }

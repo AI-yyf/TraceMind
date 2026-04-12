@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -44,6 +44,13 @@ function renderWithProviders(node: ReactNode) {
       </ReadingWorkspaceProvider>
     </I18nProvider>,
   )
+}
+
+async function ensureWorkbenchVisible() {
+  const openButton = screen.queryByTestId('topic-workbench-open')
+  if (openButton) {
+    fireEvent.click(openButton)
+  }
 }
 
 describe('RightSidebarShell failure recovery', () => {
@@ -89,6 +96,9 @@ describe('RightSidebarShell failure recovery', () => {
         onOpenSearchResult={vi.fn()}
       />,
     )
+
+    fireEvent.click(await screen.findByTestId('topic-workbench-open'))
+    fireEvent.click(await screen.findByRole('button', { name: 'Show' }))
 
     const composer = await screen.findByTestId('assistant-composer-input')
     const draft = 'Keep this question available if the model call fails.'
@@ -142,6 +152,143 @@ describe('RightSidebarShell failure recovery', () => {
     })
   })
 
+  it('offers localized quick actions that prefill the composer draft', async () => {
+    sessionStorage.setItem(
+      'reading-workspace:v1',
+      JSON.stringify({
+        trail: [],
+        pageScroll: {},
+        workbenchByTopic: {
+          'topic-1': {
+            open: true,
+            activeTab: 'assistant',
+            historyOpen: false,
+            searchEnabled: true,
+            thinkingEnabled: true,
+            style: 'balanced',
+            contextPills: [],
+          },
+        },
+      }),
+    )
+
+    renderWithProviders(
+      <RightSidebarShell
+        topicId="topic-1"
+        topicTitle="Reliability topic"
+        suggestedQuestions={[]}
+        selectedEvidence={null}
+        onOpenCitation={vi.fn()}
+        onAction={vi.fn()}
+        onOpenSearchResult={vi.fn()}
+      />,
+    )
+
+    const suggestButton = await screen.findByRole('button', { name: 'Suggest' })
+    fireEvent.click(suggestButton)
+
+    expect(screen.getByTestId('assistant-composer-input')).toHaveValue(
+      'I suggest that your next research run strengthen the weakest point in the current mainline and explain why that shift matters.',
+    )
+  })
+
+  it('sends a quick action through chat and renders the returned guidance receipt', async () => {
+    sessionStorage.setItem(
+      'reading-workspace:v1',
+      JSON.stringify({
+        trail: [],
+        pageScroll: {},
+        workbenchByTopic: {
+          'topic-1': {
+            open: true,
+            activeTab: 'assistant',
+            historyOpen: false,
+            searchEnabled: true,
+            thinkingEnabled: true,
+            style: 'balanced',
+            contextPills: [],
+          },
+        },
+      }),
+    )
+
+    apiPostMock.mockResolvedValueOnce({
+      messageId: 'assistant-guidance-1',
+      answer: 'I accept your request and will strengthen the weakest point in the current mainline next.',
+      citations: [],
+      suggestedActions: [],
+      guidanceReceipt: {
+        classification: 'suggest',
+        directiveId: 'guidance-1',
+        directiveType: 'suggest',
+        status: 'accepted',
+        scopeLabel: 'Current topic',
+        summary:
+          'Accepted as an editorial preference for Current topic: strengthen the weakest point in the current mainline.',
+        effectWindow: 'next-run',
+        promptHint: 'Please explain how this will change the next research pass.',
+      },
+    })
+
+    renderWithProviders(
+      <RightSidebarShell
+        topicId="topic-1"
+        topicTitle="Reliability topic"
+        suggestedQuestions={[]}
+        selectedEvidence={null}
+        onOpenCitation={vi.fn()}
+        onAction={vi.fn()}
+        onOpenSearchResult={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Suggest' }))
+    fireEvent.click(screen.getByTestId('assistant-send-button'))
+
+    await waitFor(() => {
+      expect(apiPostMock).toHaveBeenCalledWith(
+        '/api/topics/topic-1/chat',
+        expect.objectContaining({
+          question: expect.stringContaining(
+            'I suggest that your next research run strengthen the weakest point in the current mainline and explain why that shift matters.',
+          ),
+        }),
+      )
+    })
+
+    const receipt = await screen.findByTestId('guidance-receipt')
+    expect(within(receipt).getByText('Guidance receipt')).toBeInTheDocument()
+    expect(within(receipt).getByText('Suggest')).toBeInTheDocument()
+    expect(within(receipt).getByText('Current topic')).toBeInTheDocument()
+    expect(
+      within(receipt).getByText(
+        'Accepted as an editorial preference for Current topic: strengthen the weakest point in the current mainline.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('auto-opens the workbench by default on ultra-wide first visit', async () => {
+    vi.stubGlobal('innerWidth', 1800)
+
+    renderWithProviders(
+      <RightSidebarShell
+        topicId="topic-1"
+        topicTitle="Reliability topic"
+        suggestedQuestions={[]}
+        selectedEvidence={null}
+        onOpenCitation={vi.fn()}
+        onAction={vi.fn()}
+        onOpenSearchResult={vi.fn()}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('topic-workbench-open')).not.toBeInTheDocument()
+    })
+
+    expect(screen.getByTestId('right-sidebar-shell')).toBeInTheDocument()
+  })
+
   it('keeps the current reading focus visible and injects it into chat grounding by default', async () => {
     sessionStorage.setItem(
       'reading-workspace:v1',
@@ -190,6 +337,7 @@ describe('RightSidebarShell failure recovery', () => {
       />,
     )
 
+    fireEvent.click(await screen.findByRole('button', { name: 'Show' }))
     expect(await screen.findByTestId('current-reading-focus')).toHaveTextContent('Node focus')
 
     fireEvent.change(screen.getByTestId('assistant-composer-input'), {
@@ -280,7 +428,8 @@ describe('RightSidebarShell failure recovery', () => {
       />,
     )
 
-    fireEvent.click(await screen.findByTestId('topic-workbench-open'))
+    await ensureWorkbenchVisible()
+    fireEvent.click(await screen.findByRole('button', { name: 'Show' }))
     expect(await screen.findByTestId('topic-research-intel-empty')).toBeVisible()
     expect(screen.getByText('No persistent intel yet')).toBeInTheDocument()
     expect(
@@ -288,5 +437,85 @@ describe('RightSidebarShell failure recovery', () => {
         'This topic already has a live workbench, but the backend has not written a stable thesis, absorbed guidance, or calibration memory here yet.',
       ),
     ).toBeVisible()
+  })
+
+  it('keeps compact map workbench focused on assistant and notes, and only shows the composer on assistant', async () => {
+    renderWithProviders(
+      <RightSidebarShell
+        topicId="topic-1"
+        topicTitle="Reliability topic"
+        suggestedQuestions={[]}
+        selectedEvidence={null}
+        onOpenCitation={vi.fn()}
+        onAction={vi.fn()}
+        onOpenSearchResult={vi.fn()}
+        surfaceMode="map"
+      />,
+    )
+
+    await ensureWorkbenchVisible()
+
+    expect(screen.getByTestId('sidebar-tab-assistant')).toBeInTheDocument()
+    expect(screen.getByTestId('sidebar-tab-notes')).toBeInTheDocument()
+    expect(screen.queryByTestId('sidebar-tab-similar')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('sidebar-tab-resources')).not.toBeInTheDocument()
+    expect(screen.getByTestId('assistant-composer-input')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('sidebar-tab-notes'))
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('assistant-composer-input')).not.toBeInTheDocument()
+    })
+  })
+
+  it('keeps context collapsed by default in compact map workbench while preserving the current reading focus summary', async () => {
+    sessionStorage.setItem(
+      'reading-workspace:v1',
+      JSON.stringify({
+        trail: [
+          {
+            id: 'node:node-1',
+            kind: 'node',
+            topicId: 'topic-1',
+            nodeId: 'node-1',
+            title: 'Node focus',
+            route: '/node/node-1?stageMonths=1',
+            updatedAt: '2026-04-08T00:00:00.000Z',
+          },
+        ],
+        pageScroll: {},
+        workbenchByTopic: {
+          'topic-1': {
+            open: true,
+            activeTab: 'assistant',
+            historyOpen: false,
+            searchEnabled: true,
+            thinkingEnabled: true,
+            style: 'balanced',
+            contextPills: [],
+          },
+        },
+      }),
+    )
+
+    renderWithProviders(
+      <RightSidebarShell
+        topicId="topic-1"
+        topicTitle="Reliability topic"
+        suggestedQuestions={[]}
+        selectedEvidence={null}
+        onOpenCitation={vi.fn()}
+        onAction={vi.fn()}
+        onOpenSearchResult={vi.fn()}
+        surfaceMode="map"
+      />,
+    )
+
+    expect(await screen.findByText('Current focus: Node focus')).toBeVisible()
+    expect(screen.queryByTestId('current-reading-focus')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Context/i }))
+
+    expect(await screen.findByTestId('current-reading-focus')).toHaveTextContent('Node focus')
   })
 })

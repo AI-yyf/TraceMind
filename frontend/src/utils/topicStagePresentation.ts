@@ -9,6 +9,8 @@ type StageBadgeLabelInput = StageChronology & {
   fallbackLabel?: string | null
 }
 
+const STAGE_DATE_RANGE_RE = /^(?:\d{4}\.\d{2})(?:\s*[-–]\s*\d{4}\.\d{2})?$/u
+
 const MECHANICAL_STAGE_PATTERNS = [
   /^\s*stage\s*[-:]?\s*(?:\d+|[ivx]+)\s*$/iu,
   /^\s*(?:etapa|etape|étape|stufe|этап)\s*[-:]?\s*(?:\d+|[ivx]+)\s*$/iu,
@@ -24,6 +26,12 @@ export function isMechanicalStageTitle(value: string | null | undefined) {
   return MECHANICAL_STAGE_PATTERNS.some((pattern) => pattern.test(text))
 }
 
+export function looksLikeStageDateRange(value: string | null | undefined) {
+  const text = value?.replace(/\s+/gu, ' ').trim() ?? ''
+  if (!text) return false
+  return STAGE_DATE_RANGE_RE.test(text)
+}
+
 export function pickStageChronologyLabel(stage: StageChronology) {
   return [stage.dateLabel, stage.timeLabel, stage.yearLabel]
     .map((value) => value?.trim() ?? '')
@@ -32,7 +40,7 @@ export function pickStageChronologyLabel(stage: StageChronology) {
 
 export function pickStageNarrativeTitle(value: string | null | undefined) {
   const text = value?.replace(/\s+/gu, ' ').trim() ?? ''
-  if (!text || isMechanicalStageTitle(text)) return ''
+  if (!text || isMechanicalStageTitle(text) || looksLikeStageDateRange(text)) return ''
   return text
 }
 

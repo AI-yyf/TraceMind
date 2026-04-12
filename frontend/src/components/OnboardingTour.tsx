@@ -11,7 +11,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
-import { getCache, setCache } from '../utils/storage'
+import { setItem, getItem } from '../utils/storage'
 
 const ONBOARDING_KEY = 'tracemind:onboarding:completed'
 const ONBOARDING_VERSION = 1
@@ -79,8 +79,8 @@ export function OnboardingTour({ forceShow = false, onComplete, onSkip }: Onboar
       return
     }
 
-    const cached = getCache<{ completed: boolean; version: number }>(ONBOARDING_KEY)
-    if (!cached || cached.version !== ONBOARDING_VERSION || !cached.completed) {
+    const cached = getItem<{ completed: boolean; version: number }>(ONBOARDING_KEY)
+    if (!cached || cached.version !== ONBOARDING_VERSION || cached.completed !== true) {
       // 延迟显示，等待页面加载完成
       const timer = setTimeout(() => setIsVisible(true), 1000)
       return () => clearTimeout(timer)
@@ -109,13 +109,19 @@ export function OnboardingTour({ forceShow = false, onComplete, onSkip }: Onboar
     return () => window.removeEventListener('resize', updatePosition)
   }, [isVisible, currentStepIndex])
 
+  const handleComplete = useCallback(() => {
+    setIsVisible(false)
+    setItem(ONBOARDING_KEY, { completed: true, version: ONBOARDING_VERSION })
+    onComplete?.()
+  }, [onComplete])
+
   const handleNext = useCallback(() => {
     if (currentStepIndex < ONBOARDING_STEPS.length - 1) {
       setCurrentStepIndex((prev) => prev + 1)
     } else {
       handleComplete()
     }
-  }, [currentStepIndex])
+  }, [currentStepIndex, handleComplete])
 
   const handlePrevious = useCallback(() => {
     if (currentStepIndex > 0) {
@@ -125,15 +131,9 @@ export function OnboardingTour({ forceShow = false, onComplete, onSkip }: Onboar
 
   const handleSkip = useCallback(() => {
     setIsVisible(false)
-    setCache(ONBOARDING_KEY, { completed: true, version: ONBOARDING_VERSION })
+    setItem(ONBOARDING_KEY, { completed: true, version: ONBOARDING_VERSION })
     onSkip?.()
   }, [onSkip])
-
-  const handleComplete = useCallback(() => {
-    setIsVisible(false)
-    setCache(ONBOARDING_KEY, { completed: true, version: ONBOARDING_VERSION })
-    onComplete?.()
-  }, [onComplete])
 
   if (!isVisible) return null
 
@@ -278,17 +278,6 @@ export function OnboardingTour({ forceShow = false, onComplete, onSkip }: Onboar
       </motion.div>
     </AnimatePresence>
   )
-}
-
-// 重置 onboarding 状态（用于开发/测试）
-export function resetOnboarding() {
-  localStorage.removeItem(ONBOARDING_KEY)
-}
-
-// 检查是否已完成 onboarding
-export function hasCompletedOnboarding(): boolean {
-  const cached = getCache<{ completed: boolean; version: number }>(ONBOARDING_KEY)
-  return cached?.completed && cached.version === ONBOARDING_VERSION
 }
 
 export default OnboardingTour

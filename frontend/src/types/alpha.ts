@@ -176,7 +176,8 @@ export type TopicGraphLane = {
 }
 
 export type TopicViewModel = {
-  schemaVersion?: string
+  /** Schema version - always provided by backend */
+  schemaVersion: string
   topicId: string
   title: string
   titleEn: string
@@ -192,22 +193,28 @@ export type TopicViewModel = {
   localization?: TopicLocalizationPayload | null
   hero: TopicHero
   stageConfig: TopicStageConfig
-  summaryPanel?: TopicSummaryPanel
+  /** Summary panel - always provided by backend */
+  summaryPanel: TopicSummaryPanel
   stats: {
     stageCount: number
     nodeCount: number
     paperCount: number
+    mappedPaperCount: number
+    unmappedPaperCount: number
     evidenceCount: number
   }
-  timeline?: {
+  /** Timeline stages - always provided by backend */
+  timeline: {
     stages: TopicTimelineStage[]
   }
-  graph?: {
+  /** Graph layout - always provided by backend */
+  graph: {
     columnCount: number
     lanes: TopicGraphLane[]
     nodes: TopicGraphNode[]
   }
-  generationState?: {
+  /** Generation state - always provided by backend */
+  generationState: {
     hero: 'ready' | 'pending'
     stageTimeline: 'ready' | 'pending'
     nodeCards: 'ready' | 'pending'
@@ -222,6 +229,9 @@ export type TopicViewModel = {
     branchLabel: string
     branchColor: string
     editorial: TopicStageEditorial
+    trackedPaperCount: number
+    mappedPaperCount: number
+    unmappedPaperCount: number
     nodes: TopicNodeCard[]
   }>
   papers: Array<{
@@ -240,6 +250,20 @@ export type TopicViewModel = {
     tablesCount: number
     formulasCount: number
     sectionsCount: number
+  }>
+  unmappedPapers: Array<{
+    paperId: string
+    anchorId: string
+    route: string
+    title: string
+    titleEn: string
+    summary: string
+    publishedAt: string
+    authors: string[]
+    citationCount: number | null
+    coverImage: string | null
+    stageIndex: number | null
+    stageLabel: string
   }>
   narrativeArticle: string
   closingEditorial: TopicClosingEditorial
@@ -330,6 +354,17 @@ export type ArticleFlowBlock =
       title?: string
       body: string[]
     }
+  | {
+      id: string
+      type: 'paper-transition'
+      fromPaperId: string
+      fromPaperTitle: string
+      toPaperId: string
+      toPaperTitle: string
+      content: string
+      transitionType: 'method-evolution' | 'problem-shift' | 'scale-up' | 'scope-broaden' | 'complementary'
+      anchorId: string
+    }
 
 export type CrossPaperComparisonBlock = {
   id: string
@@ -382,6 +417,8 @@ export type PaperRole = {
   publishedAt: string
   role: string
   contribution: string
+  authors?: string[]
+  citationCount?: number | null
   figuresCount: number
   tablesCount: number
   formulasCount: number
@@ -435,6 +472,15 @@ export type PaperArticleViewModel = {
   }
   critique: ReviewerCritique
   evidence: EvidenceExplanation[]
+  references?: Array<{
+    paperId: string
+    title: string
+    publishedAt?: string
+    authors?: string[]
+    citationCount?: number | null
+    originalUrl?: string
+    pdfUrl?: string
+  }>
 }
 
 export type NodeArticleViewModel = {
@@ -477,10 +523,25 @@ export type NodeArticleViewModel = {
   evidence: EvidenceExplanation[]
   /** 增强版文章流（8-Pass深度解析） */
   enhancedArticleFlow?: import('./article').NodeArticleFlowBlock[]
+  /** 核心判断（节点级别的一句话判断） */
+  coreJudgment?: {
+    content: string
+    contentEn: string
+  }
 }
 
 export type PaperViewModel = PaperArticleViewModel
-export type NodeViewModel = NodeArticleViewModel
+export type NodeViewModel = NodeArticleViewModel & {
+  references?: Array<{
+    paperId: string
+    title: string
+    publishedAt?: string
+    authors?: string[]
+    citationCount?: number | null
+    originalUrl?: string
+    pdfUrl?: string
+  }>
+}
 
 export type SearchResultKind =
   | 'topic'

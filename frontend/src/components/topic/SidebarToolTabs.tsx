@@ -6,9 +6,11 @@ import { cn } from '@/utils/cn'
 export function SidebarToolTabs({
   activeTab,
   onChange,
+  tabs,
 }: {
   activeTab: TopicWorkbenchTab
   onChange: (tab: TopicWorkbenchTab) => void
+  tabs?: TopicWorkbenchTab[]
 }) {
   const { copy } = useProductCopy()
   const { t } = useI18n()
@@ -21,13 +23,15 @@ export function SidebarToolTabs({
     similar: workbenchText('assistant.tabSimilar', 'workbench.tabSearch', 'Search'),
     resources: workbenchText('assistant.tabResources', 'workbench.tabResources', 'Resources'),
   }
+  const visibleTabs =
+    tabs && tabs.length > 0 ? tabs : (Object.keys(labels) as TopicWorkbenchTab[])
 
   return (
     <div
       data-testid="sidebar-tool-tabs"
-      className="inline-flex max-w-full items-center gap-1 rounded-full bg-[var(--surface-soft)] p-1"
+      className="inline-flex max-w-full items-center gap-1"
     >
-      {(Object.keys(labels) as TopicWorkbenchTab[]).map((tab) => (
+      {visibleTabs.map((tab) => (
         <button
           key={tab}
           type="button"
@@ -36,8 +40,8 @@ export function SidebarToolTabs({
           className={cn(
             'rounded-full px-2.5 py-1 text-[10px] transition',
             activeTab === tab
-              ? 'bg-white text-black shadow-[0_8px_18px_rgba(15,23,42,0.05)]'
-              : 'text-black/52 hover:text-black',
+              ? 'bg-black text-white'
+              : 'bg-[var(--surface-soft)] text-black/52 hover:text-black',
           )}
         >
           {labels[tab]}

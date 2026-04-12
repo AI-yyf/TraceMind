@@ -46,13 +46,13 @@ export function AssistantHeader({
   ] as const
 
   return (
-    <header className="bg-white/94 px-2.5 pb-2 pt-2.5 backdrop-blur">
-      <div className="flex items-center justify-between gap-2.5">
-        <div className="min-w-0">
-          <div className="text-[11px] uppercase tracking-[0.22em] text-black/32">
-            {workbenchText('assistant.title', 'workbench.title', 'Research Workbench')}
+    <header className="border-b border-black/6 bg-white px-2.5 py-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="text-[12px] font-medium text-black/78">
+            {workbenchText('assistant.title', 'workbench.title', 'Assistant')}
           </div>
-          <div className="mt-1 text-[10px] leading-5 text-black/46">{modelLabel}</div>
+          <div className="truncate text-[10px] leading-4 text-black/42">{modelLabel}</div>
         </div>
 
         <div className="flex items-center gap-1">
@@ -63,11 +63,11 @@ export function AssistantHeader({
                 key={action.id}
                 type="button"
                 onClick={action.onClick}
-                className="inline-flex shrink-0 items-center justify-center rounded-full bg-[var(--surface-soft)] p-2 text-black/58 transition hover:bg-black/[0.04] hover:text-black"
+                className="inline-flex shrink-0 items-center justify-center rounded-full bg-[var(--surface-soft)] p-1.5 text-black/54 transition hover:bg-black/[0.04] hover:text-black"
                 aria-label={action.label}
                 title={action.label}
               >
-                <Icon className="h-3.5 w-3.5" />
+                <Icon className="h-3 w-3" />
               </button>
             )
           })}
@@ -76,7 +76,7 @@ export function AssistantHeader({
             type="button"
             onClick={onToggleCollapse}
             className={cn(
-              'rounded-full border border-black/8 bg-white p-2 text-black/48 transition hover:border-black/16 hover:text-black',
+              'rounded-full border border-black/8 bg-white p-1.5 text-black/48 transition hover:border-black/16 hover:text-black',
               collapsed && 'rotate-180',
             )}
             aria-label={workbenchText(
@@ -90,7 +90,7 @@ export function AssistantHeader({
               'Collapse Workbench',
             )}
           >
-            <ChevronRight className="h-3.5 w-3.5" />
+            <ChevronRight className="h-3 w-3" />
           </button>
         </div>
       </div>

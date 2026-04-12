@@ -149,6 +149,18 @@ export interface NodeClosingBlock {
   openQuestions?: string[]
 }
 
+/** 节点批判性分析块 */
+export interface NodeCritiqueBlock {
+  type: 'critique'
+  id: string
+  /** 批判性分析标题 */
+  title: string
+  /** 批判性分析总结（100-150字） */
+  summary: string
+  /** 批判性要点列表 */
+  bullets: string[]
+}
+
 // ============================================================================
 // 文章流块联合类型
 // ============================================================================
@@ -159,6 +171,30 @@ export type NodeArticleFlowBlock =
   | PaperArticleBlock
   | NodeSynthesisBlock
   | NodeClosingBlock
+  | PaperTransitionBlock
+  | NodeCritiqueBlock
+
+// ============================================================================
+// 论文过渡段落 - 论文之间的自然过渡
+// ============================================================================
+
+/** 论文过渡段落 - 论文之间的自然过渡句 */
+export interface PaperTransitionBlock {
+  type: 'paper-transition'
+  id: string
+  /** 从哪篇论文过渡 */
+  fromPaperId: string
+  fromPaperTitle: string
+  /** 过渡到哪篇论文 */
+  toPaperId: string
+  toPaperTitle: string
+  /** 过渡内容（50-100字） */
+  content: string
+  /** 过渡类型 */
+  transitionType: 'method-evolution' | 'problem-shift' | 'scale-up' | 'scope-broaden' | 'complementary'
+  /** 锚点ID */
+  anchorId: string
+}
 
 // ============================================================================
 // 主题仪表盘类型
@@ -212,8 +248,11 @@ export interface TopicDashboard {
   // === 统计摘要 ===
   stats: {
     totalPapers: number
+    mappedPapers: number
+    pendingPapers: number
     totalNodes: number
     totalStages: number
+    mappedStages: number
     timeSpanYears: number
     avgPapersPerNode: number
     citationCoverage: number  // 有多少论文有引用数据
@@ -228,6 +267,15 @@ export interface TopicDashboard {
     decliningTopics: string[]
     methodShifts: string[]
   }
+  pendingPapers: Array<{
+    paperId: string
+    title: string
+    publishedAt: string
+    stageIndex: number | null
+    stageLabel: string
+    summary: string
+    route: string
+  }>
 }
 
 // ============================================================================
@@ -277,6 +325,10 @@ export interface EnhancedNodeArticleViewModel {
   
   // === 批判性分析 ===
   critique: ReviewerCritique
+  
+  // === 核心判断（节点级别的一句话判断）===
+  coreJudgment?: string
+  coreJudgmentEn?: string
 }
 
 /** 论文角色信息（用于导航） */

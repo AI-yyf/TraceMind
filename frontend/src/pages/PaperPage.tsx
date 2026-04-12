@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 
-import { useReadingWorkspace } from '@/contexts/ReadingWorkspaceContext'
+import { useReadingWorkspace } from '@/contexts/readingWorkspaceHooks'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useProductCopy } from '@/hooks/useProductCopy'
 import { useI18n } from '@/i18n'

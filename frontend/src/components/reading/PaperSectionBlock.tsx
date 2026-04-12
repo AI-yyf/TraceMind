@@ -1,14 +1,14 @@
-/**
- * 论文子节组件 - 8-Pass深度解析
- * 
- * 展示单篇论文的8个子节：
- * 背景、问题、方法、实验、结果、贡献、局限、意义
- */
+import React from 'react'
 
-import React, { useState } from 'react'
-import { ChevronDown, ChevronUp } from 'lucide-react'
-import type { PaperSubsection, PaperRoleInNode } from '@/types/article'
+import {
+  type ArticleInlineReference,
+  renderInlineArticleText,
+} from '@/components/reading/ArticleInlineText'
+import { ReadingEvidenceBlock } from '@/components/reading/ReadingEvidenceBlock'
 import { useI18n } from '@/i18n'
+import type { EvidenceExplanation } from '@/types/alpha'
+import type { PaperRoleInNode, PaperSubsection } from '@/types/article'
+import { resolveApiAssetUrl } from '@/utils/api'
 
 interface PaperSectionBlockProps {
   paperId: string
@@ -22,18 +22,53 @@ interface PaperSectionBlockProps {
   subsections: PaperSubsection[]
   conclusion: string
   anchorId: string
+  coverImage?: string | null
+  originalUrl?: string
+  pdfUrl?: string
+  referenceMap: Map<string, ArticleInlineReference>
+  evidenceById: Map<string, EvidenceExplanation>
+  stageWindowMonths: number
+  activeAnchor?: string | null
 }
 
-const ROLE_COLORS: Record<PaperRoleInNode, string> = {
-  origin: '#22c55e',
-  milestone: '#f59e0b',
-  branch: '#3b82f6',
-  confluence: '#a855f7',
-  extension: '#64748b',
-  baseline: '#a16207',
+function renderTemplate(template: string, variables: Record<string, string | number>) {
+  return Object.entries(variables).reduce(
+    (output, [key, value]) => output.split(`{${key}}`).join(String(value)),
+    template,
+  )
 }
 
-const ROLE_LABEL_KEYS: Record<PaperRoleInNode, string> = {
+function splitArticleParagraphs(text: string) {
+  return text
+    .split(/\n{2,}/u)
+    .map((paragraph) => paragraph.replace(/\s+/gu, ' ').trim())
+    .filter(Boolean)
+}
+
+function renderNarrativeParagraphs(
+  paragraphs: string[],
+  referenceMap: Map<string, ArticleInlineReference>,
+  stageWindowMonths: number,
+) {
+  return paragraphs.map((paragraph, index) => (
+    <p key={`${index}:${paragraph}`} className="text-[16px] leading-9 text-black/68">
+      {renderInlineArticleText(paragraph, referenceMap, stageWindowMonths)}
+    </p>
+  ))
+}
+
+function formatAuthorLine(authors: string[]) {
+  const visibleAuthors = authors.slice(0, 6)
+  const suffix =
+    authors.length > visibleAuthors.length ? ` +${authors.length - visibleAuthors.length}` : ''
+  return `${visibleAuthors.join(', ')}${suffix}`
+}
+
+function toArticleAnchorId(anchorId: string) {
+  return `anchor-${anchorId.replace(/[^a-zA-Z0-9_-]/g, '-')}`
+}
+
+const ROLE_TRANSLATION_KEYS: Record<PaperRoleInNode, string> = {
   origin: 'node.role.origin',
   milestone: 'node.role.milestone',
   branch: 'node.role.branch',
@@ -42,11 +77,88 @@ const ROLE_LABEL_KEYS: Record<PaperRoleInNode, string> = {
   baseline: 'node.role.baseline',
 }
 
-function renderTemplate(template: string, variables: Record<string, string | number>) {
-  return Object.entries(variables).reduce(
-    (output, [key, value]) => output.split(`{${key}}`).join(String(value)),
-    template,
-  )
+const SUBSECTION_TRANSLATION_KEYS: Record<PaperSubsection['kind'], string> = {
+  background: 'node.paper.background',
+  problem: 'node.paper.problem',
+  method: 'node.paper.method',
+  experiment: 'node.paper.experiment',
+  results: 'node.paper.results',
+  contribution: 'node.paper.contribution',
+  limitation: 'node.paper.limitation',
+  significance: 'node.paper.significance',
+}
+
+function looksLikeEvidenceTitle(value: string) {
+  const normalized = value.trim()
+  if (!normalized) return true
+  return /^(figure|table|formula|equation|section|appendix)\b/i.test(normalized)
+}
+
+function normalizeSubsectionTitle(value: string | null | undefined) {
+  return (value ?? '').replace(/\s+/gu, ' ').trim().toLowerCase()
+}
+
+function resolveSubsectionHeading(
+  subsection: PaperSubsection,
+  t: (key: string, fallback?: string) => string,
+) {
+  const normalizedTitle = normalizeSubsectionTitle(subsection.title)
+  const normalizedTitleEn = normalizeSubsectionTitle(subsection.titleEn)
+  const fallbackZh = t(SUBSECTION_TRANSLATION_KEYS[subsection.kind])
+  const fallbackEn = t(SUBSECTION_TRANSLATION_KEYS[subsection.kind])
+
+  if (
+    normalizedTitle === normalizeSubsectionTitle(fallbackEn) ||
+    normalizedTitle === normalizeSubsectionTitle(fallbackZh) ||
+    normalizedTitleEn === normalizeSubsectionTitle(fallbackEn) ||
+    normalizedTitleEn === normalizeSubsectionTitle(fallbackZh)
+  ) {
+    return t(SUBSECTION_TRANSLATION_KEYS[subsection.kind])
+  }
+
+  if (!looksLikeEvidenceTitle(subsection.title)) {
+    return subsection.title
+  }
+
+  if (subsection.titleEn && !looksLikeEvidenceTitle(subsection.titleEn)) {
+    return subsection.titleEn
+  }
+
+  return t(SUBSECTION_TRANSLATION_KEYS[subsection.kind])
+}
+
+function dedupeEvidenceAnchors(evidenceIds: string[]) {
+  return Array.from(new Set(evidenceIds.map((item) => item.trim()).filter(Boolean)))
+}
+
+function subsectionEvidenceItems(
+  subsection: PaperSubsection,
+  evidenceById: Map<string, EvidenceExplanation>,
+) {
+  return dedupeEvidenceAnchors(subsection.evidenceIds)
+    .map((anchorId) => evidenceById.get(anchorId) ?? null)
+    .filter((item): item is EvidenceExplanation => Boolean(item))
+    .filter((item) => item.type === 'figure' || item.type === 'table' || item.type === 'formula')
+}
+
+function buildInlineEvidencePlan(
+  subsections: PaperSubsection[],
+  evidenceById: Map<string, EvidenceExplanation>,
+) {
+  const seen = new Set<string>()
+  const plan = new Map<PaperSubsection['kind'], EvidenceExplanation[]>()
+
+  for (const subsection of subsections) {
+    const uniqueEvidence = subsectionEvidenceItems(subsection, evidenceById).filter((item) => {
+      if (seen.has(item.anchorId)) return false
+      seen.add(item.anchorId)
+      return true
+    })
+
+    plan.set(subsection.kind, uniqueEvidence)
+  }
+
+  return plan
 }
 
 export const PaperSectionBlock: React.FC<PaperSectionBlockProps> = ({
@@ -61,224 +173,159 @@ export const PaperSectionBlock: React.FC<PaperSectionBlockProps> = ({
   subsections,
   conclusion,
   anchorId,
+  coverImage,
+  referenceMap,
+  evidenceById,
+  stageWindowMonths,
+  activeAnchor,
 }) => {
-  const { t } = useI18n()
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-    introduction: true,
-    conclusion: true,
-  })
-
-  const toggleSection = (sectionId: string) => {
-    setExpandedSections(prev => ({
-      ...prev,
-      [sectionId]: !prev[sectionId],
-    }))
-  }
+  const { t, preference } = useI18n()
+  const displayLanguage = preference.primary === 'zh' ? 'zh' : 'en'
+  const roleLabel = t(ROLE_TRANSLATION_KEYS[role])
+  const inlineEvidencePlan = buildInlineEvidencePlan(subsections, evidenceById)
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr)
-    return date.toLocaleDateString('zh-CN', { year: 'numeric', month: 'short' })
+    if (Number.isNaN(date.getTime())) return ''
+    return displayLanguage === 'zh'
+      ? date.toLocaleDateString('zh-CN', { year: 'numeric', month: 'short' })
+      : date.toLocaleDateString('en-US', { year: 'numeric', month: 'short' })
   }
 
-  const roleColor = ROLE_COLORS[role]
+  const metaLine = [
+    roleLabel,
+    publishedAt ? formatDate(publishedAt) : '',
+    citationCount !== null
+      ? renderTemplate(t('node.citations', 'Cited {count} times'), {
+          count: citationCount,
+        })
+      : '',
+  ]
+    .filter(Boolean)
+    .join(' · ')
 
   return (
     <article
       id={anchorId}
       data-paper-id={paperId}
-      className="relative mb-6 rounded-2xl border border-black/8 bg-[#fcfbf9] p-4 md:p-6 shadow-[0_12px_28px_rgba(15,23,42,0.04)]"
+      data-paper-role={role}
+      className="border-t border-black/6 pt-12"
     >
-      {/* 左侧角色色条 */}
-      <div
-        className="absolute left-0 top-0 bottom-0 w-1 rounded-l-2xl"
-        style={{ backgroundColor: roleColor }}
-      />
+      <div className="mb-6">
+        {metaLine ? (
+          <div className="mb-2 text-[11px] uppercase tracking-[0.14em] text-black/40">{metaLine}</div>
+        ) : null}
 
-      {/* 论文头部 */}
-      <div className="mb-3 pl-3">
-        <div className="flex items-center gap-2 mb-1">
-          <span
-            className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold"
-            style={{
-              backgroundColor: `${roleColor}20`,
-              color: roleColor,
-            }}
-          >
-            {t(ROLE_LABEL_KEYS[role])}
-          </span>
-          {citationCount !== null && (
-            <span className="text-xs text-black/48">
-              {renderTemplate(t('node.citations', 'Cited {count} times'), {
-                count: citationCount,
-              })}
-            </span>
-          )}
-        </div>
+        <h3 className="text-[30px] font-semibold leading-[1.2] text-black">{title}</h3>
 
-        <h3 className="text-xl font-semibold text-black md:text-[22px]">
-          {title}
-        </h3>
+        {titleEn && titleEn !== title ? (
+          <div className="mt-2 text-[14px] leading-7 text-black/42">{titleEn}</div>
+        ) : null}
 
-        {titleEn && titleEn !== title && (
-          <div className="mt-0.5 text-sm text-black/40">
-            {titleEn}
-          </div>
-        )}
-
-        <div className="mt-1 flex flex-wrap gap-x-1">
-          {authors.slice(0, 5).map((author, idx) => (
-            <span key={idx} className="text-xs text-black/48">
-              {author}{idx < Math.min(authors.length, 5) - 1 ? ',' : ''}
-            </span>
-          ))}
-          {authors.length > 5 && (
-            <span className="text-xs text-black/48">
-              +{authors.length - 5}
-            </span>
-          )}
-        </div>
-
-        <div className="mt-0.5 text-xs text-black/48">
-          {formatDate(publishedAt)}
-        </div>
+        <div className="mt-3 text-[13px] leading-7 text-black/50">{formatAuthorLine(authors)}</div>
       </div>
 
-      <div className="border-t border-black/6 my-3" />
-
-      {/* 引言 */}
-      <div className="mb-3 pl-3">
-        <button
-          type="button"
-          className="flex w-full items-center justify-between text-left"
-          onClick={() => toggleSection('introduction')}
-        >
-          <h4 className="text-base font-semibold text-black">
-            {t('node.paper.introduction')}
-          </h4>
-          {expandedSections.introduction
-            ? <ChevronUp className="h-4 w-4 text-black/40" />
-            : <ChevronDown className="h-4 w-4 text-black/40" />
-          }
-        </button>
-        {expandedSections.introduction && (
-          <p className="mt-2 text-sm leading-7 text-black/72">
-            {introduction}
-          </p>
+      <div className="space-y-4">
+        {renderNarrativeParagraphs(
+          splitArticleParagraphs(introduction),
+          referenceMap,
+          stageWindowMonths,
         )}
       </div>
 
-      {/* 8个子节 */}
-      <div className="pl-3">
-        {subsections.map((subsection, index) => (
+      <div className="mt-9 space-y-10">
+        {subsections.map((subsection) => (
           <PaperSubsectionItem
             key={subsection.kind}
             subsection={subsection}
-            index={index}
-            expanded={expandedSections[subsection.kind] ?? false}
-            onToggle={() => toggleSection(subsection.kind)}
+            representativeImage={subsection.kind === 'method' ? resolveApiAssetUrl(coverImage) ?? coverImage ?? null : null}
+            referenceMap={referenceMap}
+            evidenceItems={inlineEvidencePlan.get(subsection.kind) ?? []}
+            stageWindowMonths={stageWindowMonths}
+            activeAnchor={activeAnchor}
+            whyItMattersLabel={t('evidence.whyItMatters', 'Why it matters: ')}
+            t={t}
           />
         ))}
       </div>
 
-      {/* 总结 */}
-      <div className="mt-3 pl-3">
-        <button
-          type="button"
-          className="flex w-full items-center justify-between text-left"
-          onClick={() => toggleSection('conclusion')}
-        >
-          <h4 className="text-base font-semibold text-black">
-            {t('node.paper.conclusion')}
-          </h4>
-          {expandedSections.conclusion
-            ? <ChevronUp className="h-4 w-4 text-black/40" />
-            : <ChevronDown className="h-4 w-4 text-black/40" />
-          }
-        </button>
-        {expandedSections.conclusion && (
-          <p className="mt-2 text-sm leading-7 text-black/72">
-            {conclusion}
-          </p>
-        )}
-      </div>
+      <section className="mt-10 border-t border-black/6 pt-6">
+        <h4 className="text-[18px] font-semibold leading-[1.2] text-black/88">
+          {t('node.paper.conclusion', displayLanguage === 'zh' ? '结语' : 'Conclusion')}
+        </h4>
+        <div className="mt-4 space-y-4">
+          {renderNarrativeParagraphs(
+            splitArticleParagraphs(conclusion),
+            referenceMap,
+            stageWindowMonths,
+          )}
+        </div>
+      </section>
     </article>
   )
 }
 
-// 子节项组件
 interface PaperSubsectionItemProps {
   subsection: PaperSubsection
-  index: number
-  expanded: boolean
-  onToggle: () => void
-}
-
-const SUBSECTION_ICONS: Record<string, string> = {
-  background: '📚',
-  problem: '❓',
-  method: '⚙️',
-  experiment: '🧪',
-  results: '📊',
-  contribution: '💡',
-  limitation: '⚠️',
-  significance: '🌟',
+  representativeImage: string | null
+  referenceMap: Map<string, ArticleInlineReference>
+  evidenceItems: EvidenceExplanation[]
+  stageWindowMonths: number
+  activeAnchor?: string | null
+  whyItMattersLabel: string
+  t: (key: string, fallback?: string) => string
 }
 
 const PaperSubsectionItem: React.FC<PaperSubsectionItemProps> = ({
   subsection,
-  index,
-  expanded,
-  onToggle,
+  representativeImage,
+  referenceMap,
+  evidenceItems,
+  stageWindowMonths,
+  activeAnchor,
+  whyItMattersLabel,
+  t,
 }) => {
-  const { t } = useI18n()
+  const heading = resolveSubsectionHeading(subsection, t)
 
   return (
-    <div className="mb-2">
-      <button
-        type="button"
-        className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left transition hover:bg-black/[0.03]"
-        onClick={onToggle}
-      >
-        <div className="flex items-center gap-2">
-          <span className="min-w-[20px] text-xs text-black/48">
-            {index + 1}.
-          </span>
-          <span className="text-base">{SUBSECTION_ICONS[subsection.kind]}</span>
-          <span className="text-sm font-semibold text-black">
-            {subsection.title}
-          </span>
-          <span className="text-xs text-black/40">
-            {renderTemplate(t('node.subsection.wordCount', '{count} words'), {
-              count: subsection.wordCount,
-            })}
-          </span>
-        </div>
-        {expanded
-          ? <ChevronUp className="h-4 w-4 text-black/40" />
-          : <ChevronDown className="h-4 w-4 text-black/40" />
-        }
-      </button>
+    <section>
+      <h4 className="mb-4 text-[20px] font-semibold leading-[1.25] text-black/88">{heading}</h4>
 
-      {expanded && (
-        <div className="pl-8 pr-2 py-2">
-          <p className="text-sm leading-7 text-black/72">
-            {subsection.content}
-          </p>
+      <div className="space-y-4">
+        {renderNarrativeParagraphs(
+          splitArticleParagraphs(subsection.content),
+          referenceMap,
+          stageWindowMonths,
+        )}
+      </div>
 
-          {subsection.keyPoints.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {subsection.keyPoints.map((point, idx) => (
-                <span
-                  key={idx}
-                  className="inline-block rounded-full border border-black/10 px-2.5 py-0.5 text-xs text-black/58"
-                >
-                  {point}
-                </span>
-              ))}
-            </div>
-          )}
+      {evidenceItems.length > 0 ? (
+        <div className="mt-6 space-y-6">
+          {evidenceItems.map((evidence) => (
+            <ReadingEvidenceBlock
+              key={evidence.anchorId}
+              anchorId={toArticleAnchorId(evidence.anchorId)}
+              evidence={evidence}
+              highlighted={activeAnchor === evidence.anchorId}
+              whyItMattersLabel={whyItMattersLabel}
+              variant="article-inline"
+            />
+          ))}
         </div>
-      )}
-    </div>
+      ) : representativeImage ? (
+        <figure className="mt-6 border-y border-black/8 py-6">
+          <img
+            src={representativeImage}
+            alt={heading}
+            className="max-h-[520px] w-full rounded-[20px] border border-black/8 bg-white object-contain p-3"
+            loading="lazy"
+          />
+          <figcaption className="mt-4 text-[14px] leading-7 text-black/56">
+            {t('node.representativeFigureHint')}
+          </figcaption>
+        </figure>
+      ) : null}
+    </section>
   )
 }

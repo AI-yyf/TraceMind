@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -9,6 +9,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { ReadingWorkspaceProvider } from '@/contexts/ReadingWorkspaceContext'
 import { I18nProvider } from '@/i18n'
 import type { TopicResearchBrief, TopicViewModel } from '@/types/alpha'
+import { fetchTopicResearchBrief, primeTopicResearchBrief } from '@/utils/omniRuntimeCache'
 import { apiGet } from '@/utils/api'
 import { TopicPage } from './TopicPage'
 
@@ -21,12 +22,18 @@ vi.mock('@/utils/api', async () => {
   }
 })
 
+vi.mock('@/utils/omniRuntimeCache', () => ({
+  fetchTopicResearchBrief: vi.fn(),
+  primeTopicResearchBrief: vi.fn(),
+}))
+
 vi.mock('@/components/topic/RightSidebarShell', () => ({
   RightSidebarShell: () => <div data-testid="topic-sidebar-stub" />,
 }))
 
 const apiGetMock = vi.mocked(apiGet)
-
+const fetchTopicResearchBriefMock = vi.mocked(fetchTopicResearchBrief)
+const primeTopicResearchBriefMock = vi.mocked(primeTopicResearchBrief)
 function renderWithProviders(node: ReactNode, initialEntry: string, path: string) {
   localStorage.setItem(
     'arxiv-chronicle-language-preference',
@@ -88,6 +95,8 @@ function makeTopicViewModel(windowMonths = 3): TopicViewModel {
       stageCount: 1,
       nodeCount: 1,
       paperCount: 1,
+      mappedPaperCount: 1,
+      unmappedPaperCount: 0,
       evidenceCount: 0,
     },
     timeline: {
@@ -205,6 +214,9 @@ function makeTopicViewModel(windowMonths = 3): TopicViewModel {
           summary: 'Stage summary',
           transition: 'Stage transition',
         },
+        trackedPaperCount: 1,
+        mappedPaperCount: 1,
+        unmappedPaperCount: 0,
         nodes: [
           {
             nodeId: 'node-1',
@@ -254,6 +266,7 @@ function makeTopicViewModel(windowMonths = 3): TopicViewModel {
         sectionsCount: 0,
       },
     ],
+    unmappedPapers: [],
     narrativeArticle: 'Narrative article',
     closingEditorial: {
       title: 'Closing',
@@ -273,48 +286,14 @@ function makeResearchBrief(): TopicResearchBrief {
   } as unknown as TopicResearchBrief
 }
 
-function makeDashboardResponse() {
-  return {
-    success: true,
-    data: {
-      topicId: 'topic-1',
-      topicTitle: 'Topic title',
-      researchThreads: [
-        {
-          stageIndex: 0,
-          nodeId: 'node-1',
-          nodeTitle: 'Node title',
-          thesis: 'Mainline thesis',
-          paperCount: 1,
-          keyPaperTitle: 'Paper title',
-          isMilestone: true,
-        },
-      ],
-      methodEvolution: [],
-      activeAuthors: [],
-      stats: {
-        totalPapers: 1,
-        totalNodes: 1,
-        totalStages: 1,
-        timeSpanYears: 1,
-        avgPapersPerNode: 1,
-        citationCoverage: 1,
-      },
-      keyInsights: ['Insight one'],
-      trends: {
-        emergingTopics: [],
-        decliningTopics: [],
-        methodShifts: [],
-      },
-    },
-  }
-}
-
-describe('TopicPage stage window controls', () => {
+describe('TopicPage timeline map', () => {
   beforeEach(() => {
     localStorage.clear()
     sessionStorage.clear()
     apiGetMock.mockReset()
+    fetchTopicResearchBriefMock.mockReset()
+    primeTopicResearchBriefMock.mockReset()
+    fetchTopicResearchBriefMock.mockResolvedValue(makeResearchBrief())
   })
 
   afterEach(() => {
@@ -322,15 +301,11 @@ describe('TopicPage stage window controls', () => {
     vi.clearAllMocks()
   })
 
-  it('requests the topic view model with the selected stage window and shows fixed cadence guidance', async () => {
+  it('requests the topic view model and renders the timeline map', async () => {
     apiGetMock.mockImplementation(async (path: string) => {
       if (path.startsWith('/api/topics/topic-1/view-model')) {
         const stageMonths = Number(new URL(`https://example.com${path}`).searchParams.get('stageMonths') ?? '1')
         return makeTopicViewModel(stageMonths)
-      }
-
-      if (path === '/api/topics/topic-1/research-brief') {
-        return makeResearchBrief()
       }
 
       throw new Error(`Unexpected GET ${path}`)
@@ -338,25 +313,20 @@ describe('TopicPage stage window controls', () => {
 
     renderWithProviders(<TopicPage />, '/topic/topic-1?stageMonths=3', '/topic/:topicId')
 
-    expect(await screen.findByText('Topic title')).toBeVisible()
-    expect(apiGetMock).toHaveBeenCalledWith('/api/topics/topic-1/view-model?stageMonths=3')
     expect(
-      screen.getByText(
-        'This topic currently groups stages with a 3 months publication window. Change the cadence from Topic Management; the reading surface stays stable and does not rewrite structure here.',
-      ),
+      await screen.findByRole('heading', { name: 'Topic title', level: 1 }),
     ).toBeVisible()
-    expect(screen.getByRole('link', { name: 'Manage topic cadence' })).toHaveAttribute(
-      'href',
-      '/manage/topics',
-    )
-    expect(screen.getByTestId('topic-stage-map')).toBeVisible()
-    expect(screen.getByRole('link', { name: /Node title/i })).toHaveAttribute(
+    expect(apiGetMock).toHaveBeenCalledWith('/api/topics/topic-1/view-model?stageMonths=3')
+    const stageMap = screen.getByTestId('topic-stage-map')
+    expect(stageMap).toBeVisible()
+    expect(within(stageMap).getByRole('link', { name: 'Open article' })).toHaveAttribute(
       'href',
       '/node/node-1?stageMonths=3',
     )
+    expect(screen.getByTestId('topic-sidebar-stub')).toBeVisible()
   })
 
-  it('keeps the visible topic map dense by hiding empty placeholder stages', async () => {
+  it('omits empty placeholder stages from the visible map', async () => {
     apiGetMock.mockImplementation(async (path: string) => {
       if (path.startsWith('/api/topics/topic-1/view-model')) {
         const model = makeTopicViewModel(1)
@@ -397,14 +367,13 @@ describe('TopicPage stage window controls', () => {
               summary: 'This stage exists only as a future placeholder.',
               transition: 'Transition',
             },
+            trackedPaperCount: 0,
+            mappedPaperCount: 0,
+            unmappedPaperCount: 0,
             nodes: [],
           },
         ]
         return model
-      }
-
-      if (path === '/api/topics/topic-1/research-brief') {
-        return makeResearchBrief()
       }
 
       throw new Error(`Unexpected GET ${path}`)
@@ -414,18 +383,115 @@ describe('TopicPage stage window controls', () => {
 
     const stageMap = await screen.findByTestId('topic-stage-map')
 
-    expect(await screen.findByText('Topic title')).toBeVisible()
     expect(
-      screen.getByText(
-        'This topic currently groups stages with a 1 month publication window. Change the cadence from Topic Management; the reading surface stays stable and does not rewrite structure here.',
-      ),
+      await screen.findByRole('heading', { name: 'Topic title', level: 1 }),
     ).toBeVisible()
-    expect(within(stageMap).queryByText('This stage exists only as a future placeholder.')).not.toBeInTheDocument()
-    expect(within(stageMap).queryByText('Stage 2')).not.toBeInTheDocument()
-    expect(within(stageMap).getByRole('link', { name: /Node title/i })).toHaveAttribute(
+    expect(within(stageMap).queryByText('2026.04-2026.06')).not.toBeInTheDocument()
+    expect(within(stageMap).getByRole('link', { name: 'Open article' })).toHaveAttribute(
       'href',
       '/node/node-1?stageMonths=1',
     )
+  })
+
+  it('shows a later stage when tracked papers exist there even before a node forms', async () => {
+    apiGetMock.mockImplementation(async (path: string) => {
+      if (path.startsWith('/api/topics/topic-1/view-model')) {
+        const model = makeTopicViewModel(1)
+        model.stats.stageCount = 2
+        model.stats.paperCount = 2
+        model.stats.mappedPaperCount = 1
+        model.stats.unmappedPaperCount = 1
+        model.timeline = {
+          stages: [
+            model.timeline!.stages[0],
+            {
+              stageIndex: 2,
+              title: '2026.04-2026.06',
+              titleEn: '2026.04-2026.06',
+              description: 'A later bucket with one tracked paper awaiting node placement.',
+              branchLabel: '2026.04-2026.06',
+              branchColor: '#7d1938',
+              yearLabel: '2026',
+              dateLabel: '2026.04-2026.06',
+              timeLabel: '2026.04-2026.06',
+              stageThesis: 'Pending literature',
+              editorial: {
+                kicker: 'Window',
+                summary: 'One tracked paper is waiting for node synthesis in this stage.',
+                transition: 'Transition',
+              },
+            },
+          ],
+        }
+        model.stages = [
+          model.stages[0],
+          {
+            stageIndex: 2,
+            title: 'Stage 2',
+            titleEn: 'Stage 2',
+            description: 'A later bucket with one tracked paper awaiting node placement.',
+            branchLabel: '2026.04-2026.06',
+            branchColor: '#7d1938',
+            editorial: {
+              kicker: 'Window',
+              summary: 'One tracked paper is waiting for node synthesis in this stage.',
+              transition: 'Transition',
+            },
+            trackedPaperCount: 1,
+            mappedPaperCount: 0,
+            unmappedPaperCount: 1,
+            nodes: [],
+          },
+        ]
+        model.unmappedPapers = [
+          {
+            paperId: 'paper-2',
+            anchorId: 'paper:paper-2',
+            route: '/paper/paper-2',
+            title: 'Awaiting synthesis paper',
+            titleEn: 'Awaiting synthesis paper',
+            summary: 'A pending paper that should stay visible at the topic level.',
+            publishedAt: '2026-05-01T00:00:00.000Z',
+            authors: ['Author 2'],
+            citationCount: 0,
+            coverImage: null,
+            stageIndex: 2,
+            stageLabel: '2026.04-2026.06',
+          },
+        ]
+        model.papers.push({
+          paperId: 'paper-2',
+          anchorId: 'paper:paper-2',
+          route: '/paper/paper-2',
+          title: 'Awaiting synthesis paper',
+          titleEn: 'Awaiting synthesis paper',
+          summary: 'A pending paper that should stay visible at the topic level.',
+          explanation: 'Still waiting to be grouped into a problem node.',
+          publishedAt: '2026-05-01T00:00:00.000Z',
+          authors: ['Author 2'],
+          citationCount: 0,
+          coverImage: null,
+          figuresCount: 0,
+          tablesCount: 0,
+          formulasCount: 0,
+          sectionsCount: 0,
+        })
+        return model
+      }
+
+      throw new Error(`Unexpected GET ${path}`)
+    })
+
+    renderWithProviders(<TopicPage />, '/topic/topic-1?stageMonths=1', '/topic/:topicId')
+
+    const stageMap = await screen.findByTestId('topic-stage-map')
+
+    expect(
+      within(stageMap).getAllByText((_, element) => {
+        const text = element?.textContent?.replace(/\s+/g, ' ').trim() ?? ''
+        return text.includes('2026.04') && text.includes('2026.06')
+      }).length,
+    ).toBeGreaterThan(0)
   })
 
   it('reserves desktop space for the right workbench when the drawer is already open', async () => {
@@ -458,102 +524,14 @@ describe('TopicPage stage window controls', () => {
         return makeTopicViewModel(3)
       }
 
-      if (path === '/api/topics/topic-1/research-brief') {
-        return makeResearchBrief()
-      }
-
       throw new Error(`Unexpected GET ${path}`)
     })
 
     renderWithProviders(<TopicPage />, '/topic/topic-1?stageMonths=3', '/topic/:topicId')
 
-    expect(await screen.findByText('Topic title')).toBeVisible()
+    expect(
+      await screen.findByRole('heading', { name: 'Topic title', level: 1 }),
+    ).toBeVisible()
     expect(screen.getByRole('main')).toHaveStyle({ paddingRight: '416px' })
-  })
-
-  it('loads dashboard lazily and supports retry after a dashboard fetch failure', async () => {
-    let dashboardAttempts = 0
-
-    apiGetMock.mockImplementation(async (path: string) => {
-      if (path.startsWith('/api/topics/topic-1/view-model')) {
-        return makeTopicViewModel(3)
-      }
-
-      if (path === '/api/topics/topic-1/research-brief') {
-        return makeResearchBrief()
-      }
-
-      if (path === '/api/topics/topic-1/dashboard') {
-        dashboardAttempts += 1
-        if (dashboardAttempts === 1) {
-          throw new Error('dashboard offline')
-        }
-        return makeDashboardResponse()
-      }
-
-      throw new Error(`Unexpected GET ${path}`)
-    })
-
-    renderWithProviders(<TopicPage />, '/topic/topic-1?stageMonths=3', '/topic/:topicId')
-
-    expect(await screen.findByText('Topic title')).toBeVisible()
-    expect(apiGetMock).not.toHaveBeenCalledWith('/api/topics/topic-1/dashboard')
-
-    fireEvent.click(screen.getByRole('button', { name: 'Research Dashboard' }))
-
-    expect(screen.queryByTestId('topic-stage-map')).not.toBeInTheDocument()
-    expect(await screen.findByTestId('topic-dashboard-error')).toBeVisible()
-    expect(screen.getByText('Dashboard data is unavailable right now.')).toBeVisible()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
-
-    await waitFor(() => {
-      expect(screen.getByText('Insight one')).toBeVisible()
-    })
-    expect(screen.getByTestId('topic-dashboard-panel')).toBeVisible()
-    expect(dashboardAttempts).toBe(2)
-
-    fireEvent.click(screen.getByRole('button', { name: 'Research Graph' }))
-
-    expect(await screen.findByTestId('topic-stage-map')).toBeVisible()
-  })
-
-  it('restores the persisted topic surface mode from reading workspace state', async () => {
-    sessionStorage.setItem(
-      'reading-workspace:v1',
-      JSON.stringify({
-        trail: [],
-        pageScroll: {},
-        workbenchByTopic: {},
-        topicSurfaceByTopic: {
-          'topic-1': {
-            mode: 'dashboard',
-          },
-        },
-      }),
-    )
-
-    apiGetMock.mockImplementation(async (path: string) => {
-      if (path.startsWith('/api/topics/topic-1/view-model')) {
-        return makeTopicViewModel(3)
-      }
-
-      if (path === '/api/topics/topic-1/research-brief') {
-        return makeResearchBrief()
-      }
-
-      if (path === '/api/topics/topic-1/dashboard') {
-        return makeDashboardResponse()
-      }
-
-      throw new Error(`Unexpected GET ${path}`)
-    })
-
-    renderWithProviders(<TopicPage />, '/topic/topic-1?stageMonths=3', '/topic/:topicId')
-
-    expect(await screen.findByText('Topic title')).toBeVisible()
-    expect(await screen.findByTestId('topic-dashboard-panel')).toBeVisible()
-    expect(screen.queryByTestId('topic-stage-map')).not.toBeInTheDocument()
-    expect(screen.getByText('Insight one')).toBeVisible()
   })
 })

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Loader2, Paperclip, Search, Send, Sparkles } from 'lucide-react'
+import { Loader2, Search, Send, Sparkles } from 'lucide-react'
 
 import { useProductCopy } from '@/hooks/useProductCopy'
 import { useI18n } from '@/i18n'
@@ -9,6 +9,8 @@ export function GroundedComposer({
   value,
   onChange,
   onSubmit,
+  quickActions,
+  onUseQuickAction,
   searchEnabled,
   onToggleSearch,
   thinkingEnabled,
@@ -21,6 +23,12 @@ export function GroundedComposer({
   value: string
   onChange: (value: string) => void
   onSubmit: () => void
+  quickActions?: Array<{
+    id: string
+    label: string
+    prompt: string
+  }>
+  onUseQuickAction?: (prompt: string) => void
   searchEnabled: boolean
   onToggleSearch: () => void
   thinkingEnabled: boolean
@@ -40,8 +48,23 @@ export function GroundedComposer({
     assistantState === 'retrieving'
 
   return (
-    <div className="rounded-[20px] border border-black/8 bg-white px-2 py-2 shadow-[0_16px_36px_rgba(15,23,42,0.08)]">
-      <div className="flex gap-1.5 overflow-x-auto px-0.5 pb-2">
+    <div className="rounded-[14px] border border-black/10 bg-white px-1.5 py-1.5 shadow-[0_8px_18px_rgba(15,23,42,0.08)]">
+      {quickActions && quickActions.length > 0 ? (
+        <div className="flex gap-1.5 overflow-x-auto px-0.5 pb-1.5">
+          {quickActions.map((action) => (
+            <button
+              key={action.id}
+              type="button"
+              onClick={() => onUseQuickAction?.(action.prompt)}
+              className="inline-flex items-center rounded-full border border-black/10 bg-white px-2.5 py-1 text-[10px] text-black/58 transition hover:border-black/18 hover:text-black"
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="flex gap-1.5 overflow-x-auto px-0.5 pb-1.5">
         <ComposerChip
           label={workbenchText('assistant.searchToggle', 'workbench.searchToggle', 'Search')}
           active={searchEnabled}
@@ -68,13 +91,9 @@ export function GroundedComposer({
             onClick={() => onStyleChange(item)}
           />
         ))}
-        <div className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[var(--surface-soft)] px-2.5 py-1 text-[10px] text-black/52">
-          <Paperclip className="h-3.5 w-3.5" />
-          {workbenchText('assistant.contextLabel', 'workbench.context', 'Context')}
-        </div>
       </div>
 
-      <div className="rounded-[18px] bg-[var(--surface-soft)] px-3 py-2">
+      <div className="rounded-[12px] bg-[var(--surface-soft)] px-2.5 py-2">
         <textarea
           data-testid="assistant-composer-input"
           value={value}
@@ -84,15 +103,15 @@ export function GroundedComposer({
             'workbench.inputPlaceholder',
             'Ask about the current node, paper, figure, or the overall mainline.',
           )}
-          className="min-h-[60px] w-full resize-none bg-transparent px-2 py-1.5 text-[13px] leading-6 text-black outline-none placeholder:text-black/32"
+          className="min-h-[52px] w-full resize-none bg-transparent px-1.5 py-1 text-[13px] leading-5 text-black outline-none placeholder:text-black/32"
         />
 
-        <div className="mt-2.5 flex items-center justify-between gap-3 px-2">
-          <div className="inline-flex min-w-0 items-center gap-2 text-[10px] text-black/42">
+        <div className="mt-2 flex items-center justify-between gap-2 px-1.5">
+          <div className="inline-flex min-w-0 items-center gap-1.5 text-[10px] text-black/42">
             {busy ? (
-              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+              <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
             ) : (
-              <span className="h-2 w-2 shrink-0 rounded-full bg-[#0f766e]" />
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#0f766e]" />
             )}
             <span className="truncate">
               {busy
@@ -114,12 +133,12 @@ export function GroundedComposer({
             data-testid="assistant-send-button"
             onClick={onSubmit}
             disabled={disabled}
-            className="inline-flex shrink-0 items-center gap-2 rounded-full bg-black px-3.5 py-2 text-[11px] text-white transition hover:bg-black/92 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-black px-3 py-1.5 text-[10px] text-white transition hover:bg-black/92 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {busy ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <Loader2 className="h-3 w-3 animate-spin" />
             ) : (
-              <Send className="h-3.5 w-3.5" />
+              <Send className="h-3 w-3" />
             )}
             {workbenchText('assistant.send', 'workbench.send', 'Send')}
           </button>
@@ -144,7 +163,7 @@ function ComposerChip({
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] transition ${
+      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] transition ${
         active ? 'bg-black text-white' : 'bg-[var(--surface-soft)] text-black/60 hover:text-black'
       }`}
     >

@@ -10,17 +10,30 @@ import {
   Sparkles,
   Wand2,
   Workflow,
+  BookOpen,
+  Pencil,
+  X,
+  Save,
 } from 'lucide-react'
 
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useI18n } from '@/i18n'
 import type { ModelCapabilitySummary, PromptStudioBundle } from '@/types/alpha'
-import { apiGet } from '@/utils/api'
+import { apiGet, apiPatch } from '@/utils/api'
 import { fetchModelCapabilitySummary } from '@/utils/omniRuntimeCache'
 
-type SettingsFocusTab = 'models' | 'pipeline' | 'prompts' | 'copy' | 'agents'
+type SettingsFocusTab = 'models' | 'pipeline' | 'prompts' | 'copy' | 'agents' | 'research'
 
-const focusTabs: SettingsFocusTab[] = ['models', 'pipeline', 'prompts', 'copy', 'agents']
+interface ResearchConfig {
+  maxCandidatesPerStage: number
+  discoveryQueryLimit: number
+  maxPapersPerNode: number
+  admissionThreshold: number
+  semanticScholarLimit: number
+  discoveryRounds: number
+}
+
+const focusTabs: SettingsFocusTab[] = ['models', 'pipeline', 'prompts', 'copy', 'agents', 'research']
 
 function normalizeFocusTab(value: string | null): SettingsFocusTab {
   return focusTabs.includes(value as SettingsFocusTab)
@@ -53,6 +66,43 @@ function SettingsMetric({
     <div className="rounded-[18px] bg-[var(--surface-soft)] px-4 py-3">
       <div className="text-[10px] uppercase tracking-[0.18em] text-black/34">{label}</div>
       <div className="mt-2 text-[14px] font-medium text-black">{value}</div>
+    </div>
+  )
+}
+
+function EditableResearchMetric({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  step,
+  disabled,
+}: {
+  label: string
+  value: number
+  onChange: (value: number) => void
+  min: number
+  max: number
+  step?: number
+  disabled?: boolean
+}) {
+  return (
+    <div className="rounded-[18px] bg-[var(--surface-soft)] px-4 py-3">
+      <div className="text-[10px] uppercase tracking-[0.18em] text-black/34">{label}</div>
+      <input
+        type="number"
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        min={min}
+        max={max}
+        step={step ?? 1}
+        disabled={disabled}
+        className="mt-2 w-full text-[14px] font-medium text-black bg-transparent border-none outline-none focus:ring-2 focus:ring-[#d1aa5c]/50 disabled:opacity-50"
+      />
+      <div className="text-[9px] text-black/34 mt-1">
+        {min} - {max}
+      </div>
     </div>
   )
 }
@@ -127,6 +177,202 @@ function SettingsCard({
   )
 }
 
+function ResearchConfigCard({
+  active,
+  eyebrow,
+  title,
+  body,
+  icon,
+  config,
+  editing,
+  saving,
+  saved,
+  error,
+  onEdit,
+  onSave,
+  onCancel,
+  onChange,
+  primaryHref,
+  primaryLabel,
+  secondaryHref,
+  secondaryLabel,
+  t,
+}: {
+  active?: boolean
+  eyebrow: string
+  title: string
+  body: string
+  icon: typeof Settings2
+  config: ResearchConfig
+  editing: boolean
+  saving: boolean
+  saved: boolean
+  error: string | null
+  onEdit: () => void
+  onSave: () => void
+  onCancel: () => void
+  onChange: (config: ResearchConfig) => void
+  primaryHref: string
+  primaryLabel: string
+  secondaryHref: string
+  secondaryLabel: string
+  t: (key: string, fallback?: string) => string
+}) {
+  const Icon = icon
+
+  return (
+    <article
+      className={`rounded-[30px] border bg-white px-5 py-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)] transition ${
+        active ? 'border-[#d1aa5c]/70 shadow-[0_18px_40px_rgba(209,170,92,0.14)]' : 'border-black/8'
+      }`}
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.22em] text-black/34">{eyebrow}</div>
+          <h2 className="mt-2 text-[22px] font-semibold text-black">{title}</h2>
+        </div>
+        <div className="rounded-[18px] bg-[var(--surface-soft)] p-3 text-black/68">
+          <Icon className="h-5 w-5" />
+        </div>
+      </div>
+
+      <p className="mt-3 text-[13px] leading-7 text-black/58">{body}</p>
+
+      {editing ? (
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <EditableResearchMetric
+            label={t('settings.metric.maxCandidates', 'Max candidates per stage')}
+            value={config.maxCandidatesPerStage}
+            onChange={(v) => onChange({ ...config, maxCandidatesPerStage: v })}
+            min={10}
+            max={100}
+            disabled={saving}
+          />
+          <EditableResearchMetric
+            label={t('settings.metric.discoveryLimit', 'Discovery query limit')}
+            value={config.discoveryQueryLimit}
+            onChange={(v) => onChange({ ...config, discoveryQueryLimit: v })}
+            min={50}
+            max={300}
+            disabled={saving}
+          />
+          <EditableResearchMetric
+            label={t('settings.metric.maxPapersPerNode', 'Max papers per node')}
+            value={config.maxPapersPerNode}
+            onChange={(v) => onChange({ ...config, maxPapersPerNode: v })}
+            min={5}
+            max={30}
+            disabled={saving}
+          />
+          <EditableResearchMetric
+            label={t('settings.metric.admissionThreshold', 'Admission threshold')}
+            value={config.admissionThreshold}
+            onChange={(v) => onChange({ ...config, admissionThreshold: v })}
+            min={0.15}
+            max={0.85}
+            step={0.05}
+            disabled={saving}
+          />
+          <EditableResearchMetric
+            label={t('settings.metric.semanticScholarLimit', 'Semantic Scholar limit')}
+            value={config.semanticScholarLimit}
+            onChange={(v) => onChange({ ...config, semanticScholarLimit: v })}
+            min={10}
+            max={50}
+            disabled={saving}
+          />
+          <EditableResearchMetric
+            label={t('settings.metric.discoveryRounds', 'Discovery rounds')}
+            value={config.discoveryRounds}
+            onChange={(v) => onChange({ ...config, discoveryRounds: v })}
+            min={1}
+            max={4}
+            disabled={saving}
+          />
+        </div>
+      ) : (
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <SettingsMetric label={t('settings.metric.maxCandidates', 'Max candidates per stage')} value={String(config.maxCandidatesPerStage)} />
+          <SettingsMetric label={t('settings.metric.discoveryLimit', 'Discovery query limit')} value={String(config.discoveryQueryLimit)} />
+          <SettingsMetric label={t('settings.metric.maxPapersPerNode', 'Max papers per node')} value={String(config.maxPapersPerNode)} />
+          <SettingsMetric label={t('settings.metric.admissionThreshold', 'Admission threshold')} value={String(config.admissionThreshold)} />
+          <SettingsMetric label={t('settings.metric.semanticScholarLimit', 'Semantic Scholar limit')} value={String(config.semanticScholarLimit)} />
+          <SettingsMetric label={t('settings.metric.discoveryRounds', 'Discovery rounds')} value={String(config.discoveryRounds)} />
+        </div>
+      )}
+
+      {/* Status indicators */}
+      {saved && (
+        <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-green-100 px-3 py-1 text-[12px] text-green-700">
+          <CheckCircle2 className="h-3.5 w-3.5" />
+          {t('settings.researchSaved', 'Configuration saved')}
+        </div>
+      )}
+      {error && (
+        <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-red-100 px-3 py-1 text-[12px] text-red-700">
+          <Sparkles className="h-3.5 w-3.5" />
+          {error}
+        </div>
+      )}
+
+      <div className="mt-5 flex flex-wrap items-center gap-3">
+        {editing ? (
+          <>
+            <button
+              onClick={onSave}
+              disabled={saving}
+              className="inline-flex items-center gap-2 rounded-full bg-black px-4 py-2.5 text-[13px] text-white transition hover:bg-black/92 disabled:opacity-50"
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {t('settings.researchSaving', 'Saving...')}
+                </>
+              ) : (
+                <>
+                  <Save className="h-4 w-4" />
+                  {t('settings.researchSave', 'Save configuration')}
+                </>
+              )}
+            </button>
+            <button
+              onClick={onCancel}
+              disabled={saving}
+              className="inline-flex items-center gap-2 rounded-full border border-black/8 bg-white px-4 py-2.5 text-[13px] text-black/64 transition hover:border-black/16 hover:text-black disabled:opacity-50"
+            >
+              <X className="h-4 w-4" />
+              {t('settings.researchCancel', 'Cancel')}
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={onEdit}
+              className="inline-flex items-center gap-2 rounded-full bg-black px-4 py-2.5 text-[13px] text-white transition hover:bg-black/92"
+            >
+              <Pencil className="h-4 w-4" />
+              {t('settings.researchEdit', 'Edit parameters')}
+            </button>
+            <Link
+              to={primaryHref}
+              className="inline-flex items-center gap-2 rounded-full border border-black/8 bg-white px-4 py-2.5 text-[13px] text-black/64 transition hover:border-black/16 hover:text-black"
+            >
+              {primaryLabel}
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+            <Link
+              to={secondaryHref}
+              className="inline-flex items-center gap-2 rounded-full border border-black/8 bg-white px-4 py-2.5 text-[13px] text-black/64 transition hover:border-black/16 hover:text-black"
+            >
+              {secondaryLabel}
+            </Link>
+          </>
+        )}
+      </div>
+    </article>
+  )
+}
+
 export function SettingsPage() {
   const { t } = useI18n()
   const [searchParams] = useSearchParams()
@@ -134,6 +380,20 @@ export function SettingsPage() {
   const [bundle, setBundle] = useState<PromptStudioBundle | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  
+  // Research config state
+  const [researchConfig, setResearchConfig] = useState<ResearchConfig>({
+    maxCandidatesPerStage: 100,
+    discoveryQueryLimit: 200,
+    maxPapersPerNode: 20,
+    admissionThreshold: 0.55,
+    semanticScholarLimit: 25,
+    discoveryRounds: 2,
+  })
+  const [researchEditing, setResearchEditing] = useState(false)
+  const [researchSaving, setResearchSaving] = useState(false)
+  const [researchSaved, setResearchSaved] = useState(false)
+  const [researchError, setResearchError] = useState<string | null>(null)
 
   const focusTab = normalizeFocusTab(searchParams.get('tab'))
   const focusLabel =
@@ -145,9 +405,36 @@ export function SettingsPage() {
           ? t('settings.focus.prompts', 'Prompts')
           : focusTab === 'copy'
             ? t('settings.focus.copy', 'Copy')
-            : t('settings.focus.agents', 'Agents')
+            : focusTab === 'agents'
+              ? t('settings.focus.agents', 'Agents')
+              : t('settings.focus.research', 'Research Tracking')
 
   useDocumentTitle(t('nav.settings', 'Settings'))
+  
+  const handleSaveResearchConfig = async () => {
+    setResearchSaving(true)
+    setResearchError(null)
+    setResearchSaved(false)
+    
+    try {
+      const result = await apiPatch<ResearchConfig>('/api/topics/research-config', researchConfig)
+      setResearchConfig(result)
+      setResearchEditing(false)
+      setResearchSaved(true)
+      setTimeout(() => setResearchSaved(false), 3000)
+    } catch (err) {
+      setResearchError(err instanceof Error ? err.message : t('settings.researchError', 'Failed to save'))
+    } finally {
+      setResearchSaving(false)
+    }
+  }
+  
+  const handleCancelResearchEdit = () => {
+    setResearchEditing(false)
+    setResearchError(null)
+    // Reset to current saved values by re-fetching
+    apiGet<ResearchConfig>('/api/topics/research-config').then(setResearchConfig).catch(() => {})
+  }
 
   const roleEntries = useMemo(
     () => Object.values(capabilities?.roles ?? {}),
@@ -157,7 +444,7 @@ export function SettingsPage() {
   const effectiveRoleCount = roleEntries.filter((role) => role.configured).length
   const totalRoleCount = roleEntries.length
 
-  useEffect(() => {
+useEffect(() => {
     let alive = true
     setLoading(true)
     setError(null)
@@ -165,11 +452,13 @@ export function SettingsPage() {
     Promise.all([
       fetchModelCapabilitySummary(),
       apiGet<PromptStudioBundle>('/api/prompt-templates/studio'),
+      apiGet<ResearchConfig>('/api/topics/research-config'),
     ])
-      .then(([nextCapabilities, nextBundle]) => {
+      .then(([nextCapabilities, nextBundle, nextResearchConfig]) => {
         if (!alive) return
         setCapabilities(nextCapabilities)
         setBundle(nextBundle)
+        setResearchConfig(nextResearchConfig)
       })
       .catch((nextError) => {
         if (!alive) return
@@ -409,8 +698,48 @@ export function SettingsPage() {
         secondaryLabel: t('settings.agentsSecondary', 'Review copy layer'),
         icon: Wand2,
       },
+      {
+        id: 'research' as const,
+        eyebrow: t('settings.researchEyebrow', 'Research tracking'),
+        title: t('settings.researchTitle', 'Paper discovery and admission'),
+        body: t(
+          'settings.researchBody',
+          'Configure how the research tracking agent discovers and admits papers. Adjust discovery depth, admission thresholds, and per-stage limits to make the agent a master researcher in your domain.',
+        ),
+        metrics: [
+          {
+            label: t('settings.metric.maxCandidates', 'Max candidates per stage'),
+            value: String(researchConfig.maxCandidatesPerStage),
+          },
+          {
+            label: t('settings.metric.discoveryLimit', 'Discovery query limit'),
+            value: String(researchConfig.discoveryQueryLimit),
+          },
+          {
+            label: t('settings.metric.maxPapersPerNode', 'Max papers per node'),
+            value: String(researchConfig.maxPapersPerNode),
+          },
+          {
+            label: t('settings.metric.admissionThreshold', 'Admission threshold'),
+            value: String(researchConfig.admissionThreshold),
+          },
+          {
+            label: t('settings.metric.semanticScholarLimit', 'Semantic Scholar limit'),
+            value: String(researchConfig.semanticScholarLimit),
+          },
+          {
+            label: t('settings.metric.discoveryRounds', 'Discovery rounds'),
+            value: String(researchConfig.discoveryRounds),
+          },
+        ],
+        primaryHref: '/topic-manager',
+        primaryLabel: t('settings.researchPrimary', 'Configure topics'),
+        secondaryHref: '/settings?tab=pipeline',
+        secondaryLabel: t('settings.researchSecondary', 'View pipeline'),
+        icon: BookOpen,
+      },
     ]
-  }, [bundle, capabilities, configuredRoleCount, effectiveRoleCount, t, totalRoleCount])
+  }, [bundle, capabilities, configuredRoleCount, effectiveRoleCount, t, totalRoleCount, researchConfig])
 
   return (
     <main data-testid="settings-page" className="px-4 pb-20 pt-8 md:px-6 xl:px-10">
@@ -483,7 +812,7 @@ export function SettingsPage() {
           </section>
         ) : (
           <section className="mt-6 grid gap-5 xl:grid-cols-2">
-            {cards.map((card) => (
+            {cards.filter((card) => card.id !== 'research').map((card) => (
               <SettingsCard
                 key={card.id}
                 active={focusTab === card.id || (focusTab === 'copy' && card.id === 'prompts')}
@@ -498,6 +827,31 @@ export function SettingsPage() {
                 icon={card.icon}
               />
             ))}
+            {/* Research config card with editable form */}
+            <ResearchConfigCard
+              active={focusTab === 'research'}
+              eyebrow={t('settings.researchEyebrow', 'Research tracking')}
+              title={t('settings.researchTitle', 'Paper discovery and admission')}
+              body={t(
+                'settings.researchBody',
+                'Configure how the research tracking agent discovers and admits papers. Adjust discovery depth, admission thresholds, and per-stage limits to make the agent a master researcher in your domain.',
+              )}
+              icon={BookOpen}
+              config={researchConfig}
+              editing={researchEditing}
+              saving={researchSaving}
+              saved={researchSaved}
+              error={researchError}
+              onEdit={() => setResearchEditing(true)}
+              onSave={handleSaveResearchConfig}
+              onCancel={handleCancelResearchEdit}
+              onChange={setResearchConfig}
+              primaryHref="/topic-manager"
+              primaryLabel={t('settings.researchPrimary', 'Configure topics')}
+              secondaryHref="/settings?tab=pipeline"
+              secondaryLabel={t('settings.researchSecondary', 'View pipeline')}
+              t={t}
+            />
           </section>
         )}
 
