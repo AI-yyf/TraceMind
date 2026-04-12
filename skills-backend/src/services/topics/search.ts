@@ -667,11 +667,6 @@ export async function searchResearchCorpus({
         node_papers: {
           select: {
             paperId: true,
-            papers: {
-              select: {
-                tags: true,
-              },
-            },
           },
         },
       },
@@ -692,6 +687,9 @@ export async function searchResearchCorpus({
 
   const topicKeywordMap = await loadTopicKeywordMap(visibleTopics.map((topic) => topic.id))
   const topicTitleMap = new Map(visibleTopics.map((topic) => [topic.id, topic.nameZh]))
+  const paperTagMap = new Map(
+    visiblePapers.map((paper) => [paper.id, parseJsonArray(paper.tags)] as const),
+  )
   const paperPublishedAtById = new Map(
     visiblePapers.map((paper) => [paper.id, paper.published] as const),
   )
@@ -785,7 +783,7 @@ export async function searchResearchCorpus({
     for (const node of visibleNodes) {
       const tags = Array.from(
         new Set(
-          node.node_papers.flatMap((entry) => parseJsonArray(entry.papers?.tags)),
+          node.node_papers.flatMap((entry) => paperTagMap.get(entry.paperId) ?? []),
         ),
       )
       const nodeTopicTitle = topicTitleMap.get(node.topicId) ?? ''
