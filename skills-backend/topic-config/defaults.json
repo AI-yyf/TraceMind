@@ -1,7 +1,8 @@
 {
   "bootstrapWindowDays": 30,
   "maxPaperIntervalDays": 61,
-  "maxCandidates": 8,
+  "maxCandidates": 100,
+  "maxPapersPerNode": 20,
   "windowPolicy": "auto",
   "minStageWindowMonths": 2,
   "maxStageWindowMonths": 8,

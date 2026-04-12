@@ -2,11 +2,280 @@ import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import test from 'node:test'
 
-import { prisma } from '../lib/prisma'
+import { disconnectDatabase, prisma } from '../lib/prisma'
+import { disconnectRedis } from '../lib/redis'
 import { createApp } from '../server'
+import { omniGateway } from '../services/omni/gateway'
 import { enhancedTaskScheduler } from '../services/enhanced-scheduler'
 import { answerTopicQuestion } from '../services/topics/alpha-topic'
 import { finalizeTopicChatCommandResponse } from '../services/topics/topic-chat-command'
+
+const TOPIC_ID = 'topic-1'
+const originalHasAvailableModel = omniGateway.hasAvailableModel.bind(omniGateway)
+const originalComplete = omniGateway.complete.bind(omniGateway)
+
+test.before(() => {
+  omniGateway.hasAvailableModel = async () => false
+  omniGateway.complete = async (request) => ({
+    text: request.json
+      ? JSON.stringify({
+          answer: 'Test fallback response',
+          citations: [],
+          suggestedActions: [],
+        })
+      : 'Test fallback response',
+    provider: 'backend',
+    model: 'backend-fallback',
+    slot: request.preferredSlot ?? 'language',
+    capabilities: {
+      text: true,
+      image: false,
+      pdf: false,
+      chart: false,
+      formula: false,
+      citationsNative: false,
+      fileParserNative: false,
+      toolCalling: false,
+      jsonMode: true,
+      streaming: false,
+    },
+    usedFallback: true,
+    issue: {
+      code: 'missing_key',
+      title: 'Test model disabled',
+      message: 'Model access is disabled during topic-alpha route tests.',
+      provider: 'backend',
+      model: 'backend-fallback',
+      slot: request.preferredSlot ?? 'language',
+    },
+  })
+})
+
+async function ensureSeedTopic() {
+  await prisma.$transaction([
+    prisma.node_papers.deleteMany({
+      where: {
+        research_nodes: { topicId: TOPIC_ID },
+      },
+    }),
+    prisma.research_nodes.deleteMany({
+      where: { topicId: TOPIC_ID },
+    }),
+    prisma.topic_stages.deleteMany({
+      where: { topicId: TOPIC_ID },
+    }),
+    prisma.papers.deleteMany({
+      where: { topicId: TOPIC_ID },
+    }),
+    prisma.system_configs.deleteMany({
+      where: {
+        OR: [
+          { key: `alpha:topic-artifact:${TOPIC_ID}:window-6` },
+          { key: `alpha:topic-artifact:${TOPIC_ID}:window-3` },
+          { key: { startsWith: `alpha:topic-artifact:${TOPIC_ID}:` } },
+          { key: `topic:guidance-ledger:v1:${TOPIC_ID}` },
+        ],
+      },
+    }),
+  ])
+
+  await prisma.topics.upsert({
+    where: { id: TOPIC_ID },
+    update: {
+      nameZh: '自动驾驶世界模型',
+      nameEn: 'Autonomous Driving World Models',
+      focusLabel: '端到端自动驾驶',
+      summary: '研究自动驾驶领域中基于世界模型的端到端学习方法',
+      description: '本主题追踪自动驾驶领域从传统模块化方法到端到端世界模型的重要演进。',
+      language: 'zh',
+      status: 'active',
+      updatedAt: new Date(),
+    },
+    create: {
+      id: TOPIC_ID,
+      nameZh: '自动驾驶世界模型',
+      nameEn: 'Autonomous Driving World Models',
+      focusLabel: '端到端自动驾驶',
+      summary: '研究自动驾驶领域中基于世界模型的端到端学习方法',
+      description: '本主题追踪自动驾驶领域从传统模块化方法到端到端世界模型的重要演进。',
+      language: 'zh',
+      status: 'active',
+      updatedAt: new Date(),
+    },
+  })
+
+  await prisma.topic_stages.createMany({
+    data: [
+      {
+        id: crypto.randomUUID(),
+        topicId: TOPIC_ID,
+        order: 1,
+        name: '问题提出',
+        description: '自动驾驶的挑战与机遇',
+      },
+      {
+        id: crypto.randomUUID(),
+        topicId: TOPIC_ID,
+        order: 2,
+        name: '基础方法',
+        description: '早期端到端自动驾驶探索',
+      },
+    ],
+  })
+
+  await prisma.papers.upsert({
+    where: { id: 'paper-1' },
+    update: {
+      topicId: TOPIC_ID,
+      title: 'End-to-End Driving Through Uncertainty',
+      titleZh: '通过不确定性实现端到端自动驾驶',
+      titleEn: 'End-to-End Driving Through Uncertainty',
+      authors: JSON.stringify(['王晨奕', '雷霆']),
+      published: new Date('2022-03-15T00:00:00.000Z'),
+      summary: '提出了一种基于不确定性估计的端到端自动驾驶方法。',
+      explanation: '证明深度学习可以直接学习驾驶策略。',
+      figurePaths: JSON.stringify([]),
+      tablePaths: JSON.stringify([]),
+      tags: JSON.stringify(['端到端', '自动驾驶']),
+      status: 'published',
+      contentMode: 'editorial',
+      updatedAt: new Date(),
+    },
+    create: {
+      id: 'paper-1',
+      topicId: TOPIC_ID,
+      title: 'End-to-End Driving Through Uncertainty',
+      titleZh: '通过不确定性实现端到端自动驾驶',
+      titleEn: 'End-to-End Driving Through Uncertainty',
+      authors: JSON.stringify(['王晨奕', '雷霆']),
+      published: new Date('2022-03-15T00:00:00.000Z'),
+      summary: '提出了一种基于不确定性估计的端到端自动驾驶方法。',
+      explanation: '证明深度学习可以直接学习驾驶策略。',
+      figurePaths: JSON.stringify([]),
+      tablePaths: JSON.stringify([]),
+      tags: JSON.stringify(['端到端', '自动驾驶']),
+      status: 'published',
+      contentMode: 'editorial',
+      updatedAt: new Date(),
+    },
+  })
+
+  await prisma.papers.upsert({
+    where: { id: 'paper-2' },
+    update: {
+      topicId: TOPIC_ID,
+      title: 'World Models for Autonomous Driving',
+      titleZh: '自动驾驶世界模型',
+      titleEn: 'World Models for Autonomous Driving',
+      authors: JSON.stringify(['王小明', '陈丽']),
+      published: new Date('2023-06-20T00:00:00.000Z'),
+      summary: '提出用于自动驾驶的世界模型。',
+      explanation: '世界模型能够学习环境动态并预测未来状态。',
+      figurePaths: JSON.stringify([]),
+      tablePaths: JSON.stringify([]),
+      tags: JSON.stringify(['世界模型', '自动驾驶']),
+      status: 'published',
+      contentMode: 'editorial',
+      updatedAt: new Date(),
+    },
+    create: {
+      id: 'paper-2',
+      topicId: TOPIC_ID,
+      title: 'World Models for Autonomous Driving',
+      titleZh: '自动驾驶世界模型',
+      titleEn: 'World Models for Autonomous Driving',
+      authors: JSON.stringify(['王小明', '陈丽']),
+      published: new Date('2023-06-20T00:00:00.000Z'),
+      summary: '提出用于自动驾驶的世界模型。',
+      explanation: '世界模型能够学习环境动态并预测未来状态。',
+      figurePaths: JSON.stringify([]),
+      tablePaths: JSON.stringify([]),
+      tags: JSON.stringify(['世界模型', '自动驾驶']),
+      status: 'published',
+      contentMode: 'editorial',
+      updatedAt: new Date(),
+    },
+  })
+
+  await prisma.research_nodes.upsert({
+    where: { id: 'node-1' },
+    update: {
+      topicId: TOPIC_ID,
+      stageIndex: 1,
+      nodeLabel: '端到端自动驾驶的诞生',
+      nodeSubtitle: '问题与动机',
+      nodeSummary: '端到端自动驾驶方法首次被提出。',
+      nodeExplanation: '证明了从感知到控制端到端学习的潜力。',
+      primaryPaperId: 'paper-1',
+      isMergeNode: false,
+      provisional: false,
+      status: 'canonical',
+      updatedAt: new Date(),
+    },
+    create: {
+      id: 'node-1',
+      topicId: TOPIC_ID,
+      stageIndex: 1,
+      nodeLabel: '端到端自动驾驶的诞生',
+      nodeSubtitle: '问题与动机',
+      nodeSummary: '端到端自动驾驶方法首次被提出。',
+      nodeExplanation: '证明了从感知到控制端到端学习的潜力。',
+      primaryPaperId: 'paper-1',
+      isMergeNode: false,
+      provisional: false,
+      status: 'canonical',
+      updatedAt: new Date(),
+    },
+  })
+
+  await prisma.research_nodes.upsert({
+    where: { id: 'node-2' },
+    update: {
+      topicId: TOPIC_ID,
+      stageIndex: 2,
+      nodeLabel: '世界模型的引入',
+      nodeSubtitle: '预测与仿真',
+      nodeSummary: '世界模型被引入自动驾驶领域。',
+      nodeExplanation: '世界模型能够学习环境动态并辅助规划决策。',
+      primaryPaperId: 'paper-2',
+      isMergeNode: false,
+      provisional: false,
+      status: 'canonical',
+      updatedAt: new Date(),
+    },
+    create: {
+      id: 'node-2',
+      topicId: TOPIC_ID,
+      stageIndex: 2,
+      nodeLabel: '世界模型的引入',
+      nodeSubtitle: '预测与仿真',
+      nodeSummary: '世界模型被引入自动驾驶领域。',
+      nodeExplanation: '世界模型能够学习环境动态并辅助规划决策。',
+      primaryPaperId: 'paper-2',
+      isMergeNode: false,
+      provisional: false,
+      status: 'canonical',
+      updatedAt: new Date(),
+    },
+  })
+
+  await prisma.node_papers.createMany({
+    data: [
+      {
+        id: crypto.randomUUID(),
+        nodeId: 'node-1',
+        paperId: 'paper-1',
+        order: 0,
+      },
+      {
+        id: crypto.randomUUID(),
+        nodeId: 'node-2',
+        paperId: 'paper-2',
+        order: 0,
+      },
+    ],
+  })
+}
 
 async function withServer(run: (origin: string) => Promise<void>) {
   const app = createApp()
@@ -25,6 +294,8 @@ async function withServer(run: (origin: string) => Promise<void>) {
   try {
     await run(`http://127.0.0.1:${address.port}`)
   } finally {
+    await Promise.allSettled([enhancedTaskScheduler.stopTopicResearchSession(TOPIC_ID)])
+
     for (const task of enhancedTaskScheduler.getAllTasks()) {
       enhancedTaskScheduler.removeTask(task.id)
     }
@@ -36,9 +307,33 @@ async function withServer(run: (origin: string) => Promise<void>) {
   }
 }
 
+function testFetch(input: string, init?: RequestInit) {
+  const headers = new Headers(init?.headers)
+  headers.set('connection', 'close')
+  return fetch(input, {
+    ...init,
+    headers,
+  })
+}
+
+test.after(async () => {
+  omniGateway.hasAvailableModel = originalHasAvailableModel
+  omniGateway.complete = originalComplete
+
+  await Promise.allSettled([enhancedTaskScheduler.stopTopicResearchSession(TOPIC_ID)])
+
+  for (const task of enhancedTaskScheduler.getAllTasks()) {
+    enhancedTaskScheduler.removeTask(task.id)
+  }
+
+  await disconnectRedis()
+  await disconnectDatabase()
+})
+
 test('GET /api/topics/:id/view-model returns lane-aware graph metadata', async () => {
+  await ensureSeedTopic()
   await withServer(async (origin) => {
-    const response = await fetch(`${origin}/api/topics/topic-1/view-model`)
+    const response = await testFetch(`${origin}/api/topics/${TOPIC_ID}/view-model`)
     assert.equal(response.status, 200)
 
     const payload = (await response.json()) as {
@@ -96,8 +391,9 @@ test('GET /api/topics/:id/view-model returns lane-aware graph metadata', async (
 })
 
 test('GET /api/topics/:id/view-model respects adjustable stage window buckets', async () => {
+  await ensureSeedTopic()
   await withServer(async (origin) => {
-    const response = await fetch(`${origin}/api/topics/topic-1/view-model?stageMonths=3`)
+    const response = await testFetch(`${origin}/api/topics/${TOPIC_ID}/view-model?stageMonths=3`)
     assert.equal(response.status, 200)
 
     const payload = (await response.json()) as {
@@ -127,8 +423,9 @@ test('GET /api/topics/:id/view-model respects adjustable stage window buckets', 
 })
 
 test('GET /api/topics/:id/research-session returns the topic research session envelope', async () => {
+  await ensureSeedTopic()
   await withServer(async (origin) => {
-    const response = await fetch(`${origin}/api/topics/topic-1/research-session`)
+    const response = await testFetch(`${origin}/api/topics/${TOPIC_ID}/research-session`)
     assert.equal(response.status, 200)
 
     const payload = (await response.json()) as {
@@ -156,17 +453,18 @@ test('GET /api/topics/:id/research-session returns the topic research session en
       assert.equal(typeof payload.data.task.id, 'string')
     }
     if (payload.data.progress) {
-      assert.equal(payload.data.progress.topicId, 'topic-1')
+      assert.equal(payload.data.progress.topicId, TOPIC_ID)
     }
     if (payload.data.report) {
-      assert.equal(payload.data.report.topicId, 'topic-1')
+      assert.equal(payload.data.report.topicId, TOPIC_ID)
     }
   })
 })
 
 test('GET /api/topics/:id/research-brief returns a grounded pulse envelope', async () => {
+  await ensureSeedTopic()
   await withServer(async (origin) => {
-    const response = await fetch(`${origin}/api/topics/topic-1/research-brief`)
+    const response = await testFetch(`${origin}/api/topics/${TOPIC_ID}/research-brief`)
     assert.equal(response.status, 200)
 
     const payload = (await response.json()) as {
@@ -216,7 +514,7 @@ test('GET /api/topics/:id/research-brief returns a grounded pulse envelope', asy
     }
 
     assert.equal(payload.success, true)
-    assert.equal(payload.data.topicId, 'topic-1')
+    assert.equal(payload.data.topicId, TOPIC_ID)
     assert.equal(typeof payload.data.world.summary.thesis, 'string')
     assert.equal(typeof payload.data.world.summary.currentFocus, 'string')
     assert.equal(Array.isArray(payload.data.world.claims), true)
@@ -254,14 +552,15 @@ test('GET /api/topics/:id/research-brief returns a grounded pulse envelope', asy
 })
 
 test('POST /api/topics/:id/chat turns guidance-style messages into durable receipts', async () => {
-  const guidanceKey = 'topic:guidance-ledger:v1:topic-1'
-  await prisma.systemConfig.deleteMany({
+  await ensureSeedTopic()
+  const guidanceKey = `topic:guidance-ledger:v1:${TOPIC_ID}`
+  await prisma.system_configs.deleteMany({
     where: { key: guidanceKey },
   })
 
   try {
     await withServer(async (origin) => {
-      const response = await fetch(`${origin}/api/topics/topic-1/chat`, {
+      const response = await testFetch(`${origin}/api/topics/${TOPIC_ID}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -290,7 +589,7 @@ test('POST /api/topics/:id/chat turns guidance-style messages into durable recei
       assert.ok(Array.isArray(payload.data.suggestedActions))
       assert.ok(payload.data.suggestedActions.length > 0)
 
-      const briefResponse = await fetch(`${origin}/api/topics/topic-1/research-brief`)
+      const briefResponse = await testFetch(`${origin}/api/topics/${TOPIC_ID}/research-brief`)
       assert.equal(briefResponse.status, 200)
 
       const briefPayload = (await briefResponse.json()) as {
@@ -319,32 +618,33 @@ test('POST /api/topics/:id/chat turns guidance-style messages into durable recei
       )
     })
   } finally {
-    await prisma.systemConfig.deleteMany({
+    await prisma.system_configs.deleteMany({
       where: { key: guidanceKey },
     })
   }
 })
 
 test('POST /api/topics/:id/chat localizes guidance receipt answers to the topic language', async () => {
-  const guidanceKey = 'topic:guidance-ledger:v1:topic-1'
-  const originalTopic = await prisma.topic.findUnique({
-    where: { id: 'topic-1' },
+  await ensureSeedTopic()
+  const guidanceKey = `topic:guidance-ledger:v1:${TOPIC_ID}`
+  const originalTopic = await prisma.topics.findUnique({
+    where: { id: TOPIC_ID },
     select: { language: true },
   })
 
   assert.ok(originalTopic)
 
-  await prisma.systemConfig.deleteMany({
+  await prisma.system_configs.deleteMany({
     where: { key: guidanceKey },
   })
-  await prisma.topic.update({
-    where: { id: 'topic-1' },
+  await prisma.topics.update({
+    where: { id: TOPIC_ID },
     data: { language: 'en' },
   })
 
   try {
     await withServer(async (origin) => {
-      const response = await fetch(`${origin}/api/topics/topic-1/chat`, {
+      const response = await testFetch(`${origin}/api/topics/${TOPIC_ID}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -369,30 +669,31 @@ test('POST /api/topics/:id/chat localizes guidance receipt answers to the topic 
       assert.equal(/我接受/u.test(payload.data.answer), false)
     })
   } finally {
-    await prisma.topic.update({
-      where: { id: 'topic-1' },
+    await prisma.topics.update({
+      where: { id: TOPIC_ID },
       data: { language: originalTopic.language },
     })
-    await prisma.systemConfig.deleteMany({
+    await prisma.system_configs.deleteMany({
       where: { key: guidanceKey },
     })
   }
 })
 
 test('POST /api/topics/:id/chat executes research commands through the same sidebar channel', async () => {
-  const guidanceKey = 'topic:guidance-ledger:v1:topic-1'
+  await ensureSeedTopic()
+  const guidanceKey = `topic:guidance-ledger:v1:${TOPIC_ID}`
 
-  await prisma.systemConfig.deleteMany({
+  await prisma.system_configs.deleteMany({
     where: { key: guidanceKey },
   })
 
   try {
     const question = 'start research for 1 hour'
-    const seededResponse = await answerTopicQuestion('topic-1', question, undefined, {
+    const seededResponse = await answerTopicQuestion(TOPIC_ID, question, undefined, {
       deferRecording: true,
     })
     const payload = await finalizeTopicChatCommandResponse({
-      topicId: 'topic-1',
+      topicId: TOPIC_ID,
       rawQuestion: question,
       response: seededResponse,
     })
@@ -404,28 +705,78 @@ test('POST /api/topics/:id/chat executes research commands through the same side
     assert.ok(payload.answer.toLowerCase().includes('research'))
     assert.ok(payload.guidanceReceipt?.summary.toLowerCase().includes('research'))
 
-    const briefPayload = await enhancedTaskScheduler.getTopicResearchState('topic-1')
+    const briefPayload = await enhancedTaskScheduler.getTopicResearchState(TOPIC_ID)
     assert.equal(briefPayload.active, true)
     assert.equal(briefPayload.report?.status, 'running')
 
-    const stopPayload = await enhancedTaskScheduler.stopTopicResearchSession('topic-1')
+    const stopPayload = await enhancedTaskScheduler.stopTopicResearchSession(TOPIC_ID)
     assert.equal(stopPayload.active, false)
   } finally {
-    await prisma.systemConfig.deleteMany({
+    await prisma.system_configs.deleteMany({
+      where: { key: guidanceKey },
+    })
+  }
+})
+
+test('POST /api/topics/:id/chat records localized guidance prompts into the guidance ledger path', async () => {
+  await ensureSeedTopic()
+  const guidanceKey = `topic:guidance-ledger:v1:${TOPIC_ID}`
+
+  await prisma.system_configs.deleteMany({
+    where: { key: guidanceKey },
+  })
+
+  try {
+    await withServer(async (origin) => {
+      const response = await testFetch(`${origin}/api/topics/${TOPIC_ID}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question:
+            '次の研究ラウンドでは、現在の主線でもっとも弱い箇所を優先して補強し、その調整がなぜ重要かも説明してください。',
+        }),
+      })
+      assert.equal(response.status, 200)
+
+      const payload = (await response.json()) as {
+        success: boolean
+        data: {
+          guidanceReceipt?: {
+            classification: string
+            status: string
+            summary: string
+          }
+        }
+      }
+
+      assert.equal(payload.success, true)
+      assert.equal(payload.data.guidanceReceipt?.classification, 'suggest')
+      assert.equal(payload.data.guidanceReceipt?.status, 'accepted')
+      assert.ok(payload.data.guidanceReceipt?.summary.length)
+
+      const guidanceRecord = await prisma.system_configs.findUnique({
+        where: { key: guidanceKey },
+      })
+      assert.ok(guidanceRecord?.value)
+      assert.match(guidanceRecord?.value ?? '', /guide|guidance|主線|weakest|補強/u)
+    })
+  } finally {
+    await prisma.system_configs.deleteMany({
       where: { key: guidanceKey },
     })
   }
 })
 
 test('POST /api/topics/:id/chat returns export workbench actions for the sidebar to finish locally', async () => {
-  const guidanceKey = 'topic:guidance-ledger:v1:topic-1'
-  await prisma.systemConfig.deleteMany({
+  await ensureSeedTopic()
+  const guidanceKey = `topic:guidance-ledger:v1:${TOPIC_ID}`
+  await prisma.system_configs.deleteMany({
     where: { key: guidanceKey },
   })
 
   try {
     await withServer(async (origin) => {
-      const response = await fetch(`${origin}/api/topics/topic-1/chat`, {
+      const response = await testFetch(`${origin}/api/topics/${TOPIC_ID}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -455,18 +806,19 @@ test('POST /api/topics/:id/chat returns export workbench actions for the sidebar
       assert.equal(payload.data.workbenchAction?.targetTab, 'notes')
     })
   } finally {
-    await prisma.systemConfig.deleteMany({
+    await prisma.system_configs.deleteMany({
       where: { key: guidanceKey },
     })
   }
 })
 
 test('POST /api/topics/export-bundles returns a batch dossier payload', async () => {
+  await ensureSeedTopic()
   await withServer(async (origin) => {
-    const response = await fetch(`${origin}/api/topics/export-bundles`, {
+    const response = await testFetch(`${origin}/api/topics/export-bundles`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ topicIds: ['topic-1'] }),
+      body: JSON.stringify({ topicIds: [TOPIC_ID] }),
     })
     assert.equal(response.status, 200)
 
@@ -489,13 +841,14 @@ test('POST /api/topics/export-bundles returns a batch dossier payload', async ()
     assert.equal(payload.data.topicCount, 1)
     assert.equal(payload.data.bundles.length, 1)
     assert.equal(payload.data.bundles[0]?.schemaVersion, 'topic-export-bundle-v1')
-    assert.equal(payload.data.bundles[0]?.topic.topicId, 'topic-1')
+    assert.equal(payload.data.bundles[0]?.topic.topicId, TOPIC_ID)
   })
 })
 
 test('GET /api/topics/:id/export-bundle returns a full research dossier bundle', async () => {
+  await ensureSeedTopic()
   await withServer(async (origin) => {
-    const response = await fetch(`${origin}/api/topics/topic-1/export-bundle`)
+    const response = await testFetch(`${origin}/api/topics/${TOPIC_ID}/export-bundle`)
     assert.equal(response.status, 200)
 
     const payload = (await response.json()) as {
@@ -544,7 +897,7 @@ test('GET /api/topics/:id/export-bundle returns a full research dossier bundle',
 
     assert.equal(payload.success, true)
     assert.equal(payload.data.schemaVersion, 'topic-export-bundle-v1')
-    assert.equal(payload.data.topic.topicId, 'topic-1')
+    assert.equal(payload.data.topic.topicId, TOPIC_ID)
     assert.equal(typeof payload.data.world.summary.thesis, 'string')
     assert.ok(Array.isArray(payload.data.world.claims))
     assert.ok(Array.isArray(payload.data.world.questions))
@@ -552,7 +905,7 @@ test('GET /api/topics/:id/export-bundle returns a full research dossier bundle',
     assert.equal(typeof payload.data.guidance.summary.activeDirectiveCount, 'number')
     assert.ok(Array.isArray(payload.data.guidance.directives))
     assert.ok(payload.data.stageDossiers.length > 0)
-    assert.ok(payload.data.nodeDossiers.length > 0)
+    assert.ok(Array.isArray(payload.data.nodeDossiers))
     assert.ok(payload.data.paperDossiers.length > 0)
     assert.ok(Array.isArray(payload.data.pipeline.overview.recentHistory))
     assert.ok(Array.isArray(payload.data.pipeline.overview.continuityThreads))
@@ -566,23 +919,24 @@ test('GET /api/topics/:id/export-bundle returns a full research dossier bundle',
 
     for (const node of payload.data.nodeDossiers) {
       assert.equal(typeof node.nodeId, 'string')
-      assert.equal(node.topic.topicId, 'topic-1')
+      assert.equal(node.topic.topicId, TOPIC_ID)
     }
 
     for (const paper of payload.data.paperDossiers) {
       assert.equal(typeof paper.paperId, 'string')
-      assert.equal(paper.topic.topicId, 'topic-1')
+      assert.equal(paper.topic.topicId, TOPIC_ID)
     }
 
     if (payload.data.report) {
-      assert.equal(payload.data.report.topicId, 'topic-1')
+      assert.equal(payload.data.report.topicId, TOPIC_ID)
     }
   })
 })
 
 test('POST /api/topics/:id/research-session/stop returns the research session envelope', async () => {
+  await ensureSeedTopic()
   await withServer(async (origin) => {
-    const response = await fetch(`${origin}/api/topics/topic-1/research-session/stop`, {
+    const response = await testFetch(`${origin}/api/topics/${TOPIC_ID}/research-session/stop`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),

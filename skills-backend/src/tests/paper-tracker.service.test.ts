@@ -2,6 +2,9 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { __testing } from '../../skill-packs/research/paper-tracker/executor'
+import { __testing as discoveryTesting } from '../../skill-packs/research/paper-tracker/discovery'
+import { prisma } from '../lib/prisma'
+import { loadTopicStageConfig } from '../services/topics/topic-stage-config'
 
 test('paper tracker sanitizes noisy discovery terms before they reach external search', () => {
   const queries = __testing.sanitizeDiscoveryTerms([
@@ -131,6 +134,65 @@ test('paper tracker heuristic keeps direct world-model matches above the admit f
   )
 
   assert.ok(score >= 0.64)
+})
+
+test('paper tracker rejects 5G communication papers during early autonomous-driving continuity stages', () => {
+  const topicDef = {
+    id: 'autonomous-driving',
+    nameZh: '自动驾驶世界模型',
+    nameEn: 'Autonomous Driving World Models',
+    focusLabel: 'autonomous driving world model',
+    queryTags: ['autonomous driving', 'end-to-end driving', 'self-driving control'],
+    problemPreference: ['closed-loop control', 'planning'],
+    defaults: {
+      bootstrapWindowDays: 3650,
+      maxCandidates: 8,
+    },
+  } as any
+
+  const communicationPaper = {
+    id: 'paper-5g',
+    title: 'A Comparison of Symbol-Wise and Self-Contained Frame Structure for 5G Services',
+    summary:
+      'We compare symbol-wise and self-contained radio frame structures for 5G services, focusing on latency, throughput, and numerology choices in wireless communication.',
+    authors: ['Test Author'],
+    published: '2017-02-03T00:00:00.000Z',
+    categories: ['cs.NI'],
+    primaryCategory: 'cs.NI',
+    arxivUrl: 'https://arxiv.org/abs/1702.00001',
+  }
+
+  const admissionContext = {
+    topicId: 'autonomous-driving',
+    targetStageIndex: 2,
+    bootstrapMode: false,
+    stageLabel: '2016.10-2017.03',
+    anchorPaperTitles: [
+      'End to End Learning for Self-Driving Cars',
+      'Brain-Inspired Cognitive Model with Attention for Self-Driving Cars',
+    ],
+    anchorNodeTexts: ['end-to-end driving control', 'driving attention and recovery'],
+  } as any
+
+  const queries = ['end-to-end autonomous driving', 'self-driving control', 'driving attention']
+  const relevance = __testing.calculateSimpleRelevance(
+    communicationPaper as any,
+    topicDef,
+    queries,
+    admissionContext,
+  )
+
+  assert.equal(
+    __testing.passesTopicAdmissionGuard({
+      paper: communicationPaper as any,
+      topicDef,
+      queries,
+      candidateType: 'branch',
+      admissionContext,
+    }),
+    false,
+  )
+  assert.ok(relevance <= 0.34, `expected early-stage noise papers to be penalized, got ${relevance}`)
 })
 
 test('paper tracker bootstrap heuristic admits strong time-aligned papers without waiting for model classification', () => {
@@ -349,6 +411,74 @@ test('paper tracker derives the next stage from chronological stage buckets inst
   assert.equal(resolved.window.endDateExclusive.toISOString(), '2025-05-01T00:00:00.000Z')
 })
 
+test('paper tracker builds a broader discovery plan without diluting stage-bounded search', () => {
+  const topic = {
+    id: 'topic-vla',
+    nameZh: '自动驾驶 VLA 世界模型',
+    nameEn: 'Autonomous Driving VLA World Models',
+    focusLabel: 'autonomous driving VLA world model',
+    summary: 'Testing broader discovery planning.',
+    description: 'Testing broader discovery planning.',
+    createdAt: new Date('2025-01-03T00:00:00.000Z'),
+    papers: [],
+    nodes: [],
+    stages: [],
+  } as any
+
+  const topicDef = {
+    id: 'topic-vla',
+    nameZh: '自动驾驶 VLA 世界模型',
+    nameEn: 'Autonomous Driving VLA World Models',
+    focusLabel: 'autonomous driving VLA world model',
+    queryTags: ['vision language action', 'world model', 'autonomous driving'],
+    problemPreference: ['planning', 'closed-loop simulation', 'latent dynamics'],
+    defaults: {
+      bootstrapWindowDays: 3650,
+      maxCandidates: 8,
+    },
+  } as any
+
+  const stageWindow = {
+    currentStageIndex: 2,
+    targetStageIndex: 2,
+    windowMonths: 3,
+    stageLabel: '2026.01-2026.03',
+    startDate: new Date('2026-01-01T00:00:00.000Z'),
+    endDateExclusive: new Date('2026-04-01T00:00:00.000Z'),
+    searchStartDate: new Date('2026-01-01T00:00:00.000Z'),
+    searchEndDateExclusive: new Date('2026-04-01T00:00:00.000Z'),
+    anchorStageIndex: 1,
+    bootstrapMode: false,
+    anchorPapers: [
+      {
+        paperId: 'paper-1',
+        title: 'Drive-WM: A Driving World Model for Closed-Loop Autonomous Driving',
+        published: '2026-01-12T00:00:00.000Z',
+      },
+    ],
+    anchorNodes: [
+      {
+        nodeId: 'node-1',
+        title: 'Closed-loop world models',
+        summary: 'Latent dynamics, planning, and world-model-based simulation for self-driving.',
+      },
+    ],
+  } as any
+
+  const plan = __testing.buildDiscoveryPlan({
+    topic,
+    topicDef,
+    input: {
+      topicId: 'topic-vla',
+    },
+    stageWindow,
+  })
+
+  assert.equal(plan.discoveryRounds, 2)
+  assert.ok(plan.queries.length >= 8)
+  assert.ok(plan.maxCandidates >= 18)
+})
+
 test('paper tracker ignores topic creation time when deriving the next temporal stage', () => {
   const topic = {
     id: 'topic-vla-created-late',
@@ -487,6 +617,283 @@ test('paper tracker demotes generic world-model papers out of the direct mainlin
 
   assert.equal(signals.directTopicLexicalFit, false)
   assert.equal(__testing.normalizeCandidateTypeBySignals('direct', signals), 'branch')
+})
+
+test('paper tracker admits early autonomous-driving continuity papers before world-model terminology appears', () => {
+  const topicDef = {
+    id: 'autonomous-driving',
+    nameZh: '自动驾驶 VLA 世界模型',
+    nameEn: 'Autonomous Driving VLA World Models',
+    focusLabel: 'autonomous driving VLA world model',
+    queryTags: ['autonomous driving', 'self-driving', 'world model'],
+    problemPreference: ['closed-loop robustness', 'recovery policy', 'world modeling'],
+    defaults: {
+      bootstrapWindowDays: 3650,
+      maxCandidates: 8,
+    },
+  } as any
+
+  const paper = {
+    id: 'paper-early-driving',
+    title: 'Query-Efficient Imitation Learning for End-to-End Simulated Driving',
+    summary:
+      'We study imitation learning for end-to-end autonomous driving with intervention recovery and closed-loop evaluation in simulation.',
+    authors: ['Test Author'],
+    published: '2017-02-15T00:00:00.000Z',
+    categories: ['cs.RO', 'cs.LG'],
+    arxivUrl: 'https://example.com/paper-early-driving',
+  }
+
+  const admissionContext = {
+    topicId: 'autonomous-driving',
+    targetStageIndex: 2,
+    bootstrapMode: false,
+    stageLabel: '2016.10-2017.03',
+    anchorPaperTitles: ['End to End Learning for Self-Driving Cars'],
+    anchorNodeTexts: [
+      'End-to-end driving policy formation',
+      'Direct camera-to-control driving policies and recovery strategies.',
+    ],
+  }
+  const queries = [
+    'end-to-end autonomous driving',
+    'imitation learning driving',
+    'self-driving recovery',
+  ]
+
+  const signals = __testing.buildTopicAdmissionSignals(
+    paper as any,
+    topicDef,
+    queries,
+    admissionContext as any,
+  )
+
+  assert.equal(signals.earlyStageDrivingFit, true)
+  assert.equal(
+    __testing.passesTopicAdmissionGuard({
+      paper: paper as any,
+      topicDef,
+      queries,
+      candidateType: 'branch',
+      admissionContext: admissionContext as any,
+    }),
+    true,
+  )
+
+  const guarded = __testing.enforceTopicAdmissionGuard({
+    candidate: {
+      paperId: paper.id,
+      title: paper.title,
+      published: paper.published,
+      authors: paper.authors,
+      candidateType: 'direct',
+      confidence: 0.72,
+      status: 'admitted',
+      why: 'Strong early-stage autonomous-driving continuity.',
+      stageIndex: 2,
+      queryHits: queries,
+      discoveryChannels: ['openalex'],
+      arxivData: paper as any,
+    },
+    paper: paper as any,
+    topicDef,
+    queries,
+    admissionContext: admissionContext as any,
+  })
+
+  assert.equal(guarded.status, 'admitted')
+  assert.equal(guarded.candidateType, 'branch')
+})
+
+test('paper tracker admits early autonomous-driving interpretability papers as stage continuity branches', () => {
+  const topicDef = {
+    id: 'autonomous-driving',
+    nameZh: '自动驾驶 VLA 世界模型',
+    nameEn: 'Autonomous Driving VLA World Models',
+    focusLabel: 'autonomous driving VLA world model',
+    queryTags: ['autonomous driving', 'self-driving', 'world model'],
+    problemPreference: ['closed-loop robustness', 'recovery policy', 'world modeling'],
+    defaults: {
+      bootstrapWindowDays: 3650,
+      maxCandidates: 8,
+    },
+  } as any
+
+  const paper = {
+    id: 'paper-interpretable-driving',
+    title: 'Interpretable Learning for Self-Driving Cars by Visualizing Causal Attention',
+    summary:
+      'Deep neural perception and control networks for self-driving vehicles should provide easy-to-interpret rationales. We use a visual attention model trained end-to-end from images to steering angle and apply causal filtering to expose which regions truly influence steering control.',
+    authors: ['Test Author'],
+    published: '2017-03-30T00:00:00.000Z',
+    categories: ['cs.CV', 'cs.RO'],
+    arxivUrl: 'https://example.com/paper-interpretable-driving',
+  }
+
+  const admissionContext = {
+    topicId: 'autonomous-driving',
+    targetStageIndex: 2,
+    bootstrapMode: false,
+    stageLabel: '2016.10-2017.03',
+    anchorPaperTitles: ['End to End Learning for Self-Driving Cars'],
+    anchorNodeTexts: [
+      'End-to-end driving policy formation',
+      'Direct camera-to-control driving policies and recovery strategies.',
+    ],
+  }
+  const queries = [
+    'End to End Learning for Self-Driving Cars',
+    'end-to-end autonomous driving',
+    'causal attention self-driving',
+  ]
+
+  const signals = __testing.buildTopicAdmissionSignals(
+    paper as any,
+    topicDef,
+    queries,
+    admissionContext as any,
+  )
+
+  assert.equal(signals.earlyStageDrivingFit, true)
+  assert.equal(signals.earlyStageNoiseSignal, false)
+  assert.ok(signals.stageContinuityEvidenceScore >= 4)
+  assert.equal(
+    __testing.passesTopicAdmissionGuard({
+      paper: paper as any,
+      topicDef,
+      queries,
+      candidateType: 'branch',
+      admissionContext: admissionContext as any,
+    }),
+    true,
+  )
+})
+
+test('paper tracker keeps perception-only autonomous-driving stacks out of the early continuity bridge', () => {
+  const topicDef = {
+    id: 'autonomous-driving',
+    nameZh: '自动驾驶 VLA 世界模型',
+    nameEn: 'Autonomous Driving VLA World Models',
+    focusLabel: 'autonomous driving VLA world model',
+    queryTags: ['autonomous driving', 'self-driving', 'world model'],
+    problemPreference: ['closed-loop robustness', 'recovery policy', 'world modeling'],
+    defaults: {
+      bootstrapWindowDays: 3650,
+      maxCandidates: 8,
+    },
+  } as any
+
+  const paper = {
+    id: 'paper-multinet',
+    title: 'MultiNet: Real-time Joint Semantic Reasoning for Autonomous Driving',
+    summary:
+      'We present a unified architecture for classification, detection, and semantic segmentation in autonomous driving. The shared encoder can be trained end-to-end and reaches real-time inference on KITTI.',
+    authors: ['Test Author'],
+    published: '2016-12-22T00:00:00.000Z',
+    categories: ['cs.CV'],
+    arxivUrl: 'https://example.com/paper-multinet',
+  }
+
+  const admissionContext = {
+    topicId: 'autonomous-driving',
+    targetStageIndex: 2,
+    bootstrapMode: false,
+    stageLabel: '2016.10-2017.03',
+    anchorPaperTitles: ['End to End Learning for Self-Driving Cars'],
+    anchorNodeTexts: [
+      'End-to-end driving policy formation',
+      'Direct camera-to-control driving policies and recovery strategies.',
+    ],
+  }
+  const queries = [
+    'End to End Learning for Self-Driving Cars',
+    'end-to-end autonomous driving',
+    'autonomous driving end-to-end',
+  ]
+
+  const signals = __testing.buildTopicAdmissionSignals(
+    paper as any,
+    topicDef,
+    queries,
+    admissionContext as any,
+  )
+
+  assert.equal(signals.earlyStageDrivingFit, true)
+  assert.equal(signals.earlyStageNoiseSignal, true)
+  assert.equal(
+    __testing.passesTopicAdmissionGuard({
+      paper: paper as any,
+      topicDef,
+      queries,
+      candidateType: 'branch',
+      admissionContext: admissionContext as any,
+    }),
+    false,
+  )
+})
+
+test('paper tracker rejects human-robot trust papers that only mention autonomous driving as a task domain', () => {
+  const topicDef = {
+    id: 'autonomous-driving',
+    nameZh: '自动驾驶 VLA 世界模型',
+    nameEn: 'Autonomous Driving VLA World Models',
+    focusLabel: 'autonomous driving VLA world model',
+    queryTags: ['autonomous driving', 'self-driving', 'world model'],
+    problemPreference: ['closed-loop robustness', 'recovery policy', 'world modeling'],
+    defaults: {
+      bootstrapWindowDays: 3650,
+      maxCandidates: 8,
+    },
+  } as any
+
+  const paper = {
+    id: 'paper-trust-robots',
+    title: 'Maintaining efficient collaboration with trust-seeking robots',
+    summary:
+      'We infer a human supervisor trust state and adapt robot behavior to maintain collaboration efficiency. The end-to-end trust-seeking robot framework is demonstrated in aerial terrain coverage and interactive autonomous driving.',
+    authors: ['Test Author'],
+    published: '2016-10-01T00:00:00.000Z',
+    categories: ['cs.RO'],
+    arxivUrl: 'https://example.com/paper-trust-robots',
+  }
+
+  const admissionContext = {
+    topicId: 'autonomous-driving',
+    targetStageIndex: 2,
+    bootstrapMode: false,
+    stageLabel: '2016.10-2017.03',
+    anchorPaperTitles: ['End to End Learning for Self-Driving Cars'],
+    anchorNodeTexts: [
+      'End-to-end driving policy formation',
+      'Direct camera-to-control driving policies and recovery strategies.',
+    ],
+  }
+  const queries = [
+    'End to End Learning for Self-Driving Cars',
+    'end-to-end autonomous driving',
+    'autonomous driving end-to-end',
+  ]
+
+  const signals = __testing.buildTopicAdmissionSignals(
+    paper as any,
+    topicDef,
+    queries,
+    admissionContext as any,
+  )
+
+  assert.equal(signals.earlyStageDrivingFit, true)
+  assert.equal(signals.humanRobotInteractionSignal, true)
+  assert.equal(signals.earlyStageNoiseSignal, true)
+  assert.equal(
+    __testing.passesTopicAdmissionGuard({
+      paper: paper as any,
+      topicDef,
+      queries,
+      candidateType: 'branch',
+      admissionContext: admissionContext as any,
+    }),
+    false,
+  )
 })
 
 test('paper tracker builds discovery plans from stage anchors and exact time windows', () => {
@@ -638,4 +1045,302 @@ test('paper tracker expands VLA discovery queries into domain-method and domain-
         /\b(?:planning|control|simulation|closed-loop)\b/iu.test(query),
     ),
   )
+})
+
+test('structured discovery normalizes Semantic Scholar supplements into stage-filterable candidates', () => {
+  const candidate = discoveryTesting.normalizeSemanticScholarCandidate({
+    paper: {
+      paperId: 'semantic-paper-1',
+      externalIds: {
+        ArXiv: '2503.01234',
+        DOI: '10.1000/example',
+      },
+      title: 'DriveWorldVLA: Vision-Language-Action World Models for Autonomous Driving',
+      abstract: 'A world-model paper for autonomous driving with VLA control.',
+      authors: [{ name: 'Ada Researcher' }, { name: 'Bo Scientist' }],
+      year: 2025,
+      citationCount: 42,
+      referenceCount: 10,
+      publicationDate: '2025-03-12',
+      openAccessPdf: {
+        url: 'https://arxiv.org/pdf/2503.01234.pdf',
+        status: 'GREEN',
+      },
+    },
+    discoveryChannel: 'semantic-scholar:problem',
+    query: {
+      query: 'autonomous driving vision language action world model',
+      rationale: 'stage supplement',
+      targetProblemIds: ['node-vla'],
+      targetBranchIds: ['branch-main'],
+      targetAnchorPaperIds: ['paper-anchor'],
+      focus: 'problem',
+    },
+    discoveryRound: 1,
+  })
+
+  assert.ok(candidate)
+  assert.equal(candidate?.paperId, '2503.01234')
+  assert.equal(candidate?.source, 'semantic-scholar')
+  assert.equal(candidate?.published, '2025-03-12T00:00:00.000Z')
+  assert.equal(candidate?.arxivUrl, 'https://arxiv.org/abs/2503.01234')
+  assert.equal(candidate?.pdfUrl, 'https://arxiv.org/pdf/2503.01234.pdf')
+  assert.deepEqual(candidate?.matchedProblemNodeIds, ['node-vla'])
+  assert.deepEqual(candidate?.matchedBranchIds, ['branch-main'])
+  assert.deepEqual(candidate?.queryHits, ['autonomous driving vision language action world model'])
+})
+
+test('structured discovery dedupes and normalizes external query strings before retrieval fan-out', () => {
+  const deduped = discoveryTesting.dedupeDiscoveryQueries([
+    {
+      query: ' Autonomous Driving World Models ',
+      rationale: 'a',
+      targetProblemIds: ['node-a'],
+      focus: 'problem',
+    },
+    {
+      query: 'autonomous driving world models',
+      rationale: 'b',
+      targetProblemIds: ['node-b'],
+      focus: 'method',
+    },
+    {
+      query: 'Closed-loop planning with language actions',
+      rationale: 'c',
+      targetProblemIds: ['node-c'],
+      focus: 'merge',
+    },
+  ])
+
+  assert.deepEqual(
+    deduped.map((query) => query.query),
+    ['Autonomous Driving World Models', 'Closed-loop planning with language actions'],
+  )
+})
+
+test('structured discovery falls back to anchor-wide window checks when branch targeting is stale', () => {
+  const inWindow = discoveryTesting.withinAnyWindow({
+    published: '2025-01-20T00:00:00.000Z',
+    anchors: [
+      {
+        paperId: 'anchor-a',
+        title: 'Anchor A',
+        published: '2025-01-10T00:00:00.000Z',
+        branchId: 'branch-a',
+      },
+    ],
+    query: {
+      query: 'stale branch filter',
+      rationale: 'test fallback behavior',
+      targetProblemIds: ['node-a'],
+      targetBranchIds: ['missing-branch'],
+      focus: 'problem',
+    },
+    maxWindowMonths: 1,
+  })
+  const outOfWindow = discoveryTesting.withinAnyWindow({
+    published: '2025-03-20T00:00:00.000Z',
+    anchors: [
+      {
+        paperId: 'anchor-a',
+        title: 'Anchor A',
+        published: '2025-01-10T00:00:00.000Z',
+        branchId: 'branch-a',
+      },
+    ],
+    query: {
+      query: 'stale branch filter',
+      rationale: 'test fallback behavior',
+      targetProblemIds: ['node-a'],
+      targetBranchIds: ['missing-branch'],
+      focus: 'problem',
+    },
+    maxWindowMonths: 1,
+  })
+
+  assert.equal(inWindow, true)
+  assert.equal(outOfWindow, false)
+})
+
+test('structured discovery widens Semantic Scholar year prefilter while keeping strict date windows later', () => {
+  const bounds = discoveryTesting.deriveSemanticScholarYearBounds(
+    [
+      {
+        paperId: 'anchor-1',
+        title: 'Anchor 1',
+        published: '2025-01-10T00:00:00.000Z',
+      },
+      {
+        paperId: 'anchor-2',
+        title: 'Anchor 2',
+        published: '2026-05-12T00:00:00.000Z',
+      },
+    ],
+    2,
+  )
+
+  assert.equal(bounds.yearStart, 2024)
+  assert.equal(bounds.yearEnd, 2027)
+})
+
+test('paper tracker materialization turns committed stage papers into stage nodes for isolated topics', async () => {
+  const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const topicId = `paper-tracker-materialization-${uniqueSuffix}`
+  const stageIndex = 47
+  const stageLabel = '2028.01-2028.06'
+  const stageStartDate = new Date('2028-01-01T00:00:00.000Z')
+  const stageEndDateExclusive = new Date('2028-07-01T00:00:00.000Z')
+  const paperIds = [
+    `${topicId}-paper-a`,
+    `${topicId}-paper-b`,
+  ]
+  const topicStageConfigKey = `topic-stage-config:v1:${topicId}`
+  const logger = {
+    info() {},
+    warn() {},
+    error() {},
+    debug() {},
+  }
+  let createdNodeIds: string[] = []
+  await prisma.topics.create({
+    data: {
+      id: topicId,
+      nameZh: 'Paper Tracker Materialization Topic',
+      nameEn: 'Paper Tracker Materialization Topic',
+      language: 'en',
+      status: 'active',
+      updatedAt: new Date(),
+    },
+  })
+
+  await prisma.papers.create({
+    data: {
+      id: paperIds[0],
+      topicId,
+      title: 'Query-Efficient Recovery Policies for End-to-End Autonomous Driving',
+      titleZh: 'Query-Efficient Recovery Policies for End-to-End Autonomous Driving',
+      titleEn: 'Query-Efficient Recovery Policies for End-to-End Autonomous Driving',
+      authors: JSON.stringify(['Codex Test']),
+      published: new Date('2028-01-15T00:00:00.000Z'),
+      summary:
+        'Studies query-efficient recovery policies for end-to-end autonomous driving with closed-loop evidence.',
+      explanation:
+        'Focuses on recovery policy learning, intervention efficiency, and closed-loop stabilization for driving.',
+      figurePaths: '[]',
+      tablePaths: '[]',
+      tags: JSON.stringify(['stage-materialization-test']),
+      status: 'published',
+      contentMode: 'editorial',
+      updatedAt: new Date(),
+    },
+  })
+  await prisma.papers.create({
+    data: {
+      id: paperIds[1],
+      topicId,
+      title: 'Interpretable Attention Recovery for Self-Driving Control',
+      titleZh: 'Interpretable Attention Recovery for Self-Driving Control',
+      titleEn: 'Interpretable Attention Recovery for Self-Driving Control',
+      authors: JSON.stringify(['Codex Test']),
+      published: new Date('2028-02-10T00:00:00.000Z'),
+      summary:
+        'Connects interpretable attention maps to recovery-oriented end-to-end autonomous driving control.',
+      explanation:
+        'Explains how attention-guided recovery policies improve robustness and interpretability in closed-loop driving.',
+      figurePaths: '[]',
+      tablePaths: '[]',
+      tags: JSON.stringify(['stage-materialization-test']),
+      status: 'published',
+      contentMode: 'editorial',
+      updatedAt: new Date(),
+    },
+  })
+
+  try {
+    const result = await __testing.materializeTrackerStageCoverage({
+      topicId,
+      stageIndex,
+      stageLabel,
+      stageStartDate,
+      stageEndDateExclusive,
+      stageWindowMonths: 6,
+      admittedPaperIds: paperIds,
+      artifactMode: 'off',
+      context: {
+        logger,
+      } as any,
+    })
+
+    createdNodeIds = result.affectedNodeIds
+
+    assert.equal(result.stageIndex, stageIndex)
+    assert.equal(result.stagePaperIds.includes(paperIds[0]), true)
+    assert.equal(result.stagePaperIds.includes(paperIds[1]), true)
+    assert.ok(result.affectedNodeIds.length >= 1)
+
+    const topicStageConfig = await loadTopicStageConfig(topicId)
+    assert.equal(topicStageConfig.windowMonths, 6)
+
+    const stage = await prisma.topic_stages.findFirst({
+      where: {
+        topicId,
+        order: stageIndex,
+      },
+    })
+    if (stage) {
+      assert.equal(stage.order, stageIndex)
+    }
+
+    const nodes = await prisma.research_nodes.findMany({
+      where: {
+        id: { in: result.affectedNodeIds },
+      },
+      include: {
+        node_papers: {
+          orderBy: { order: 'asc' },
+        },
+      },
+    })
+
+    if (nodes.length > 0) {
+      const nodePaperIds = new Set(nodes.flatMap((node) => node.node_papers.map((entry) => entry.paperId)))
+      assert.equal(nodePaperIds.has(paperIds[0]), true)
+      assert.equal(nodePaperIds.has(paperIds[1]), true)
+    }
+  } finally {
+    if (createdNodeIds.length > 0) {
+      await prisma.node_papers.deleteMany({
+        where: {
+          nodeId: { in: createdNodeIds },
+        },
+      })
+      await prisma.research_nodes.deleteMany({
+        where: {
+          id: { in: createdNodeIds },
+        },
+      })
+    }
+
+    await prisma.topic_stages.deleteMany({
+      where: {
+        topicId,
+        order: stageIndex,
+      },
+    })
+    await prisma.papers.deleteMany({
+      where: {
+        id: { in: paperIds },
+      },
+    })
+    await prisma.topics.deleteMany({
+      where: {
+        id: topicId,
+      },
+    })
+    await prisma.system_configs.deleteMany({
+      where: {
+        key: topicStageConfigKey,
+      },
+    })
+  }
 })

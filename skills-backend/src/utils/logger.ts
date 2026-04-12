@@ -1,10 +1,8 @@
 import winston from 'winston'
 import DailyRotateFile from 'winston-daily-rotate-file'
 import path from 'path'
-import { fileURLToPath } from 'url'
 
 const { combine, timestamp, printf, colorize, errors } = winston.format
-const currentDir = path.dirname(fileURLToPath(import.meta.url))
 
 // 自定义日志格式
 const customFormat = printf(({ level, message, timestamp, stack, ...metadata }) => {
@@ -36,7 +34,7 @@ const fileFormat = combine(
 )
 
 // 创建日志目录
-const logDir = path.join(currentDir, '../../logs')
+const logDir = path.join(__dirname, '../../logs')
 
 //  transports
 const transports: winston.transport[] = [

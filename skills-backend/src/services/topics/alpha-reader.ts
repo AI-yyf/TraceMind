@@ -26,7 +26,6 @@ import {
 } from './topic-guidance-ledger'
 import {
   collectTopicSessionMemoryContext,
-  loadTopicSessionMemory,
 } from './topic-session-memory'
 import { collectTopicCognitiveMemory } from './topic-cognitive-memory'
 import { collectNodeRelatedPaperIds } from './node-paper-association'
@@ -36,14 +35,21 @@ import {
   normalizeStageWindowMonths,
 } from './stage-buckets'
 import { loadTopicStageConfig } from './topic-stage-config'
+import { ensureConfiguredTopicMaterializedForNode } from './topic-config-sync'
+import { hasMeaningfulDisplayText, pickMeaningfulDisplayText } from './display-text'
 import { logger } from '../../utils/logger'
 
 type EvidenceType = 'figure' | 'table' | 'formula'
+type GenerateNodeEnhancedArticle = typeof import('./deep-article-generator').generateNodeEnhancedArticle
 
 const READER_ARTIFACT_PREFIX = 'alpha:reader-artifact:'
 const readerArtifactBuildQueue = new Map<string, Promise<unknown>>()
-const NODE_READER_ARTIFACT_SCHEMA_VERSION = 'node-article-v3'
-const PAPER_READER_ARTIFACT_SCHEMA_VERSION = 'paper-article-v2'
+const NODE_READER_ARTIFACT_SCHEMA_VERSION = 'node-article-v5'
+const PAPER_READER_ARTIFACT_SCHEMA_VERSION = 'paper-article-v3'
+const ENHANCED_NODE_ARTICLE_TIMEOUT_MS = (() => {
+  const configured = Number.parseInt(process.env.ENHANCED_NODE_ARTICLE_TIMEOUT_MS ?? '', 10)
+  return Number.isFinite(configured) && configured > 0 ? configured : 180000
+})()
 const HEURISTIC_NARRATIVE_RE =
   /heuristic fit|query overlap|lexical and temporal relevance|stage-aligned query overlap/iu
 const LOW_SIGNAL_NODE_COPY_PATTERNS = [
@@ -78,9 +84,10 @@ const HTML_SECTION_NOISE_RE =
 const GENERIC_FIGURE_LABEL_RE = /^(?:图|figure)\s*\d+[a-z]?(?:\s*[:.]?)$/iu
 const GENERIC_TABLE_LABEL_RE = /^(?:表|table)\s*\d+[a-z]?(?:\s*[:.]?)$/iu
 const GENERIC_FORMULA_LABEL_RE = /^(?:公式|formula)\s*\d+[a-z]?(?:\s*[:.]?)$/iu
-const BODY_SECTION_TITLE_RE = /^body section \d+$/iu
+const BODY_SECTION_TITLE_RE = /^(?:body section|section) \d+$/iu
 
 type ReaderArtifactKind = 'paper' | 'node'
+type ReaderArtifactVariant = 'default' | 'enhanced'
 type ReaderArtifactWarmMode = 'full' | 'quick' | 'deferred'
 
 interface ReaderArtifactRecord<T> {
@@ -89,6 +96,78 @@ interface ReaderArtifactRecord<T> {
   fingerprint: string
   updatedAt: string
   viewModel: T
+}
+
+function normalizeReaderPaperDisplayFields(paper: any) {
+  const title = pickMeaningfulDisplayText(
+    paper?.titleZh,
+    paper?.titleEn,
+    paper?.title,
+    'Untitled paper',
+  )
+  const titleEn = pickMeaningfulDisplayText(
+    paper?.titleEn,
+    paper?.title,
+    paper?.titleZh,
+    title,
+  )
+  const titleZh = pickMeaningfulDisplayText(
+    paper?.titleZh,
+    paper?.titleEn,
+    paper?.title,
+    title,
+  )
+
+  return {
+    ...paper,
+    title,
+    titleEn,
+    titleZh,
+  }
+}
+
+function normalizeReaderNodeDisplayFields(node: any) {
+  const primaryPaper = node?.primaryPaper ?? node?.papers ?? null
+  const primaryPaperTitle = pickMeaningfulDisplayText(
+    primaryPaper?.titleZh,
+    primaryPaper?.titleEn,
+    primaryPaper?.title,
+  )
+
+  return {
+    ...node,
+    nodeLabel: pickMeaningfulDisplayText(
+      node?.nodeLabel,
+      node?.nodeSubtitle,
+      primaryPaperTitle,
+      'Research node',
+    ),
+    nodeSubtitle: pickMeaningfulDisplayText(
+      node?.nodeSubtitle,
+      primaryPaper?.titleEn,
+      primaryPaper?.title,
+      '',
+    ),
+  }
+}
+
+async function withReaderTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${timeoutMs}ms.`))
+    }, timeoutMs)
+
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error) => {
+        clearTimeout(timer)
+        reject(error)
+      },
+    )
+  })
 }
 
 export interface ArticleSection {
@@ -211,6 +290,8 @@ export interface PaperRole {
   publishedAt: string
   role: string
   contribution: string
+  authors?: string[]
+  citationCount?: number | null
   figuresCount: number
   tablesCount: number
   formulasCount: number
@@ -264,6 +345,15 @@ export interface PaperViewModel {
   }
   critique: ReviewerCritique
   evidence: EvidenceExplanation[]
+  references?: Array<{
+    paperId: string
+    title: string
+    publishedAt?: string
+    authors?: string[]
+    citationCount?: number | null
+    originalUrl?: string
+    pdfUrl?: string
+  }>
 }
 
 export interface NodeViewModel {
@@ -306,12 +396,32 @@ export interface NodeViewModel {
   evidence: EvidenceExplanation[]
   /** 增强版文章流（8-Pass深度解析）- 可选，用于新格式 */
   enhancedArticleFlow?: import('./deep-article-generator').NodeArticleFlowBlock[]
+  /** 核心判断（节点级别的一句话判断） */
+  coreJudgment?: {
+    content: string
+    contentEn: string
+  }
+  references?: Array<{
+    paperId: string
+    title: string
+    publishedAt?: string
+    authors?: string[]
+    citationCount?: number | null
+    originalUrl?: string
+    pdfUrl?: string
+  }>
 }
 
 type ReaderArtifactViewModel = NodeViewModel | PaperViewModel
 
-function readerArtifactKey(kind: ReaderArtifactKind, entityId: string) {
-  return `${READER_ARTIFACT_PREFIX}${kind}:${entityId}`
+function readerArtifactKey(
+  kind: ReaderArtifactKind,
+  entityId: string,
+  variant: ReaderArtifactVariant = 'default',
+) {
+  return variant === 'default'
+    ? `${READER_ARTIFACT_PREFIX}${kind}:${entityId}`
+    : `${READER_ARTIFACT_PREFIX}${kind}:${variant}:${entityId}`
 }
 
 function normalizeReaderNarrative(value: string | null | undefined) {
@@ -391,6 +501,7 @@ function looksLikeStaleNodeNarrative(
 ) {
   const normalized = normalizeReaderNarrative(value)
   if (!normalized) return false
+  if (!hasMeaningfulDisplayText(normalized)) return true
   if (HEURISTIC_NARRATIVE_RE.test(normalized)) return true
   if (LOW_SIGNAL_NODE_COPY_PATTERNS.some((pattern) => pattern.test(normalized))) return true
 
@@ -418,8 +529,19 @@ const LOW_SIGNAL_PAPER_SUMMARY_PATTERNS = [
   /^(?:computer science|artificial intelligence|reinforcement learning(?: in robotics)?|autonomous vehicle technology and safety|advanced neural network applications|multimodal machine learning applications|transportation and mobility innovations|computer graphics and visualization techniques|domain adaptation and few-shot learning)$/iu,
 ]
 
+function pickMeaningfulNarrativeText(...values: Array<string | null | undefined>) {
+  for (const value of values) {
+    const normalized = normalizeReaderNarrative(value)
+    if (hasMeaningfulDisplayText(normalized)) {
+      return normalized
+    }
+  }
+
+  return ''
+}
+
 function normalizePaperNarrativeText(value: string | null | undefined, maxLength = 320) {
-  const normalized = clipText(value ?? '', maxLength)
+  const normalized = clipText(pickMeaningfulNarrativeText(value), maxLength)
   if (!normalized) return ''
   if (HEURISTIC_NARRATIVE_RE.test(normalized)) return ''
   if (LOW_SIGNAL_PAPER_SUMMARY_PATTERNS.some((pattern) => pattern.test(normalized))) return ''
@@ -487,6 +609,7 @@ function cleanExtractedParagraph(value: string | null | undefined) {
   const abstractBody =
     stripped.match(/\babstract\b[^A-Za-z0-9]{0,8}(.*)$/iu)?.[1]?.trim() ?? ''
   const normalized = abstractBody.length >= 40 ? abstractBody : stripped
+  if (!hasMeaningfulDisplayText(normalized)) return ''
 
   if (looksLikeTitleFragment(normalized)) return ''
   if (LOW_SIGNAL_SECTION_BODY_PATTERNS.some((pattern) => pattern.test(normalized))) return ''
@@ -516,14 +639,22 @@ function inferSectionTitleFromParagraphs(
 }
 
 function buildPaperContributionSeed(paper: any) {
-  const paperTitle = paper.titleZh || paper.title
+  const paperTitle = pickMeaningfulDisplayText(
+    paper.titleZh,
+    paper.titleEn,
+    paper.title,
+    '这篇论文',
+  )
   const sectionLead =
     getRenderablePaperSections(paper, 3)
       .flatMap((section: any) => section.renderParagraphs as string[])
       .map((paragraph: string) => clipText(paragraph, 180))
       .find((value: string) => value.length > 0) ?? ''
 
-  const abstractLead = normalizePaperNarrativeText(paper.summary, 180)
+  const abstractLead = normalizePaperNarrativeText(
+    pickMeaningfulNarrativeText(paper.summary, paper.explanation, paper.abstract),
+    180,
+  )
   const evidenceLine =
     paper.figures.length + paper.tables.length + paper.formulas.length > 0
       ? `当前可直接提取 ${paper.figures.length} 张图、${paper.tables.length} 张表和 ${paper.formulas.length} 个公式。`
@@ -547,8 +678,22 @@ function buildNodeNarrativeSeed(args: {
 }) {
   const { node, papers } = args
   const primaryPaper = papers[0] ?? null
-  const primaryPaperTitle = primaryPaper?.titleZh || primaryPaper?.title || '代表论文'
-  const abstractLead = primaryPaper ? normalizePaperNarrativeText(primaryPaper.summary, 180) : ''
+  const primaryPaperTitle = pickMeaningfulDisplayText(
+    primaryPaper?.titleZh,
+    primaryPaper?.titleEn,
+    primaryPaper?.title,
+    '代表论文',
+  )
+  const abstractLead = primaryPaper
+    ? normalizePaperNarrativeText(
+        pickMeaningfulNarrativeText(
+          primaryPaper.summary,
+          primaryPaper.explanation,
+          primaryPaper.abstract,
+        ),
+        180,
+      )
+    : ''
   const paperCount = papers.length
   const evidenceCount = papers.reduce(
     (count, paper) => count + paper.figures.length + paper.tables.length + paper.formulas.length,
@@ -636,9 +781,13 @@ function sanitizeNodeParagraphs(
   return sanitized.length > 0 ? sanitized : fallback
 }
 
-async function readReaderArtifact<T>(kind: ReaderArtifactKind, entityId: string) {
-  const record = await prisma.systemConfig.findUnique({
-    where: { key: readerArtifactKey(kind, entityId) },
+async function readReaderArtifact<T>(
+  kind: ReaderArtifactKind,
+  entityId: string,
+  variant: ReaderArtifactVariant = 'default',
+) {
+  const record = await prisma.system_configs.findUnique({
+    where: { key: readerArtifactKey(kind, entityId, variant) },
   })
 
   if (!record?.value) return null
@@ -655,6 +804,7 @@ async function persistReaderArtifact<T>(
   entityId: string,
   fingerprint: string,
   viewModel: T,
+  variant: ReaderArtifactVariant = 'default',
 ) {
   const payload: ReaderArtifactRecord<T> = {
     kind,
@@ -664,11 +814,20 @@ async function persistReaderArtifact<T>(
     viewModel,
   }
 
-  await prisma.systemConfig.upsert({
-    where: { key: readerArtifactKey(kind, entityId) },
-    update: { value: JSON.stringify(payload) },
-    create: { key: readerArtifactKey(kind, entityId), value: JSON.stringify(payload) },
+await prisma.system_configs.upsert({
+    where: { key: readerArtifactKey(kind, entityId, variant) },
+    update: { value: JSON.stringify(payload), updatedAt: new Date() },
+    create: {
+      id: crypto.randomUUID(),
+      key: readerArtifactKey(kind, entityId, variant),
+      value: JSON.stringify(payload),
+      updatedAt: new Date(),
+    },
   })
+
+  if (variant === 'enhanced') {
+    return
+  }
 
   if (kind === 'node') {
     await upsertTopicArtifactIndexEntry(kind, viewModel as ReaderArtifactViewModel as NodeViewModel)
@@ -731,17 +890,54 @@ async function loadReaderResearchPipelineContext(args: {
   }
 }
 
+function normalizeReaderFingerprintContext(value: unknown): unknown {
+  if (value == null) return null
+
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => normalizeReaderFingerprintContext(entry))
+      .filter((entry) => entry !== undefined)
+  }
+
+  if (typeof value === 'object') {
+    const output: Record<string, unknown> = {}
+
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      if (
+        /^(?:updatedAt|createdAt|savedAt|timestamp|initializedAt|lastCompactedAt)$/u.test(key) ||
+        key === 'recentSessionEvents' ||
+        key === 'recentEvents' ||
+        key === 'recalledEvents'
+      ) {
+        continue
+      }
+
+      const normalized = normalizeReaderFingerprintContext(entry)
+      if (normalized === undefined) continue
+      output[key] = normalized
+    }
+
+    return output
+  }
+
+  if (typeof value === 'string') {
+    return value.replace(/\s+/gu, ' ').trim()
+  }
+
+  return value
+}
+
 export async function buildPaperArtifactFingerprint(paperId: string) {
-  const paper = await prisma.paper.findUnique({
+  const paper = await prisma.papers.findUnique({
     where: { id: paperId },
     select: {
       id: true,
       topicId: true,
       updatedAt: true,
-      nodePapers: {
+      node_papers: {
         select: {
           nodeId: true,
-          node: {
+          research_nodes: {
             select: {
               updatedAt: true,
               stageIndex: true,
@@ -754,16 +950,15 @@ export async function buildPaperArtifactFingerprint(paperId: string) {
 
   if (!paper) return null
 
-  const [runtime, topicMemory, sessionMemory, researchPipeline, modelConfigFingerprint, paperTemplate, reviewerTemplate] = await Promise.all([
+  const [runtime, topicMemory, researchContext, modelConfigFingerprint, paperTemplate, reviewerTemplate] = await Promise.all([
     getGenerationRuntimeConfig(),
     loadTopicGenerationMemory(paper.topicId),
-    loadTopicSessionMemory(paper.topicId),
     loadReaderResearchPipelineContext({
       topicId: paper.topicId,
       paperIds: [paper.id],
       stageIndex:
-        paper.nodePapers
-          .map((entry) => entry.node.stageIndex)
+        paper.node_papers
+          .map((entry) => entry.research_nodes.stageIndex)
           .filter((value): value is number => typeof value === 'number')
           .sort((left, right) => left - right)[0] ?? undefined,
       historyLimit: 6,
@@ -779,21 +974,23 @@ export async function buildPaperArtifactFingerprint(paperId: string) {
     paperId: paper.id,
     topicId: paper.topicId,
     paperUpdatedAt: paper.updatedAt.toISOString(),
-    relatedNodes: paper.nodePapers.map((entry) => ({
+    relatedNodes: paper.node_papers.map((entry) => ({
       nodeId: entry.nodeId,
-      updatedAt: entry.node.updatedAt.toISOString(),
+      updatedAt: entry.research_nodes.updatedAt.toISOString(),
     })),
     runtime,
     modelConfigFingerprint,
     promptTemplates: [paperTemplate, reviewerTemplate],
     topicMemoryUpdatedAt: topicMemory.updatedAt,
-    sessionMemoryUpdatedAt: sessionMemory.updatedAt,
-    researchPipeline,
+    researchContext: normalizeReaderFingerprintContext(researchContext),
   })
 }
 
-export async function buildNodeArtifactFingerprint(nodeId: string) {
-  const node = await prisma.researchNode.findUnique({
+export async function buildNodeArtifactFingerprint(
+  nodeId: string,
+  variant: ReaderArtifactVariant = 'default',
+) {
+const node = await prisma.research_nodes.findUnique({
     where: { id: nodeId },
     select: {
       id: true,
@@ -805,14 +1002,14 @@ export async function buildNodeArtifactFingerprint(nodeId: string) {
       nodeExplanation: true,
       updatedAt: true,
       primaryPaperId: true,
-      primaryPaper: {
+      papers: {
         select: {
           title: true,
           titleZh: true,
           titleEn: true,
         },
       },
-      papers: {
+      node_papers: {
         select: {
           paperId: true,
         },
@@ -827,14 +1024,13 @@ export async function buildNodeArtifactFingerprint(nodeId: string) {
     topicPapers,
     runtime,
     topicMemory,
-    sessionMemory,
     modelConfigFingerprint,
     nodeTemplate,
     comparisonTemplate,
     reviewerTemplate,
     effectiveStageWindowMonths,
   ] = await Promise.all([
-    prisma.topicStage.findFirst({
+    prisma.topic_stages.findFirst({
       where: {
         topicId: node.topicId,
         order: node.stageIndex,
@@ -844,7 +1040,7 @@ export async function buildNodeArtifactFingerprint(nodeId: string) {
         nameEn: true,
       },
     }),
-    prisma.paper.findMany({
+    prisma.papers.findMany({
       where: { topicId: node.topicId },
       select: {
         id: true,
@@ -865,7 +1061,6 @@ export async function buildNodeArtifactFingerprint(nodeId: string) {
     }),
     getGenerationRuntimeConfig(),
     loadTopicGenerationMemory(node.topicId),
-    loadTopicSessionMemory(node.topicId),
     getModelConfigFingerprint(),
     getPromptTemplate(PROMPT_TEMPLATE_IDS.ARTICLE_NODE),
     getPromptTemplate(PROMPT_TEMPLATE_IDS.ARTICLE_CROSS_PAPER),
@@ -884,8 +1079,10 @@ export async function buildNodeArtifactFingerprint(nodeId: string) {
     papers: topicPapers,
     allowedPaperIds,
   })
+  const linkedPaperIds = collectNodeLinkedPaperIds(node, allowedPaperIds)
+  const resolvedRelatedPaperIds = mergeNodePaperIdsByPriority(linkedPaperIds, relatedPaperIds)
   const relatedPaperMap = new Map(topicPapers.map((paper) => [paper.id, paper]))
-  const relatedPapers = relatedPaperIds
+  const relatedPapers = resolvedRelatedPaperIds
     .map((paperId) => relatedPaperMap.get(paperId) ?? null)
     .filter((paper): paper is (typeof topicPapers)[number] => Boolean(paper))
   const researchPipeline = await loadReaderResearchPipelineContext({
@@ -896,12 +1093,21 @@ export async function buildNodeArtifactFingerprint(nodeId: string) {
     historyLimit: 6,
   })
 
+  const researchContextForFingerprint =
+    variant === 'enhanced'
+      ? {
+          ...researchPipeline,
+          sessionMemory: null,
+          cognitiveMemory: null,
+        }
+      : researchPipeline
+
   return buildGenerationFingerprint({
     kind: 'node',
     artifactSchemaVersion: NODE_READER_ARTIFACT_SCHEMA_VERSION,
     nodeId: node.id,
     topicId: node.topicId,
-    nodeUpdatedAt: node.updatedAt.toISOString(),
+    nodeUpdatedAt: variant === 'enhanced' ? undefined : node.updatedAt.toISOString(),
     primaryPaperId: node.primaryPaperId,
     relatedPapers: relatedPapers.map((paper) => ({
       paperId: paper.id,
@@ -910,16 +1116,20 @@ export async function buildNodeArtifactFingerprint(nodeId: string) {
     runtime,
     modelConfigFingerprint,
     promptTemplates: [nodeTemplate, comparisonTemplate, reviewerTemplate],
-    topicMemoryUpdatedAt: topicMemory.updatedAt,
-    sessionMemoryUpdatedAt: sessionMemory.updatedAt,
-    researchPipeline,
+    topicMemoryUpdatedAt: variant === 'enhanced' ? undefined : topicMemory.updatedAt,
+    researchContext: normalizeReaderFingerprintContext(researchContextForFingerprint),
   })
+}
+
+async function buildEnhancedNodeArtifactFingerprint(nodeId: string) {
+  return buildNodeArtifactFingerprint(nodeId, 'enhanced')
 }
 
 interface ReaderArtifactDriver<T> {
   kind: ReaderArtifactKind
+  variant?: ReaderArtifactVariant
   buildFingerprint: (entityId: string) => Promise<string | null>
-  buildViewModel: (entityId: string, options?: { quick?: boolean }) => Promise<T>
+  buildViewModel: (entityId: string, options?: { quick?: boolean; enhanced?: boolean }) => Promise<T>
 }
 
 const DEFERRED_READER_ARTIFACTS_DISABLED =
@@ -929,18 +1139,29 @@ const DEFERRED_READER_ARTIFACTS_DISABLED =
   process.env.NODE_TEST_CONTEXT === 'child-v8' ||
   process.env.NODE_ENV === 'test'
 
-function readerArtifactQueueKey(kind: ReaderArtifactKind, entityId: string) {
-  return `${kind}:${entityId}`
+function readerArtifactQueueKey(
+  kind: ReaderArtifactKind,
+  entityId: string,
+  variant: ReaderArtifactVariant = 'default',
+) {
+  return `${kind}:${variant}:${entityId}`
 }
 
 async function buildAndPersistReaderArtifact<T>(
   driver: ReaderArtifactDriver<T>,
   entityId: string,
+  options?: { enhanced?: boolean },
 ) {
-  const viewModel = await driver.buildViewModel(entityId)
+  const viewModel = await driver.buildViewModel(entityId, options)
   const fingerprint = await driver.buildFingerprint(entityId)
   if (fingerprint) {
-    await persistReaderArtifact(driver.kind, entityId, fingerprint, viewModel)
+    await persistReaderArtifact(
+      driver.kind,
+      entityId,
+      fingerprint,
+      viewModel,
+      driver.variant ?? 'default',
+    )
   }
   return viewModel
 }
@@ -948,14 +1169,15 @@ async function buildAndPersistReaderArtifact<T>(
 function queueReaderArtifactBuild<T>(
   driver: ReaderArtifactDriver<T>,
   entityId: string,
+  options?: { enhanced?: boolean },
 ) {
-  const queueKey = readerArtifactQueueKey(driver.kind, entityId)
+  const queueKey = readerArtifactQueueKey(driver.kind, entityId, driver.variant ?? 'default')
   const existing = readerArtifactBuildQueue.get(queueKey)
   if (existing) return existing as Promise<T>
 
   const job = (async () => {
     try {
-      return await buildAndPersistReaderArtifact(driver, entityId)
+      return await buildAndPersistReaderArtifact(driver, entityId, options)
     } finally {
       readerArtifactBuildQueue.delete(queueKey)
     }
@@ -968,15 +1190,15 @@ function queueReaderArtifactBuild<T>(
 async function resolveReaderArtifact<T>(
   driver: ReaderArtifactDriver<T>,
   entityId: string,
-  options?: { forceRebuild?: boolean },
+  options?: { forceRebuild?: boolean; enhanced?: boolean },
 ) {
   if (options?.forceRebuild) {
-    return queueReaderArtifactBuild(driver, entityId)
+    return queueReaderArtifactBuild(driver, entityId, { enhanced: options?.enhanced })
   }
 
   const fingerprintBeforeBuild = await driver.buildFingerprint(entityId)
   if (fingerprintBeforeBuild) {
-    const cached = await readReaderArtifact<T>(driver.kind, entityId)
+    const cached = await readReaderArtifact<T>(driver.kind, entityId, driver.variant ?? 'default')
     if (cached?.fingerprint === fingerprintBeforeBuild) {
       return cached.viewModel
     }
@@ -987,9 +1209,11 @@ async function resolveReaderArtifact<T>(
         entityId,
         driver.buildFingerprint,
         driver.buildViewModel,
+        options?.enhanced,
+        driver.variant ?? 'default',
       )
       if (!DEFERRED_READER_ARTIFACTS_DISABLED) {
-        void queueReaderArtifactBuild(driver, entityId).catch((error) => {
+        void queueReaderArtifactBuild(driver, entityId, { enhanced: options?.enhanced }).catch((error) => {
           if (error instanceof AppError && error.statusCode === 404) {
             return
           }
@@ -1004,9 +1228,11 @@ async function resolveReaderArtifact<T>(
     entityId,
     driver.buildFingerprint,
     driver.buildViewModel,
+    options?.enhanced,
+    driver.variant ?? 'default',
   )
   if (!DEFERRED_READER_ARTIFACTS_DISABLED) {
-    void queueReaderArtifactBuild(driver, entityId).catch((error) => {
+    void queueReaderArtifactBuild(driver, entityId, { enhanced: options?.enhanced }).catch((error) => {
       if (error instanceof AppError && error.statusCode === 404) {
         return
       }
@@ -1019,14 +1245,15 @@ async function syncPersistedReaderArtifactFingerprint<T>(
   kind: ReaderArtifactKind,
   entityId: string,
   buildFingerprint: (entityId: string) => Promise<string | null>,
+  variant: ReaderArtifactVariant = 'default',
 ) {
   const [cached, fingerprint] = await Promise.all([
-    readReaderArtifact<T>(kind, entityId),
+    readReaderArtifact<T>(kind, entityId, variant),
     buildFingerprint(entityId),
   ])
 
   if (cached && fingerprint && cached.fingerprint !== fingerprint) {
-    await persistReaderArtifact(kind, entityId, fingerprint, cached.viewModel)
+    await persistReaderArtifact(kind, entityId, fingerprint, cached.viewModel, variant)
   }
 }
 
@@ -1038,10 +1265,12 @@ async function persistQuickReaderArtifact<T>(
   kind: ReaderArtifactKind,
   entityId: string,
   buildFingerprint: (entityId: string) => Promise<string | null>,
-  buildViewModel: (entityId: string, options?: { quick?: boolean }) => Promise<T>,
+  buildViewModel: (entityId: string, options?: { quick?: boolean; enhanced?: boolean }) => Promise<T>,
+  enhanced?: boolean,
+  variant: ReaderArtifactVariant = 'default',
 ) {
   const [viewModel, fingerprint] = await Promise.all([
-    buildViewModel(entityId, { quick: true }),
+    buildViewModel(entityId, { quick: true, enhanced }),
     buildFingerprint(entityId),
   ])
 
@@ -1050,6 +1279,7 @@ async function persistQuickReaderArtifact<T>(
     entityId,
     buildDeferredArtifactFingerprint(fingerprint, entityId),
     viewModel,
+    variant,
   )
 
   return viewModel
@@ -1130,7 +1360,7 @@ function parseStoredParagraphs(value: string | null | undefined, maxParts = 5) {
   return sanitizeStoredParagraphList(splitParagraphs(value, maxParts), maxParts)
 }
 
-function joinStoredParagraphs(value: string | null | undefined, maxParts = 6) {
+function _joinStoredParagraphs(value: string | null | undefined, maxParts = 6) {
   return parseStoredParagraphs(value, maxParts).join('\n\n')
 }
 
@@ -1178,9 +1408,15 @@ function sanitizeStoredParagraphList(
 }
 
 function getRenderablePaperSections(paper: any, maxParts = 5) {
-  if (!Array.isArray(paper.sections)) return [] as Array<any & { renderTitle: string; renderParagraphs: string[] }>
+  const sections = Array.isArray(paper.paper_sections)
+    ? paper.paper_sections
+    : Array.isArray(paper.sections)
+      ? paper.sections
+      : null
 
-  return paper.sections
+  if (!sections) return [] as Array<any & { renderTitle: string; renderParagraphs: string[] }>
+
+  return sections
     .map((section: any) => {
       const rawTitle = normalizeReaderNarrative(
         section.editorialTitle || section.sourceSectionTitle,
@@ -1269,11 +1505,44 @@ function buildTableWhyItMatters(table: any) {
 }
 
 function buildFormulaWhyItMatters(formula: any) {
-  const evidenceText = [formula.latex, formula.rawText].filter(Boolean).join(' ')
+  const evidenceText = [sanitizeFormulaLatex(formula.latex), formula.rawText].filter(Boolean).join(' ')
   if (/(?:loss|objective|min|max|likelihood|cost)/iu.test(evidenceText)) {
     return '这个公式定义了训练目标或优化约束，决定方法究竟在学什么。'
   }
   return '这个公式说明了方法真正依赖的约束、目标或更新方式。'
+}
+
+function sanitizeFormulaLatex(value: string | null | undefined) {
+  const latex = (value ?? '')
+    .replace(/\r\n/gu, '\n')
+    .replaceAll('\0', ' ')
+    .replace(/\uFFFD/gu, ' ')
+    .replace(/^\$+|\$+$/gu, '')
+    .replace(/\s+/gu, ' ')
+    .trim()
+
+  return latex
+}
+
+function looksLikeFormulaLatexNoise(value: string | null | undefined) {
+  const latex = sanitizeFormulaLatex(value)
+  if (!latex || latex.length < 5) return true
+  if (/^[^A-Za-z\\\d]+$/u.test(latex)) return true
+  if (/[\u02C6\u02C7\u02DC\u00AF]/u.test(latex) && !/\\(?:hat|tilde|bar|vec)/u.test(latex)) {
+    return true
+  }
+
+  const hasSymbolicStructure =
+    /[=+\-/*<>]/u.test(latex) ||
+    /\\(?:frac|sum|prod|min|max|arg|max|min|log|exp|mathbb|mathbf|mathcal|cdot|left|right)/u.test(
+      latex,
+    )
+  const alphaCount = latex.match(/[A-Za-z]/gu)?.length ?? 0
+
+  if (!hasSymbolicStructure && alphaCount < 2) return true
+  if ((latex.match(/[?]/gu)?.length ?? 0) >= 2) return true
+
+  return false
 }
 
 function looksLikeEvidenceNoise(item: EvidenceExplanation) {
@@ -1315,7 +1584,7 @@ function looksLikeEvidenceNoise(item: EvidenceExplanation) {
   if (
     item.type === 'formula' &&
     (!item.formulaLatex ||
-      item.formulaLatex.trim().length < 3 ||
+      looksLikeFormulaLatexNoise(item.formulaLatex) ||
       /^#+$/u.test(item.formulaLatex.trim()))
   ) {
     return true
@@ -1487,7 +1756,7 @@ function buildSectionEvidenceIds(evidence: EvidenceExplanation[], kinds: Array<'
   return evidence.filter((item) => kinds.includes(item.type)).slice(0, limit).map((item) => item.anchorId)
 }
 
-function buildPaperEvidence(paper: any): EvidenceExplanation[] {
+function _buildPaperEvidence(paper: any): EvidenceExplanation[] {
   const renderableSections = getRenderablePaperSections(paper)
   return [
     ...renderableSections.map((section: any) => ({
@@ -1530,20 +1799,23 @@ function buildPaperEvidence(paper: any): EvidenceExplanation[] {
       sourcePaperTitle: paper.titleZh || paper.title,
       whyItMatters: '这张表通常直接决定论文与基线之间的优劣是否成立。',
     })),
-    ...paper.formulas.map((formula: any) => ({
-      anchorId: `formula:${formula.id}`,
-      type: 'formula' as const,
-      route: paperRoute(paper.id, undefined, `formula:${formula.id}`),
-      title: `Formula ${formula.number}`,
-      label: `${paper.titleZh || paper.title} / Formula ${formula.number}`,
-      quote: clipText(formula.rawText || formula.latex),
-      content: `${formula.latex}\n\n${formula.rawText ?? ''}`.trim(),
-      page: formula.page ?? null,
-      sourcePaperId: paper.id,
-      sourcePaperTitle: paper.titleZh || paper.title,
-      formulaLatex: formula.latex,
-      whyItMatters: '这个公式说明了方法真正依赖的约束、目标或更新方式。',
-    })),
+    ...paper.formulas.map((formula: any) => {
+      const normalizedLatex = sanitizeFormulaLatex(formula.latex)
+      return {
+        anchorId: `formula:${formula.id}`,
+        type: 'formula' as const,
+        route: paperRoute(paper.id, undefined, `formula:${formula.id}`),
+        title: `Formula ${formula.number}`,
+        label: `${paper.titleZh || paper.title} / Formula ${formula.number}`,
+        quote: clipText(formula.rawText || normalizedLatex),
+        content: [normalizedLatex, formula.rawText ?? ''].filter(Boolean).join('\n\n').trim(),
+        page: formula.page ?? null,
+        sourcePaperId: paper.id,
+        sourcePaperTitle: paper.titleZh || paper.title,
+        formulaLatex: looksLikeFormulaLatexNoise(normalizedLatex) ? null : normalizedLatex,
+        whyItMatters: '这个公式说明了方法真正依赖的约束、目标或更新方式。',
+      }
+    }),
   ]
 }
 
@@ -1593,20 +1865,24 @@ function buildRenderablePaperEvidence(paper: any): EvidenceExplanation[] {
     whyItMatters: buildTableWhyItMatters(table),
   }))
 
-  const formulaEvidence = paper.formulas.map((formula: any) => ({
-    anchorId: `formula:${formula.id}`,
-    type: 'formula' as const,
-    route: paperRoute(paper.id, undefined, `formula:${formula.id}`),
-    title: `Formula ${formula.number}`,
-    label: `${paper.titleZh || paper.title} / Formula ${formula.number}`,
-    quote: clipText(formula.rawText || formula.latex),
-    content: `${formula.latex}\n\n${formula.rawText ?? ''}`.trim(),
-    page: formula.page ?? null,
-    sourcePaperId: paper.id,
-    sourcePaperTitle: paper.titleZh || paper.title,
-    formulaLatex: formula.latex,
-    whyItMatters: buildFormulaWhyItMatters(formula),
-  }))
+  const formulaEvidence = paper.formulas.map((formula: any) => {
+    const normalizedLatex = sanitizeFormulaLatex(formula.latex)
+
+    return {
+      anchorId: `formula:${formula.id}`,
+      type: 'formula' as const,
+      route: paperRoute(paper.id, undefined, `formula:${formula.id}`),
+      title: `Formula ${formula.number}`,
+      label: `${paper.titleZh || paper.title} / Formula ${formula.number}`,
+      quote: clipText(formula.rawText || normalizedLatex),
+      content: [normalizedLatex, formula.rawText ?? ''].filter(Boolean).join('\n\n').trim(),
+      page: formula.page ?? null,
+      sourcePaperId: paper.id,
+      sourcePaperTitle: paper.titleZh || paper.title,
+      formulaLatex: looksLikeFormulaLatexNoise(normalizedLatex) ? null : normalizedLatex,
+      whyItMatters: buildFormulaWhyItMatters(formula),
+    }
+  })
 
   return [...sectionEvidence, ...figureEvidence, ...tableEvidence, ...formulaEvidence].map((item) => ({
     ...item,
@@ -1832,7 +2108,7 @@ function buildPaperArticleSections(paper: any, evidence: EvidenceExplanation[]):
 function buildPaperSectionFlowBlocks(paper: any): ArticleFlowBlock[] {
   const paperTitle = paper.titleZh || paper.title
   const evidence = buildRenderablePaperEvidence(paper)
-  const sectionLimit = paper.sections?.length > 6 ? 2 : 3
+  const sectionLimit = paper.paper_sections?.length > 6 ? 2 : 3
 
   return buildPaperArticleSections(paper, evidence).slice(0, sectionLimit).map((section) => ({
     id: `paper-section-flow-${section.id}`,
@@ -1860,10 +2136,16 @@ function buildPaperPass(paper: any, role: string, contribution: string): PaperRo
     title: paper.titleZh || paper.title,
     titleEn: paper.titleEn ?? paper.title,
     route: paperRoute(paper.id),
-    summary: normalizePaperNarrativeText(paper.summary, 140),
+    summary:
+      normalizePaperNarrativeText(
+        pickMeaningfulNarrativeText(paper.summary, paper.explanation, paper.abstract),
+        140,
+      ) || clipText(buildPaperContributionSeed(paper), 140),
     publishedAt: paper.published.toISOString(),
     role,
     contribution: safeContribution,
+    authors: parseJsonArray(paper.authors),
+    citationCount: paper.citationCount ?? null,
     figuresCount: paper.figures.length,
     tablesCount: paper.tables.length,
     formulasCount: paper.formulas.length,
@@ -1873,7 +2155,7 @@ function buildPaperPass(paper: any, role: string, contribution: string): PaperRo
   }
 }
 
-function buildCrossPaperPass(papers: any[]): CrossPaperComparisonBlock[] {
+function _buildCrossPaperPass(papers: any[]): CrossPaperComparisonBlock[] {
   if (papers.length <= 1) return []
 
   const sorted = [...papers].sort((left, right) => +left.published - +right.published)
@@ -1990,11 +2272,44 @@ function buildNodeStatsFromPaperRoles(paperRoles: PaperRole[]) {
   )
 }
 
+function buildNodeReferenceList(paperRoles: PaperRole[]) {
+  const seen = new Set<string>()
+
+  return paperRoles.reduce<Array<{
+    paperId: string
+    title: string
+    publishedAt?: string
+    authors?: string[]
+    citationCount?: number | null
+    originalUrl?: string
+    pdfUrl?: string
+  }>>((entries, paper) => {
+    if (seen.has(paper.paperId)) return entries
+    seen.add(paper.paperId)
+    entries.push({
+      paperId: paper.paperId,
+      title: paper.title,
+      publishedAt: paper.publishedAt,
+      authors: paper.authors,
+      citationCount: paper.citationCount ?? null,
+      originalUrl: paper.originalUrl,
+      pdfUrl: paper.pdfUrl,
+    })
+    return entries
+  }, [])
+}
+
 function filterNodeEvidenceByPaperIds(
   evidence: EvidenceExplanation[],
   allowedPaperIds: Set<string>,
+  options?: { strictWhenEmpty?: boolean },
 ) {
-  if (allowedPaperIds.size === 0) return evidence
+  if (allowedPaperIds.size === 0) {
+    if (options?.strictWhenEmpty) {
+      return evidence.filter((item) => !item.sourcePaperId)
+    }
+    return evidence
+  }
 
   return evidence.filter(
     (item) => !item.sourcePaperId || allowedPaperIds.has(item.sourcePaperId),
@@ -2005,8 +2320,20 @@ function filterNodeSectionsByPaperIds(
   sections: ArticleSection[],
   allowedPaperIds: Set<string>,
   allowedEvidenceIds: Set<string>,
+  options?: { strictWhenEmpty?: boolean },
 ) {
-  if (allowedPaperIds.size === 0) return sections
+  if (allowedPaperIds.size === 0) {
+    if (!options?.strictWhenEmpty) return sections
+
+    return sections
+      .filter((section) => !section.paperId)
+      .map((section) => ({
+        ...section,
+        evidenceIds: Array.isArray(section.evidenceIds)
+          ? section.evidenceIds.filter((evidenceId) => allowedEvidenceIds.has(evidenceId))
+          : section.evidenceIds,
+      }))
+  }
 
   return sections
     .filter((section) => !section.paperId || allowedPaperIds.has(section.paperId))
@@ -2022,8 +2349,31 @@ function filterNodeFlowByPaperIds(
   flow: ArticleFlowBlock[],
   allowedPaperIds: Set<string>,
   keepComparisonBlocks: boolean,
+  options?: { strictWhenEmpty?: boolean },
 ) {
-  if (allowedPaperIds.size === 0) return flow
+  if (allowedPaperIds.size === 0) {
+    if (!options?.strictWhenEmpty) return flow
+
+    return flow.filter((block) => {
+      if (block.type === 'paper-break') {
+        return false
+      }
+
+      if (block.type === 'text') {
+        return !block.paperId
+      }
+
+      if (block.type === 'comparison') {
+        return false
+      }
+
+      if (block.type === 'figure' || block.type === 'table' || block.type === 'formula') {
+        return !block.evidence.sourcePaperId
+      }
+
+      return true
+    })
+  }
 
   return flow.filter((block) => {
     if (block.type === 'paper-break') {
@@ -2046,6 +2396,44 @@ function filterNodeFlowByPaperIds(
   })
 }
 
+function filterEnhancedNodeFlowByPaperIds(
+  flow: import('./deep-article-generator').NodeArticleFlowBlock[] | undefined,
+  allowedPaperIds: Set<string>,
+  options?: { strictWhenEmpty?: boolean },
+) {
+  if (!Array.isArray(flow)) return flow
+  if (allowedPaperIds.size === 0) {
+    if (!options?.strictWhenEmpty) return flow
+    return flow.filter(
+      (block) =>
+        block.type !== 'paper-article' &&
+        block.type !== 'paper-transition' &&
+        block.type !== 'synthesis',
+    )
+  }
+
+  const filtered = flow.filter((block) => {
+    if (block.type === 'paper-article') {
+      return allowedPaperIds.has(block.paperId)
+    }
+
+    if (block.type === 'paper-transition') {
+      return allowedPaperIds.has(block.fromPaperId) && allowedPaperIds.has(block.toPaperId)
+    }
+
+    return true
+  })
+
+  const filteredPaperCount = filtered.filter((block) => block.type === 'paper-article').length
+  return filtered.filter((block) => {
+    if (block.type === 'synthesis') {
+      return filteredPaperCount > 1
+    }
+
+    return true
+  })
+}
+
 function sortPublishedValues(values: string[]) {
   return [...values]
     .map((value) => value.trim())
@@ -2054,7 +2442,7 @@ function sortPublishedValues(values: string[]) {
 }
 
 async function loadTopicTemporalStageBuckets(topicId: string, stageWindowMonths?: number) {
-  const topic = await prisma.topic.findUnique({
+  const topic = await prisma.topics.findUnique({
     where: { id: topicId },
     select: {
       createdAt: true,
@@ -2064,13 +2452,13 @@ async function loadTopicTemporalStageBuckets(topicId: string, stageWindowMonths?
           published: true,
         },
       },
-      nodes: {
+      research_nodes: {
         select: {
           id: true,
           primaryPaperId: true,
           updatedAt: true,
           createdAt: true,
-          papers: {
+          node_papers: {
             select: {
               paperId: true,
             },
@@ -2087,10 +2475,10 @@ async function loadTopicTemporalStageBuckets(topicId: string, stageWindowMonths?
       id: paper.id,
       published: paper.published,
     })),
-    nodes: topic.nodes.map((node) => ({
+    nodes: topic.research_nodes.map((node) => ({
       id: node.id,
       primaryPaperId: node.primaryPaperId,
-      papers: node.papers.map((paper) => ({ paperId: paper.paperId })),
+      papers: node.node_papers.map((paper) => ({ paperId: paper.paperId })),
       updatedAt: node.updatedAt,
       createdAt: node.createdAt,
     })),
@@ -2118,7 +2506,7 @@ function collectNodeStageScopedPaperIds(
 function collectNodeLinkedPaperIds(
   node: {
     primaryPaperId?: string | null
-    papers: Array<{
+    node_papers: Array<{
       paperId?: string | null
     }>
   },
@@ -2128,7 +2516,7 @@ function collectNodeLinkedPaperIds(
     new Set(
       [
         ...(node.primaryPaperId ? [node.primaryPaperId] : []),
-        ...node.papers
+        ...node.node_papers
           .map((entry) => entry.paperId)
           .filter(
             (paperId): paperId is string =>
@@ -2137,6 +2525,10 @@ function collectNodeLinkedPaperIds(
       ].filter((paperId) => !allowedPaperIds || allowedPaperIds.has(paperId)),
     ),
   )
+}
+
+function mergeNodePaperIdsByPriority(primaryPaperIds: string[], supplementalPaperIds: string[]) {
+  return Array.from(new Set([...primaryPaperIds, ...supplementalPaperIds]))
 }
 
 async function resolveTopicStageWindowMonths(
@@ -2155,10 +2547,27 @@ async function resolveNodeStageWindowRequest(
   nodeId: string,
   stageWindowMonths?: number,
 ) {
-  const node = await prisma.researchNode.findUnique({
+  let node = await prisma.research_nodes.findUnique({
     where: { id: nodeId },
     select: { topicId: true },
   })
+
+  if (!node) {
+    const materialized = await ensureConfiguredTopicMaterializedForNode(nodeId).catch((error) => {
+      logger.warn('Configured topic materialization failed while resolving node stage window.', {
+        nodeId,
+        error,
+      })
+      return false
+    })
+
+    if (materialized) {
+      node = await prisma.research_nodes.findUnique({
+        where: { id: nodeId },
+        select: { topicId: true },
+      })
+    }
+  }
 
   if (!node) {
     throw new AppError(404, 'Node not found.')
@@ -2234,10 +2643,11 @@ async function applyTemporalStageLabelsToNodeViewModel(
     (paper) =>
       stageBuckets.paperAssignments.get(paper.paperId)?.bucketKey === nodeAssignment.bucketKey,
   )
-  const effectivePaperRoles =
-    stagePaperRoles.length > 0 ? stagePaperRoles : viewModel.paperRoles
+  const effectivePaperRoles = stagePaperRoles
   const allowedPaperIds = new Set(effectivePaperRoles.map((paper) => paper.paperId))
-  const filteredEvidence = filterNodeEvidenceByPaperIds(viewModel.evidence, allowedPaperIds)
+  const filteredEvidence = filterNodeEvidenceByPaperIds(viewModel.evidence, allowedPaperIds, {
+    strictWhenEmpty: true,
+  })
   const allowedEvidenceIds = new Set(filteredEvidence.map((item) => item.anchorId))
   const filteredComparisonBlocks = viewModel.comparisonBlocks
     .map((block) => ({
@@ -2249,12 +2659,21 @@ async function applyTemporalStageLabelsToNodeViewModel(
     viewModel.article.flow,
     allowedPaperIds,
     filteredComparisonBlocks.length > 0 && effectivePaperRoles.length > 1,
+    { strictWhenEmpty: true },
   )
   const filteredSections = filterNodeSectionsByPaperIds(
     viewModel.article.sections,
     allowedPaperIds,
     allowedEvidenceIds,
+    { strictWhenEmpty: true },
   )
+  const filteredEnhancedArticleFlow = filterEnhancedNodeFlowByPaperIds(
+    viewModel.enhancedArticleFlow,
+    allowedPaperIds,
+    { strictWhenEmpty: true },
+  )
+  const filteredEnhancedPaperCount =
+    filteredEnhancedArticleFlow?.filter((block) => block.type === 'paper-article').length ?? 0
   const publishedValues = sortPublishedValues(
     effectivePaperRoles.map((paper) => paper.publishedAt),
   )
@@ -2280,6 +2699,12 @@ async function applyTemporalStageLabelsToNodeViewModel(
       sections: filteredSections,
     },
     evidence: filteredEvidence,
+    references: buildNodeReferenceList(effectivePaperRoles),
+    enhancedArticleFlow: filteredEnhancedArticleFlow,
+    coreJudgment:
+      filteredEnhancedArticleFlow && filteredEnhancedPaperCount !== viewModel.paperRoles.length
+        ? undefined
+        : viewModel.coreJudgment,
   }
 }
 
@@ -2481,21 +2906,46 @@ async function buildPaperViewModel(
   options?: { quick?: boolean },
 ): Promise<PaperViewModel> {
   const quick = options?.quick === true
-  const paper = await prisma.paper.findUnique({
+const loadedPaper = await prisma.papers.findUnique({
     where: { id: paperId },
     include: {
-      topic: true,
+      topics: true,
       figures: true,
       tables: true,
       formulas: true,
-      sections: { orderBy: { order: 'asc' } },
-      nodePapers: { include: { node: true } },
+      paper_sections: { orderBy: { order: 'asc' } },
+      node_papers: {
+        include: {
+          research_nodes: true,
+        },
+      },
     },
   })
 
-  if (!paper) throw new AppError(404, 'Paper not found.')
+  if (!loadedPaper) throw new AppError(404, 'Paper not found.')
 
-  const relatedNodes = paper.nodePapers.map((entry) => entry.node).sort((left, right) => left.stageIndex - right.stageIndex)
+  const paper = normalizeReaderPaperDisplayFields({
+    ...loadedPaper,
+    topic: {
+      ...loadedPaper.topics,
+      nameZh: pickMeaningfulDisplayText(
+        loadedPaper.topics.nameZh,
+        loadedPaper.topics.nameEn,
+        'Research topic',
+      ),
+      nameEn: pickMeaningfulDisplayText(
+        loadedPaper.topics.nameEn,
+        loadedPaper.topics.nameZh,
+        'Research topic',
+      ),
+    },
+    node_papers: loadedPaper.node_papers.map((entry) => ({
+      ...entry,
+      node: normalizeReaderNodeDisplayFields(entry.research_nodes),
+    })),
+  })
+
+  const relatedNodes = paper.node_papers.map((entry: { node: { stageIndex: number; id: string; nodeLabel: string; nodeSubtitle: string | null; nodeSummary: string } }) => entry.node).sort((left: { stageIndex: number }, right: { stageIndex: number }) => left.stageIndex - right.stageIndex)
   const researchPipelineContext = await loadReaderResearchPipelineContext({
     topicId: paper.topicId,
     paperIds: [paper.id],
@@ -2573,7 +3023,7 @@ async function buildPaperViewModel(
   return {
     schemaVersion: PAPER_READER_ARTIFACT_SCHEMA_VERSION,
     paperId: paper.id,
-    title: paper.titleZh || paper.title,
+    title: paper.title,
     titleEn: paper.titleEn ?? paper.title,
     summary: paper.summary,
     explanation: paper.explanation ?? paper.summary,
@@ -2592,15 +3042,20 @@ async function buildPaperViewModel(
       route: `/topic/${paper.topicId}`,
     },
     stats: {
-      sectionCount: paper.sections.length,
+      sectionCount: paper.paper_sections.length,
       figureCount: paper.figures.length,
       tableCount: paper.tables.length,
       formulaCount: paper.formulas.length,
       relatedNodeCount: relatedNodes.length,
     },
-    relatedNodes: relatedNodes.map((node) => ({
+    relatedNodes: relatedNodes.map((node: { id: string; nodeLabel: string; nodeSubtitle: string | null; nodeSummary: string; stageIndex: number }) => ({
       nodeId: node.id,
-      title: node.nodeLabel,
+      title: pickMeaningfulDisplayText(
+        node.nodeLabel === 'Research node' ? null : node.nodeLabel,
+        node.nodeSubtitle,
+        paper.title,
+        'Research node',
+      ),
       subtitle: node.nodeSubtitle ?? '',
       summary: node.nodeSummary,
       stageIndex: node.stageIndex,
@@ -2629,26 +3084,30 @@ async function buildNodeViewModel(
 ): Promise<NodeViewModel> {
   const quick = options?.quick === true
   const enableEnhanced = options?.enhanced === true
-  const node = await prisma.researchNode.findUnique({
+  // Enhanced node requests should not block on the slower legacy article pipeline.
+  // We keep the legacy article shell grounded and deterministic, then layer the
+  // enhanced long-form flow on top so the API always returns a readable article.
+  const useFallbackReaderDraft = quick || enableEnhanced
+const loadedNode = await prisma.research_nodes.findUnique({
     where: { id: nodeId },
     include: {
-      topic: true,
-      primaryPaper: {
+      topics: true,
+      papers: {
         include: {
           figures: true,
           tables: true,
           formulas: true,
-          sections: { orderBy: { order: 'asc' } },
+          paper_sections: { orderBy: { order: 'asc' } },
         },
       },
-      papers: {
+      node_papers: {
         include: {
-          paper: {
+          papers: {
             include: {
               figures: true,
               tables: true,
               formulas: true,
-              sections: { orderBy: { order: 'asc' } },
+              paper_sections: { orderBy: { order: 'asc' } },
             },
           },
         },
@@ -2657,10 +3116,32 @@ async function buildNodeViewModel(
     },
   })
 
-  if (!node) throw new AppError(404, 'Node not found.')
+  if (!loadedNode) throw new AppError(404, 'Node not found.')
 
-  const [stage, topicPapers] = await Promise.all([
-    prisma.topicStage.findFirst({
+const node = normalizeReaderNodeDisplayFields({
+    ...loadedNode,
+    topic: {
+      ...loadedNode.topics,
+      nameZh: pickMeaningfulDisplayText(
+        loadedNode.topics.nameZh,
+        loadedNode.topics.nameEn,
+        'Research topic',
+      ),
+      nameEn: pickMeaningfulDisplayText(
+        loadedNode.topics.nameEn,
+        loadedNode.topics.nameZh,
+        'Research topic',
+      ),
+    },
+    papers: loadedNode.papers ? normalizeReaderPaperDisplayFields(loadedNode.papers) : null,
+    node_papers: loadedNode.node_papers.map((item) => ({
+      ...item,
+      papers: normalizeReaderPaperDisplayFields(item.papers),
+    })),
+  })
+
+  const [stage, loadedTopicPapers] = await Promise.all([
+    prisma.topic_stages.findFirst({
       where: {
         topicId: node.topicId,
         order: node.stageIndex,
@@ -2670,17 +3151,18 @@ async function buildNodeViewModel(
         nameEn: true,
       },
     }),
-    prisma.paper.findMany({
+    prisma.papers.findMany({
       where: { topicId: node.topicId },
       include: {
         figures: true,
         tables: true,
         formulas: true,
-        sections: { orderBy: { order: 'asc' } },
+        paper_sections: { orderBy: { order: 'asc' } },
       },
       orderBy: { published: 'desc' },
     }),
   ])
+  const topicPapers = loadedTopicPapers.map((paper) => normalizeReaderPaperDisplayFields(paper))
 
   const effectiveStageWindowMonths = await resolveTopicStageWindowMonths(node.topicId, options?.stageWindowMonths)
   const temporalStageBuckets = await loadTopicTemporalStageBuckets(
@@ -2689,19 +3171,17 @@ async function buildNodeViewModel(
   )
   const allowedPaperIds = collectNodeStageScopedPaperIds(node.id, temporalStageBuckets)
   const linkedPaperIds = collectNodeLinkedPaperIds(node, allowedPaperIds)
-  const relatedPaperIds =
-    linkedPaperIds.length > 0
-      ? linkedPaperIds
-      : collectNodeRelatedPaperIds({
-          node,
-          stageTitle: [stage?.name, stage?.nameEn].filter(Boolean).join(' '),
-          papers: topicPapers,
-          allowedPaperIds,
-        })
+  const relatedPaperIds = collectNodeRelatedPaperIds({
+    node,
+    stageTitle: [stage?.name, stage?.nameEn].filter(Boolean).join(' '),
+    papers: topicPapers,
+    allowedPaperIds,
+  })
+  const resolvedRelatedPaperIds = mergeNodePaperIdsByPriority(linkedPaperIds, relatedPaperIds)
   const paperById = new Map(topicPapers.map((paper) => [paper.id, paper]))
   const resolvedPaperIds = Array.from(
     new Set(
-      relatedPaperIds.concat(node.primaryPaperId ? [node.primaryPaperId] : []),
+      resolvedRelatedPaperIds.concat(node.primaryPaperId ? [node.primaryPaperId] : []),
     ),
   ).filter((paperId) => !allowedPaperIds || allowedPaperIds.has(paperId))
   const papers = resolvedPaperIds
@@ -2743,8 +3223,8 @@ async function buildNodeViewModel(
     paperId: paper.id,
     overviewTitle:
       paper.id === node.primaryPaperId
-        ? `${paper.titleZh || paper.title} 为什么构成节点主线`
-        : `${paper.titleZh || paper.title} 在这里补了什么`,
+        ? `${paper.title} 为什么构成节点主线`
+        : `${paper.title} 在这里补了什么`,
     role: paperRoleLabel(index, paper.id === node.primaryPaperId),
     contribution: buildPaperContributionSeed(paper),
     body: [
@@ -2811,7 +3291,7 @@ async function buildNodeViewModel(
       '读完节点之后，读者至少应该能回答三件事：这篇或这些论文解决了什么、靠什么证据站住、还缺什么关键验证。',
     ],
   }
-  const rawPaperPasses = quick
+  const rawPaperPasses = useFallbackReaderDraft
     ? fallbackPaperPasses
     : await generateNodePaperPasses(papers, node.primaryPaperId, researchPipelineContext)
   const paperPasses = rawPaperPasses.map((pass, index) =>
@@ -2821,7 +3301,7 @@ async function buildNodeViewModel(
       fallback: fallbackPaperPasses[index],
     }),
   )
-  const rawComparisonPass = quick
+  const rawComparisonPass = useFallbackReaderDraft
     ? fallbackComparisonPass
     : await generateNodeComparisonPass(
         normalizedNodeContext,
@@ -2834,7 +3314,7 @@ async function buildNodeViewModel(
     pass: rawComparisonPass,
     fallback: fallbackComparisonPass,
   })
-  const rawSynthesisPass = quick
+  const rawSynthesisPass = useFallbackReaderDraft
     ? fallbackSynthesisPass
     : await generateNodeSynthesisPass(
         normalizedNodeContext,
@@ -2848,7 +3328,7 @@ async function buildNodeViewModel(
     pass: rawSynthesisPass,
     fallback: fallbackSynthesisPass,
   })
-  const rawGeneratedCritique = quick
+  const rawGeneratedCritique = useFallbackReaderDraft
     ? {
         summary: fallbackCritique.summary,
         bullets: fallbackCritique.bullets,
@@ -2929,7 +3409,7 @@ async function buildNodeViewModel(
   let nodeExplanation = node.nodeExplanation ?? node.nodeSummary
   let nodeUpdatedAt = node.updatedAt.toISOString()
 
-  if (!quick) {
+  if (!useFallbackReaderDraft) {
     nodeSummary = editorialWriteback.summary
     nodeExplanation = editorialWriteback.explanation
 
@@ -2938,7 +3418,7 @@ async function buildNodeViewModel(
       (node.nodeExplanation ?? node.nodeSummary) !== editorialWriteback.explanation ||
       (node.fullContent ?? '') !== editorialWriteback.fullContent
     ) {
-      const updateResult = await prisma.researchNode.updateMany({
+      const updateResult = await prisma.research_nodes.updateMany({
         where: { id: node.id },
         data: {
           nodeSummary: editorialWriteback.summary,
@@ -2948,7 +3428,7 @@ async function buildNodeViewModel(
       })
 
       if (updateResult.count > 0) {
-        const refreshedNode = await prisma.researchNode.findUnique({
+        const refreshedNode = await prisma.research_nodes.findUnique({
           where: { id: node.id },
           select: { updatedAt: true },
         })
@@ -2962,11 +3442,24 @@ async function buildNodeViewModel(
 
   // 可选：生成增强版文章流（8-Pass深度解析）
   let enhancedArticleFlow: import('./deep-article-generator.js').NodeArticleFlowBlock[] | undefined
+  let coreJudgment: { content: string; contentEn: string } | undefined
   if (enableEnhanced && !quick) {
     try {
-      const { generateNodeEnhancedArticle } = await import('./deep-article-generator.js')
-      enhancedArticleFlow = await generateNodeEnhancedArticle(nodeId, {
-        papers: papers.map(p => ({
+      const deepArticleModule = await import('./deep-article-generator.js')
+      const generateNodeEnhancedArticle =
+        ((deepArticleModule as { generateNodeEnhancedArticle?: unknown }).generateNodeEnhancedArticle ??
+        (deepArticleModule as { default?: { generateNodeEnhancedArticle?: unknown } }).default
+          ?.generateNodeEnhancedArticle ??
+        (deepArticleModule as { 'module.exports'?: { generateNodeEnhancedArticle?: unknown } })[
+          'module.exports'
+        ]?.generateNodeEnhancedArticle) as GenerateNodeEnhancedArticle | undefined
+
+      if (typeof generateNodeEnhancedArticle !== 'function') {
+        throw new Error('generateNodeEnhancedArticle export is unavailable.')
+      }
+
+      const result = await withReaderTimeout(generateNodeEnhancedArticle(nodeId, {
+        papers: papers.map((p) => ({
           id: p.id,
           title: p.titleZh || p.title,
           titleEn: p.titleEn ?? undefined,
@@ -2978,15 +3471,52 @@ async function buildNodeViewModel(
           originalUrl: p.arxivUrl ?? undefined,
           citationCount: p.citationCount,
           coverImage: p.coverPath ?? undefined,
+paper_sections: p.paper_sections.map((section: { id: string; editorialTitle: string | null; sourceSectionTitle: string; paragraphs: string }) => ({
+            id: section.id,
+            editorialTitle: section.editorialTitle,
+            sourceSectionTitle: section.sourceSectionTitle,
+            paragraphs: section.paragraphs,
+          })),
+          figures: p.figures.map((figure: { id: string; number: number | string; caption: string; analysis: string | null; page: number; imagePath: string; thumbnailPath: string | null }) => ({
+            id: figure.id,
+            number: figure.number,
+            caption: figure.caption,
+            analysis: figure.analysis,
+            page: figure.page,
+            imagePath: figure.imagePath,
+            thumbnailPath: figure.thumbnailPath,
+          })),
+          tables: p.tables.map((table: { id: string; number: number | string; caption: string; rawText: string; page: number }) => ({
+            id: table.id,
+            number: table.number,
+            caption: table.caption,
+            rawText: table.rawText,
+            page: table.page,
+          })),
+          formulas: p.formulas.map((formula: { id: string; number: number | string; latex: string; rawText: string | null; page: number }) => ({
+            id: formula.id,
+            number: formula.number,
+            latex: formula.latex,
+            rawText: formula.rawText,
+            page: formula.page,
+          })),
+          evidence: buildRenderablePaperEvidence(p),
         })),
         nodeContext: {
           title: node.nodeLabel,
           stageIndex: node.stageIndex,
           summary: node.nodeSummary,
+          explanation: node.nodeExplanation ?? undefined,
         },
-      })
+      }), ENHANCED_NODE_ARTICLE_TIMEOUT_MS, `Enhanced article flow for node ${nodeId}`)
+      enhancedArticleFlow = result.flow
+      coreJudgment = result.coreJudgment
     } catch (err) {
-      logger.warn('Failed to generate enhanced article flow', { nodeId, err })
+      logger.warn('Failed to generate enhanced article flow', {
+        nodeId,
+        err,
+        timeoutMs: ENHANCED_NODE_ARTICLE_TIMEOUT_MS,
+      })
       // 失败时保持undefined，使用标准flow
     }
   }
@@ -2995,7 +3525,7 @@ async function buildNodeViewModel(
     schemaVersion: NODE_READER_ARTIFACT_SCHEMA_VERSION,
     nodeId: node.id,
     title: node.nodeLabel,
-    titleEn: node.nodeSubtitle || node.primaryPaper.titleEn || node.primaryPaper.title,
+    titleEn: node.nodeSubtitle || node.papers?.titleEn || node.papers?.title,
     headline: synthesisPass.headline,
     subtitle: node.nodeSubtitle ?? '',
     summary: looksLikeStaleNodeNarrative(nodeSummary, papers.length)
@@ -3027,7 +3557,9 @@ async function buildNodeViewModel(
     },
     critique: generatedCritique,
     evidence,
+    references: buildNodeReferenceList(paperRoles),
     enhancedArticleFlow,
+    coreJudgment,
   }
 }
 
@@ -3072,12 +3604,13 @@ export async function getNodeViewModel(
   )
 
   if (!stageWindowRequest.matchesConfiguredWindow) {
-    const viewModel = await buildNodeViewModel(nodeId, {
+    const directViewModel = await buildNodeViewModel(nodeId, {
       stageWindowMonths: stageWindowRequest.effectiveStageWindowMonths,
       enhanced: options?.enhanced,
     })
+
     return applyTemporalStageLabelsToNodeViewModel(
-      viewModel,
+      directViewModel,
       stageWindowRequest.effectiveStageWindowMonths,
     )
   }
@@ -3092,13 +3625,18 @@ export async function getNodeViewModel(
         enhanced: options?.enhanced,
       }),
   }
+  const enhancedNodeDriver: ReaderArtifactDriver<NodeViewModel> = {
+    ...nodeDriver,
+    variant: 'enhanced',
+    buildFingerprint: buildEnhancedNodeArtifactFingerprint,
+  }
 
   let viewModel: NodeViewModel
 
   if (options?.enhanced) {
     const [cached, fingerprint] = await Promise.all([
-      readReaderArtifact<NodeViewModel>('node', nodeId),
-      buildNodeArtifactFingerprint(nodeId),
+      readReaderArtifact<NodeViewModel>('node', nodeId, 'enhanced'),
+      buildEnhancedNodeArtifactFingerprint(nodeId),
     ])
 
     const hasEnhancedCache =
@@ -3106,9 +3644,16 @@ export async function getNodeViewModel(
       Array.isArray(cached.viewModel.enhancedArticleFlow) &&
       cached.viewModel.enhancedArticleFlow.length > 0
 
-    viewModel = hasEnhancedCache
-      ? cached.viewModel
-      : await queueReaderArtifactBuild(nodeDriver, nodeId)
+    if (hasEnhancedCache) {
+      viewModel = cached.viewModel
+    } else if (cached?.fingerprint === fingerprint) {
+      // Enhanced node requests should return the long-form article on the same request.
+      // The enhanced builder now uses the fast grounded fallback path, so returning the
+      // legacy cached view model would keep the node page stuck in the old interrupted flow.
+      viewModel = await queueReaderArtifactBuild(enhancedNodeDriver, nodeId, { enhanced: true })
+    } else {
+      viewModel = await queueReaderArtifactBuild(enhancedNodeDriver, nodeId, { enhanced: true })
+    }
   } else {
     viewModel = await resolveReaderArtifact(nodeDriver, nodeId)
   }
@@ -3121,7 +3666,7 @@ export async function getNodeViewModel(
 
 export async function rebuildNodeViewModel(
   nodeId: string,
-  options?: { stageWindowMonths?: number },
+  options?: { stageWindowMonths?: number; enhanced?: boolean },
 ): Promise<NodeViewModel> {
   const stageWindowRequest = await resolveNodeStageWindowRequest(
     nodeId,
@@ -3129,28 +3674,33 @@ export async function rebuildNodeViewModel(
   )
 
   if (!stageWindowRequest.matchesConfiguredWindow) {
-    const viewModel = await buildNodeViewModel(nodeId, {
+    const directViewModel = await buildNodeViewModel(nodeId, {
       stageWindowMonths: stageWindowRequest.effectiveStageWindowMonths,
+      enhanced: options?.enhanced,
     })
+
     return applyTemporalStageLabelsToNodeViewModel(
-      viewModel,
+      directViewModel,
       stageWindowRequest.effectiveStageWindowMonths,
     )
   }
 
-  const viewModel = await resolveReaderArtifact(
-    {
-      kind: 'node',
-      buildFingerprint: buildNodeArtifactFingerprint,
-      buildViewModel: (entityId, buildOptions) =>
-        buildNodeViewModel(entityId, {
-          ...buildOptions,
-          stageWindowMonths: stageWindowRequest.configuredStageWindowMonths,
-        }),
-    },
-    nodeId,
-    { forceRebuild: true },
-  )
+  const nodeDriver: ReaderArtifactDriver<NodeViewModel> = {
+    kind: 'node',
+    variant: options?.enhanced ? 'enhanced' : 'default',
+    buildFingerprint: buildNodeArtifactFingerprint,
+    buildViewModel: (entityId, buildOptions) =>
+      buildNodeViewModel(entityId, {
+        ...buildOptions,
+        stageWindowMonths: stageWindowRequest.configuredStageWindowMonths,
+        enhanced: options?.enhanced,
+      }),
+  }
+
+  const viewModel = await resolveReaderArtifact(nodeDriver, nodeId, {
+    forceRebuild: true,
+    enhanced: options?.enhanced,
+  })
   return applyTemporalStageLabelsToNodeViewModel(
     viewModel,
     stageWindowRequest.effectiveStageWindowMonths,
@@ -3203,7 +3753,7 @@ export async function warmTopicReaderArtifacts(
   const [nodes, papers] = await Promise.all([
     shouldScopeNodes
       ? scopedNodeIds.length > 0
-        ? prisma.researchNode.findMany({
+        ? prisma.research_nodes.findMany({
             where: {
               topicId,
               id: { in: scopedNodeIds },
@@ -3213,7 +3763,7 @@ export async function warmTopicReaderArtifacts(
             take: Math.max(scopedNodeIds.length, limit),
           })
         : Promise.resolve<Array<{ id: string }>>([])
-      : prisma.researchNode.findMany({
+      : prisma.research_nodes.findMany({
           where: { topicId },
           select: { id: true },
           orderBy: [{ updatedAt: 'desc' }],
@@ -3221,7 +3771,7 @@ export async function warmTopicReaderArtifacts(
         }),
     shouldScopePapers
       ? scopedPaperIds.length > 0
-        ? prisma.paper.findMany({
+        ? prisma.papers.findMany({
             where: {
               topicId,
               id: { in: scopedPaperIds },
@@ -3231,7 +3781,7 @@ export async function warmTopicReaderArtifacts(
             take: Math.max(scopedPaperIds.length, limit),
           })
         : Promise.resolve<Array<{ id: string }>>([])
-      : prisma.paper.findMany({
+      : prisma.papers.findMany({
           where: { topicId },
           select: { id: true },
           orderBy: [{ updatedAt: 'desc' }],

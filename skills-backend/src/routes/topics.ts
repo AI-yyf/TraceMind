@@ -12,6 +12,7 @@ import {
   getTopicLocalizationMap,
   type TopicLocalizationPayload,
 } from '../services/topics/localization'
+import { getTopicViewModel } from '../services/topics/alpha-topic'
 import {
   buildResearchPipelineContext,
   loadResearchPipelineState,
@@ -259,13 +260,13 @@ function buildResearchBriefSessionSummary(args: {
 router.get(
   '/',
   asyncHandler(async (_req, res) => {
-    const topics = await prisma.topic.findMany({
+    const topics = await prisma.topics.findMany({
       include: {
         _count: {
           select: {
             papers: true,
-            nodes: true,
-            stages: true,
+            research_nodes: true,
+            topic_stages: true,
           },
         },
       },
@@ -286,8 +287,8 @@ router.get(
         return {
           ...topic,
           paperCount: topic._count.papers,
-          nodeCount: topic._count.nodes,
-          stageCount: topic._count.stages,
+          nodeCount: topic._count.research_nodes,
+          stageCount: topic._count.topic_stages,
           localization: localizationMap.get(topic.id) ?? null,
           stageConfig: stageConfig
             ? {
@@ -307,23 +308,23 @@ router.get(
   asyncHandler(async (req, res) => {
     const { id } = req.params
 
-    const topic = await prisma.topic.findUnique({
+    const topic = await prisma.topics.findUnique({
       where: { id },
       include: {
         papers: {
           orderBy: { published: 'desc' },
         },
-        nodes: {
+        research_nodes: {
           include: {
-            papers: {
+            node_papers: {
               include: {
-                paper: true,
+                papers: true,
               },
             },
           },
           orderBy: { stageIndex: 'asc' },
         },
-        stages: {
+        topic_stages: {
           orderBy: { order: 'asc' },
         },
       },
@@ -348,13 +349,15 @@ router.post(
   asyncHandler(async (req, res) => {
     const { nameZh, nameEn, focusLabel, summary, description } = req.body
 
-    const topic = await prisma.topic.create({
+    const topic = await prisma.topics.create({
       data: {
+        id: crypto.randomUUID(),
         nameZh,
         nameEn,
         focusLabel,
         summary,
         description,
+        updatedAt: new Date(),
       },
     })
 
@@ -373,7 +376,7 @@ router.patch(
     const { id } = req.params
     const { nameZh, nameEn, focusLabel, summary, description, status } = req.body
 
-    const topic = await prisma.topic.update({
+    const topic = await prisma.topics.update({
       where: { id },
       data: {
         nameZh,
@@ -399,7 +402,7 @@ router.delete(
   asyncHandler(async (req, res) => {
     const { id } = req.params
 
-    await prisma.topic.delete({
+    await prisma.topics.delete({
       where: { id },
     })
 
@@ -417,7 +420,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const { id } = req.params
 
-    const topic = await prisma.topic.findUnique({
+    const topic = await prisma.topics.findUnique({
       where: { id },
       select: { id: true },
     })
@@ -440,7 +443,7 @@ router.patch(
   asyncHandler(async (req, res) => {
     const { id } = req.params
 
-    const topic = await prisma.topic.findUnique({
+    const topic = await prisma.topics.findUnique({
       where: { id },
       select: { id: true },
     })
@@ -469,12 +472,12 @@ router.get(
     const { id } = req.params
 
     const [paperStats, nodeStats] = await Promise.all([
-      prisma.paper.groupBy({
+      prisma.papers.groupBy({
         by: ['status'],
         where: { topicId: id },
         _count: true,
       }),
-      prisma.researchNode.groupBy({
+      prisma.research_nodes.groupBy({
         by: ['status'],
         where: { topicId: id },
         _count: true,
@@ -498,7 +501,7 @@ router.get(
 
     const [topic, session, pipelineState, sessionMemory, latestResearchReport, topicMemory, world, guidance] =
       await Promise.all([
-        prisma.topic.findUnique({
+        prisma.topics.findUnique({
           where: { id },
           select: {
             id: true,
@@ -567,8 +570,10 @@ router.get(
   '/:id/dashboard',
   asyncHandler(async (req, res) => {
     const { id: topicId } = req.params
+    const requestedStageWindow = Number(req.query.stageMonths)
+    const stageWindowMonths = Number.isFinite(requestedStageWindow) ? requestedStageWindow : undefined
 
-    const topic = await prisma.topic.findUnique({
+    const topic = await prisma.topics.findUnique({
       where: { id: topicId },
       select: { id: true, nameZh: true, nameEn: true },
     })
@@ -577,26 +582,15 @@ router.get(
       throw new AppError(404, 'Topic not found.')
     }
 
+    const topicViewModel = await getTopicViewModel(topicId, { stageWindowMonths })
+
     const [nodes, papers] = await Promise.all([
-      prisma.researchNode.findMany({
+      prisma.research_nodes.findMany({
         where: { topicId },
         include: {
-          primaryPaper: {
-            select: {
-              id: true,
-              title: true,
-              titleZh: true,
-              titleEn: true,
-              summary: true,
-              explanation: true,
-              citationCount: true,
-              published: true,
-              tags: true,
-            },
-          },
-          papers: {
+          node_papers: {
             include: {
-              paper: {
+              papers: {
                 select: {
                   id: true,
                   title: true,
@@ -615,7 +609,7 @@ router.get(
         },
         orderBy: { stageIndex: 'asc' },
       }),
-      prisma.paper.findMany({
+      prisma.papers.findMany({
         where: { topicId },
         select: {
           id: true,
@@ -671,6 +665,10 @@ router.get(
     const totalPapers = papers.length
     const totalNodes = nodes.length
     const totalStages = new Set(nodes.map((node) => node.stageIndex)).size
+    const mappedPaperIds = new Set(topicViewModel.stages.flatMap((stage) => stage.nodes.flatMap((node) => node.paperIds)))
+    const mappedPapers = mappedPaperIds.size
+    const pendingPapers = topicViewModel.unmappedPapers.length
+    const mappedStages = topicViewModel.stages.filter((stage) => stage.mappedPaperCount > 0 || stage.nodes.length > 0).length
     const years = papers.map((paper) => new Date(paper.published).getFullYear())
     const timeSpanYears = years.length > 1 ? Math.max(...years) - Math.min(...years) : 0
     const avgPapersPerNode = totalNodes > 0 ? Number((totalPapers / totalNodes).toFixed(1)) : 0
@@ -680,8 +678,8 @@ router.get(
         : 0
 
     const researchThreads = nodes.map((node) => {
-      const nodePapers = node.papers.map((item) => item.paper)
-      const leadPaper = node.primaryPaper ?? nodePapers[0]
+      const nodePapers = node.node_papers.map((item) => item.papers)
+      const leadPaper = nodePapers[0]
 
       return {
         stageIndex: node.stageIndex,
@@ -696,19 +694,22 @@ router.get(
 
     const methodEvolution = nodes
       .flatMap((node) =>
-        node.papers.slice(0, 2).map(({ paper }) => ({
-          year: new Date(paper.published).getFullYear(),
-          methodName: paperTitle(paper).split(/[:：|]/u)[0]?.trim().slice(0, 60) || paperTitle(paper),
-          paperId: paper.id,
-          paperTitle: paperTitle(paper),
-          contribution: cleanText(paper.explanation || paper.summary, 200),
-          impact:
-            (paper.citationCount ?? 0) > 500
-              ? 'high' as const
-              : (paper.citationCount ?? 0) > 100
-                ? 'medium' as const
-                : 'low' as const,
-        })),
+        node.node_papers.slice(0, 2).map((item) => {
+          const paper = item.papers
+          return {
+            year: new Date(paper.published).getFullYear(),
+            methodName: paperTitle(paper).split(/[:：|]/u)[0]?.trim().slice(0, 60) || paperTitle(paper),
+            paperId: paper.id,
+            paperTitle: paperTitle(paper),
+            contribution: cleanText(paper.explanation || paper.summary, 200),
+            impact:
+              (paper.citationCount ?? 0) > 500
+                ? 'high' as const
+                : (paper.citationCount ?? 0) > 100
+                  ? 'medium' as const
+                  : 'low' as const,
+          }
+        }),
       )
       .sort((left, right) => left.year - right.year)
 
@@ -755,6 +756,13 @@ router.get(
       .filter(Boolean)
       .slice(0, 5)
 
+    const pendingPaperItems = topicViewModel.unmappedPapers.map((paper) => ({
+      paperId: paper.paperId,
+      stageIndex: paper.stageIndex,
+      stageLabel: paper.stageLabel,
+      route: paper.route,
+    }))
+
     const methodKeywords = papers
       .flatMap((paper) => `${paper.title} ${paper.titleZh} ${paper.titleEn ?? ''} ${paper.tags}`.match(
         /\b(?:Transformer|CNN|RNN|GAN|Diffusion|LLM|RL|Attention|VAE|BERT|GPT|ViT|CLIP)\b/gi,
@@ -771,13 +779,17 @@ router.get(
         activeAuthors,
         stats: {
           totalPapers,
+          mappedPapers,
+          pendingPapers,
           totalNodes,
           totalStages,
+          mappedStages,
           timeSpanYears,
           avgPapersPerNode,
           citationCoverage,
         },
         keyInsights,
+        pendingPapers: pendingPaperItems,
         trends: {
           emergingTopics: [],
           decliningTopics: [],

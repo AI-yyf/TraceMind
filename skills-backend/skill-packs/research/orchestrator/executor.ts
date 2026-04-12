@@ -70,12 +70,19 @@ function resolvePaperIdFromMemory(topicMemory: Record<string, unknown>): string 
   const queue = Array.isArray(topicMemory.recommendationQueue)
     ? (topicMemory.recommendationQueue as Array<Record<string, unknown>>)
     : []
-  return (
-    queue.find((entry) => entry.status === 'selected' && typeof entry.paperId === 'string')?.paperId ??
-    queue.find((entry) => entry.status === 'queued' && typeof entry.paperId === 'string')?.paperId ??
-    queue.find((entry) => typeof entry.paperId === 'string')?.paperId ??
-    null
-  )
+  const selectedEntry = queue.find((entry) => entry.status === 'selected' && typeof entry.paperId === 'string')
+  if (selectedEntry && typeof selectedEntry.paperId === 'string') {
+    return selectedEntry.paperId
+  }
+  const queuedEntry = queue.find((entry) => entry.status === 'queued' && typeof entry.paperId === 'string')
+  if (queuedEntry && typeof queuedEntry.paperId === 'string') {
+    return queuedEntry.paperId
+  }
+  const anyEntry = queue.find((entry) => typeof entry.paperId === 'string')
+  if (anyEntry && typeof anyEntry.paperId === 'string') {
+    return anyEntry.paperId
+  }
+  return null
 }
 
 function resolveBranchIdForPaper(topicMemory: Record<string, unknown>, paperId: string): string | null {
@@ -90,7 +97,11 @@ function resolveBranchIdForPaper(topicMemory: Record<string, unknown>, paperId: 
   const queue = Array.isArray(topicMemory.recommendationQueue)
     ? (topicMemory.recommendationQueue as Array<Record<string, unknown>>)
     : []
-  return queue.find((entry) => entry.paperId === paperId && typeof entry.branchId === 'string')?.branchId ?? null
+  const branchEntry = queue.find((entry) => entry.paperId === paperId && typeof entry.branchId === 'string')
+  if (branchEntry && typeof branchEntry.branchId === 'string') {
+    return branchEntry.branchId
+  }
+  return null
 }
 
 function buildSyntheticContext(args: {

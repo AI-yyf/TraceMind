@@ -30,6 +30,10 @@ try:
 except ImportError:
     Image = None
 
+MIN_IMAGE_WIDTH = 80
+MIN_IMAGE_HEIGHT = 60
+MIN_IMAGE_AREA = 12_000
+
 
 def emit_json(payload: Dict[str, Any]) -> None:
     """Write JSON using UTF-8 even on Windows terminals with GBK defaults."""
@@ -64,6 +68,50 @@ def extract_text_from_page(page: fitz.Page) -> Dict[str, Any]:
         "blocks": structured_text
     }
 
+def to_png_safe_pixmap(pix: fitz.Pixmap) -> fitz.Pixmap:
+    """Convert unusual colorspaces into a PNG-safe pixmap."""
+    if pix.colorspace is None:
+        return fitz.Pixmap(fitz.csRGB, pix)
+    if pix.colorspace.n not in (1, 3):
+        return fitz.Pixmap(fitz.csRGB, pix)
+    if pix.alpha and pix.colorspace.n != 3:
+        return fitz.Pixmap(fitz.csRGB, pix)
+    return pix
+
+def save_pixmap_png(pix: fitz.Pixmap, target_path: Path) -> fitz.Pixmap:
+    """Persist a pixmap as PNG, falling back to Pillow when direct saving fails."""
+    png_pix = to_png_safe_pixmap(pix)
+
+    try:
+        png_pix.save(str(target_path))
+        return png_pix
+    except Exception:
+        if Image is None:
+            raise
+
+        mode = "RGB"
+        if png_pix.colorspace is None:
+            mode = "RGB"
+        elif png_pix.colorspace.n == 1:
+            mode = "L"
+        elif png_pix.alpha:
+            mode = "RGBA"
+
+        image = Image.frombytes(mode, [png_pix.width, png_pix.height], png_pix.samples)
+        if mode == "RGBA":
+            image = image.convert("RGB")
+        image.save(str(target_path), format="PNG")
+        return png_pix
+
+def should_keep_image(pix: fitz.Pixmap, bbox: Optional[fitz.Rect]) -> bool:
+    if pix.width < MIN_IMAGE_WIDTH or pix.height < MIN_IMAGE_HEIGHT:
+        return False
+    if pix.width * pix.height < MIN_IMAGE_AREA:
+        return False
+    if bbox is not None and (bbox.width < 30 or bbox.height < 30):
+        return False
+    return True
+
 def extract_images_from_page(page: fitz.Page, page_num: int, output_dir: Path) -> List[Dict[str, Any]]:
     """提取页面中的图片"""
     images = []
@@ -74,22 +122,20 @@ def extract_images_from_page(page: fitz.Page, page_num: int, output_dir: Path) -
     for img_index, img in enumerate(image_list):
         xref = img[0]
         pix = fitz.Pixmap(page.parent, xref)
-        
-        # 跳过 CMYK 图片
-        if pix.n > 4:
-            pix = fitz.Pixmap(fitz.csRGB, pix)
-        
-        # 生成图片文件名
-        img_filename = f"page_{page_num + 1}_img_{img_index + 1}.png"
-        img_path = output_dir / img_filename
-        
-        # 保存图片
-        pix.save(str(img_path))
-        
+
         # 获取图片在页面中的位置
         rects = page.get_image_rects(xref)
         bbox = rects[0] if rects else None
-        
+        if not should_keep_image(pix, bbox):
+            pix = None
+            continue
+
+        # 生成图片文件名
+        img_filename = f"page_{page_num + 1}_img_{img_index + 1}.png"
+        img_path = output_dir / img_filename
+
+        pix = save_pixmap_png(pix, img_path)
+
         images.append({
             "id": f"img_{page_num + 1}_{img_index + 1}",
             "page": page_num + 1,
@@ -216,12 +262,13 @@ def extract_pdf_content(pdf_path: str, output_dir: str, paper_id: str, paper_tit
             "fullText": ""
         }
         
-        # 提取封面
-        if len(doc) > 0:
-            cover_pix = doc[0].get_pixmap(matrix=fitz.Matrix(2, 2))
-            cover_path = paper_output_dir / "cover.png"
-            cover_pix.save(str(cover_path))
-            result["coverPath"] = str(cover_path.relative_to(output_dir.parent))
+# Cover extraction disabled - smart figure selection is now handled in pdf-grounding.ts
+        # This prioritizes architecture/method diagrams over first-page screenshots
+        # if len(doc) > 0:
+        #     cover_pix = doc[0].get_pixmap(matrix=fitz.Matrix(2, 2))
+        #     cover_path = paper_output_dir / "cover.png"
+        #     cover_pix = save_pixmap_png(cover_pix, cover_path)
+        #     result["coverPath"] = str(cover_path.relative_to(output_dir.parent))
         
         # 逐页提取
         for page_num in range(len(doc)):

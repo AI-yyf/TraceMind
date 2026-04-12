@@ -1,13 +1,12 @@
-import { PrismaClient } from '@prisma/client'
 import { Router } from 'express'
 import { z } from 'zod'
 
+import { prisma } from '../lib/prisma'
 import { enhancedTaskScheduler } from '../services/enhanced-scheduler'
 import { type TaskConfig } from '../services/scheduler'
 import { getStageLocalization, getTopicLocalization, getTopicLocalizationMap } from '../services/topics/localization'
 
 const router = Router()
-const prisma = new PrismaClient()
 
 const taskConfigSchema = z.object({
   id: z.string(),
@@ -38,7 +37,7 @@ const taskConfigSchema = z.object({
 
 router.get('/topics', async (_req, res) => {
   try {
-    const topics = await prisma.topic.findMany({
+    const topics = await prisma.topics.findMany({
       select: {
         id: true,
         nameZh: true,
@@ -67,7 +66,7 @@ router.get('/topics/:topicId/stages', async (req, res) => {
   try {
     const { topicId } = req.params
     const localization = await getTopicLocalization(topicId)
-    const stages = await prisma.topicStage.findMany({
+    const stages = await prisma.topic_stages.findMany({
       where: { topicId },
       orderBy: { order: 'asc' },
     })
@@ -129,7 +128,7 @@ router.get('/stats', async (_req, res) => {
 
 router.get('/', async (_req, res) => {
   try {
-    const dbTasks = await prisma.systemConfig.findMany({
+    const dbTasks = await prisma.system_configs.findMany({
       where: { key: { startsWith: 'task:' } },
     })
 
@@ -162,10 +161,10 @@ router.post('/', async (req, res) => {
     const success = enhancedTaskScheduler.addTask(body)
 
     if (success) {
-      await prisma.systemConfig.upsert({
+      await prisma.system_configs.upsert({
         where: { key: `task:${body.id}` },
-        update: { value: JSON.stringify(body) },
-        create: { key: `task:${body.id}`, value: JSON.stringify(body) },
+        update: { value: JSON.stringify(body), updatedAt: new Date() },
+        create: { id: crypto.randomUUID(), key: `task:${body.id}`, value: JSON.stringify(body), updatedAt: new Date() },
       })
     }
 
@@ -193,7 +192,7 @@ router.post('/', async (req, res) => {
 router.get('/:taskId', async (req, res) => {
   try {
     const { taskId } = req.params
-    const config = await prisma.systemConfig.findUnique({
+    const config = await prisma.system_configs.findUnique({
       where: { key: `task:${taskId}` },
     })
 
@@ -225,10 +224,10 @@ router.put('/:taskId', async (req, res) => {
     const success = enhancedTaskScheduler.addTask(body)
 
     if (success) {
-      await prisma.systemConfig.upsert({
+await prisma.system_configs.upsert({
         where: { key: `task:${taskId}` },
-        update: { value: JSON.stringify(body) },
-        create: { key: `task:${taskId}`, value: JSON.stringify(body) },
+        update: { value: JSON.stringify(body), updatedAt: new Date() },
+        create: { id: crypto.randomUUID(), key: `task:${taskId}`, value: JSON.stringify(body), updatedAt: new Date() },
       })
     }
 
@@ -250,7 +249,7 @@ router.delete('/:taskId', async (req, res) => {
     const { taskId } = req.params
     const success = enhancedTaskScheduler.removeTask(taskId)
 
-    await prisma.systemConfig.deleteMany({
+    await prisma.system_configs.deleteMany({
       where: {
         key: {
           in: [`task:${taskId}`, `task-progress:${taskId}`, `task-history:${taskId}`],
@@ -279,11 +278,11 @@ router.post('/:taskId/toggle', async (req, res) => {
     if (success) {
       const task = enhancedTaskScheduler.getTaskConfig(taskId)
       if (task) {
-        await prisma.systemConfig.upsert({
-          where: { key: `task:${taskId}` },
-          update: { value: JSON.stringify(task) },
-          create: { key: `task:${taskId}`, value: JSON.stringify(task) },
-        })
+await prisma.system_configs.upsert({
+        where: { key: `task:${taskId}` },
+        update: { value: JSON.stringify(task), updatedAt: new Date() },
+        create: { id: crypto.randomUUID(), key: `task:${taskId}`, value: JSON.stringify(task), updatedAt: new Date() },
+      })
       }
     }
 

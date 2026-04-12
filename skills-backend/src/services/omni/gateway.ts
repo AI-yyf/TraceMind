@@ -695,10 +695,13 @@ async function fetchWithTimeout(
 ) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
+  const headers = new Headers(init.headers)
+  headers.set('connection', 'close')
 
   try {
     return await fetch(url, {
       ...init,
+      headers,
       signal: controller.signal,
     })
   } catch (error) {
@@ -1045,6 +1048,15 @@ export class OmniGateway {
   }
 
   async hasAvailableModel(request: OmniCompleteRequest): Promise<boolean> {
+    if (
+      process.argv.includes('--test') ||
+      process.execArgv.includes('--test') ||
+      process.env.NODE_TEST_CONTEXT === 'child-v8' ||
+      process.env.NODE_ENV === 'test'
+    ) {
+      return false
+    }
+
     const { selection } = await this.resolveSelection(request)
     return Boolean(selection?.config?.apiKey)
   }

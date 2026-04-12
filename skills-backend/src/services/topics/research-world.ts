@@ -347,12 +347,14 @@ function topicPipelineContextOptions(
 }
 
 async function saveTopicResearchWorldRecord(record: TopicResearchWorldRecord) {
-  await prisma.systemConfig.upsert({
+  await prisma.system_configs.upsert({
     where: { key: researchWorldKey(record.topicId) },
-    update: { value: JSON.stringify(record) },
+    update: { value: JSON.stringify(record), updatedAt: new Date() },
     create: {
+      id: crypto.randomUUID(),
       key: researchWorldKey(record.topicId),
       value: JSON.stringify(record),
+      updatedAt: new Date(),
     },
   })
 }
@@ -362,7 +364,7 @@ function buildTopicResearchWorldFingerprint(input: unknown) {
 }
 
 export async function loadTopicResearchWorld(topicId: string) {
-  const record = await prisma.systemConfig.findUnique({
+  const record = await prisma.system_configs.findUnique({
     where: { key: researchWorldKey(topicId) },
   })
 
@@ -375,7 +377,7 @@ export async function buildTopicResearchWorld(topicId: string): Promise<{
 }> {
   const [topic, topicMemory, judgmentState, pipelineState, sessionMemory, report] =
     await Promise.all([
-      prisma.topic.findUnique({
+      prisma.topics.findUnique({
         where: { id: topicId },
         select: {
           id: true,
@@ -386,7 +388,7 @@ export async function buildTopicResearchWorld(topicId: string): Promise<{
           focusLabel: true,
           language: true,
           updatedAt: true,
-          stages: {
+          topic_stages: {
             orderBy: { order: 'asc' },
             select: {
               id: true,
@@ -397,7 +399,7 @@ export async function buildTopicResearchWorld(topicId: string): Promise<{
               descriptionEn: true,
             },
           },
-          nodes: {
+          research_nodes: {
             orderBy: [{ stageIndex: 'asc' }, { updatedAt: 'desc' }],
             select: {
               id: true,
@@ -411,7 +413,7 @@ export async function buildTopicResearchWorld(topicId: string): Promise<{
               provisional: true,
               primaryPaperId: true,
               updatedAt: true,
-              papers: {
+              node_papers: {
                 orderBy: { order: 'asc' },
                 select: {
                   paperId: true,
@@ -431,7 +433,7 @@ export async function buildTopicResearchWorld(topicId: string): Promise<{
               coverPath: true,
               published: true,
               updatedAt: true,
-              nodePapers: {
+              node_papers: {
                 select: {
                   nodeId: true,
                 },
@@ -455,7 +457,7 @@ export async function buildTopicResearchWorld(topicId: string): Promise<{
     limit: 12,
   })
   const pipelineOverview = buildResearchPipelineContext(pipelineState, { historyLimit: 8 })
-  const nodeById = new Map(topic.nodes.map((node) => [node.id, node] as const))
+  const nodeById = new Map(topic.research_nodes.map((node) => [node.id, node] as const))
 
   const claims: TopicResearchWorldClaim[] = []
   const questions: TopicResearchWorldQuestion[] = []
@@ -498,7 +500,7 @@ export async function buildTopicResearchWorld(topicId: string): Promise<{
       scope === 'paper'
         ? [scopeId]
         : scope === 'node'
-          ? nodeById.get(scopeId)?.papers.map((paper) => paper.paperId) ?? []
+          ? nodeById.get(scopeId)?.node_papers.map((paper) => paper.paperId) ?? []
           : []
     const supportNodeIds =
       scope === 'node'
@@ -506,7 +508,7 @@ export async function buildTopicResearchWorld(topicId: string): Promise<{
         : scope === 'paper'
           ? topic.papers
               .find((paper) => paper.id === scopeId)
-              ?.nodePapers.map((entry) => entry.nodeId) ?? []
+              ?.node_papers.map((entry) => entry.nodeId) ?? []
           : []
 
     claims.push({
@@ -602,11 +604,11 @@ export async function buildTopicResearchWorld(topicId: string): Promise<{
   })
 
   const stageContextByIndex = new Map(
-    topic.stages.map((stage) => {
+    topic.topic_stages.map((stage) => {
       const paperIds = uniqueStrings(
-        topic.nodes
+        topic.research_nodes
           .filter((node) => node.stageIndex === stage.order)
-          .flatMap((node) => node.papers.map((entry) => entry.paperId)),
+          .flatMap((node) => node.node_papers.map((entry) => entry.paperId)),
         24,
         80,
       )
@@ -621,10 +623,10 @@ export async function buildTopicResearchWorld(topicId: string): Promise<{
     }),
   )
 
-  const stages: TopicResearchWorldStage[] = topic.stages.map((stage) => {
-    const stageNodes = topic.nodes.filter((node) => node.stageIndex === stage.order)
+  const stages: TopicResearchWorldStage[] = topic.topic_stages.map((stage) => {
+    const stageNodes = topic.research_nodes.filter((node) => node.stageIndex === stage.order)
     const stagePaperIds = uniqueStrings(
-      stageNodes.flatMap((node) => node.papers.map((entry) => entry.paperId)),
+      stageNodes.flatMap((node) => node.node_papers.map((entry) => entry.paperId)),
       24,
       80,
     )
@@ -664,8 +666,8 @@ export async function buildTopicResearchWorld(topicId: string): Promise<{
   const seedQuestions = dedupeById(questions, MAX_WORLD_QUESTIONS)
   const seedCritiques = dedupeById(critiques, MAX_WORLD_CRITIQUES)
 
-  const nodes: TopicResearchWorldNode[] = topic.nodes.map((node) => {
-    const paperIds = node.papers.map((entry) => entry.paperId)
+  const nodes: TopicResearchWorldNode[] = topic.research_nodes.map((node) => {
+    const paperIds = node.node_papers.map((entry) => entry.paperId)
     const relatedQuestions = seedQuestions.filter(
       (question) => question.scope === 'node' && question.scopeId === node.id,
     )
@@ -705,7 +707,7 @@ export async function buildTopicResearchWorld(topicId: string): Promise<{
   })
 
   const papers: TopicResearchWorldPaper[] = topic.papers.map((paper) => {
-    const nodeIds = paper.nodePapers.map((entry) => entry.nodeId)
+    const nodeIds = paper.node_papers.map((entry) => entry.nodeId)
     const stageIndexes = uniqueStrings(
       nodeIds.map((nodeId) => String(nodeById.get(nodeId)?.stageIndex ?? '')),
       8,
@@ -1111,8 +1113,8 @@ export async function buildTopicResearchWorld(topicId: string): Promise<{
       focusLabel: topic.focusLabel,
       language: topic.language,
     },
-    stages: topic.stages,
-    nodes: topic.nodes.map((node) => ({
+    stages: topic.topic_stages,
+    nodes: topic.research_nodes.map((node) => ({
       id: node.id,
       stageIndex: node.stageIndex,
       updatedAt: node.updatedAt.toISOString(),
@@ -1121,7 +1123,7 @@ export async function buildTopicResearchWorld(topicId: string): Promise<{
       provisional: node.provisional,
       isMergeNode: node.isMergeNode,
       coverImage: node.nodeCoverImage,
-      paperIds: node.papers.map((entry) => entry.paperId),
+      paperIds: node.node_papers.map((entry) => entry.paperId),
     })),
     papers: topic.papers.map((paper) => ({
       id: paper.id,
@@ -1130,7 +1132,7 @@ export async function buildTopicResearchWorld(topicId: string): Promise<{
       titleZh: paper.titleZh,
       titleEn: paper.titleEn,
       coverPath: paper.coverPath,
-      nodeIds: paper.nodePapers.map((entry) => entry.nodeId),
+      nodeIds: paper.node_papers.map((entry) => entry.nodeId),
     })),
     reportUpdatedAt: report?.updatedAt ?? null,
     pipelineUpdatedAt: pipelineState.updatedAt ?? null,
@@ -1167,7 +1169,7 @@ export async function syncTopicResearchWorldSnapshot(
   options?: { force?: boolean },
 ) {
   const [existing, next] = await Promise.all([
-    prisma.systemConfig.findUnique({
+    prisma.system_configs.findUnique({
       where: { key: researchWorldKey(topicId) },
     }),
     buildTopicResearchWorld(topicId),

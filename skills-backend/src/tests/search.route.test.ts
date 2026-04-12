@@ -5,6 +5,10 @@ import test from 'node:test'
 import { prisma } from '../lib/prisma'
 import { createApp } from '../server'
 
+function createTestId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
 async function withServer(run: (origin: string) => Promise<void>) {
   const app = createApp()
   const server = createServer(app)
@@ -60,17 +64,20 @@ test('GET /api/search returns grouped payload in global scope', async () => {
 })
 
 test('GET /api/search includes topic titles for topic-linked results', async () => {
-  const topic = await prisma.topic.create({
+  const topic = await prisma.topics.create({
     data: {
+      id: createTestId('search-topic'),
       nameZh: 'GAIA 搜索主题',
       nameEn: 'GAIA Search Topic',
       language: 'zh',
       status: 'active',
+      updatedAt: new Date(),
     },
   })
 
-  await prisma.paper.create({
+  await prisma.papers.create({
     data: {
+      id: createTestId('search-paper'),
       topicId: topic.id,
       title: 'GAIA driving foundation model',
       titleZh: 'GAIA 驾驶基础模型',
@@ -83,6 +90,7 @@ test('GET /api/search includes topic titles for topic-linked results', async () 
       tablePaths: '[]',
       tags: JSON.stringify(['gaia', 'search']),
       status: 'candidate',
+      updatedAt: new Date(),
     },
   })
 
@@ -115,24 +123,27 @@ test('GET /api/search includes topic titles for topic-linked results', async () 
       assert.ok((payload.data.facets?.topics ?? []).some((facet) => facet.value === topic.id))
     })
   } finally {
-    await prisma.topic.delete({
+    await prisma.topics.delete({
       where: { id: topic.id },
     })
   }
 })
 
 test('GET /api/search exposes stage and node location details for paper results', async () => {
-  const topic = await prisma.topic.create({
+  const topic = await prisma.topics.create({
     data: {
+      id: createTestId('search-topic'),
       nameZh: 'GAIA 节点定位主题',
       nameEn: 'GAIA Node Search Topic',
       language: 'zh',
       status: 'active',
+      updatedAt: new Date(),
     },
   })
 
-  const paper = await prisma.paper.create({
+  const paper = await prisma.papers.create({
     data: {
+      id: createTestId('search-paper'),
       topicId: topic.id,
       title: 'GAIA node grounding paper',
       titleZh: 'GAIA 节点定位论文',
@@ -145,11 +156,13 @@ test('GET /api/search exposes stage and node location details for paper results'
       tablePaths: '[]',
       tags: JSON.stringify(['gaia', 'node']),
       status: 'candidate',
+      updatedAt: new Date(),
     },
   })
 
-  const node = await prisma.researchNode.create({
+  const node = await prisma.research_nodes.create({
     data: {
+      id: createTestId('search-node'),
       topicId: topic.id,
       stageIndex: 2,
       nodeLabel: 'GAIA 节点',
@@ -159,11 +172,13 @@ test('GET /api/search exposes stage and node location details for paper results'
       primaryPaperId: paper.id,
       status: 'provisional',
       provisional: true,
+      updatedAt: new Date(),
     },
   })
 
-  await prisma.nodePaper.create({
+  await prisma.node_papers.create({
     data: {
+      id: createTestId('search-node-paper'),
       nodeId: node.id,
       paperId: paper.id,
       order: 1,
@@ -199,24 +214,27 @@ test('GET /api/search exposes stage and node location details for paper results'
       assert.ok((paperItem?.relatedNodes ?? []).length > 0)
     })
   } finally {
-    await prisma.topic.delete({
+    await prisma.topics.delete({
       where: { id: topic.id },
     })
   }
 })
 
 test('GET /api/search matches paper locations by author names and arXiv identifiers', async () => {
-  const topic = await prisma.topic.create({
+  const topic = await prisma.topics.create({
     data: {
+      id: createTestId('search-topic'),
       nameZh: '搜索定位主题',
       nameEn: 'Search Location Topic',
       language: 'zh',
       status: 'active',
+      updatedAt: new Date(),
     },
   })
 
-  const paper = await prisma.paper.create({
+  const paper = await prisma.papers.create({
     data: {
+      id: createTestId('search-paper'),
       topicId: topic.id,
       title: 'Grounded Search Retrieval',
       titleZh: '定位搜索检索',
@@ -231,11 +249,13 @@ test('GET /api/search matches paper locations by author names and arXiv identifi
       tablePaths: '[]',
       tags: JSON.stringify(['retrieval', 'search']),
       status: 'candidate',
+      updatedAt: new Date(),
     },
   })
 
-  const node = await prisma.researchNode.create({
+  const node = await prisma.research_nodes.create({
     data: {
+      id: createTestId('search-node'),
       topicId: topic.id,
       stageIndex: 4,
       nodeLabel: '定位搜索节点',
@@ -245,11 +265,13 @@ test('GET /api/search matches paper locations by author names and arXiv identifi
       primaryPaperId: paper.id,
       status: 'provisional',
       provisional: true,
+      updatedAt: new Date(),
     },
   })
 
-  await prisma.nodePaper.create({
+  await prisma.node_papers.create({
     data: {
+      id: createTestId('search-node-paper'),
       nodeId: node.id,
       paperId: paper.id,
       order: 1,
@@ -311,24 +333,27 @@ test('GET /api/search matches paper locations by author names and arXiv identifi
       assert.match(sourceHit?.locationLabel ?? '', /定位搜索节点/u)
     })
   } finally {
-    await prisma.topic.delete({
+    await prisma.topics.delete({
       where: { id: topic.id },
     })
   }
 })
 
 test('GET /api/search exposes stage facets and filters topic results by selected stages', async () => {
-  const topic = await prisma.topic.create({
+  const topic = await prisma.topics.create({
     data: {
+      id: createTestId('search-topic'),
       nameZh: '搜索分期主题',
       nameEn: 'Search Stage Topic',
       language: 'zh',
       status: 'active',
+      updatedAt: new Date(),
     },
   })
 
-  const januaryPaper = await prisma.paper.create({
+  const januaryPaper = await prisma.papers.create({
     data: {
+      id: createTestId('search-paper'),
       topicId: topic.id,
       title: 'Stage filter alpha paper',
       titleZh: '阶段筛选论文 Alpha',
@@ -341,11 +366,13 @@ test('GET /api/search exposes stage facets and filters topic results by selected
       tablePaths: '[]',
       tags: JSON.stringify(['stage-filter', 'alpha']),
       status: 'candidate',
+      updatedAt: new Date(),
     },
   })
 
-  const marchPaper = await prisma.paper.create({
+  const marchPaper = await prisma.papers.create({
     data: {
+      id: createTestId('search-paper'),
       topicId: topic.id,
       title: 'Stage filter beta paper',
       titleZh: '阶段筛选论文 Beta',
@@ -358,11 +385,13 @@ test('GET /api/search exposes stage facets and filters topic results by selected
       tablePaths: '[]',
       tags: JSON.stringify(['stage-filter', 'beta']),
       status: 'candidate',
+      updatedAt: new Date(),
     },
   })
 
-  const januaryNode = await prisma.researchNode.create({
+  const januaryNode = await prisma.research_nodes.create({
     data: {
+      id: createTestId('search-node'),
       topicId: topic.id,
       stageIndex: 1,
       nodeLabel: 'Alpha stage node',
@@ -372,11 +401,13 @@ test('GET /api/search exposes stage facets and filters topic results by selected
       primaryPaperId: januaryPaper.id,
       status: 'provisional',
       provisional: true,
+      updatedAt: new Date(),
     },
   })
 
-  const marchNode = await prisma.researchNode.create({
+  const marchNode = await prisma.research_nodes.create({
     data: {
+      id: createTestId('search-node'),
       topicId: topic.id,
       stageIndex: 2,
       nodeLabel: 'Beta stage node',
@@ -386,17 +417,20 @@ test('GET /api/search exposes stage facets and filters topic results by selected
       primaryPaperId: marchPaper.id,
       status: 'provisional',
       provisional: true,
+      updatedAt: new Date(),
     },
   })
 
-  await prisma.nodePaper.createMany({
+  await prisma.node_papers.createMany({
     data: [
       {
+        id: createTestId('search-node-paper'),
         nodeId: januaryNode.id,
         paperId: januaryPaper.id,
         order: 1,
       },
       {
+        id: createTestId('search-node-paper'),
         nodeId: marchNode.id,
         paperId: marchPaper.id,
         order: 1,
@@ -460,24 +494,27 @@ test('GET /api/search exposes stage facets and filters topic results by selected
       )
     })
   } finally {
-    await prisma.topic.delete({
+    await prisma.topics.delete({
       where: { id: topic.id },
     })
   }
 })
 
 test('GET /api/search uses node chronology from linked papers instead of node updatedAt', async () => {
-  const topic = await prisma.topic.create({
+  const topic = await prisma.topics.create({
     data: {
+      id: createTestId('search-topic'),
       nameZh: '节点时间主题',
       nameEn: 'Node Chronology Topic',
       language: 'zh',
       status: 'active',
+      updatedAt: new Date(),
     },
   })
 
-  const paper = await prisma.paper.create({
+  const paper = await prisma.papers.create({
     data: {
+      id: createTestId('search-paper'),
       topicId: topic.id,
       title: 'Node chronology seed paper',
       titleZh: '节点时间种子论文',
@@ -490,11 +527,13 @@ test('GET /api/search uses node chronology from linked papers instead of node up
       tablePaths: '[]',
       tags: JSON.stringify(['node-chronology']),
       status: 'candidate',
+      updatedAt: new Date(),
     },
   })
 
-  const node = await prisma.researchNode.create({
+  const node = await prisma.research_nodes.create({
     data: {
+      id: createTestId('search-node'),
       topicId: topic.id,
       stageIndex: 1,
       nodeLabel: 'Chronology node',
@@ -509,8 +548,9 @@ test('GET /api/search uses node chronology from linked papers instead of node up
     },
   })
 
-  await prisma.nodePaper.create({
+  await prisma.node_papers.create({
     data: {
+      id: createTestId('search-node-paper'),
       nodeId: node.id,
       paperId: paper.id,
       order: 1,
@@ -548,33 +588,38 @@ test('GET /api/search uses node chronology from linked papers instead of node up
       assert.equal(nodeHit?.stageLabel, '2024.08')
     })
   } finally {
-    await prisma.topic.delete({
+    await prisma.topics.delete({
       where: { id: topic.id },
     })
   }
 })
 
 test('GET /api/search filters global results by selected topic ids while preserving topic facets', async () => {
-  const alphaTopic = await prisma.topic.create({
+  const alphaTopic = await prisma.topics.create({
     data: {
+      id: createTestId('search-topic'),
       nameZh: '全局搜索主题甲',
       nameEn: 'Global Search Topic Alpha',
       language: 'zh',
       status: 'active',
+      updatedAt: new Date(),
     },
   })
 
-  const betaTopic = await prisma.topic.create({
+  const betaTopic = await prisma.topics.create({
     data: {
+      id: createTestId('search-topic'),
       nameZh: '全局搜索主题乙',
       nameEn: 'Global Search Topic Beta',
       language: 'zh',
       status: 'active',
+      updatedAt: new Date(),
     },
   })
 
-  const alphaPaper = await prisma.paper.create({
+  await prisma.papers.create({
     data: {
+      id: createTestId('search-paper'),
       topicId: alphaTopic.id,
       title: 'Global topic filter alpha',
       titleZh: '全局主题筛选 Alpha',
@@ -587,11 +632,13 @@ test('GET /api/search filters global results by selected topic ids while preserv
       tablePaths: '[]',
       tags: JSON.stringify(['global-topic-filter']),
       status: 'candidate',
+      updatedAt: new Date(),
     },
   })
 
-  const betaPaper = await prisma.paper.create({
+  await prisma.papers.create({
     data: {
+      id: createTestId('search-paper'),
       topicId: betaTopic.id,
       title: 'Global topic filter beta',
       titleZh: '全局主题筛选 Beta',
@@ -604,6 +651,7 @@ test('GET /api/search filters global results by selected topic ids while preserv
       tablePaths: '[]',
       tags: JSON.stringify(['global-topic-filter']),
       status: 'candidate',
+      updatedAt: new Date(),
     },
   })
 
@@ -657,7 +705,7 @@ test('GET /api/search filters global results by selected topic ids while preserv
       )
     })
   } finally {
-    await prisma.topic.deleteMany({
+    await prisma.topics.deleteMany({
       where: {
         id: {
           in: [alphaTopic.id, betaTopic.id],

@@ -255,7 +255,7 @@ export async function performExpandedSearch(
   }
 
   // 第3轮：引用扩展
-  let citationResults: SemanticScholarPaper[] = []
+  const citationResults: SemanticScholarPaper[] = []
   if (expansionDepth >= 2 && queryResults.length > 0) {
     // 获取前3篇高引用论文的引用
     const topPapers = queryResults

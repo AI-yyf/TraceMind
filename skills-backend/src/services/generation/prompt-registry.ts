@@ -3504,7 +3504,7 @@ function parseStoredCopyOverride(value: string | null | undefined) {
   }
 }
 
-function parseStoredRuntime(value: string | null | undefined) {
+function _parseStoredRuntime(value: string | null | undefined) {
   if (!value) return null
   try {
     return JSON.parse(value) as GenerationRuntimePatch
@@ -3682,7 +3682,7 @@ export function getBuiltInProductCopyDefinitions() {
 }
 
 export async function listPromptTemplates(): Promise<PromptTemplateRecord[]> {
-  const records = await prisma.systemConfig.findMany({
+  const records = await prisma.system_configs.findMany({
     where: {
       key: {
         startsWith: PROMPT_TEMPLATE_KEY_PREFIX,
@@ -3705,14 +3705,14 @@ export async function listPromptTemplates(): Promise<PromptTemplateRecord[]> {
 
 export async function getPromptTemplate(id: PromptTemplateId): Promise<PromptTemplateRecord> {
   const definition = BUILT_IN_PROMPTS[id]
-  const record = await prisma.systemConfig.findUnique({
+  const record = await prisma.system_configs.findUnique({
     where: { key: templateSystemKey(id) },
   })
   return mergeDefinitionWithOverride(definition, parseStoredOverride(record?.value))
 }
 
 export async function listProductCopies(): Promise<ProductCopyRecord[]> {
-  const records = await prisma.systemConfig.findMany({
+  const records = await prisma.system_configs.findMany({
     where: {
       key: {
         startsWith: PRODUCT_COPY_KEY_PREFIX,
@@ -3735,7 +3735,7 @@ export async function listProductCopies(): Promise<ProductCopyRecord[]> {
 
 export async function getProductCopy(id: ProductCopyId): Promise<ProductCopyRecord> {
   const definition = BUILT_IN_PRODUCT_COPIES[id]
-  const record = await prisma.systemConfig.findUnique({
+  const record = await prisma.system_configs.findUnique({
     where: { key: copySystemKey(id) },
   })
   return mergeCopyDefinitionWithOverride(definition, parseStoredCopyOverride(record?.value))
@@ -3743,7 +3743,7 @@ export async function getProductCopy(id: ProductCopyId): Promise<ProductCopyReco
 
 export async function listExternalAgentAssets(): Promise<ExternalAgentAssetRecord[]> {
   const definitions = Object.values(EXTERNAL_AGENT_ASSET_DEFINITIONS)
-  const records = await prisma.systemConfig.findMany({
+  const records = await prisma.system_configs.findMany({
     where: {
       key: {
         startsWith: EXTERNAL_AGENT_ASSET_KEY_PREFIX,
@@ -3777,7 +3777,7 @@ export async function getExternalAgentAsset(
   const definition = EXTERNAL_AGENT_ASSET_DEFINITIONS[id]
   const [base, record] = await Promise.all([
     readExternalAgentAssetBase(definition),
-    prisma.systemConfig.findUnique({
+    prisma.system_configs.findUnique({
       where: { key: externalAgentAssetSystemKey(id) },
     }),
   ])
@@ -3795,10 +3795,12 @@ export async function saveExternalAgentAssetPatch(
   await fs.mkdir(path.dirname(resolveExternalAgentAssetPath(definition)), { recursive: true })
   await fs.writeFile(resolveExternalAgentAssetPath(definition), nextContent, 'utf8')
 
-  await prisma.systemConfig.upsert({
+  await prisma.system_configs.upsert({
     where: { key: externalAgentAssetSystemKey(patch.id) },
-    update: { value: JSON.stringify({ id: patch.id, content: nextContent }) },
+    update: { value: JSON.stringify({ id: patch.id, content: nextContent }), updatedAt: new Date() },
     create: {
+      id: crypto.randomUUID(),
+      updatedAt: new Date(),
       key: externalAgentAssetSystemKey(patch.id),
       value: JSON.stringify({ id: patch.id, content: nextContent }),
     },
@@ -3818,10 +3820,10 @@ export async function saveProductCopyPatch(
     ),
   }
 
-  await prisma.systemConfig.upsert({
+  await prisma.system_configs.upsert({
     where: { key: copySystemKey(patch.id) },
-    update: { value: JSON.stringify(mergedPatch) },
-    create: { key: copySystemKey(patch.id), value: JSON.stringify(mergedPatch) },
+    update: { value: JSON.stringify(mergedPatch), updatedAt: new Date() },
+    create: { id: crypto.randomUUID(), key: copySystemKey(patch.id), value: JSON.stringify(mergedPatch), updatedAt: new Date() },
   })
 
   return getProductCopy(patch.id)
@@ -3848,10 +3850,10 @@ export async function savePromptTemplatePatch(
     ),
   }
 
-  await prisma.systemConfig.upsert({
+  await prisma.system_configs.upsert({
     where: { key: templateSystemKey(patch.id) },
-    update: { value: JSON.stringify(mergedPatch) },
-    create: { key: templateSystemKey(patch.id), value: JSON.stringify(mergedPatch) },
+    update: { value: JSON.stringify(mergedPatch), updatedAt: new Date() },
+    create: { id: crypto.randomUUID(), key: templateSystemKey(patch.id), value: JSON.stringify(mergedPatch), updatedAt: new Date() },
   })
 
   return getPromptTemplate(patch.id)
@@ -3911,18 +3913,18 @@ export async function resetPromptStudio(options?: {
   runtime?: boolean
 }) {
   if (options?.runtime) {
-    await prisma.systemConfig.deleteMany({
+    await prisma.system_configs.deleteMany({
       where: { key: PROMPT_STUDIO_SYSTEM_KEY },
     })
   }
 
   if (options?.templateId) {
     if (!options.language) {
-      await prisma.systemConfig.deleteMany({
+      await prisma.system_configs.deleteMany({
         where: { key: templateSystemKey(options.templateId) },
       })
     } else {
-      const current = await prisma.systemConfig.findUnique({
+      const current = await prisma.system_configs.findUnique({
         where: { key: templateSystemKey(options.templateId) },
       })
 
@@ -3930,13 +3932,13 @@ export async function resetPromptStudio(options?: {
       if (parsed?.languageContents?.[options.language]) {
         delete parsed.languageContents[options.language]
         if (hasAnyLanguageOverride(parsed.languageContents)) {
-          await prisma.systemConfig.upsert({
+          await prisma.system_configs.upsert({
             where: { key: templateSystemKey(options.templateId) },
-            update: { value: JSON.stringify(parsed) },
-            create: { key: templateSystemKey(options.templateId), value: JSON.stringify(parsed) },
+            update: { value: JSON.stringify(parsed), updatedAt: new Date() },
+            create: { id: crypto.randomUUID(), key: templateSystemKey(options.templateId), value: JSON.stringify(parsed), updatedAt: new Date() },
           })
         } else {
-          await prisma.systemConfig.deleteMany({
+          await prisma.system_configs.deleteMany({
             where: { key: templateSystemKey(options.templateId) },
           })
         }
@@ -3946,11 +3948,11 @@ export async function resetPromptStudio(options?: {
 
   if (options?.productCopyId) {
     if (!options.language) {
-      await prisma.systemConfig.deleteMany({
+      await prisma.system_configs.deleteMany({
         where: { key: copySystemKey(options.productCopyId) },
       })
     } else {
-      const current = await prisma.systemConfig.findUnique({
+      const current = await prisma.system_configs.findUnique({
         where: { key: copySystemKey(options.productCopyId) },
       })
 
@@ -3958,13 +3960,13 @@ export async function resetPromptStudio(options?: {
       if (parsed?.languageContents?.[options.language]) {
         delete parsed.languageContents[options.language]
         if (hasAnyLanguageOverride(parsed.languageContents)) {
-          await prisma.systemConfig.upsert({
+          await prisma.system_configs.upsert({
             where: { key: copySystemKey(options.productCopyId) },
-            update: { value: JSON.stringify(parsed) },
-            create: { key: copySystemKey(options.productCopyId), value: JSON.stringify(parsed) },
+            update: { value: JSON.stringify(parsed), updatedAt: new Date() },
+            create: { id: crypto.randomUUID(), key: copySystemKey(options.productCopyId), value: JSON.stringify(parsed), updatedAt: new Date() },
           })
         } else {
-          await prisma.systemConfig.deleteMany({
+          await prisma.system_configs.deleteMany({
             where: { key: copySystemKey(options.productCopyId) },
           })
         }
@@ -3975,7 +3977,7 @@ export async function resetPromptStudio(options?: {
   if (options?.language && !options.templateId && !options.productCopyId) {
     const templateIds = Object.keys(BUILT_IN_PROMPTS) as PromptTemplateId[]
     for (const templateId of templateIds) {
-      const current = await prisma.systemConfig.findUnique({
+      const current = await prisma.system_configs.findUnique({
         where: { key: templateSystemKey(templateId) },
       })
 
@@ -3984,13 +3986,13 @@ export async function resetPromptStudio(options?: {
 
       delete parsed.languageContents[options.language]
       if (hasAnyLanguageOverride(parsed.languageContents)) {
-        await prisma.systemConfig.upsert({
-          where: { key: templateSystemKey(templateId) },
-          update: { value: JSON.stringify(parsed) },
-          create: { key: templateSystemKey(templateId), value: JSON.stringify(parsed) },
-        })
+await prisma.system_configs.upsert({
+            where: { key: templateSystemKey(templateId) },
+            update: { value: JSON.stringify(parsed), updatedAt: new Date() },
+            create: { id: crypto.randomUUID(), key: templateSystemKey(templateId), value: JSON.stringify(parsed), updatedAt: new Date() },
+          })
       } else {
-        await prisma.systemConfig.deleteMany({
+        await prisma.system_configs.deleteMany({
           where: { key: templateSystemKey(templateId) },
         })
       }
@@ -4000,7 +4002,7 @@ export async function resetPromptStudio(options?: {
   if (options?.language && !options.templateId && !options.productCopyId) {
     const productCopyIds = Object.keys(BUILT_IN_PRODUCT_COPIES) as ProductCopyId[]
     for (const productCopyId of productCopyIds) {
-      const current = await prisma.systemConfig.findUnique({
+      const current = await prisma.system_configs.findUnique({
         where: { key: copySystemKey(productCopyId) },
       })
 
@@ -4009,13 +4011,13 @@ export async function resetPromptStudio(options?: {
 
       delete parsed.languageContents[options.language]
       if (hasAnyLanguageOverride(parsed.languageContents)) {
-        await prisma.systemConfig.upsert({
-          where: { key: copySystemKey(productCopyId) },
-          update: { value: JSON.stringify(parsed) },
-          create: { key: copySystemKey(productCopyId), value: JSON.stringify(parsed) },
-        })
+await prisma.system_configs.upsert({
+            where: { key: copySystemKey(productCopyId) },
+            update: { value: JSON.stringify(parsed), updatedAt: new Date() },
+            create: { id: crypto.randomUUID(), key: copySystemKey(productCopyId), value: JSON.stringify(parsed), updatedAt: new Date() },
+          })
       } else {
-        await prisma.systemConfig.deleteMany({
+        await prisma.system_configs.deleteMany({
           where: { key: copySystemKey(productCopyId) },
         })
       }

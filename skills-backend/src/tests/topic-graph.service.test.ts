@@ -51,6 +51,9 @@ test('buildGraphLayout keeps the mainline centered and assigns stable branch lan
         summary: 'summary',
         transition: 'transition',
       },
+      trackedPaperCount: 1,
+      mappedPaperCount: 1,
+      unmappedPaperCount: 0,
       nodes: [createStageNode('n1', 1)],
     },
     {
@@ -65,6 +68,9 @@ test('buildGraphLayout keeps the mainline centered and assigns stable branch lan
         summary: 'summary',
         transition: 'transition',
       },
+      trackedPaperCount: 3,
+      mappedPaperCount: 3,
+      unmappedPaperCount: 0,
       nodes: [createStageNode('n2', 2), createStageNode('n3', 2), createStageNode('n4', 2)],
     },
     {
@@ -79,6 +85,9 @@ test('buildGraphLayout keeps the mainline centered and assigns stable branch lan
         summary: 'summary',
         transition: 'transition',
       },
+      trackedPaperCount: 2,
+      mappedPaperCount: 2,
+      unmappedPaperCount: 0,
       nodes: [createStageNode('n5', 3, { isMergeNode: true }), createStageNode('n6', 3)],
     },
   ]

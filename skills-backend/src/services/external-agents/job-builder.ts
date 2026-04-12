@@ -106,21 +106,6 @@ function clipText(value: string | null | undefined, maxLength = 220) {
   return `${normalized.slice(0, Math.max(0, maxLength - 3))}...`
 }
 
-function uniqueStrings(values: string[], limit = 8) {
-  const seen = new Set<string>()
-  const output: string[] = []
-
-  for (const value of values) {
-    const normalized = clipText(value, 220)
-    if (!normalized || seen.has(normalized)) continue
-    seen.add(normalized)
-    output.push(normalized)
-    if (output.length >= limit) break
-  }
-
-  return output
-}
-
 function buildDefaultOutputContract(templateId: PromptTemplateId) {
   return {
     type: 'json-object',
@@ -147,22 +132,21 @@ function sanitizeFileName(value: string) {
 
 async function loadTopicSubjectSnapshot(topicId: string) {
   const [topic, stageNodeCounts] = await Promise.all([
-    prisma.topic.findUnique({
+    prisma.topics.findUnique({
       where: { id: topicId },
       include: {
-        stages: {
+        topic_stages: {
           orderBy: { order: 'asc' },
         },
-        _count: {
-          select: {
-            papers: true,
-            nodes: true,
-            stages: true,
-          },
+        papers: {
+          select: { id: true },
+        },
+        research_nodes: {
+          select: { id: true },
         },
       },
     }),
-    prisma.researchNode.groupBy({
+    prisma.research_nodes.groupBy({
       by: ['stageIndex'],
       where: { topicId },
       _count: { _all: true },
@@ -189,11 +173,11 @@ async function loadTopicSubjectSnapshot(topicId: string) {
     createdAt: topic.createdAt.toISOString(),
     updatedAt: topic.updatedAt.toISOString(),
     stats: {
-      paperCount: topic._count.papers,
-      nodeCount: topic._count.nodes,
-      stageCount: topic._count.stages,
+      paperCount: topic.papers.length,
+      nodeCount: topic.research_nodes.length,
+      stageCount: topic.topic_stages.length,
     },
-    stages: topic.stages.map((stage) => ({
+    stages: topic.topic_stages.map((stage) => ({
       stageIndex: stage.order,
       title: stage.name,
       titleEn: stage.nameEn ?? '',
@@ -230,7 +214,7 @@ async function buildTopicMemoryContext(topicId: string, topicSnapshot?: Awaited<
     pipeline: buildResearchPipelineContext(pipelineState, { historyLimit: 8 }),
     sessionMemory,
     cognitiveMemory,
-    stageDossiers: topic.stages.map((stage) => ({
+    stageDossiers: topic.stages.map((stage: { stageIndex: number; title: string; titleEn: string; description: string; nodeCount: number }) => ({
       stageIndex: stage.stageIndex,
       title: stage.title,
       titleEn: stage.titleEn,
@@ -241,12 +225,12 @@ async function buildTopicMemoryContext(topicId: string, topicSnapshot?: Awaited<
 }
 
 async function buildNodeMemoryContext(nodeId: string, topicId: string) {
-  const nodeRecord = await prisma.researchNode.findUnique({
+  const nodeRecord = await prisma.research_nodes.findUnique({
     where: { id: nodeId },
     select: {
       id: true,
       stageIndex: true,
-      papers: {
+      node_papers: {
         select: { paperId: true },
       },
     },
@@ -265,7 +249,7 @@ async function buildNodeMemoryContext(nodeId: string, topicId: string) {
 
   const pipelineOptions: ResearchPipelineContextOptions = {
     nodeId,
-    paperIds: nodeRecord.papers.map((entry) => entry.paperId),
+    paperIds: nodeRecord.node_papers.map((entry) => entry.paperId),
     stageIndex: nodeRecord.stageIndex,
     historyLimit: 8,
   }
@@ -288,13 +272,13 @@ async function buildNodeMemoryContext(nodeId: string, topicId: string) {
 }
 
 async function buildPaperMemoryContext(paperId: string, topicId: string) {
-  const paperRecord = await prisma.paper.findUnique({
+  const paperRecord = await prisma.papers.findUnique({
     where: { id: paperId },
     select: {
       id: true,
-      nodePapers: {
+      node_papers: {
         select: {
-          node: {
+          research_nodes: {
             select: {
               id: true,
               stageIndex: true,
@@ -310,8 +294,8 @@ async function buildPaperMemoryContext(paperId: string, topicId: string) {
   }
 
   const stageIndex =
-    paperRecord.nodePapers
-      .map((entry) => entry.node.stageIndex)
+    paperRecord.node_papers
+      .map((entry) => entry.research_nodes.stageIndex)
       .filter((value): value is number => typeof value === 'number')
       .sort((left, right) => left - right)[0] ?? undefined
 

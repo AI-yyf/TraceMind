@@ -1590,7 +1590,7 @@ function createSeedKeyword(
   }
 }
 
-function buildBlueprintCoreFallback(
+function _buildBlueprintCoreFallback(
   blueprint: TopicBlueprint,
   sourceLanguage: PromptLanguage,
 ): TopicBlueprintCore {
@@ -1647,7 +1647,7 @@ function buildBlueprintCoreFallback(
   })
 }
 
-function mergeBlueprintCore(
+function _mergeBlueprintCore(
   fallback: TopicBlueprint,
   raw: unknown,
   sourceLanguage: PromptLanguage,
@@ -2562,8 +2562,10 @@ async function saveTopicBlueprint(
   preview: TopicPreview,
   blueprint: TopicBlueprint,
 ) {
-  const topic = await prisma.topic.create({
+  const topic = await prisma.topics.create({
     data: {
+      id: crypto.randomUUID(),
+      updatedAt: new Date(),
       nameZh: pickNonEmpty(blueprint.topic.locales.zh.name, blueprint.topic.nameZh, preview.nameZh, '新主题'),
       nameEn: pickNonEmpty(blueprint.topic.locales.en.name, blueprint.topic.nameEn, preview.nameEn, 'New Topic'),
       focusLabel: pickNonEmpty(blueprint.topic.locales.zh.focusLabel, blueprint.topic.focusLabelZh, preview.focusLabelZh, '研究焦点'),
@@ -2571,16 +2573,20 @@ async function saveTopicBlueprint(
       description: input.sourceDescription,
       language: resolveStoredLanguage(input.languageMode, blueprint.topic.primaryLanguage),
       status: 'active',
-      stages: {
-        create: blueprint.stages.map((stage) => ({
-          order: stage.order,
-          name: pickNonEmpty(stage.locales.zh.name, stage.name, `阶段 ${stage.order}`),
-          nameEn: pickNonEmpty(stage.locales.en.name, stage.nameEn, `Stage ${stage.order}`),
-          description: pickNonEmpty(stage.locales.zh.description, stage.description),
-          descriptionEn: pickNonEmpty(stage.locales.en.description, stage.descriptionEn),
-        })),
-      },
     },
+  })
+
+  // Create topic stages separately
+  await prisma.topic_stages.createMany({
+    data: blueprint.stages.map((stage) => ({
+      id: crypto.randomUUID(),
+      topicId: topic.id,
+      order: stage.order,
+      name: pickNonEmpty(stage.locales.zh.name, stage.name, `阶段 ${stage.order}`),
+      nameEn: pickNonEmpty(stage.locales.en.name, stage.nameEn, `Stage ${stage.order}`),
+      description: pickNonEmpty(stage.locales.zh.description, stage.description),
+      descriptionEn: pickNonEmpty(stage.locales.en.description, stage.descriptionEn),
+    })),
   })
 
   const localizationPayload = {
@@ -2598,25 +2604,27 @@ async function saveTopicBlueprint(
   }
 
   await prisma.$transaction([
-    prisma.systemConfig.upsert({
+    prisma.system_configs.upsert({
       where: { key: `topic:${topic.id}:keywords` },
-      update: { value: JSON.stringify(blueprint.topic.keywords) },
-      create: { key: `topic:${topic.id}:keywords`, value: JSON.stringify(blueprint.topic.keywords) },
+      update: { value: JSON.stringify(blueprint.topic.keywords), updatedAt: new Date() },
+      create: { id: crypto.randomUUID(), key: `topic:${topic.id}:keywords`, value: JSON.stringify(blueprint.topic.keywords), updatedAt: new Date() },
     }),
-    prisma.systemConfig.upsert({
+    prisma.system_configs.upsert({
       where: { key: `topic:${topic.id}:summaryEn` },
-      update: { value: pickNonEmpty(blueprint.topic.summaryEn, blueprint.topic.locales.en.summary, preview.summaryEn) },
+      update: { value: pickNonEmpty(blueprint.topic.summaryEn, blueprint.topic.locales.en.summary, preview.summaryEn), updatedAt: new Date() },
       create: {
+        id: crypto.randomUUID(),
+        updatedAt: new Date(),
         key: `topic:${topic.id}:summaryEn`,
         value: pickNonEmpty(blueprint.topic.summaryEn, blueprint.topic.locales.en.summary, preview.summaryEn),
       },
     }),
-    prisma.systemConfig.upsert({
+    prisma.system_configs.upsert({
       where: { key: `topic:${topic.id}:localization` },
-      update: { value: JSON.stringify(localizationPayload) },
-      create: { key: `topic:${topic.id}:localization`, value: JSON.stringify(localizationPayload) },
+      update: { value: JSON.stringify(localizationPayload), updatedAt: new Date() },
+      create: { id: crypto.randomUUID(), key: `topic:${topic.id}:localization`, value: JSON.stringify(localizationPayload), updatedAt: new Date() },
     }),
-    prisma.systemConfig.upsert({
+    prisma.system_configs.upsert({
       where: { key: `topic:${topic.id}:creation` },
       update: {
         value: JSON.stringify({
@@ -2632,6 +2640,8 @@ async function saveTopicBlueprint(
         }),
       },
       create: {
+        id: crypto.randomUUID(),
+        updatedAt: new Date(),
         key: `topic:${topic.id}:creation`,
         value: JSON.stringify({
           description: input.sourceDescription,

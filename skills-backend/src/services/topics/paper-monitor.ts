@@ -52,8 +52,8 @@ export interface MonitorResult {
 type MonitorNode = {
   id: string
   nodeLabel: string
-  papers: Array<{
-    paper: {
+  node_papers: Array<{
+    papers: {
       id: string
       title: string
       titleZh: string
@@ -100,7 +100,7 @@ function parseStringArray(value: string | null | undefined) {
 }
 
 export async function getMonitoredTopics(prisma: PrismaClient): Promise<MonitoredTopic[]> {
-  const topics = await prisma.topic.findMany({
+  const topics = await prisma.topics.findMany({
     where: { status: 'active' },
     include: {
       papers: {
@@ -262,8 +262,8 @@ function calculateNodeMatchScore(paper: NewPaperMatch, node: MonitorNode) {
     score += (labelMatches / labelWords.length) * 0.5
   }
 
-  for (const nodePaper of node.papers.slice(0, 3)) {
-    const sourceTitle = normalizePaperTitle(nodePaper.paper.titleZh || nodePaper.paper.titleEn || nodePaper.paper.title)
+  for (const nodePaper of node.node_papers.slice(0, 3)) {
+    const sourceTitle = normalizePaperTitle(nodePaper.papers.titleZh || nodePaper.papers.titleEn || nodePaper.papers.title)
     const sourceWords = sourceTitle.split(/\s+/u).filter(Boolean)
     if (sourceWords.length === 0) continue
     const sourceMatches = sourceWords.filter((word) => paperTitle.includes(word)).length
@@ -291,12 +291,12 @@ async function generateUpdateSuggestions(
   topic: MonitoredTopic,
   newPapers: NewPaperMatch[],
 ): Promise<UpdateSuggestion[]> {
-  const nodes = await prisma.researchNode.findMany({
+  const nodes = await prisma.research_nodes.findMany({
     where: { topicId: topic.topicId },
     include: {
-      papers: {
+        node_papers: {
         include: {
-          paper: {
+          papers: {
             select: {
               id: true,
               title: true,
@@ -318,7 +318,7 @@ async function generateUpdateSuggestions(
     paper.suggestedNodeId = bestNode.id
     const existing = suggestions.find((item) => item.nodeId === bestNode.id)
 
-if (existing) {
+    if (existing) {
       existing.affectedPapers.push(paper.paperId)
       existing.suggestedChanges.push({
         type: 'add_paper',
@@ -339,24 +339,9 @@ if (existing) {
         },
       ],
     })
-      continue
-    }
-
-    suggestions.push({
-      nodeId: bestNode.id,
-      nodeTitle: bestNode.nodeLabel,
-      reason: '鍙戠幇涓庤鑺傜偣楂樺害鐩稿叧鐨勬柊璁烘枃',
-      affectedPapers: [paper.paperId],
-      suggestedChanges: [
-        {
-          type: 'add_paper',
-          description: `娣诲姞璁烘枃锛?{paper.title}`,
-        },
-      ],
-    })
   }
 
-const newNodeCandidates = newPapers.filter((item) => item.suggestedAction === 'create_new_node')
+  const newNodeCandidates = newPapers.filter((item) => item.suggestedAction === 'create_new_node')
   if (newNodeCandidates.length > 0) {
     suggestions.push({
       nodeId: 'new',
@@ -370,7 +355,7 @@ const newNodeCandidates = newPapers.filter((item) => item.suggestedAction === 'c
     })
   }
 
-  return suggestions
+return suggestions
 }
 
 export async function runFullMonitor(
@@ -391,7 +376,7 @@ export async function runFullMonitor(
     try {
       const result = await monitorTopic(prisma, topic, options)
       results.push(result)
-      await prisma.topic.update({
+      await prisma.topics.update({
         where: { id: topic.topicId },
         data: { updatedAt: new Date() },
       })

@@ -73,6 +73,19 @@ export class MultimodalClient {
   }
 
   /**
+   * 调用模型生成内容（别名方法）
+   */
+  async generateContent(options: { prompt: string; maxTokens?: number; temperature?: number }): Promise<{ content: string }> {
+    const response = await this.complete({
+      taskType: 'content-generation',
+      prompt: options.prompt,
+      maxTokens: options.maxTokens,
+      temperature: options.temperature,
+    })
+    return { content: response.text }
+  }
+
+  /**
    * 调用模型生成内容
    */
   async complete(request: CompletionRequest): Promise<ModelResponse> {
@@ -169,6 +182,33 @@ export class MultimodalClient {
       text: this.generateMockResponse(request),
       latency: Date.now() - startTime,
       modelId: 'mock-model',
+    }
+  }
+
+  /**
+   * 测试模型连接
+   */
+  async testModel(modelId: string): Promise<{ success: boolean; latency: number; error?: string }> {
+    const startTime = Date.now()
+    
+    try {
+      await this.complete({
+        taskType: 'content-generation',
+        prompt: 'Hello, this is a test.',
+        maxTokens: 10,
+        model: modelId,
+      })
+      
+      return {
+        success: true,
+        latency: Date.now() - startTime,
+      }
+    } catch (error) {
+      return {
+        success: false,
+        latency: Date.now() - startTime,
+        error: error instanceof Error ? error.message : '测试失败',
+      }
     }
   }
 

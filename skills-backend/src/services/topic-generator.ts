@@ -85,7 +85,7 @@ export class TopicGenerator {
   /**
    * 解析失败时的后备方案
    */
-  private generateFallback(text: string, language: Language): TopicGenerationOutput {
+  private generateFallback(text: string, _language: Language): TopicGenerationOutput {
     const lines = text.split('\n').filter(l => l.trim())
 
     const result: TopicGenerationOutput = {

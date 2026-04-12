@@ -24,7 +24,7 @@ export interface SearchResult {
   authors: string[]
   relevanceScore: number
   matchedQueryIds: string[]
-  source: 'arxiv' | 'openalex' | 'semantic-scholar'
+  source: 'arxiv' | 'openalex' | 'semantic-scholar' | string
   pdfUrl?: string
   categories?: string[]
   citationCount?: number
@@ -95,7 +95,7 @@ export class DiscoveryEngine {
     // 第一轮：生成并执行初始查询
     const round1 = await this.executeRound1(stageContext)
     rounds.push(round1)
-    this.round1Results = round1.results
+    this.round1Results = round1.results || []
 
     // 评估是否需要第二轮
     const needsRound2 = this.shouldExecuteRound2(round1, stageContext)
@@ -111,13 +111,16 @@ export class DiscoveryEngine {
     // 去重和排序
     const uniqueCandidates = this.deduplicateAndRank(allCandidates)
 
+    const round1Candidates = round1.candidates || []
+    const round2Candidates = rounds[1]?.candidates || []
+
     return {
       rounds,
       candidates: uniqueCandidates,
       summary: {
         totalCandidates: uniqueCandidates.length,
-        round1Count: round1.candidates.length,
-        round2Count: rounds[1]?.candidates.length || 0,
+        round1Count: round1Candidates.length,
+        round2Count: round2Candidates.length,
         uniquePapers: new Set(uniqueCandidates.map((c) => c.paperId)).size,
         executionTimeMs: Date.now() - this.startTime,
       },
@@ -219,8 +222,10 @@ ${capabilityContext.gapCapabilities.join(', ')}
    * 评估是否需要第二轮
    */
   private shouldExecuteRound2(round1: DiscoveryRound, stageContext: StageContext): boolean {
+    const round1Candidates = round1.candidates || []
+    
     // 条件1: 第一轮候选不足
-    if (round1.candidates.length < this.config.discovery.minCandidatesThreshold) {
+    if (round1Candidates.length < this.config.discovery.minCandidatesThreshold) {
       return true
     }
 
@@ -232,7 +237,7 @@ ${capabilityContext.gapCapabilities.join(', ')}
 
     // 条件3: 高置信度候选比例低
     const highConfidenceRatio =
-      round1.candidates.filter((c) => c.confidence > 0.8).length / round1.candidates.length
+      round1Candidates.filter((c) => c.confidence > 0.8).length / round1Candidates.length
 
     if (highConfidenceRatio < 0.3) {
       return true
@@ -246,10 +251,11 @@ ${capabilityContext.gapCapabilities.join(', ')}
    */
   private identifyGaps(round1: DiscoveryRound, stageContext: StageContext): DiscoveryGap[] {
     const gaps: DiscoveryGap[] = []
+    const round1Candidates = round1.candidates || []
 
     // 检查问题覆盖
     const coveredProblemIds = new Set<string>()
-    for (const candidate of round1.candidates) {
+    for (const candidate of round1Candidates) {
       for (const id of candidate.matchedProblemNodeIds) {
         coveredProblemIds.add(id)
       }
@@ -270,7 +276,7 @@ ${capabilityContext.gapCapabilities.join(', ')}
 
     // 检查能力覆盖
     const coveredCapabilities = new Set<string>()
-    for (const candidate of round1.candidates) {
+    for (const candidate of round1Candidates) {
       // 从查询命中推断能力覆盖
       for (const hit of candidate.queryHits) {
         if (hit.queryText.includes('capability:')) {
@@ -325,7 +331,8 @@ ${capabilityContext.gapCapabilities.join(', ')}
     })
 
     // 提取候选（排除第一轮已有的）
-    const existingIds = new Set(round1.candidates.map((c) => c.paperId))
+    const round1Candidates = round1.candidates || []
+    const existingIds = new Set(round1Candidates.map((c) => c.paperId))
     const candidates = this.extractCandidates(results, stageContext, 2).filter(
       (c) => !existingIds.has(c.paperId)
     )
@@ -373,14 +380,14 @@ ${capabilityContext.gapCapabilities.join(', ')}
 当前阶段: ${stageContext.stageIndex}
 
 第一轮结果摘要:
-- 总候选数: ${round1.candidates.length}
-- 高置信度候选: ${round1.candidates.filter((c) => c.confidence > 0.8).length}
+- 总候选数: ${(round1.candidates || []).length}
+- 高置信度候选: ${(round1.candidates || []).filter((c) => c.confidence > 0.8).length}
 
 发现的缺口:
 ${gaps.map((g) => `- [${g.severity}] ${g.description}`).join('\n')}
 
 现有候选的论文ID:
-${round1.candidates.map((c) => `- ${c.paperId}: ${c.title}`).join('\n')}
+${(round1.candidates || []).map((c) => `- ${c.paperId}: ${c.title}`).join('\n')}
 
 请生成 3-5 个补充查询，专注于：
 1. 填补未覆盖的问题节点
@@ -516,7 +523,8 @@ ${round1.candidates.map((c) => `- ${c.paperId}: ${c.title}`).join('\n')}
     const candidateMap = new Map<string, Candidate>()
 
     for (const round of rounds) {
-      for (const candidate of round.candidates) {
+      const roundCandidates = round.candidates || []
+      for (const candidate of roundCandidates) {
         const existing = candidateMap.get(candidate.paperId)
 
         if (existing) {

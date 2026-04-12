@@ -24,9 +24,12 @@ import tasksRoutes from './routes/tasks'
 import topicAlphaRoutes from './routes/topic-alpha'
 import topicGenRoutes from './routes/topic-gen'
 import topicRoutes from './routes/topics'
+import researchRoutes from './routes/research'
+import zoteroRoutes from './routes/zotero'
 import { logger } from './utils/logger'
 import { initializeWebSocketServer } from './websocket/server'
 import { startPaperMonitorCron } from './services/topics/paper-monitor-cron'
+import { ensureConfiguredTopicsMaterialized } from './services/topics/topic-config-sync'
 
 dotenv.config()
 
@@ -74,6 +77,13 @@ function buildCorsOriginChecker() {
     logger.warn('Blocked request from disallowed origin.', { origin })
     callback(null, false)
   }
+}
+
+function shouldMaterializeTopicsOnStartup() {
+  const flag = (process.env.TOPIC_SYNC_ON_STARTUP ?? '').trim().toLowerCase()
+  if (flag === '1' || flag === 'true' || flag === 'yes') return true
+  if (flag === '0' || flag === 'false' || flag === 'no') return false
+  return process.env.NODE_ENV === 'production'
 }
 
 export function createApp() {
@@ -132,6 +142,8 @@ export function createApp() {
   app.use('/api/prompt-templates', promptTemplatesRoutes)
   app.use('/api/tasks', tasksRoutes)
   app.use('/api/search', searchRoutes)
+  app.use('/api/zotero', zoteroRoutes)
+  app.use('/api/research', researchRoutes)
 
   app.use(errorHandler)
 
@@ -155,6 +167,17 @@ export function startServer(port = Number(process.env.PORT || 3303)) {
 
       // 启动论文监控定时任务（每日凌晨3点）
       startPaperMonitorCron()
+      if (shouldMaterializeTopicsOnStartup()) {
+        void ensureConfiguredTopicsMaterialized().catch((error) => {
+          logger.warn('Configured topics could not be materialized during server startup.', {
+            error,
+          })
+        })
+      } else {
+        logger.info(
+          'Skipping configured topic materialization during startup; set TOPIC_SYNC_ON_STARTUP=1 to enable it.',
+        )
+      }
 
       resolve(server)
     })

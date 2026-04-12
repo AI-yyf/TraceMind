@@ -54,7 +54,7 @@ test('research report normalizes mixed-language stage key moves on load/save', a
       '第 1 阶段：本轮没有新的论文被纳入主线，因此当前阶段继续停留在证据收束与判断校准模式。',
     ])
   } finally {
-    await prisma.systemConfig.deleteMany({
+    await prisma.system_configs.deleteMany({
       where: { key: `topic:${topicId}:research-report` },
     })
   }

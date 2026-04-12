@@ -96,7 +96,7 @@ export function createOpenAlexSearchProvider() {
 
         const works = Array.isArray(data.results) ? data.results : []
 
-        return works.map(work => ({
+        return works.map((work: any) => ({
           ...parseOpenAlexWork(work),
           relevanceScore: calculateRelevance(work, query),
         }))

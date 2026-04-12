@@ -1,15 +1,13 @@
 import { PrismaClient } from '@prisma/client'
 import fs from 'fs'
 import path from 'path'
-import { fileURLToPath } from 'url'
 import { logger } from '../utils/logger'
 
 // Prisma 客户端全局实例
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
 }
-const currentDir = path.dirname(fileURLToPath(import.meta.url))
-const prismaDir = path.resolve(currentDir, '../../prisma')
+const prismaDir = path.resolve(__dirname, '../../prisma')
 
 function toSqliteFileUrl(relativePathFromPrismaDir: string) {
   return `file:${relativePathFromPrismaDir.replace(/\\/gu, '/')}`

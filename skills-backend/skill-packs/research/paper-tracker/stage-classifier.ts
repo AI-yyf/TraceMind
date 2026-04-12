@@ -133,7 +133,7 @@ export class StageClassifier {
   /**
    * 计算思想跨度
    */
-  private async calculateIdeaSpan(candidate: Candidate, stageContext: StageContext): number {
+  private async calculateIdeaSpan(candidate: Candidate, stageContext: StageContext): Promise<number> {
     // TODO: 基于引用关系计算
     // 简化实现：基于作者数量和机构多样性
     const authorCount = candidate.authors.length

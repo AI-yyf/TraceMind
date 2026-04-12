@@ -289,8 +289,13 @@ function pickPaperExplanationSeed(paper: any, maxLength = 320) {
       ? clipText(paper.explanation, maxLength)
       : ''
   const summary = clipText(typeof paper?.summary === 'string' ? paper.summary : '', maxLength)
-  const sectionLead = Array.isArray(paper?.sections)
-    ? paper.sections
+  const sections = Array.isArray(paper?.paper_sections)
+    ? paper.paper_sections
+    : Array.isArray(paper?.sections)
+      ? paper.sections
+      : []
+  const sectionLead = sections.length > 0
+    ? sections
         .map((section: any) => clipText(section?.paragraphs, maxLength))
         .find((value: string) => value.length > 0) ?? ''
     : ''
@@ -334,6 +339,11 @@ function mergeMemoryContext(
 
 function summarizePaper(paper: any) {
   const paperTitle = paper.titleZh || paper.title
+  const sections = Array.isArray(paper?.paper_sections)
+    ? paper.paper_sections
+    : Array.isArray(paper?.sections)
+      ? paper.sections
+      : []
 
   return {
     paperId: paper.id,
@@ -352,8 +362,8 @@ function summarizePaper(paper: any) {
         : typeof paper.pdfPath === 'string' && paper.pdfPath.trim()
           ? paper.pdfPath
           : null,
-    sections: Array.isArray(paper.sections)
-      ? paper.sections.map((section: any, index: number) => ({
+    sections: sections.length > 0
+      ? sections.map((section: any, index: number) => ({
           order: index + 1,
           title: clipText(section.editorialTitle || section.sourceSectionTitle, 120),
           summary: clipText(section.paragraphs, 420),
@@ -384,7 +394,7 @@ function summarizePaper(paper: any) {
         }))
       : [],
     stats: {
-      sectionCount: Array.isArray(paper.sections) ? paper.sections.length : 0,
+      sectionCount: sections.length,
       figureCount: Array.isArray(paper.figures) ? paper.figures.length : 0,
       tableCount: Array.isArray(paper.tables) ? paper.tables.length : 0,
       formulaCount: Array.isArray(paper.formulas) ? paper.formulas.length : 0,
@@ -397,8 +407,13 @@ function summarizePaperEvidenceCoverage(
   roleLabel: string,
 ) {
   const paperTitle = paper.titleZh || paper.title
-  const leadSection = Array.isArray(paper.sections) ? paper.sections[0] : null
-  const secondarySection = Array.isArray(paper.sections) ? paper.sections[1] : null
+  const sections = Array.isArray(paper?.paper_sections)
+    ? paper.paper_sections
+    : Array.isArray(paper?.sections)
+      ? paper.sections
+      : []
+  const leadSection = sections[0] ?? null
+  const secondarySection = sections[1] ?? null
   const firstFigure = Array.isArray(paper.figures) ? paper.figures[0] : null
   const firstTable = Array.isArray(paper.tables) ? paper.tables[0] : null
   const firstFormula = Array.isArray(paper.formulas) ? paper.formulas[0] : null
@@ -421,7 +436,7 @@ function summarizePaperEvidenceCoverage(
       firstFormula
         ? `关键公式锚点是 Formula ${firstFormula.number ?? 1}：${clipText(firstFormula.rawText || firstFormula.latex, 220)}`
         : '',
-      `证据覆盖上，这篇论文提供了 ${Array.isArray(paper.sections) ? paper.sections.length : 0} 个正文 section、${Array.isArray(paper.figures) ? paper.figures.length : 0} 张图、${Array.isArray(paper.tables) ? paper.tables.length : 0} 张表和 ${Array.isArray(paper.formulas) ? paper.formulas.length : 0} 个公式，需要把这些材料都纳入叙述，而不是只摘结论。`,
+      `证据覆盖上，这篇论文提供了 ${sections.length} 个正文 section、${Array.isArray(paper.figures) ? paper.figures.length : 0} 张图、${Array.isArray(paper.tables) ? paper.tables.length : 0} 张表和 ${Array.isArray(paper.formulas) ? paper.formulas.length : 0} 个公式，需要把这些材料都纳入叙述，而不是只摘结论。`,
     ],
     8,
   )
@@ -769,8 +784,8 @@ export async function generatePaperStoryPass(
     userPayload: {
       mode: 'paper-story',
       paper: summarizePaper(paper),
-      sections: Array.isArray(paper.sections)
-        ? paper.sections.map((section: any) => ({
+      sections: Array.isArray(paper.paper_sections)
+        ? paper.paper_sections.map((section: any) => ({
             sourceSectionTitle: section.sourceSectionTitle,
             editorialTitle: section.editorialTitle,
             paragraphs: clipText(section.paragraphs, 520),
@@ -803,7 +818,7 @@ export async function generatePaperStoryPass(
     },
     memoryContext: mergeMemoryContext(
       {
-        sectionCount: Array.isArray(paper.sections) ? paper.sections.length : 0,
+        sectionCount: Array.isArray(paper.paper_sections) ? paper.paper_sections.length : 0,
         figureCount: Array.isArray(paper.figures) ? paper.figures.length : 0,
         tableCount: Array.isArray(paper.tables) ? paper.tables.length : 0,
         formulaCount: Array.isArray(paper.formulas) ? paper.formulas.length : 0,

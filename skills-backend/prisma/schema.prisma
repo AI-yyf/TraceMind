@@ -1,6 +1,3 @@
-// Prisma schema for 溯知集 ArXiv Chronicle
-// Supports both SQLite (development) and PostgreSQL (production)
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,302 +7,299 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// 生产环境配置示例：
-// datasource db {
-//   provider = "postgresql"
-//   url      = env("DATABASE_URL") // postgresql://user:password@host:5432/arxiv_chronicle
-// }
-
-// 研究主题
-model Topic {
-  id          String   @id @default(uuid())
-  nameZh      String
-  nameEn      String?
-  focusLabel  String?
-  summary     String?
-  description String?
-  language    String   @default("zh")  // 界面语言: zh, en, ja, ko
-  status      String   @default("active")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  papers Paper[]
-  nodes  ResearchNode[]
-  stages TopicStage[]
-
-  @@index([status])
-  @@index([language])
-  @@map("topics")
-}
-
-// 研究阶段定义
-model TopicStage {
-  id            String @id @default(uuid())
-  topicId       String
-  order         Int
-  name          String
-  nameEn        String?
-  description   String?
-  descriptionEn String?
-
-  topic Topic @relation(fields: [topicId], references: [id], onDelete: Cascade)
-
-  @@index([topicId])
-  @@map("topic_stages")
-}
-
-// 论文
-model Paper {
-  id              String    @id @default(uuid())
-  topicId         String
-  title           String
-  titleZh         String
-  titleEn         String?
-  authors         String
-  published       DateTime
-  summary         String
-  explanation     String?
-  arxivUrl        String?
-  pdfUrl          String?
-  pdfPath         String?
-  citationCount   Int?
-  coverPath       String?
-  figurePaths     String
-  tablePaths      String
-  status          String    @default("candidate")
-  tags            String
-  contentMode     String    @default("editorial")
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-
-  topic       Topic          @relation(fields: [topicId], references: [id], onDelete: Cascade)
-  primaryFor  ResearchNode[] @relation("PrimaryPaper")
-  figures     Figure[]
-  tables      Table[]
-  formulas    Formula[]
-  sections    PaperSection[]
-  nodePapers  NodePaper[]
-
-  @@index([topicId])
-  @@index([status])
-  @@index([published])
-  @@map("papers")
-}
-
-// 论文章节
-model PaperSection {
-  id                 String @id @default(uuid())
-  paperId            String
-  sourceSectionTitle String
-  editorialTitle     String
-  paragraphs         String
-  order              Int
-
-  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+model figures {
+  id        String   @id
+  paperId   String
+  number    Int
+  caption   String
+  page      Int
+  imagePath String
+  analysis  String?
+  createdAt DateTime @default(now())
+  papers    papers   @relation(fields: [paperId], references: [id], onDelete: Cascade)
 
   @@index([paperId])
-  @@map("paper_sections")
 }
 
-// 研究节点（节点中心架构）
-model ResearchNode {
-  id                String   @id @default(uuid())
-  topicId           String
-  stageIndex        Int
-  nodeLabel         String
-  nodeSubtitle      String?
-  nodeSummary       String
-  nodeExplanation   String?
-  nodeCoverImage    String?
-  status            String   @default("provisional")
-  isMergeNode       Boolean  @default(false)
-  provisional       Boolean  @default(true)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  topic          Topic  @relation(fields: [topicId], references: [id], onDelete: Cascade)
-  primaryPaperId String
-  primaryPaper   Paper  @relation("PrimaryPaper", fields: [primaryPaperId], references: [id], onDelete: SetNull)
-
-   papers     NodePaper[]
-   fullContent      String?
-   fullArticleFlow  String?
-   editorialPromptHash String?
-
-   @@index([topicId])
-  @@index([stageIndex])
-  @@map("research_nodes")
-}
-
-// 节点-论文关联表
-model NodePaper {
-  id       String @id @default(uuid())
-  nodeId   String
-  paperId  String
-  order    Int
-
-  node  ResearchNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
-  paper Paper        @relation(fields: [paperId], references: [id], onDelete: Cascade)
-
-  @@unique([nodeId, paperId])
-  @@index([nodeId])
-  @@index([paperId])
-  @@map("node_papers")
-}
-
-// 图表资源
-model Figure {
-  id          String  @id @default(uuid())
-  paperId     String
-  number      Int
-  caption     String
-  page        Int
-  imagePath   String
-  analysis    String?
-  createdAt   DateTime @default(now())
-
-  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
-
-  @@index([paperId])
-  @@map("figures")
-}
-
-// 表格资源
-model Table {
-  id          String  @id @default(uuid())
-  paperId     String
-  number      Int
-  caption     String
-  page        Int
-  headers     String
-  rows        String
-  rawText     String
-  createdAt   DateTime @default(now())
-
-  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
-
-  @@index([paperId])
-  @@map("tables")
-}
-
-// 公式资源
-model Formula {
-  id        String  @id @default(uuid())
+model formulas {
+  id        String   @id
   paperId   String
   number    String
   latex     String
   rawText   String
   page      Int
   createdAt DateTime @default(now())
-
-  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  papers    papers   @relation(fields: [paperId], references: [id], onDelete: Cascade)
 
   @@index([paperId])
-  @@map("formulas")
 }
 
-// 研究会话
-model ResearchSession {
-  id              String    @id @default(uuid())
-  topicIds        String
-  mode            String    @default("full")
-  status          String    @default("running")
-  currentStage    String?
-  progress        Float     @default(0)
-  logs            String
-  createdAt       DateTime  @default(now())
-  completedAt     DateTime?
-  error           String?
-
-  @@index([status])
-  @@map("research_sessions")
-}
-
-// 系统配置
-model SystemConfig {
-  id        String   @id @default(uuid())
-  key       String   @unique
-  value     String
-  updatedAt DateTime @updatedAt
-
-  @@map("system_configs")
-}
-
-// 多模态模型配置
-model ModelConfig {
-  id           String   @id @default(uuid())
-  modelId      String   @unique
-  name         String
-  provider     String
-  model        String
-  apiKey       String
-  baseUrl      String?
-  parameters   String
-  capabilities String
-  enabled      Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  taskMappings TaskMapping[]
+model model_configs {
+  id            String          @id
+  modelId       String          @unique
+  name          String
+  provider      String
+  model         String
+  apiKey        String
+  baseUrl       String?
+  parameters    String
+  capabilities  String
+  enabled       Boolean         @default(true)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime
+  task_mappings task_mappings[]
 
   @@index([provider])
-  @@map("model_configs")
 }
 
-// 任务-模型映射
-model TaskMapping {
-  id               String @id @default(uuid())
-  taskName         String @unique
-  modelId          String
-  fallbackModelId  String?
+model node_papers {
+  id             String         @id
+  nodeId         String
+  paperId        String
+  order          Int
+  papers         papers         @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  research_nodes research_nodes @relation(fields: [nodeId], references: [id], onDelete: Cascade)
 
-  config ModelConfig @relation(fields: [modelId], references: [modelId], onDelete: Cascade)
-
-  @@map("task_mappings")
+  @@unique([nodeId, paperId])
+  @@index([paperId])
+  @@index([nodeId])
 }
 
-// 研究管线状态
-model ResearchPipelineState {
-  id        String   @id @default(uuid())
+model paper_candidate_pool {
+  id                String    @id
+  topicId           String
+  paperId           String?
+  title             String
+  authors           String?
+  published         DateTime?
+  summary           String?
+  arxivUrl          String?
+  pdfUrl            String?
+  openAlexId        String?
+  semanticScholarId String?
+  status            String    @default("candidate")
+  confidence        Float     @default(0.5)
+  candidateType     String?
+  discoverySource   String?
+  discoveryChannels String?
+  queryHits         String?
+  rejectReason      String?
+  rejectFilter      String?
+  rejectScore       Float?
+  snowballParentId  String?
+  snowballDepth     Int?
+  snowballType      String?
+  createdAt         DateTime  @default(now())
+  reviewedAt        DateTime?
+  reviewedBy        String?
+  reviewDecision    String?
+  reviewComment     String?
+  topics            topics    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([discoverySource])
+  @@index([confidence])
+  @@index([status])
+  @@index([topicId])
+}
+
+model paper_sections {
+  id                 String @id
+  paperId            String
+  sourceSectionTitle String
+  editorialTitle     String
+  paragraphs         String
+  order              Int
+  papers             papers @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  @@index([paperId])
+}
+
+model papers {
+  id             String           @id
+  topicId        String
+  title          String
+  titleZh        String
+  titleEn        String?
+  authors        String
+  published      DateTime
+  summary        String
+  explanation    String?
+  arxivUrl       String?
+  pdfUrl         String?
+  pdfPath        String?
+  citationCount  Int?
+  coverPath      String?
+  figurePaths    String
+  tablePaths     String
+  status         String           @default("candidate")
+  tags           String
+  contentMode    String           @default("editorial")
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime
+  figures        figures[]
+  formulas       formulas[]
+  node_papers    node_papers[]
+  paper_sections paper_sections[]
+  topics         topics           @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  research_nodes research_nodes[]
+  tables         tables[]
+
+  @@index([published])
+  @@index([status])
+  @@index([topicId])
+}
+
+model research_nodes {
+  id                  String        @id
+  topicId             String
+  stageIndex          Int
+  nodeLabel           String
+  nodeSubtitle        String?
+  nodeSummary         String
+  nodeExplanation     String?
+  nodeCoverImage      String?
+  status              String        @default("provisional")
+  isMergeNode         Boolean       @default(false)
+  provisional         Boolean       @default(true)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime
+  primaryPaperId      String?
+  fullContent         String?
+  fullArticleFlow     String?
+  editorialPromptHash String?
+  node_papers         node_papers[]
+  papers              papers?       @relation(fields: [primaryPaperId], references: [id])
+  topics              topics        @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@index([stageIndex])
+  @@index([topicId])
+}
+
+model research_pipeline_states {
+  id        String   @id
   topicId   String   @unique
-  state     String   // JSON
-  updatedAt DateTime @updatedAt
+  state     String
+  updatedAt DateTime
 
   @@index([topicId])
-  @@map("research_pipeline_states")
 }
 
-// 研究世界快照
-model ResearchWorldSnapshot {
-  id          String   @id @default(uuid())
+model research_sessions {
+  id           String    @id
+  topicIds     String
+  mode         String    @default("full")
+  status       String    @default("running")
+  currentStage String?
+  progress     Float     @default(0)
+  logs         String
+  createdAt    DateTime  @default(now())
+  completedAt  DateTime?
+  error        String?
+
+  @@index([status])
+}
+
+model research_world_snapshots {
+  id          String   @id
   topicId     String   @unique
-  world       String   // JSON
-  fingerprint String?  // hash
-  updatedAt   DateTime @updatedAt
+  world       String
+  fingerprint String?
+  updatedAt   DateTime
 
   @@index([topicId])
-  @@map("research_world_snapshots")
 }
 
-// 主题会话记忆
-model TopicSessionMemory {
-  id        String   @id @default(uuid())
-  topicId   String   @unique
-  events    String   // JSON
-  summary   String?  // JSON
-  updatedAt DateTime @updatedAt
-
-  @@index([topicId])
-  @@map("topic_session_memories")
+model system_configs {
+  id        String   @id
+  key       String   @unique
+  value     String
+  updatedAt DateTime
 }
 
-// 主题指导指令账本
-model TopicGuidanceLedger {
-  id         String   @id @default(uuid())
+model tables {
+  id        String   @id
+  paperId   String
+  number    Int
+  caption   String
+  page      Int
+  headers   String
+  rows      String
+  rawText   String
+  createdAt DateTime @default(now())
+  papers    papers   @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  @@index([paperId])
+}
+
+model task_mappings {
+  id              String        @id
+  taskName        String        @unique
+  modelId         String
+  fallbackModelId String?
+  model_configs   model_configs @relation(fields: [modelId], references: [modelId], onDelete: Cascade)
+}
+
+model topic_guidance_ledgers {
+  id         String   @id
   topicId    String   @unique
-  directives String   // JSON
-  updatedAt  DateTime @updatedAt
+  directives String
+  updatedAt  DateTime
 
   @@index([topicId])
-  @@map("topic_guidance_ledgers")
+}
+
+model topic_session_memories {
+  id        String   @id
+  topicId   String   @unique
+  events    String
+  summary   String?
+  updatedAt DateTime
+
+  @@index([topicId])
+}
+
+model topic_stages {
+  id            String  @id
+  topicId       String
+  order         Int
+  name          String
+  nameEn        String?
+  description   String?
+  descriptionEn String?
+  topics        topics  @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@index([topicId])
+}
+
+model topics {
+  id                   String                 @id
+  nameZh               String
+  nameEn               String?
+  focusLabel           String?
+  summary              String?
+  description          String?
+  language             String                 @default("zh")
+  status               String                 @default("active")
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime
+  exportedToZoteroAt   DateTime?
+  zoteroCollectionKey  String?
+  paper_candidate_pool paper_candidate_pool[]
+  papers               papers[]
+  research_nodes       research_nodes[]
+  topic_stages         topic_stages[]
+
+  @@index([language])
+  @@index([status])
+}
+
+model zotero_config {
+  id        String   @id @default("default")
+  userId    String
+  apiKey    String
+  username  String?
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime
 }

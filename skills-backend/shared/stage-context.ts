@@ -16,7 +16,7 @@ export interface DiscoveryRound {
     authors: string[]
     relevanceScore: number
     matchedQueryIds: string[]
-    source: string
+    source: 'arxiv' | 'openalex' | 'semantic-scholar' | string
     pdfUrl?: string
     categories?: string[]
     citationCount?: number

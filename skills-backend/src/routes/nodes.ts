@@ -32,12 +32,12 @@ router.get('/', asyncHandler(async (req, res) => {
   if (topicId) where.topicId = topicId as string
   if (stageIndex) where.stageIndex = parseInt(stageIndex as string, 10)
 
-  const nodes = await prisma.researchNode.findMany({
+  const nodes = await prisma.research_nodes.findMany({
     where,
     include: {
-      papers: {
+      node_papers: {
         include: {
-          paper: {
+          papers: {
             select: {
               id: true,
               titleZh: true,
@@ -48,19 +48,19 @@ router.get('/', asyncHandler(async (req, res) => {
           }
         }
       },
-      primaryPaper: {
-        select: {
-          id: true,
-          titleZh: true,
-          coverPath: true
+      papers: {
+          select: {
+            id: true,
+            titleZh: true,
+            coverPath: true
+          }
         }
-      }
-    },
-    orderBy: [
-      { stageIndex: 'asc' },
-      { createdAt: 'asc' }
-    ]
-  })
+      },
+      orderBy: [
+        { stageIndex: 'asc' },
+        { createdAt: 'asc' }
+      ]
+    })
 
   res.json({
     success: true,
@@ -81,13 +81,13 @@ router.get('/:nodeId/view-model', asyncHandler(async (req, res) => {
 router.get('/:id', asyncHandler(async (req, res) => {
   const { id } = req.params
 
-  const node = await prisma.researchNode.findUnique({
+  const node = await prisma.research_nodes.findUnique({
     where: { id },
     include: {
-      topic: true,
-      papers: {
+      topics: true,
+      node_papers: {
         include: {
-          paper: {
+          papers: {
             include: {
               figures: true,
               tables: true,
@@ -97,7 +97,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
         },
         orderBy: { order: 'asc' }
       },
-      primaryPaper: true
+      papers: true
     }
   })
 
@@ -107,12 +107,12 @@ router.get('/:id', asyncHandler(async (req, res) => {
 
   const response = {
     ...node,
-    papers: node.papers.map((item) => item.paper),
+    papers: node.node_papers.map((item: { papers: { id: string; titleZh: string | null; titleEn: string | null; coverPath: string | null; published: Date; figures: unknown[]; tables: unknown[]; formulas: unknown[] } }) => item.papers),
     fullContent: node.fullContent as unknown,
     assets: {
-      figures: node.papers.flatMap((item) => item.paper.figures),
-      tables: node.papers.flatMap((item) => item.paper.tables),
-      formulas: node.papers.flatMap((item) => item.paper.formulas)
+      figures: node.node_papers.flatMap((item: { papers: { figures: unknown[] } }) => item.papers.figures),
+      tables: node.node_papers.flatMap((item: { papers: { tables: unknown[] } }) => item.papers.tables),
+      formulas: node.node_papers.flatMap((item: { papers: { formulas: unknown[] } }) => item.papers.formulas)
     }
   }
 
@@ -137,7 +137,7 @@ router.post('/', asyncHandler(async (req, res) => {
     fullContent
   } = req.body
 
-  const topic = await prisma.topic.findUnique({
+  const topic = await prisma.topics.findUnique({
     where: { id: topicId }
   })
 
@@ -146,7 +146,7 @@ router.post('/', asyncHandler(async (req, res) => {
   }
 
   if (paperIds && paperIds.length > 0) {
-    const papers = await prisma.paper.findMany({
+    const papers = await prisma.papers.findMany({
       where: { id: { in: paperIds } }
     })
 
@@ -155,8 +155,10 @@ router.post('/', asyncHandler(async (req, res) => {
     }
   }
 
-  const node = await prisma.researchNode.create({
+  const node = await prisma.research_nodes.create({
     data: {
+      id: crypto.randomUUID(),
+      updatedAt: new Date(),
       topicId,
       stageIndex,
       nodeLabel,
@@ -169,17 +171,18 @@ router.post('/', asyncHandler(async (req, res) => {
       provisional: false,
       status: 'canonical',
       fullContent: normalizeFullContent(fullContent),
-      papers: {
+      node_papers: {
         create: paperIds.map((paperId: string, index: number) => ({
+          id: crypto.randomUUID(),
           paperId,
           order: index
         }))
       }
     },
     include: {
-      papers: {
+      node_papers: {
         include: {
-          paper: true
+          papers: true
         }
       }
     }
@@ -206,9 +209,10 @@ router.patch('/:id', asyncHandler(async (req, res) => {
     fullContent
   } = req.body
 
-  const node = await prisma.researchNode.update({
+  const node = await prisma.research_nodes.update({
     where: { id },
     data: {
+      updatedAt: new Date(),
       nodeLabel,
       nodeSubtitle,
       nodeSummary,
@@ -219,9 +223,9 @@ router.patch('/:id', asyncHandler(async (req, res) => {
       fullContent: normalizeFullContent(fullContent),
     },
     include: {
-      papers: {
+      node_papers: {
         include: {
-          paper: true
+          papers: true
         }
       }
     }
@@ -238,7 +242,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
 router.delete('/:id', asyncHandler(async (req, res) => {
   const { id } = req.params
 
-  await prisma.researchNode.delete({
+  await prisma.research_nodes.delete({
     where: { id }
   })
 
@@ -254,23 +258,24 @@ router.post('/:id/papers', asyncHandler(async (req, res) => {
   const { id } = req.params
   const { paperIds } = req.body
 
-  await prisma.nodePaper.deleteMany({
+  await prisma.node_papers.deleteMany({
     where: { nodeId: id }
   })
 
-  await prisma.nodePaper.createMany({
+  await prisma.node_papers.createMany({
     data: paperIds.map((paperId: string, index: number) => ({
+      id: crypto.randomUUID(),
       nodeId: id,
       paperId,
       order: index
     }))
   })
 
-  const node = await prisma.researchNode.findUnique({
+  const node = await prisma.research_nodes.findUnique({
     where: { id },
     include: {
-      papers: {
-        include: { paper: true }
+      node_papers: {
+        include: { papers: true }
       }
     }
   })

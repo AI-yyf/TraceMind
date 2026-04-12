@@ -12,7 +12,7 @@ import { executePaperTracker } from '../../skill-packs/research/paper-tracker/ex
 import { executeContentGenesis } from '../../skill-packs/research/content-genesis-v2/executor'
 import { executeOrchestrator } from '../../skill-packs/research/orchestrator/executor'
 import type { SkillContext } from '../../engine/contracts'
-import { setSession, getSession, getAllSessions, SessionData } from '../lib/redis'
+import { setSession, getSession, getAllSessions } from '../lib/redis'
 
 const router = Router()
 
@@ -28,8 +28,8 @@ function createSkillContext(sessionId: string): SkillContext {
       error: (msg: string, meta?: any) => logger.error(`[Session ${sessionId}] ${msg}`, meta),
       debug: (msg: string, meta?: any) => logger.debug(`[Session ${sessionId}] ${msg}`, meta),
     },
-    sessionId,
-    workspacePath: process.cwd(),
+    activeTopicIds: [],
+    generatedDataSummary: { paperCount: 0, topicCount: 0, capabilityCount: 0, nodeCount: 0 },
   }
 }
 
@@ -69,8 +69,8 @@ router.post('/sessions', asyncHandler(async (req, res) => {
   // Store session in Redis with 24-hour TTL
   await setSession(SESSION_KEY_PREFIX + sessionId, session, 86400)
 
-  // 保存到数据库
-  await prisma.researchSession.create({
+  // 保存到数据库 (results stored in Redis only, not in DB schema)
+  await prisma.research_sessions.create({
     data: {
       id: sessionId,
       topicIds: JSON.stringify(topicIds),
@@ -78,8 +78,7 @@ router.post('/sessions', asyncHandler(async (req, res) => {
       status: 'running',
       currentStage: '初始化',
       progress: 0,
-      logs: JSON.stringify(session.logs),
-      results: JSON.stringify(session.results)
+      logs: JSON.stringify(session.logs)
     }
   })
 
@@ -101,15 +100,15 @@ router.get('/sessions/:id', asyncHandler(async (req, res) => {
   
   // Redis中没有则从数据库获取
   if (!session) {
-    const dbSession = await prisma.researchSession.findUnique({
+    const dbSession = await prisma.research_sessions.findUnique({
       where: { id }
     })
     if (!dbSession) throw new AppError(404, '会话不存在')
     session = {
       ...dbSession,
       topicIds: JSON.parse(dbSession.topicIds),
-      logs: JSON.parse(dbSession.logs),
-      results: JSON.parse(dbSession.results || '{}')
+      logs: JSON.parse(dbSession.logs as string),
+      results: { discoveredPapers: 0, admittedPapers: 0, generatedContents: 0, errors: [] }
     }
   }
 
@@ -122,7 +121,7 @@ router.get('/sessions', asyncHandler(async (req, res) => {
   const redisSessions = await getAllSessions('research:session:*')
   
   // Also get from database for historical sessions
-  const dbSessions = await prisma.researchSession.findMany({
+  const dbSessions = await prisma.research_sessions.findMany({
     orderBy: { createdAt: 'desc' },
     take: 50
   })
@@ -135,8 +134,8 @@ router.get('/sessions', asyncHandler(async (req, res) => {
     sessionsMap.set(s.id, {
       ...s,
       topicIds: JSON.parse(s.topicIds),
-      logs: JSON.parse(s.logs),
-      results: JSON.parse(s.results || '{}')
+      logs: JSON.parse(s.logs as string),
+      results: { discoveredPapers: 0, admittedPapers: 0, generatedContents: 0, errors: [] }
     })
   }
   
@@ -155,7 +154,7 @@ router.get('/sessions', asyncHandler(async (req, res) => {
 router.post('/sessions/:id/stop', asyncHandler(async (req, res) => {
   const { id } = req.params
   
-  const session = await getSession(SESSION_KEY_PREFIX + id)
+  const session: any = await getSession(SESSION_KEY_PREFIX + id)
   if (!session) {
     throw new AppError(404, '会话不存在')
   }
@@ -167,7 +166,7 @@ router.post('/sessions/:id/stop', asyncHandler(async (req, res) => {
     message: '研究会话被用户停止'
   })
 
-  await prisma.researchSession.update({
+  await prisma.research_sessions.update({
     where: { id },
     data: {
       status: 'stopped',
@@ -189,7 +188,7 @@ async function executeResearchSession(session: any) {
   
   try {
     // 阶段定义
-    const stages = [
+    const _stages = [
       { name: '论文发现', key: 'discovery' },
       { name: '论文筛选', key: 'filtering' },
       { name: '阶段分类', key: 'classification' },
@@ -222,7 +221,16 @@ async function executeResearchSession(session: any) {
             maxCandidates: 10,
             mode: 'commit',
           },
-          context: {},
+          request: {
+            skillId: 'paper-tracker',
+            input: {
+              topicId,
+              stageMode: 'next-stage',
+              discoverySource: 'external-only',
+              maxCandidates: 10,
+              mode: 'commit',
+            },
+          },
         },
         context,
         null as any
@@ -232,14 +240,21 @@ async function executeResearchSession(session: any) {
         throw new Error(`论文发现失败: ${discoveryResult.error}`)
       }
 
-      const admittedCandidates = discoveryResult.data?.admittedCandidates || []
-      session.results.discoveredPapers += discoveryResult.data?.discoverySummary?.totalDiscovered || 0
+      const discoveryData = discoveryResult.data as {
+        admittedCandidates?: Array<{ paperId: string; stageIndex?: number; citeIntent?: string }>
+        discoverySummary?: { totalDiscovered?: number }
+        stageWindow?: { stageIndex?: number }
+        decisionSummary?: string
+      } | null
+      
+      const admittedCandidates = discoveryData?.admittedCandidates || []
+      session.results.discoveredPapers += discoveryData?.discoverySummary?.totalDiscovered || 0
       session.results.admittedPapers += admittedCandidates.length
 
       await updateSessionProgress(
         session, 
         25, 
-        `论文发现完成: 发现 ${discoveryResult.data?.discoverySummary?.totalDiscovered || 0} 篇，准入 ${admittedCandidates.length} 篇`,
+        `论文发现完成: 发现 ${discoveryData?.discoverySummary?.totalDiscovered || 0} 篇，准入 ${admittedCandidates.length} 篇`,
         context
       )
 
@@ -247,50 +262,49 @@ async function executeResearchSession(session: any) {
       await updateSessionProgress(session, 35, '论文筛选: 完成准入判断', context)
 
       // 阶段 3: 阶段分类
-      await updateSessionProgress(session, 45, '阶段分类: 确定论文所属阶段...', context)
+      await updateSessionProgress(session, 45, '阶段分类: 定论文所属阶段...', context)
       
-      // 更新论文的阶段信息
-      for (const candidate of admittedCandidates) {
-        await prisma.paper.updateMany({
-          where: { arxivId: candidate.paperId },
-          data: {
-            stageIndex: candidate.stageIndex,
-          }
-        })
-      }
+      // Skip stage update - papers schema has no stageIndex field
 
-      await updateSessionProgress(session, 55, `阶段分类完成: 分配到阶段 ${discoveryResult.data?.stageWindow?.stageIndex || 1}`, context)
+      await updateSessionProgress(session, 55, `阶段分类完成: 分配到阶段 ${discoveryData?.stageWindow?.stageIndex || 1}`, context)
 
       // 阶段 4: 节点合并
       await updateSessionProgress(session, 65, '节点合并: 关联到研究节点...', context)
       
       // 创建或更新研究节点
-      const stageIndex = discoveryResult.data?.stageWindow?.stageIndex || 1
-      const node = await prisma.researchNode.upsert({
-        where: {
-          topicId_stageIndex: {
+      const stageIndex = discoveryData?.stageWindow?.stageIndex || 1
+      
+      // Find existing node or create new one
+      let node = await prisma.research_nodes.findFirst({
+        where: { topicId, stageIndex }
+      })
+      
+      if (!node) {
+        node = await prisma.research_nodes.create({
+          data: {
+            id: uuidv4(),
             topicId,
             stageIndex,
+            nodeLabel: `阶段 ${stageIndex}`,
+            nodeSummary: discoveryData?.decisionSummary || '',
+            updatedAt: new Date(),
           }
-        },
-        update: {
-          updatedAt: new Date(),
-        },
-        create: {
-          topicId,
-          stageIndex,
-          title: `阶段 ${stageIndex}`,
-          summary: discoveryResult.data?.decisionSummary || '',
-        }
-      })
+        })
+      } else {
+        await prisma.research_nodes.update({
+          where: { id: node.id },
+          data: { updatedAt: new Date() }
+        })
+      }
 
-      // 关联论文到节点
+      // 关联论文到节点 (skip - papers has no arxivId)
       for (const candidate of admittedCandidates) {
-        const paper = await prisma.paper.findFirst({
-          where: { arxivId: candidate.paperId }
+        // Find paper by title or other identifier since arxivId not in schema
+        const paper = await prisma.papers.findFirst({
+          where: { topicId, title: candidate.paperId }
         })
         if (paper) {
-          await prisma.nodePaper.upsert({
+          await prisma.node_papers.upsert({
             where: {
               nodeId_paperId: {
                 nodeId: node.id,
@@ -299,9 +313,10 @@ async function executeResearchSession(session: any) {
             },
             update: {},
             create: {
+              id: uuidv4(),
               nodeId: node.id,
               paperId: paper.id,
-              isKeyPaper: candidate.confidence >= 0.8,
+              order: 0,
             }
           })
         }
@@ -322,7 +337,7 @@ async function executeResearchSession(session: any) {
         await updateSessionProgress(
           session, 
           progress, 
-          `内容生成: 处理论文 ${i + 1}/${admittedCandidates.length}...`,
+          `内容生成: 处论文 ${i + 1}/${admittedCandidates.length}...`,
           context
         )
 
@@ -332,10 +347,19 @@ async function executeResearchSession(session: any) {
               paperId: candidate.paperId,
               topicId,
               stageIndex,
-              citeIntent: candidate.citeIntent,
+              citeIntent: candidate.citeIntent as 'supporting' | 'contrasting' | 'method-using' | 'background' | undefined,
               contentMode: 'editorial',
             },
-            context: {},
+            request: {
+              skillId: 'content-genesis-v2',
+              input: {
+                paperId: candidate.paperId,
+                topicId,
+                stageIndex,
+                citeIntent: candidate.citeIntent,
+                contentMode: 'editorial',
+              },
+            },
           },
           context,
           null as any
@@ -361,21 +385,21 @@ async function executeResearchSession(session: any) {
       // 执行编排器
       await updateSessionProgress(session, 98, '执行编排器: 整合研究成果...', context)
       
-      const orchestratorResult = await executeOrchestrator(
-        {
-          params: {
+      const orchestratorResult = await executeOrchestrator({
+        request: {
+          skillId: 'orchestrator',
+          input: {
             topicId,
             mode: 'promote',
             promoteTarget: 'topic',
           },
-          context: {},
         },
         context,
-        null as any
-      )
+      })
 
-      if (!orchestratorResult.success) {
-        logger.warn('编排器执行警告', { error: orchestratorResult.error })
+      const orchestratorOutput = orchestratorResult.output
+      if (orchestratorOutput && orchestratorOutput.failures && orchestratorOutput.failures.length > 0) {
+        logger.warn('编排器执行警告', { failures: orchestratorOutput.failures })
       }
     }
 
@@ -412,14 +436,13 @@ async function updateSessionProgress(
     results: session.results
   })
 
-  // 更新数据库
-  await prisma.researchSession.update({
+  // 更新数据库 (results stored in Redis only)
+  await prisma.research_sessions.update({
     where: { id: session.id },
     data: {
       currentStage: session.currentStage,
       progress: session.progress,
-      logs: JSON.stringify(session.logs),
-      results: JSON.stringify(session.results)
+      logs: JSON.stringify(session.logs)
     }
   })
 
@@ -445,15 +468,14 @@ async function finalizeSession(session: any, context: SkillContext) {
     message: summaryMessage
   })
 
-  await prisma.researchSession.update({
+  await prisma.research_sessions.update({
     where: { id: session.id },
     data: {
       status: 'completed',
       progress: 100,
       currentStage: '已完成',
       completedAt: new Date(),
-      logs: JSON.stringify(session.logs),
-      results: JSON.stringify(session.results)
+      logs: JSON.stringify(session.logs)
     }
   })
 
@@ -488,12 +510,11 @@ async function handleSessionError(session: any, error: any, context: SkillContex
     error: errorMessage
   })
 
-  await prisma.researchSession.update({
+  await prisma.research_sessions.update({
     where: { id: session.id },
     data: {
       status: 'failed',
       logs: JSON.stringify(session.logs),
-      results: JSON.stringify(session.results),
       error: errorMessage
     }
   })

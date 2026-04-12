@@ -7,7 +7,7 @@
  */
 
 import { createTopicGenerator, type TopicGenerationOutput } from '../services/topic-generator'
-import { buildPrompt, PROMPT_MODULES, getAvailableLanguages, type Language } from '../services/prompt-templates'
+import type { Language } from '../services/prompt-templates'
 import { PrismaClient } from '@prisma/client'
 
 const prisma = new PrismaClient()
@@ -135,24 +135,34 @@ async function saveTopicToDB(
     })
   }
 
-  const topic = await prisma.topic.create({
+  const topic = await prisma.topics.create({
     data: {
+      id: crypto.randomUUID(),
+      updatedAt: new Date(),
       nameZh: topicData.nameZh,
       nameEn: topicData.nameEn,
       focusLabel: topicData.focusLabel || topicData.keywords[0] || '',
       summary: topicData.summary,
       description: userDescription,
       status: 'active',
-      stages: {
-        create: stages,
-      },
     },
   })
 
-  await prisma.systemConfig.upsert({
+  // Create topic stages separately
+  await prisma.topic_stages.createMany({
+    data: stages.map((stage) => ({
+      id: crypto.randomUUID(),
+      topicId: topic.id,
+      order: stage.order,
+      name: stage.name,
+      description: stage.description,
+    })),
+  })
+
+  await prisma.system_configs.upsert({
     where: { key: `topic:${topic.id}:language` },
-    update: { value: language },
-    create: { key: `topic:${topic.id}:language`, value: language },
+    update: { value: language, updatedAt: new Date() },
+    create: { id: crypto.randomUUID(), key: `topic:${topic.id}:language`, value: language, updatedAt: new Date() },
   })
 
   return topic.id
@@ -160,7 +170,7 @@ async function saveTopicToDB(
 
 async function main() {
   const args = process.argv.slice(2)
-  const commands = args.reduce((acc, arg, i) => {
+  const commands = args.reduce((acc, arg) => {
     if (arg.startsWith('--')) {
       const [key, value] = arg.slice(2).split('=')
       acc[key] = value || true

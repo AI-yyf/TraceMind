@@ -1,14 +1,31 @@
 import type { ArtifactManager, SkillContext, SkillInput, SkillOutput } from '../../../engine/contracts'
+import type { Prisma } from '@prisma/client'
 import { prisma } from '../../../shared/db'
 import { researchMemory } from '../../../shared/research-memory'
 import { getTopicDefinition } from '../../../topic-config/index'
 import { omniGateway } from '../../../src/services/omni/gateway'
+import { enhancedTaskScheduler } from '../../../src/services/enhanced-scheduler'
+import {
+  extractAndPersistPaperPdfFromUrl,
+  normalizePdfUrl,
+} from '../../../src/services/pdf-grounding'
+import { refreshTopicViewModelSnapshot } from '../../../src/services/topics/alpha-topic'
+import { orchestrateTopicReaderArtifacts } from '../../../src/services/topics/alpha-reader'
+import { syncConfiguredTopicWorkflowSnapshot } from '../../../src/services/topics/topic-config-sync'
 import { discoverExternalCandidates, type DiscoveryQuery } from './discovery'
 import {
   deriveTemporalStageBuckets,
   normalizeStageWindowMonths,
 } from '../../../src/services/topics/stage-buckets'
-import { loadTopicStageConfig } from '../../../src/services/topics/topic-stage-config'
+import {
+  loadTopicStageConfig,
+  saveTopicStageConfig,
+} from '../../../src/services/topics/topic-stage-config'
+import {
+  loadTopicResearchConfig,
+  loadGlobalResearchConfig,
+  RESEARCH_CONFIG_DEFAULTS,
+} from '../../../src/services/topics/topic-research-config'
 
 interface PaperTrackerInput {
   topicId: string
@@ -50,7 +67,7 @@ interface ArxivPaper {
   primaryCategory?: string
   pdfUrl?: string
   arxivUrl: string
-  discoverySource?: 'arxiv-api' | 'openalex'
+  discoverySource?: 'arxiv-api' | 'openalex' | 'semantic-scholar'
 }
 
 interface PaperCandidate {
@@ -62,7 +79,8 @@ interface PaperCandidate {
   authors: string[]
   candidateType: 'direct' | 'branch' | 'transfer'
   confidence: number
-  status: 'admitted' | 'rejected'
+  // 广纳贤文: three-tier status system
+  status: 'admitted' | 'candidate' | 'rejected'
   why: string
   citeIntent?: 'supporting' | 'contrasting' | 'method-using' | 'background'
   earliestWindowMonths?: number
@@ -72,6 +90,15 @@ interface PaperCandidate {
   queryHits?: string[]
   discoveryChannels?: string[]
   arxivData?: ArxivPaper
+  // Rejection audit trail (for "广纳贤文")
+  rejectReason?: string
+  rejectFilter?: string
+  rejectScore?: number
+  discoverySource?: 'arxiv' | 'arxiv-api' | 'openalex' | 'semantic-scholar' | 'snowball'
+  // Snowball sampling metadata
+  snowballParentId?: string
+  snowballDepth?: number
+  snowballType?: 'forward' | 'backward'
 }
 
 type BootstrapAnchorWindow = {
@@ -81,7 +108,8 @@ type BootstrapAnchorWindow = {
 }
 
 type LlmPaperEvaluation = {
-  verdict: 'admit' | 'reject'
+  // 广纳贤文: Support three-tier verdict system
+  verdict: 'admit' | 'candidate' | 'reject'
   candidateType: 'direct' | 'branch' | 'transfer'
   confidence: number
   citeIntent: 'supporting' | 'contrasting' | 'method-using' | 'background'
@@ -136,18 +164,111 @@ type DiscoveryStageWindow = {
   }>
 }
 
-const DISCOVERY_QUERY_LIMIT = 4
+type TopicAdmissionContext = {
+  topicId: string
+  targetStageIndex: number
+  bootstrapMode: boolean
+  stageLabel: string
+  anchorPaperTitles: string[]
+  anchorNodeTexts: string[]
+}
+
+type TrackerStagePaper = {
+  id: string
+  title: string
+  titleZh: string | null
+  titleEn: string | null
+  summary: string
+  explanation: string | null
+  coverPath: string | null
+  figures: Array<{
+    id: string
+    imagePath: string
+    caption: string
+    analysis: string | null
+  }>
+}
+
+type TrackerStageMaterializationMode = 'off' | 'quick' | 'deferred' | 'full'
+
+type TrackerStageMaterializationResult = {
+  stageIndex: number
+  stagePaperIds: string[]
+  affectedNodeIds: string[]
+  removedNodeIds: string[]
+  warmedNodeCount: number
+  warmedPaperCount: number
+}
+
+const DISCOVERY_QUERY_LIMIT = 200 // Increased from 50 for 200 candidates discovery before admission
 const FALLBACK_BOOTSTRAP_WINDOW_DAYS = 3650
 const DISCOVERY_QUERY_CACHE_TTL_MS = 30 * 60 * 1000
 const PAPER_EVALUATION_CACHE_TTL_MS = 12 * 60 * 60 * 1000
 const DISCOVERY_QUERY_DELAY_MS = 350
-const DISCOVERY_QUERY_CONCURRENCY = 3
+const DISCOVERY_QUERY_CONCURRENCY = 4
 const ARXIV_RATE_LIMIT_COOLDOWN_MS = 15 * 60 * 1000
 const ARXIV_UNAVAILABLE_COOLDOWN_MS = 5 * 60 * 1000
 const ARXIV_FETCH_TIMEOUT_MS = 4_500
 const OPENALEX_FETCH_TIMEOUT_MS = 10_000
 const PAPER_EVALUATION_LLM_CONCURRENCY = 2
-const PAPER_EVALUATION_LLM_MAX_CANDIDATES = 3
+const PAPER_EVALUATION_LLM_MAX_CANDIDATES = 100 // Max 100 papers admitted per stage after quality evaluation
+const TRACKER_PDF_GROUNDING_CONCURRENCY = 2
+
+// Helper to get research config with fallback chain: topic-specific -> global -> defaults
+async function getResearchConfigParams(topicId: string): Promise<{
+  maxCandidatesPerStage: number
+  discoveryQueryLimit: number
+  admissionThreshold: number
+  maxPapersPerNode: number
+  semanticScholarLimit: number
+  discoveryRounds: number
+}> {
+  // Step 1: Try topic-specific config
+  try {
+    const topicConfig = await loadTopicResearchConfig(topicId)
+    // Check if this is a user-modified config (updatedAt > epoch)
+    if (topicConfig.updatedAt && new Date(topicConfig.updatedAt).getTime() > 0) {
+      return {
+        maxCandidatesPerStage: topicConfig.maxCandidatesPerStage,
+        discoveryQueryLimit: topicConfig.discoveryQueryLimit,
+        admissionThreshold: topicConfig.admissionThreshold,
+        maxPapersPerNode: topicConfig.maxPapersPerNode,
+        semanticScholarLimit: topicConfig.semanticScholarLimit,
+        discoveryRounds: topicConfig.discoveryRounds,
+      }
+    }
+  } catch {
+    // Topic-specific config lookup failed, continue to global
+  }
+
+  // Step 2: Try global config (set via SettingsPage)
+  try {
+    const globalConfig = await loadGlobalResearchConfig()
+    // Check if global config has been modified (updatedAt > epoch)
+    if (globalConfig.updatedAt && new Date(globalConfig.updatedAt).getTime() > 0) {
+      return {
+        maxCandidatesPerStage: globalConfig.maxCandidatesPerStage,
+        discoveryQueryLimit: globalConfig.discoveryQueryLimit,
+        admissionThreshold: globalConfig.admissionThreshold,
+        maxPapersPerNode: globalConfig.maxPapersPerNode,
+        semanticScholarLimit: globalConfig.semanticScholarLimit,
+        discoveryRounds: globalConfig.discoveryRounds,
+      }
+    }
+  } catch {
+    // Global config lookup failed, continue to defaults
+  }
+
+  // Step 3: Fallback to hardcoded defaults
+  return {
+    maxCandidatesPerStage: RESEARCH_CONFIG_DEFAULTS.MAX_CANDIDATES_PER_STAGE,
+    discoveryQueryLimit: RESEARCH_CONFIG_DEFAULTS.DISCOVERY_QUERY_LIMIT,
+    admissionThreshold: RESEARCH_CONFIG_DEFAULTS.ADMISSION_THRESHOLD,
+    maxPapersPerNode: RESEARCH_CONFIG_DEFAULTS.MAX_PAPERS_PER_NODE,
+    semanticScholarLimit: RESEARCH_CONFIG_DEFAULTS.SEMANTIC_SCHOLAR_LIMIT,
+    discoveryRounds: RESEARCH_CONFIG_DEFAULTS.DISCOVERY_ROUNDS,
+  }
+}
 
 function startOfUtcMonth(value: Date | string | null | undefined) {
   const date = value instanceof Date ? value : new Date(value ?? Date.now())
@@ -347,6 +468,15 @@ function uniqueNonEmpty(values: Array<string | null | undefined>, limit = 12) {
   }
 
   return output
+}
+
+function pickText(...values: Array<string | null | undefined>) {
+  for (const value of values) {
+    const normalized = value?.trim()
+    if (normalized) return normalized
+  }
+
+  return ''
 }
 
 function parseJsonStringArray(value: unknown): string[] {
@@ -563,11 +693,14 @@ function collectMatchedQueries(paper: ArxivPaper, queries: string[], limit = 3) 
 function scorePaperDiscoveryFit(paper: ArxivPaper, topicDef: TopicDefinitionLike, queries: string[]) {
   const paperText = buildPaperSearchText(paper)
   const titleText = `${paper.title} ${paper.titleZh ?? ''}`.toLowerCase()
-  const matchedQueries = collectMatchedQueries(paper, queries, queries.length)
+  const queryScores = queries
+    .map((query) => queryMatchScore(query, paperText))
+    .filter((score) => score > 0)
+    .sort((left, right) => right - left)
+  const topQueryScores = queryScores.slice(0, Math.min(4, queryScores.length))
   const queryScore =
-    queries.length > 0
-      ? matchedQueries.reduce((sum, query) => sum + queryMatchScore(query, paperText), 0) /
-        queries.length
+    topQueryScores.length > 0
+      ? topQueryScores.reduce((sum, score) => sum + score, 0) / topQueryScores.length
       : 0
 
   const focusTokens = tokenizeSearchText(topicDef.focusLabel)
@@ -605,7 +738,7 @@ function isArxivUnavailableError(error: unknown) {
 }
 
 async function loadTopicRecord(topicId: string) {
-  return (prisma as any).topic.findUnique({
+  const topic = await prisma.topics.findUnique({
     where: { id: topicId },
     select: {
       id: true,
@@ -631,7 +764,7 @@ async function loadTopicRecord(topicId: string) {
         },
         orderBy: { published: 'desc' },
       },
-      nodes: {
+      research_nodes: {
         select: {
           id: true,
           stageIndex: true,
@@ -641,7 +774,7 @@ async function loadTopicRecord(topicId: string) {
           primaryPaperId: true,
           createdAt: true,
           updatedAt: true,
-          papers: {
+          node_papers: {
             select: {
               paperId: true,
             },
@@ -649,11 +782,24 @@ async function loadTopicRecord(topicId: string) {
         },
         orderBy: [{ stageIndex: 'asc' }, { updatedAt: 'asc' }],
       },
-      stages: {
+      topic_stages: {
         orderBy: { order: 'asc' },
       },
     },
   })
+
+  if (!topic) {
+    return null
+  }
+
+  return {
+    ...topic,
+    nodes: topic.research_nodes.map((node) => ({
+      ...node,
+      papers: node.node_papers,
+    })),
+    stages: topic.topic_stages,
+  }
 }
 
 async function loadTopicCreationSeed(topicId: string): Promise<TopicCreationSeed | null> {
@@ -683,10 +829,47 @@ async function resolveTrackerStageWindowMonths(
   return normalizeStageWindowMonths(config.windowMonths)
 }
 
+function resolveTrackerNodeBranchId(node: any) {
+  if (typeof node?.branchId === 'string' && node.branchId.trim().length > 0) {
+    return node.branchId.trim()
+  }
+
+  if (Array.isArray(node?.sourceBranchIds)) {
+    const branchId = node.sourceBranchIds.find(
+      (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0,
+    )
+    if (branchId) {
+      return branchId.trim()
+    }
+  }
+
+  return undefined
+}
+
+function nodeIncludesTrackerPaper(node: any, paperId: string) {
+  if (!paperId) return false
+  if (node?.primaryPaperId === paperId || node?.paperId === paperId) return true
+
+  if (!Array.isArray(node?.papers)) return false
+  return node.papers.some((entry: any) => entry?.paperId === paperId || entry?.id === paperId)
+}
+
+function resolveTrackerPaperBranchId(
+  topic: NonNullable<TopicRecord>,
+  paperId: string,
+  requestedBranchId?: string,
+) {
+  if (requestedBranchId) return requestedBranchId
+
+  const matchedNode = topic.nodes.find((node: any) => nodeIncludesTrackerPaper(node, paperId))
+  return matchedNode ? resolveTrackerNodeBranchId(matchedNode) : undefined
+}
+
 function resolveTemporalDiscoveryWindow(args: {
   topic: NonNullable<TopicRecord>
   requestedWindowMonths: number
   requestedStageIndex?: number
+  requestedBranchId?: string
   stageMode?: PaperTrackerInput['stageMode']
   bootstrapWindowDays?: number
 }) {
@@ -768,6 +951,7 @@ function resolveTemporalDiscoveryWindow(args: {
   const anchorStageIndex = Math.max(1, Math.min(Math.max(currentStageIndex, 1), targetStageIndex))
   const anchorStageStart = addUtcMonths(firstStageStart, Math.max(0, anchorStageIndex - 1) * windowMonths)
   const anchorStageBucketKey = `${anchorStageStart.getUTCFullYear()}-${`${anchorStageStart.getUTCMonth() + 1}`.padStart(2, '0')}-01`
+  const requestedBranchId = args.requestedBranchId?.trim() || undefined
   const paperById = new Map(args.topic.papers.map((paper: any) => [paper.id, paper]))
   const anchorPaperIds = Array.from(temporalBuckets.paperAssignments.entries())
     .filter(([, assignment]) => assignment.bucketKey === anchorStageBucketKey)
@@ -785,7 +969,7 @@ function resolveTemporalDiscoveryWindow(args: {
       paperId: extractArxivId(paper.arxivUrl) || paper.id,
       title: paper.titleEn || paper.title || paper.titleZh || paper.id,
       published: new Date(paper.published).toISOString(),
-      branchId: undefined,
+      branchId: resolveTrackerPaperBranchId(args.topic, paper.id, requestedBranchId),
     }))
   const anchorNodes = args.topic.nodes
     .filter((node: any) => {
@@ -797,7 +981,7 @@ function resolveTemporalDiscoveryWindow(args: {
       nodeId: node.id,
       title: node.nodeLabel,
       summary: clipText(node.nodeSummary, 180),
-      branchId: undefined,
+      branchId: requestedBranchId ?? resolveTrackerNodeBranchId(node),
     }))
 
   return {
@@ -1091,6 +1275,9 @@ function expandDiscoveryQueryVariants(value: string | null | undefined) {
   }
   if (/\bworld model\b/u.test(lower) && !/\bworld models\b/u.test(lower)) {
     variants.push(normalized.replace(/\bworld model\b/giu, 'world models'))
+    variants.push(normalized.replace(/\bworld model\b/giu, 'latent dynamics'))
+    variants.push(normalized.replace(/\bworld model\b/giu, 'video prediction'))
+    variants.push(normalized.replace(/\bworld model\b/giu, 'generative simulator'))
   }
   if (/\bautonomous driving\b/u.test(lower)) {
     variants.push(normalized.replace(/\bautonomous driving\b/giu, 'self-driving'))
@@ -1105,12 +1292,28 @@ function expandDiscoveryQueryVariants(value: string | null | undefined) {
   if (/\bend to end\b/u.test(lower)) {
     variants.push(normalized.replace(/\bend to end\b/giu, 'end-to-end'))
   }
+  if (/\blanguage-conditioned\b/u.test(lower)) {
+    variants.push(normalized.replace(/\blanguage-conditioned\b/giu, 'instruction-conditioned'))
+  }
+  if (/\binstruction-conditioned\b/u.test(lower)) {
+    variants.push(normalized.replace(/\binstruction-conditioned\b/giu, 'language-conditioned'))
+  }
+  if (/\bvision[- ]language[- ]model\b/u.test(lower)) {
+    variants.push(normalized.replace(/\bvision[- ]language[- ]model\b/giu, 'vision language action'))
+  }
+  if (/\bscene token\b/u.test(lower)) {
+    variants.push(normalized.replace(/\bscene token\b/giu, 'scene representation'))
+    variants.push(normalized.replace(/\bscene token\b/giu, 'scene tokenized'))
+  }
+  if (/\baction tokenizer\b|\baction-tokenized\b/u.test(lower)) {
+    variants.push(normalized.replace(/\baction tokenizer\b|\baction-tokenized\b/giu, 'policy tokenization'))
+  }
 
   return uniqueNonEmpty(
     variants
       .map((item) => normalizeDiscoveryTerm(item))
       .filter((item): item is string => Boolean(item) && !isNoisyDiscoveryTerm(item)),
-    6,
+    10,
   )
 }
 
@@ -1149,7 +1352,7 @@ function buildDiscoveryPairQueries(args: {
           if (discoveryTermsOverlap(leftVariant, rightVariant) >= 0.75) continue
 
           const combined = normalizeDiscoveryTerm(`${leftVariant} ${rightVariant}`)
-          if (!isExternalDiscoveryQueryCandidate(combined)) continue
+          if (!combined || !isExternalDiscoveryQueryCandidate(combined)) continue
 
           output.push(combined)
           if (output.length >= args.limit * 3) {
@@ -1198,6 +1401,205 @@ function buildDiscoveryQueries(baseAnchor: string, modifierTerms: string[], limi
   }
 
   return compactDiscoveryTerms(queries.filter((query) => isExternalDiscoveryQueryCandidate(query)), limit)
+}
+
+const AUTONOMOUS_DRIVING_WORLD_MODEL_ERA_START_UTC_MS = Date.UTC(2023, 0, 1)
+
+const AUTONOMOUS_DRIVING_BRIDGE_QUERY_TERMS = [
+  'end-to-end autonomous driving',
+  'end-to-end self-driving',
+  'end-to-end driving control',
+  'camera to steering self-driving',
+  'direct perception autonomous driving',
+  'affordance learning autonomous driving',
+  'driving policy learning',
+  'imitation learning autonomous driving',
+  'imitation learning for self-driving',
+  'query-efficient imitation driving',
+  'query-efficient driving policy',
+  'conditional imitation driving',
+  'conditional imitation learning driving',
+  'behavior cloning driving',
+  'behaviour cloning driving',
+  'driving recovery policy',
+  'recovery policy for self-driving',
+  'intervention recovery driving',
+  'learning by cheating autonomous driving',
+  'chauffeurnet autonomous driving',
+  'world on rails driving',
+  'simulated driving policy learning',
+  'visual attention self-driving',
+  'causal attention self-driving',
+  'interpretable self-driving',
+  'cognitive model self-driving',
+  'driving affordance prediction',
+]
+
+const AUTONOMOUS_DRIVING_WORLD_MODEL_QUERY_TERMS = [
+  'closed-loop driving',
+  'closed-loop autonomous driving',
+  'closed-loop driving policy',
+  'occupancy world model',
+  'driving occupancy world model',
+  'occupancy flow driving',
+  'driving occupancy flow',
+  'scene token driving',
+  'scene tokenized driving',
+  'scene token world model',
+  'driving scene representation',
+  'driving foundation model',
+  'foundation model for autonomous driving',
+  'latent dynamics driving',
+  'latent driving world model',
+  'generative driving simulator',
+  'neural driving simulator',
+  'counterfactual driving simulation',
+  'controllable driving scene generation',
+  'action-conditioned video generation driving',
+  'ego-video prediction driving',
+  'instruction-conditioned driving',
+  'instruction-conditioned autonomous driving',
+  'scene-centric driving planning',
+  'BEV world model driving',
+  'language-conditioned driving',
+  'language-conditioned driving policy',
+  'language-conditioned planning for driving',
+  'action-tokenized driving',
+  'driving action tokenizer',
+  'multimodal driving policy',
+  'planning-oriented driving world model',
+  'world model for closed-loop driving',
+  'OOD generalization driving policy',
+  'long-tail autonomous driving',
+]
+
+const AUTONOMOUS_DRIVING_FAMILY_QUERY_TERMS = [
+  'OccWorld autonomous driving',
+  'Drive-WM autonomous driving',
+  'DriveDreamer autonomous driving',
+  'DriveDreamer2 autonomous driving',
+  'DriveWorld autonomous driving',
+  'DrivingWorld autonomous driving',
+  'GAIA-1 autonomous driving',
+  'GAIA-2 autonomous driving',
+  'GenAD autonomous driving',
+  'UniSim autonomous driving',
+  'Vista autonomous driving',
+  'HERMES self-driving world model',
+  'driving vision language model',
+  'driving VLM',
+  'driving VLA',
+]
+
+function autonomousDrivingStageAnchorsLookWorldModelHeavy(values: string[]) {
+  const combined = values.join(' ').toLowerCase()
+  if (!combined) return false
+
+  return /\bworld model\b|\boccupancy\b|\blatent dynamics\b|\bscene token\b|\bfoundation model\b|\blanguage-conditioned\b|\bvla\b|\baction token/u.test(
+    combined,
+  )
+}
+
+function isAutonomousDrivingBridgeStage(args: {
+  topicId: string
+  stageWindow: DiscoveryStageWindow
+  anchorPaperTerms: string[]
+  stageNodeTerms: string[]
+}) {
+  if (args.topicId !== 'autonomous-driving') return false
+
+  const stageStartTimestamp = args.stageWindow.startDate.getTime()
+  const preWorldModelEra =
+    Number.isFinite(stageStartTimestamp) &&
+    stageStartTimestamp < AUTONOMOUS_DRIVING_WORLD_MODEL_ERA_START_UTC_MS
+
+  return (
+    preWorldModelEra &&
+    !autonomousDrivingStageAnchorsLookWorldModelHeavy([
+      ...args.anchorPaperTerms,
+      ...args.stageNodeTerms,
+    ])
+  )
+}
+
+function selectStageAwareDiscoveryAnchor(args: {
+  topicDef: TopicDefinitionLike
+  topic: NonNullable<TopicRecord>
+  bridgeStage: boolean
+  anchorPaperTerms: string[]
+  stageNodeTerms: string[]
+  topicSpecificTerms: string[]
+}) {
+  const sharedCandidates = [
+    args.topicDef.nameEn,
+    args.topic.nameEn,
+    args.topicDef.focusLabel,
+    args.topic.focusLabel,
+    ...args.anchorPaperTerms,
+    ...args.stageNodeTerms,
+    ...args.topicDef.queryTags,
+  ]
+
+  if (!args.bridgeStage) {
+    return selectDiscoveryAnchor(sharedCandidates)
+  }
+
+  const continuityCandidates = prioritizeExternalDiscoveryTerms(
+    [
+      ...args.stageNodeTerms,
+      ...args.anchorPaperTerms,
+      ...args.topicSpecificTerms,
+      ...AUTONOMOUS_DRIVING_BRIDGE_QUERY_TERMS,
+    ],
+    16,
+  )
+  const preferredContinuity =
+    continuityCandidates.find((value) =>
+      /\bend[- ]to[- ]end\b|\bimitation learning\b|\bconditional imitation\b|\brecovery\b|\battention\b|\bcognitive model\b|\binterpretable\b|\bdirect perception\b/iu.test(
+        value,
+      ),
+    ) ?? continuityCandidates[0]
+
+  return preferredContinuity || selectDiscoveryAnchor(sharedCandidates)
+}
+
+function buildTopicSpecificDiscoveryBoostTerms(args: {
+  topicId: string
+  stageWindow: DiscoveryStageWindow
+  termPool: string[]
+  anchorPaperTerms: string[]
+  stageNodeTerms: string[]
+}) {
+  if (args.topicId !== 'autonomous-driving') return [] as string[]
+
+  const bridgeStage = isAutonomousDrivingBridgeStage({
+    topicId: args.topicId,
+    stageWindow: args.stageWindow,
+    anchorPaperTerms: args.anchorPaperTerms,
+    stageNodeTerms: args.stageNodeTerms,
+  })
+
+  return compactDiscoveryTerms(
+    [
+      ...args.termPool,
+      ...args.anchorPaperTerms,
+      ...args.stageNodeTerms,
+      ...AUTONOMOUS_DRIVING_FAMILY_QUERY_TERMS,
+      ...(bridgeStage
+        ? AUTONOMOUS_DRIVING_BRIDGE_QUERY_TERMS
+        : AUTONOMOUS_DRIVING_WORLD_MODEL_QUERY_TERMS),
+      ...AUTONOMOUS_DRIVING_BRIDGE_QUERY_TERMS.slice(0, 10),
+      ...AUTONOMOUS_DRIVING_WORLD_MODEL_QUERY_TERMS.slice(0, 8),
+      ...AUTONOMOUS_DRIVING_FAMILY_QUERY_TERMS.slice(0, 8),
+      'recovery policy for autonomous driving',
+      'driving affordance planning',
+      'demonstration learning driving',
+      'conditional imitation for self-driving',
+      'instruction-conditioned driving planning',
+      'planning-oriented autonomous driving world model',
+    ],
+    bridgeStage ? 28 : 24,
+  )
 }
 
 async function resolveTopicDefinition(topicId: string, topic: NonNullable<TopicRecord>): Promise<TopicDefinitionLike> {
@@ -1254,11 +1656,11 @@ async function resolveTopicDefinition(topicId: string, topic: NonNullable<TopicR
       focusLabel: looksGenericTopicSeed(staticTopic.focusLabel) ? mergedFocusLabel : staticTopic.focusLabel,
       queryTags:
         mergedQueryTags.length > 0
-          ? uniqueNonEmpty([...mergedQueryTags, ...staticTopic.queryTags], 6)
+          ? uniqueNonEmpty([...mergedQueryTags, ...staticTopic.queryTags], 12)
           : staticTopic.queryTags,
       problemPreference:
         mergedProblemPreference.length > 0
-          ? uniqueNonEmpty([...mergedProblemPreference, ...staticTopic.problemPreference], 4)
+          ? uniqueNonEmpty([...mergedProblemPreference, ...staticTopic.problemPreference], 8)
           : staticTopic.problemPreference,
       defaults: {
         bootstrapWindowDays: staticTopic.defaults.bootstrapWindowDays,
@@ -1286,7 +1688,7 @@ async function resolveTopicDefinition(topicId: string, topic: NonNullable<TopicR
                 ...topicKeywordHints,
                 ...paperTags,
               ],
-              6,
+              12,
             ),
       problemPreference:
         mergedProblemPreference.length > 0
@@ -1299,7 +1701,7 @@ async function resolveTopicDefinition(topicId: string, topic: NonNullable<TopicR
                 ...topicKeywordHints,
                 ...paperTags,
               ],
-              4,
+              8,
             ),
       defaults: {
         bootstrapWindowDays: FALLBACK_BOOTSTRAP_WINDOW_DAYS,
@@ -1314,81 +1716,195 @@ function buildDiscoveryPlan(args: {
   topicDef: TopicDefinitionLike
   input: PaperTrackerInput
   stageWindow: DiscoveryStageWindow
+  discoveryQueryLimit?: number // 动态配置：发现查询上限
+  discoveryRounds?: number // 动态配置：发现轮数
+  semanticScholarLimit?: number // 动态配置：Semantic Scholar每查询上限
+  maxPapersPerNode?: number // 动态配置：每节点论文上限
 }) {
+  // 使用动态配置或默认值
+  const queryLimit = args.discoveryQueryLimit ?? DISCOVERY_QUERY_LIMIT
+  const discoveryRounds = args.discoveryRounds ?? 2 // 默认2轮发现
+  const semanticScholarLimit = args.semanticScholarLimit ?? 25 // 默认25篇每查询
+  const maxPapersPerNode = args.maxPapersPerNode ?? 20 // 默认20篇每节点
   const anchorPapers = args.stageWindow.anchorPapers.map((paper) => paper.paperId)
   const stageNodeTerms = args.stageWindow.anchorNodes.flatMap((node) => [node.title, node.summary])
   const anchorPaperTerms = args.stageWindow.anchorPapers.flatMap((paper) => [paper.title])
-  const termPool = prioritizeExternalDiscoveryTerms(
+  const bridgeStage = isAutonomousDrivingBridgeStage({
+    topicId: args.topicDef.id,
+    stageWindow: args.stageWindow,
+    anchorPaperTerms,
+    stageNodeTerms,
+  })
+  const topicSpecificTerms = buildTopicSpecificDiscoveryBoostTerms({
+    topicId: args.topicDef.id,
+    stageWindow: args.stageWindow,
+    termPool: [
+      args.topicDef.nameEn,
+      args.topic.nameEn ?? args.topic.nameZh,
+      args.topicDef.focusLabel,
+      args.topic.focusLabel ?? args.topicDef.focusLabel,
+      ...anchorPaperTerms,
+      ...stageNodeTerms,
+      ...args.topicDef.queryTags,
+      ...args.topicDef.problemPreference,
+    ],
+    anchorPaperTerms,
+    stageNodeTerms,
+  })
+const termPool = prioritizeExternalDiscoveryTerms(
     [
       args.topicDef.nameEn,
-      args.topic.nameEn,
+      args.topic.nameEn ?? args.topic.nameZh,
       args.topicDef.focusLabel,
-      args.topic.focusLabel,
+      args.topic.focusLabel ?? args.topicDef.focusLabel,
       ...anchorPaperTerms,
       ...stageNodeTerms,
       ...args.topicDef.queryTags,
       ...args.topicDef.problemPreference,
+      ...topicSpecificTerms,
     ],
-    DISCOVERY_QUERY_LIMIT * 5,
+    queryLimit * 7,
   )
 
-  const baseAnchor = selectDiscoveryAnchor([
-    args.topicDef.nameEn,
-    args.topic.nameEn,
-    args.topicDef.focusLabel,
-    args.topic.focusLabel,
-    ...anchorPaperTerms,
-    ...stageNodeTerms,
-    ...args.topicDef.queryTags,
-  ])
+  const baseAnchor = selectStageAwareDiscoveryAnchor({
+    topicDef: args.topicDef,
+    topic: args.topic,
+    bridgeStage,
+    anchorPaperTerms,
+    stageNodeTerms,
+    topicSpecificTerms,
+  })
   const modifierTerms = prioritizeExternalDiscoveryTerms(
     [
-      ...args.topicDef.problemPreference,
-      ...args.topicDef.queryTags,
       ...stageNodeTerms,
       ...anchorPaperTerms,
+      ...(bridgeStage
+        ? AUTONOMOUS_DRIVING_BRIDGE_QUERY_TERMS
+        : args.topicDef.problemPreference),
+      ...(bridgeStage
+        ? [
+            ...args.topicDef.problemPreference,
+            ...args.topicDef.queryTags.filter((term) => /\bdriving|self-driving|autonomous\b/iu.test(term)),
+          ]
+        : args.topicDef.queryTags),
+      ...topicSpecificTerms,
     ],
-    DISCOVERY_QUERY_LIMIT * 3,
+    bridgeStage ? queryLimit * 6 : queryLimit * 5,
   )
   const domainTerms = collectPatternMatchedDiscoveryTerms(
     [baseAnchor, ...termPool],
     /\b(?:autonomous driving|self[- ]driving|driving|robotics?|navigation|embodied ai|embodied agents?)\b/giu,
-    4,
+    6,
   )
   const methodTerms = collectPatternMatchedDiscoveryTerms(
-    [baseAnchor, ...termPool],
-    /\b(?:vision[- ]language[- ]action|vla|world models?|latent world models?|latent dynamics|video generation|foundation models?|diffusion|transformers?|end[- ]to[- ]end)\b/giu,
-    5,
+    bridgeStage ? [...AUTONOMOUS_DRIVING_BRIDGE_QUERY_TERMS, baseAnchor, ...termPool] : [baseAnchor, ...termPool],
+    bridgeStage
+      ? /\b(?:end[- ]to[- ]end|imitation learning|behavior cloning|behaviour cloning|conditional imitation|direct perception|attention|visual attention|causal attention|interpretable|cognitive model)\b/giu
+      : /\b(?:vision[- ]language[- ]action|vla|world models?|latent world models?|latent dynamics|video generation|foundation models?|diffusion|transformers?|end[- ]to[- ]end)\b/giu,
+    bridgeStage ? 10 : 8,
   )
   const problemTerms = collectPatternMatchedDiscoveryTerms(
-    termPool,
-    /\b(?:planning|simulation|closed[- ]loop|control|forecasting|trajectory prediction|safety|policy learning|reasoning|action models?)\b/giu,
-    5,
+    bridgeStage ? [...AUTONOMOUS_DRIVING_BRIDGE_QUERY_TERMS, ...termPool] : termPool,
+    bridgeStage
+      ? /\b(?:control|driving policy|policy learning|recovery|intervention|steering|simulation|attention|interpretable|dataset)\b/giu
+      : /\b(?:planning|simulation|closed[- ]loop|control|forecasting|trajectory prediction|safety|policy learning|reasoning|action models?)\b/giu,
+    bridgeStage ? 10 : 8,
   )
+  const bridgeQueries = bridgeStage
+    ? uniqueNonEmpty(
+        [
+          ...AUTONOMOUS_DRIVING_BRIDGE_QUERY_TERMS,
+          ...buildDiscoveryPairQueries({
+            leftTerms: ['autonomous driving', 'self-driving', 'driving'],
+            rightTerms: [
+              'end-to-end',
+              'imitation learning',
+              'recovery policy',
+              'visual attention',
+              'causal attention',
+              'interpretable driving',
+            ],
+            limit: 8,
+          }),
+          ...buildDiscoveryPairQueries({
+            leftTerms: anchorPaperTerms.length > 0 ? anchorPaperTerms : [baseAnchor],
+            rightTerms: [
+              'imitation learning',
+              'recovery policy',
+              'driving control',
+              'visual attention',
+              'self-driving',
+            ],
+            limit: 6,
+          }),
+        ],
+        12,
+      )
+    : []
+const topicSpecificQueryTerms = bridgeStage
+    ? topicSpecificTerms.filter(
+        (term) =>
+          /\bend[- ]to[- ]end\b|\bimitation learning\b|\brecovery\b|\battention\b|\binterpretable\b|\bcognitive model\b|\bdirect perception\b|\bself-driving\b|\bautonomous driving\b/iu.test(
+            term,
+          ),
+      )
+    : topicSpecificTerms
+  // 使用动态配置的queryLimit，而非硬编码DISCOVERY_QUERY_LIMIT
+  const finalQueryLimit = bridgeStage ? queryLimit + 12 : queryLimit + 8
+  const queryPairLimit = bridgeStage ? 8 : 6
+  const topicSpecificPairLimit = bridgeStage ? 8 : 6
+  const anchorNodeQueries = bridgeStage
+    ? args.stageWindow.anchorNodes.flatMap((node) =>
+        uniqueNonEmpty(
+          [
+            `${node.title} self-driving`,
+            `${node.title} autonomous driving`,
+          ],
+          2,
+        ),
+      )
+    : args.stageWindow.anchorNodes.map((node) => `${node.title} autonomous driving`)
   const queries = uniqueNonEmpty(
     [
-      ...buildDiscoveryQueries(baseAnchor, modifierTerms, DISCOVERY_QUERY_LIMIT + 2),
+      ...bridgeQueries,
+      ...buildDiscoveryQueries(baseAnchor, modifierTerms, bridgeStage ? queryLimit + 6 : queryLimit + 4),
       ...buildDiscoveryPairQueries({
         leftTerms: domainTerms.length > 0 ? domainTerms : termPool.slice(0, 2),
         rightTerms: methodTerms.length > 0 ? methodTerms : modifierTerms.slice(0, 3),
-        limit: 4,
+        limit: queryPairLimit,
       }),
       ...buildDiscoveryPairQueries({
         leftTerms: domainTerms.length > 0 ? domainTerms : [baseAnchor],
         rightTerms: problemTerms.length > 0 ? problemTerms : modifierTerms.slice(0, 3),
-        limit: 3,
+        limit: queryPairLimit,
       }),
       ...buildDiscoveryPairQueries({
         leftTerms: methodTerms.length > 0 ? methodTerms : modifierTerms.slice(0, 3),
         rightTerms: problemTerms.length > 0 ? problemTerms : modifierTerms.slice(0, 3),
-        limit: 2,
+        limit: bridgeStage ? 6 : 4,
+      }),
+      ...buildDiscoveryPairQueries({
+        leftTerms: anchorPaperTerms.length > 0 ? anchorPaperTerms : [baseAnchor],
+        rightTerms: problemTerms.length > 0 ? problemTerms : modifierTerms.slice(0, 4),
+        limit: bridgeStage ? 6 : 4,
+      }),
+      ...buildDiscoveryPairQueries({
+        leftTerms: topicSpecificQueryTerms.slice(0, bridgeStage ? 10 : 6),
+        rightTerms: [...problemTerms, ...methodTerms].slice(0, bridgeStage ? 10 : 8),
+        limit: topicSpecificPairLimit,
       }),
       ...anchorPaperTerms,
-      ...args.stageWindow.anchorNodes.map((node) => `${node.title} autonomous driving`),
+      ...anchorNodeQueries,
+      ...topicSpecificQueryTerms,
       ...modifierTerms,
     ],
-    DISCOVERY_QUERY_LIMIT + 4,
+    finalQueryLimit,
   )
+  const targetBranchIds = uniqueNonEmpty([
+    args.input.branchId,
+    ...args.stageWindow.anchorPapers.map((paper) => paper.branchId),
+    ...args.stageWindow.anchorNodes.map((node) => node.branchId),
+  ])
   const structuredQueries: DiscoveryQuery[] = queries.map((query, index) => ({
     query,
     rationale:
@@ -1396,23 +1912,25 @@ function buildDiscoveryPlan(args: {
         ? `Main stage discovery for ${args.stageWindow.stageLabel}`
         : `Broaden adjacent evidence for ${args.stageWindow.stageLabel}`,
     targetProblemIds: args.stageWindow.anchorNodes.map((node) => node.nodeId),
-    targetBranchIds: args.input.branchId ? [args.input.branchId] : [],
+    targetBranchIds,
     targetAnchorPaperIds: anchorPapers,
     focus: index === 0 ? 'problem' : index % 2 === 0 ? 'method' : 'citation',
   }))
 
-  return {
+return {
     topicId: args.topic.id,
-    branchId: args.input.branchId,
+    branchId: args.input.branchId ?? targetBranchIds[0] ?? undefined,
     stageIndex: args.stageWindow.targetStageIndex,
-    discoveryRounds: 1,
+    discoveryRounds, // 使用动态配置
+    semanticScholarLimit, // 使用动态Semantic Scholar上限
+    maxPapersPerNode, // 使用动态每节点论文上限
     queries:
       queries.length > 0
         ? queries
         : buildDiscoveryQueries(
             selectDiscoveryAnchor([args.topic.nameEn, args.topicDef.focusLabel, args.topic.focusLabel]),
-            prioritizeExternalDiscoveryTerms([args.topicDef.focusLabel, args.topic.nameEn], 4),
-            2,
+            prioritizeExternalDiscoveryTerms([args.topicDef.focusLabel, args.topic.nameEn], 6),
+            4,
           ),
     discoveryQueries: structuredQueries,
     stageLabel: args.stageWindow.stageLabel,
@@ -1425,9 +1943,17 @@ function buildDiscoveryPlan(args: {
     searchEndDateExclusive: args.stageWindow.searchEndDateExclusive,
     bootstrapMode: args.stageWindow.bootstrapMode,
     windowMonths: args.stageWindow.windowMonths,
-    maxCandidates: args.input.maxCandidates || args.topicDef.defaults.maxCandidates || 8,
+    maxCandidates: Math.max(args.input.maxCandidates || args.topicDef.defaults.maxCandidates || 8, 18),
     discoverySource: args.input.discoverySource || 'external-only',
   }
+}
+
+function mapExternalCandidateSourceToDiscoverySource(
+  source: 'arxiv' | 'openalex' | 'semantic-scholar',
+): ArxivPaper['discoverySource'] {
+  if (source === 'openalex') return 'openalex'
+  if (source === 'semantic-scholar') return 'semantic-scholar'
+  return 'arxiv-api'
 }
 
 function parseArxivEntries(xmlText: string, startDate: Date, endDate: Date) {
@@ -1643,6 +2169,7 @@ function filterDiscoveryResults(
   papers: ArxivPaper[],
   topicDef: TopicDefinitionLike,
   queries: string[],
+  admissionContext?: TopicAdmissionContext,
 ) {
   return papers.filter((paper) => {
     const fitScore = scorePaperDiscoveryFit(paper, topicDef, queries)
@@ -1651,8 +2178,16 @@ function filterDiscoveryResults(
     const directTopicFit =
       /\bworld model\b|\bworld models\b/u.test(titleText) &&
       /\bautonomous driving\b|\bself-driving\b|\bself driving\b/u.test(titleText)
+    const retainedByTopicGuard =
+      admissionContext &&
+      shouldRetainDiscoveredPaper({
+        paper,
+        topicDef,
+        queries,
+        admissionContext,
+      })
 
-    return fitScore >= 0.42 || queryHits.length > 0 || directTopicFit
+    return fitScore >= 0.42 || queryHits.length > 0 || directTopicFit || Boolean(retainedByTopicGuard)
   })
 }
 
@@ -1661,6 +2196,7 @@ function mergeDiscoveryResults(
   fallback: ArxivPaper[],
   topicDef: TopicDefinitionLike,
   queries: string[],
+  admissionContext?: TopicAdmissionContext,
 ) {
   const merged: ArxivPaper[] = []
   const seen = new Set<string>()
@@ -1672,7 +2208,127 @@ function mergeDiscoveryResults(
     merged.push(paper)
   }
 
-  return filterDiscoveryResults(merged, topicDef, queries)
+  return filterDiscoveryResults(merged, topicDef, queries, admissionContext)
+}
+
+function buildPlanAdmissionContext(plan: ReturnType<typeof buildDiscoveryPlan>): TopicAdmissionContext {
+  return {
+    topicId: plan.topicId,
+    targetStageIndex: plan.stageIndex,
+    bootstrapMode: plan.bootstrapMode,
+    stageLabel: plan.stageLabel,
+    anchorPaperTitles: plan.anchorPaperDetails.map((paper) => paper.title),
+    anchorNodeTexts: plan.anchorNodes.flatMap((node) => [node.title, node.summary]),
+  }
+}
+
+function shouldRetainDiscoveredPaper(args: {
+  paper: ArxivPaper
+  topicDef: TopicDefinitionLike
+  queries: string[]
+  admissionContext: TopicAdmissionContext
+}) {
+  const signals = buildTopicAdmissionSignals(
+    args.paper,
+    args.topicDef,
+    args.queries,
+    args.admissionContext,
+  )
+
+  if (signals.directTopicLexicalFit) return true
+  if (signals.earlyStageDrivingFit && !signals.earlyStageNoiseSignal) return true
+  if (signals.hasWorldModelFamilySignal && signals.hasDrivingSignal) return true
+
+  return passesTopicAdmissionGuard({
+    paper: args.paper,
+    topicDef: args.topicDef,
+    queries: args.queries,
+    candidateType: 'branch',
+    admissionContext: args.admissionContext,
+  })
+}
+
+function buildFollowOnDiscoveryQueries(args: {
+  plan: ReturnType<typeof buildDiscoveryPlan>
+  discovered: ArxivPaper[]
+  topicDef: TopicDefinitionLike
+}) {
+  const admissionContext = buildPlanAdmissionContext(args.plan)
+  const seedPapers = [...args.discovered]
+    .filter((paper) =>
+      shouldRetainDiscoveredPaper({
+        paper,
+        topicDef: args.topicDef,
+        queries: args.plan.queries,
+        admissionContext,
+      }),
+    )
+    .sort(
+      (left, right) =>
+        scorePaperDiscoveryFit(right, args.topicDef, args.plan.queries) -
+        scorePaperDiscoveryFit(left, args.topicDef, args.plan.queries),
+    )
+    .slice(0, Math.max(8, args.plan.maxCandidates)) // Changed from Math.max(4, Math.min(args.plan.maxCandidates, 8)) to allow more seed papers
+
+  const existingQueries = new Set(
+    args.plan.queries
+      .map((query) => normalizeDiscoveryTerm(query)?.toLowerCase())
+      .filter((query): query is string => Boolean(query)),
+  )
+  const terms = prioritizeExternalDiscoveryTerms(
+    [
+      ...seedPapers.map((paper) => paper.title),
+      ...seedPapers.map((paper) => clipText(paper.summary, 96)),
+      ...args.plan.queries,
+      ...(args.topicDef.id === 'autonomous-driving'
+        ? [
+            ...AUTONOMOUS_DRIVING_WORLD_MODEL_QUERY_TERMS,
+            ...AUTONOMOUS_DRIVING_FAMILY_QUERY_TERMS,
+          ]
+        : []),
+    ],
+    DISCOVERY_QUERY_LIMIT + 6,
+  )
+
+  return uniqueNonEmpty(
+    terms.filter((query) => {
+      const normalized = normalizeDiscoveryTerm(query)?.toLowerCase()
+      if (!normalized) return false
+      return !existingQueries.has(normalized)
+    }),
+    DISCOVERY_QUERY_LIMIT,
+  ).map((query, index) => ({
+    query,
+    rationale: `Follow-on expansion for ${args.plan.stageLabel}`,
+    targetProblemIds: args.plan.anchorNodes.map((node) => node.nodeId),
+    targetBranchIds: args.plan.branchId ? [args.plan.branchId] : [],
+    targetAnchorPaperIds: args.plan.anchorPapers,
+    focus: index % 3 === 0 ? 'citation' : index % 3 === 1 ? 'merge' : 'method',
+  } satisfies DiscoveryQuery))
+}
+
+function buildFollowOnDiscoveryAnchors(args: {
+  plan: ReturnType<typeof buildDiscoveryPlan>
+  discovered: ArxivPaper[]
+}) {
+  const anchors = [...args.plan.anchorPaperDetails]
+  const seenPaperIds = new Set(anchors.map((anchor) => anchor.paperId))
+
+  for (const paper of args.discovered) {
+    if (seenPaperIds.has(paper.id)) continue
+    anchors.push({
+      paperId: paper.id,
+      title: paper.title,
+      published: paper.published,
+      branchId: args.plan.branchId,
+    })
+    seenPaperIds.add(paper.id)
+    if (anchors.length >= Math.max(args.plan.anchorPaperDetails.length + 4, 6)) {
+      break
+    }
+  }
+
+  return anchors
 }
 
 async function discoverPapers(
@@ -1684,6 +2340,7 @@ async function discoverPapers(
   const seenDiscoveryKeys = new Set<string>()
   const startDate = new Date(plan.startDate)
   const endDate = new Date(plan.endDateExclusive.getTime() - 1)
+  const admissionContext = buildPlanAdmissionContext(plan)
   const queryResults = await mapWithConcurrency(
     plan.queries.map((query, index) => ({ query, index })),
     DISCOVERY_QUERY_CONCURRENCY,
@@ -1722,7 +2379,7 @@ async function discoverPapers(
             query,
             startDate,
             endDate,
-            maxResults: Math.max(6, plan.maxCandidates * 2),
+            maxResults: Math.max(10, plan.maxCandidates * 3),
           })
         }
       } catch (error) {
@@ -1744,17 +2401,23 @@ async function discoverPapers(
         }
       }
 
-      results = filterDiscoveryResults(results, topicDef, plan.queries)
+      results = filterDiscoveryResults(results, topicDef, plan.queries, admissionContext)
 
-      if (results.length < Math.max(4, Math.ceil(plan.maxCandidates / 2))) {
+      if (results.length < Math.max(8, Math.ceil(plan.maxCandidates * 0.85))) {
         try {
           const fallbackResults = await searchOpenAlex({
             query,
             startDate,
             endDate,
-            maxResults: Math.max(6, plan.maxCandidates * 2),
+            maxResults: Math.max(10, plan.maxCandidates * 3),
           })
-          results = mergeDiscoveryResults(results, fallbackResults, topicDef, plan.queries)
+          results = mergeDiscoveryResults(
+            results,
+            fallbackResults,
+            topicDef,
+            plan.queries,
+            admissionContext,
+          )
           if (results.length > 0) {
             context.logger.info('OpenAlex fallback supplied discovery results', {
               query,
@@ -1790,13 +2453,16 @@ async function discoverPapers(
 
   if (plan.discoverySource !== 'internal-only' && plan.anchorPaperDetails.length > 0) {
     try {
-      const externalCandidates = await discoverExternalCandidates({
+const externalCandidates = await discoverExternalCandidates({
         anchors: plan.anchorPaperDetails,
         queries: plan.discoveryQueries,
         discoveryRound: 1,
         maxWindowMonths: plan.windowMonths,
-        maxResultsPerQuery: Math.max(6, plan.maxCandidates),
-        maxTotalCandidates: Math.max(plan.maxCandidates * 3, 18),
+        searchStartDate: plan.searchStartDate,
+        searchEndDateExclusive: plan.searchEndDateExclusive,
+        maxResultsPerQuery: Math.max(10, Math.ceil(plan.maxCandidates * 1.25)),
+        maxTotalCandidates: Math.max(plan.maxCandidates * 5, 72),
+        semanticScholarLimit: plan.semanticScholarLimit, // 使用动态Semantic Scholar上限
       })
 
       for (const candidate of externalCandidates) {
@@ -1814,13 +2480,80 @@ async function discoverPapers(
           primaryCategory: undefined,
           pdfUrl: candidate.pdfUrl,
           arxivUrl: candidate.arxivUrl ?? candidate.openAlexId ?? `https://openalex.org/${candidate.paperId}`,
-          discoverySource: candidate.source === 'openalex' ? 'openalex' : 'arxiv-api',
+          discoverySource: mapExternalCandidateSourceToDiscoverySource(candidate.source),
+        }
+        if (
+          !shouldRetainDiscoveredPaper({
+            paper: arxivPaper,
+            topicDef,
+            queries: plan.queries,
+            admissionContext,
+          })
+        ) {
+          continue
         }
 
         const identityKeys = collectDiscoveryIdentityKeys(arxivPaper)
         if (identityKeys.some((key) => seenDiscoveryKeys.has(key))) continue
         identityKeys.forEach((key) => seenDiscoveryKeys.add(key))
         discovered.push(arxivPaper)
+      }
+
+      if (plan.discoveryRounds > 1) {
+        const followOnQueries = buildFollowOnDiscoveryQueries({
+          plan,
+          discovered,
+          topicDef,
+        })
+
+        if (followOnQueries.length > 0) {
+const followOnCandidates = await discoverExternalCandidates({
+            anchors: buildFollowOnDiscoveryAnchors({ plan, discovered }),
+            queries: followOnQueries,
+            discoveryRound: 2,
+            maxWindowMonths: Math.max(plan.windowMonths, 2),
+            searchStartDate: plan.searchStartDate,
+            searchEndDateExclusive: plan.searchEndDateExclusive,
+            maxResultsPerQuery: Math.max(8, plan.maxCandidates),
+            maxTotalCandidates: Math.max(plan.maxCandidates * 3, 48),
+            semanticScholarLimit: plan.semanticScholarLimit, // 使用动态Semantic Scholar上限
+          })
+
+          for (const candidate of followOnCandidates) {
+            const publishedAt = new Date(candidate.published)
+            if (Number.isNaN(publishedAt.getTime())) continue
+            if (publishedAt < startDate || publishedAt >= endDate) continue
+
+            const arxivPaper: ArxivPaper = {
+              id: candidate.paperId,
+              title: candidate.title,
+              summary: candidate.abstract,
+              authors: candidate.authors,
+              published: candidate.published,
+              categories: [],
+              primaryCategory: undefined,
+              pdfUrl: candidate.pdfUrl,
+              arxivUrl:
+                candidate.arxivUrl ?? candidate.openAlexId ?? `https://openalex.org/${candidate.paperId}`,
+              discoverySource: mapExternalCandidateSourceToDiscoverySource(candidate.source),
+            }
+            if (
+              !shouldRetainDiscoveredPaper({
+                paper: arxivPaper,
+                topicDef,
+                queries: plan.queries,
+                admissionContext,
+              })
+            ) {
+              continue
+            }
+
+            const identityKeys = collectDiscoveryIdentityKeys(arxivPaper)
+            if (identityKeys.some((key) => seenDiscoveryKeys.has(key))) continue
+            identityKeys.forEach((key) => seenDiscoveryKeys.add(key))
+            discovered.push(arxivPaper)
+          }
+        }
       }
     } catch (error) {
       context.logger.warn('Structured external discovery failed', {
@@ -1837,7 +2570,7 @@ async function discoverPapers(
     if (scoreDiff !== 0) return scoreDiff
     return Date.parse(right.published) - Date.parse(left.published)
   })
-  return discovered.slice(0, Math.max(plan.maxCandidates * 2, 12))
+  return discovered.slice(0, Math.max(plan.maxCandidates * 4, 48))
 }
 
 function buildExistingPaperKeySet(topic: NonNullable<TopicRecord>) {
@@ -1949,10 +2682,12 @@ function normalizeVerdict(
   value: unknown,
   fallback: LlmPaperEvaluation['verdict'] = 'reject',
 ): LlmPaperEvaluation['verdict'] {
-  if (value === 'admit' || value === 'reject') return value
+  // 广纳贤文: Support three-tier verdict (admit, candidate, reject)
+  if (value === 'admit' || value === 'reject' || value === 'candidate') return value
   if (typeof value === 'string') {
     const lowered = value.toLowerCase()
     if (lowered.includes('admit') || lowered.includes('include')) return 'admit'
+    if (lowered.includes('candidate') || lowered.includes('maybe') || lowered.includes('review')) return 'candidate'
     if (lowered.includes('reject') || lowered.includes('exclude')) return 'reject'
   }
   return fallback
@@ -1989,19 +2724,24 @@ function normalizeConfidence(value: unknown, fallback = 0.5) {
 
 function parsePaperEvaluationJson(raw: string): LlmPaperEvaluation | null {
   const jsonCandidate =
-    raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/iu)?.[1] ??
-    raw.match(/\{[\s\S]*\}/u)?.[0] ??
-    raw
+    raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/iu)?.[1] ?? raw.match(/\{[\s\S]*\}/u)?.[0] ?? raw
 
   try {
     const parsed = JSON.parse(jsonCandidate) as Record<string, unknown>
     const confidence = normalizeConfidence(parsed.confidence)
+    
+    // 广纳贤文: Lower thresholds for more papers per node (user expects 10-20+ papers)
+    // 0.45+ → admitted (was 0.55)
+    // 0.25-0.45 → candidate (was 0.35-0.55)
+    // <0.25 → rejected
+    const thresholdStatus = confidence >= 0.45 ? 'admit' : confidence >= 0.25 ? 'candidate' : 'reject'
+    
     return {
-      verdict: normalizeVerdict(parsed.verdict ?? parsed.decision ?? parsed.status, confidence >= 0.62 ? 'admit' : 'reject'),
+      verdict: normalizeVerdict(parsed.verdict ?? parsed.decision ?? parsed.status, thresholdStatus),
       candidateType: normalizeCandidateType(parsed.candidateType),
       confidence,
       citeIntent: normalizeCiteIntent(parsed.citeIntent),
-      why: clipText(typeof parsed.why === 'string' ? parsed.why : 'LLM evaluation', 220),
+why: clipText(typeof parsed.why === 'string' ? parsed.why : 'LLM evaluation', 220),
     }
   } catch {
     return null
@@ -2057,12 +2797,15 @@ function inferPaperEvaluationFromText(raw: string): LlmPaperEvaluation | null {
   if (!compact) return null
 
   const lower = compact.toLowerCase()
+  // 广纳贤文: Add 'candidate' tier for medium-confidence papers
   const verdict =
-    /\badmit\b|\binclude\b|\bshould enter\b|\bworth adding\b/u.test(lower)
+    /\badmit\b|\binclude\b|\bshould enter\b|\bworth adding\b|\bhighly relevant\b|\bvery relevant\b/u.test(lower)
       ? 'admit'
-      : /\breject\b|\bexclude\b|\bnot relevant\b|\bshould not\b/u.test(lower)
-        ? 'reject'
-        : 'reject'
+      : /\bcandidate\b|\bmaybe\b|\breview\b|\bpossible\b|\bmoderate\b|\bpartial(?:ly)? relevant\b|\bpossible fit\b/u.test(lower)
+        ? 'candidate'
+        : /\breject\b|\bexclude\b|\bnot relevant\b|\bshould not\b|\bweak fit\b|\bpoor fit\b/u.test(lower)
+          ? 'reject'
+          : 'reject' // default to reject if unclear
   const candidateType =
     /\btransfer\b/u.test(lower)
       ? 'transfer'
@@ -2182,6 +2925,7 @@ function buildPaperEvaluationPrompt(args: {
   paper: ArxivPaper
   topicDef: TopicDefinitionLike
   targetStageIndex: number
+  admissionContext?: TopicAdmissionContext
 }) {
   return [
     'Classify whether this paper should enter the active research topic.',
@@ -2197,6 +2941,16 @@ function buildPaperEvaluationPrompt(args: {
     `Topic en title: ${args.topicDef.nameEn}`,
     `Topic focus: ${args.topicDef.focusLabel}`,
     `Stage index: ${args.targetStageIndex}`,
+    args.admissionContext?.stageLabel ? `Stage window: ${args.admissionContext.stageLabel}` : '',
+    args.admissionContext && args.admissionContext.anchorPaperTitles.length > 0
+      ? `Stage anchor papers: ${args.admissionContext.anchorPaperTitles.slice(0, 4).join(' | ')}`
+      : '',
+    args.admissionContext && args.admissionContext.anchorNodeTexts.length > 0
+      ? `Stage anchor problems: ${args.admissionContext.anchorNodeTexts.slice(0, 3).join(' | ')}`
+      : '',
+    args.topicDef.id === 'autonomous-driving'
+      ? 'For early autonomous-driving stages, admit papers that continue the same driving-control problem line even when they do not yet use explicit world-model wording.'
+      : '',
     '',
     `Paper title: ${args.paper.title}`,
     `Paper summary: ${clipText(args.paper.summary, 1400)}`,
@@ -2261,8 +3015,9 @@ async function evaluatePaperWithLLM(args: {
   topicDef: TopicDefinitionLike
   targetStageIndex: number
   input: PaperTrackerInput
+  admissionContext?: TopicAdmissionContext
 }) {
-  const cacheKey = `${args.topicDef.id}:${args.paper.id}`
+  const cacheKey = `${args.topicDef.id}:${args.targetStageIndex}:${args.paper.id}`
   const cached = paperEvaluationCache.get(cacheKey)
   if (cached && Date.now() - cached.cachedAt <= PAPER_EVALUATION_CACHE_TTL_MS) {
     return cached.evaluation
@@ -2272,6 +3027,7 @@ async function evaluatePaperWithLLM(args: {
     paper: args.paper,
     topicDef: args.topicDef,
     targetStageIndex: args.targetStageIndex,
+    admissionContext: args.admissionContext,
   })
   const response = await requestPaperEvaluationCompletion({
     prompt,
@@ -2333,12 +3089,16 @@ function calculateSimpleRelevance(
   paper: ArxivPaper,
   topicDef: TopicDefinitionLike,
   queries: string[],
+  admissionContext?: TopicAdmissionContext,
 ) {
   const paperText = buildPaperSearchText(paper)
   const discoveryScore = scorePaperDiscoveryFit(paper, topicDef, queries)
   const matchedQueries = collectMatchedQueries(paper, queries, queries.length)
+  const admissionSignals = admissionContext
+    ? buildTopicAdmissionSignals(paper, topicDef, queries, admissionContext)
+    : null
   const matchBoost =
-    queries.length > 0 ? matchedQueries.length / Math.max(1, queries.length) : 0
+    queries.length > 0 ? matchedQueries.length / Math.max(1, Math.min(queries.length, 6)) : 0
   const focusMatchScore = Math.max(
     queryMatchScore(topicDef.focusLabel, paperText),
     queryMatchScore(topicDef.nameEn, paperText),
@@ -2363,6 +3123,20 @@ function calculateSimpleRelevance(
     (strongMainlineHit ? 0.2 : 0) +
     (strongTopicLexicalFit ? 0.16 : 0) +
     (exactTopicHit ? 0.08 : 0)
+  if (admissionSignals?.earlyStageDrivingFit && !admissionSignals.earlyStageNoiseSignal) {
+    score +=
+      0.12 +
+      Math.min(0.08, admissionSignals.stageAnchorHitCount * 0.04) +
+      Math.min(0.1, admissionSignals.stageContinuityEvidenceScore * 0.02)
+    score = Math.max(
+      score,
+      admissionSignals.stageContinuityEvidenceScore >= 4
+        ? 0.64
+        : matchedQueries.length >= 1
+          ? 0.62
+          : 0.56,
+    )
+  }
   if (strongTopicLexicalFit && exactTopicHit) {
     score = Math.max(score, 0.74)
   } else if (strongTopicLexicalFit) {
@@ -2370,10 +3144,22 @@ function calculateSimpleRelevance(
   } else if (strongMainlineHit && exactTopicHit) {
     score = Math.max(score, 0.68)
   }
-  if (!strongMainlineHit && !strongTopicLexicalFit) {
+  if (
+    !strongMainlineHit &&
+    !strongTopicLexicalFit &&
+    !(admissionSignals?.earlyStageDrivingFit && !admissionSignals.earlyStageNoiseSignal)
+  ) {
     score = Math.min(score, exactTopicHit ? 0.68 : 0.58)
   }
-  if (focusMatchScore < 0.38 && matchedQueries.length === 0 && !strongMainlineHit) {
+  if (admissionSignals?.earlyStageNoiseSignal) {
+    score = Math.min(score, 0.34)
+  }
+  if (
+    focusMatchScore < 0.38 &&
+    matchedQueries.length === 0 &&
+    !strongMainlineHit &&
+    !(admissionSignals?.earlyStageDrivingFit && !admissionSignals.earlyStageNoiseSignal)
+  ) {
     score = Math.min(score, 0.46)
   }
 
@@ -2422,10 +3208,25 @@ function collectTopicAnchorTokens(topicDef: TopicDefinitionLike) {
   )
 }
 
+function buildStageAnchorTerms(context?: TopicAdmissionContext | null) {
+  if (!context) return [] as string[]
+
+  return prioritizeExternalDiscoveryTerms(
+    [...context.anchorPaperTitles, ...context.anchorNodeTexts],
+    10,
+  ).filter((term) => {
+    const tokens = tokenizeSearchText(term).filter(
+      (token) => !GENERIC_TOPIC_ANCHOR_TOKENS.has(token),
+    )
+    return tokens.length >= 2
+  })
+}
+
 function buildTopicAdmissionSignals(
   paper: ArxivPaper,
   topicDef: TopicDefinitionLike,
   queries: string[],
+  admissionContext?: TopicAdmissionContext,
 ) {
   const paperText = buildPaperSearchText(paper)
   const matchedQueries = collectMatchedQueries(paper, queries, queries.length)
@@ -2439,6 +3240,8 @@ function buildTopicAdmissionSignals(
   const anchorTermHitCount = anchorTerms.filter((term) => queryMatchScore(term, paperText) >= 0.62).length
   const anchorTokens = collectTopicAnchorTokens(topicDef)
   const anchorTokenHitCount = anchorTokens.filter((token) => paperText.includes(token)).length
+  const stageAnchorTerms = buildStageAnchorTerms(admissionContext)
+  const stageAnchorHitCount = stageAnchorTerms.filter((term) => queryMatchScore(term, paperText) >= 0.54).length
   const focusMatchScore = Math.max(
     queryMatchScore(topicDef.focusLabel, paperText),
     queryMatchScore(topicDef.nameEn, paperText),
@@ -2450,14 +3253,97 @@ function buildTopicAdmissionSignals(
   const hasWorldModelSignal = /\bworld model\b|\bworld models\b/u.test(paperText)
   const hasWorldModelFamilySignal =
     hasWorldModelSignal ||
-    /\blatent (?:model|models|dynamics)\b|\boccupancy (?:model|models)\b|\bscene (?:model|models)\b|\bgenerative model\b|\bvideo prediction\b|\bclosed-loop simulation\b|\bsimulation\b|\bforecasting\b/u.test(
+    /\blatent (?:model|models|dynamics)\b|\boccupancy (?:model|models)\b|\bscene (?:model|models|token|tokens)\b|\bgenerative model\b|\bvideo prediction\b|\bclosed-loop simulation\b|\bsimulation\b|\bforecasting\b|\bdriving foundation model\b|\bfoundation model\b|\blanguage-conditioned\b|\brecovery policy\b|\baction token(?:ization|izer)?\b|\bmultimodal driving policy\b|\bood generalization\b|\blong-tail\b/u.test(
       paperText,
     )
+  const autonomousDrivingBridgeSignal =
+    /\bend[- ]to[- ]end\b|\bimitation learning\b|\bbehavior cloning\b|\bbehaviour cloning\b|\bconditional imitation\b|\bdirect perception\b|\bdriving policy\b|\brecovery policy\b|\brecovery\b|\bvisual attention\b|\bcausal attention\b|\battention\b|\binterpretable(?: learning)?\b|\bpolicy learning\b|\bdemonstration learning\b|\bdriving affordance\b/u.test(
+      paperText,
+    )
+  const endToEndDrivingSignal = /\bend[- ]to[- ]end\b|\bdirect perception\b/u.test(paperText)
+  const policyControlSignal =
+    /\bsteering(?: angle| control)?\b|\bdriving action\b|\bcontrol network\b|\bexpert driver\b|\breference policy\b|\bpolicy\b/u.test(
+      paperText,
+    )
+  const imitationRecoverySignal =
+    /\bimitation learning\b|\bdagger\b|\bsafedagger\b|\bbehavior cloning\b|\bbehaviour cloning\b|\bconditional imitation\b|\brecovery\b|\bintervention\b|\bquery-efficient\b/u.test(
+      paperText,
+    )
+  const interpretabilitySignal =
+    /\bvisual attention\b|\bcausal attention\b|\bvisual explanations?\b|\binterpretable(?: learning)?\b|\bexplainable\b/u.test(
+      paperText,
+    )
+  const dataInfrastructureSignal =
+    /\bdataset\b|\bbenchmark\b|\btestbed\b|\bsensor(?:s)?\b|\bradar\b|\bv2x\b|\blocalization\b|\bmapping\b/u.test(
+      paperText,
+    )
+  const perceptionStackSignal =
+    /\bsemantic segmentation\b|\bsegmentation\b|\bdetection\b|\bclassification\b|\bperception\b|\bshared encoder\b/u.test(
+      paperText,
+    )
+  const safetyVerificationSignal =
+    /\bverification\b|\badversarial perturbations?\b|\bsatisfiability modulo theory\b|\bsmt\b|\bimage classification\b/u.test(
+      paperText,
+    )
+  const humanRobotInteractionSignal =
+    /\btrust(?:-aware|-seeking)?\b|\bhuman(?:-robot)?\b|\bsupervisor'?s?\b|\bcollaboration\b|\bterrain coverage\b|\baerial\b|\binteractive behavior adaptation\b/u.test(
+      paperText,
+    )
+  const communicationInfrastructureSignal =
+    /\b5g\b|\blte\b|\bwireless(?: networks?)?\b|\bradio frame\b|\bframe structure\b|\bsubframe\b|\bnumerolog(?:y|ies)\b|\bmmwave\b|\bdoppler\b|\bchannel coding\b|\bthroughput\b|\bnetwork slicing\b|\bv2v communications?\b/u.test(
+      paperText,
+    )
+  const operationalDrivingControlSignal =
+    endToEndDrivingSignal ||
+    policyControlSignal ||
+    imitationRecoverySignal ||
+    interpretabilitySignal ||
+    /\bsteering(?: angle| control)?\b|\begomotion\b|\bvehicle motion\b|\bdriving model\b|\bdriving behavior\b|\blane following\b|\bfree space\b|\bobstacle distance\b|\bcognitive map\b/u.test(
+      paperText,
+    )
+  const stageAnchorText = (admissionContext?.anchorPaperTitles ?? []).join(' ').toLowerCase()
+  const stageAnchorsAlreadyWorldModelHeavy =
+    /\bworld model\b|\boccupancy\b|\blatent dynamics\b|\bscene token\b|\bfoundation model\b|\blanguage-conditioned\b|\bvla\b|\baction token/u.test(
+      stageAnchorText,
+    )
+  const autonomousDrivingBridgeEra =
+    topicDef.id === 'autonomous-driving' &&
+    !stageAnchorsAlreadyWorldModelHeavy &&
+    (admissionContext?.targetStageIndex ?? 1) <= 8
+  const earlyStageDrivingFit =
+    autonomousDrivingBridgeEra &&
+    hasDrivingSignal &&
+    autonomousDrivingBridgeSignal
+  const stageContinuityEvidenceScore =
+    matchedQueries.length +
+    Math.min(2, stageAnchorHitCount) +
+    (endToEndDrivingSignal ? 1 : 0) +
+    (policyControlSignal ? 1 : 0) +
+    (imitationRecoverySignal ? 1 : 0) +
+    (interpretabilitySignal ? 1 : 0)
+  const earlyStageNoiseSignal =
+    (communicationInfrastructureSignal && !operationalDrivingControlSignal) ||
+    (humanRobotInteractionSignal &&
+      !policyControlSignal &&
+      !imitationRecoverySignal &&
+      !interpretabilitySignal) ||
+    (safetyVerificationSignal && !policyControlSignal && !imitationRecoverySignal) ||
+    (perceptionStackSignal &&
+      !policyControlSignal &&
+      !imitationRecoverySignal &&
+      !interpretabilitySignal) ||
+    (dataInfrastructureSignal &&
+      stageContinuityEvidenceScore <= 3 &&
+      !policyControlSignal &&
+      !imitationRecoverySignal &&
+      !interpretabilitySignal)
   const directTopicLexicalFit =
     hasWorldModelSignal && hasDrivingSignal
   const hasTopicAnchor =
     focusMatchScore >= 0.58 ||
     anchorTermHitCount >= 1 ||
+    stageAnchorHitCount >= 1 ||
+    earlyStageDrivingFit ||
     (anchorTokens.length > 0 &&
       anchorTokenHitCount >= Math.min(anchorTokens.length >= 4 ? 2 : 1, anchorTokens.length))
 
@@ -2467,12 +3353,28 @@ function buildTopicAdmissionSignals(
     strongTermHitCount,
     anchorTermHitCount,
     anchorTokenHitCount,
+    stageAnchorHitCount,
     focusMatchScore,
     hasTopicAnchor,
     hasDrivingSignal,
     hasWorldModelSignal,
     hasWorldModelFamilySignal,
     directTopicLexicalFit,
+    autonomousDrivingBridgeEra,
+    autonomousDrivingBridgeSignal,
+    earlyStageDrivingFit,
+    endToEndDrivingSignal,
+    policyControlSignal,
+    imitationRecoverySignal,
+    interpretabilitySignal,
+    dataInfrastructureSignal,
+    perceptionStackSignal,
+    safetyVerificationSignal,
+    humanRobotInteractionSignal,
+    communicationInfrastructureSignal,
+    operationalDrivingControlSignal,
+    stageContinuityEvidenceScore,
+    earlyStageNoiseSignal,
   }
 }
 
@@ -2481,12 +3383,13 @@ function normalizeCandidateTypeBySignals(
   signals: ReturnType<typeof buildTopicAdmissionSignals>,
 ) {
   if (candidateType === 'direct' && !signals.directTopicLexicalFit) {
-    return signals.hasWorldModelFamilySignal ? 'branch' : 'transfer'
+    return signals.hasWorldModelFamilySignal || signals.earlyStageDrivingFit ? 'branch' : 'transfer'
   }
 
   if (
     candidateType === 'branch' &&
     !signals.hasWorldModelFamilySignal &&
+    !signals.earlyStageDrivingFit &&
     signals.anchorTermHitCount < 2 &&
     signals.strongTermHitCount < 2
   ) {
@@ -2501,46 +3404,87 @@ function passesTopicAdmissionGuard(args: {
   topicDef: TopicDefinitionLike
   queries: string[]
   candidateType: 'direct' | 'branch' | 'transfer'
+  admissionContext?: TopicAdmissionContext
 }) {
-  const signals = buildTopicAdmissionSignals(args.paper, args.topicDef, args.queries)
+  const signals = buildTopicAdmissionSignals(
+    args.paper,
+    args.topicDef,
+    args.queries,
+    args.admissionContext,
+  )
 
   if (!signals.hasTopicAnchor) return false
   if (signals.directTopicLexicalFit) return true
+  if (signals.earlyStageDrivingFit) {
+    if (signals.earlyStageNoiseSignal) return false
+
+    if (args.candidateType === 'direct') {
+      return (
+        signals.discoveryScore >= 0.46 &&
+        signals.stageContinuityEvidenceScore >= 4 &&
+        (signals.matchedQueries.length >= 1 || signals.stageAnchorHitCount >= 1)
+      )
+    }
+
+    if (args.candidateType === 'branch') {
+      return (
+        (
+          signals.discoveryScore >= 0.38 &&
+          signals.stageContinuityEvidenceScore >= 3
+        ) ||
+        (
+          signals.discoveryScore >= 0.34 &&
+          signals.stageContinuityEvidenceScore >= 5 &&
+          (
+            signals.matchedQueries.length >= 1 ||
+            signals.stageAnchorHitCount >= 1 ||
+            signals.anchorTermHitCount >= 1
+          )
+        )
+      )
+    }
+
+    return (
+      signals.discoveryScore >= 0.42 &&
+      signals.stageContinuityEvidenceScore >= 4 &&
+      signals.matchedQueries.length >= 1
+    )
+  }
+
+  // 非早期桥接阶段仍需要保留最基本的主题锚点，避免明显离题论文进入主线。
   if (args.candidateType === 'direct') {
     return (
-      signals.hasWorldModelFamilySignal &&
-      signals.focusMatchScore >= 0.68 &&
+      (signals.hasWorldModelFamilySignal || signals.directTopicLexicalFit) &&
+      signals.hasTopicAnchor &&
+      signals.focusMatchScore >= 0.25 &&
       (
-        signals.strongTermHitCount >= 2 ||
-        (signals.matchedQueries.length >= 2 && signals.discoveryScore >= 0.7) ||
-        (
-          (signals.hasDrivingSignal || signals.hasWorldModelSignal) &&
-          signals.strongTermHitCount >= 1 &&
-          signals.discoveryScore >= 0.66
-        )
+        signals.strongTermHitCount >= 1 ||
+        signals.matchedQueries.length >= 1 ||
+        signals.discoveryScore >= 0.25 ||
+        signals.stageContinuityEvidenceScore >= 1
       )
     )
   }
 
   if (args.candidateType === 'branch') {
     return (
-      signals.hasWorldModelFamilySignal &&
-      signals.focusMatchScore >= 0.56 &&
-      signals.strongTermHitCount >= 1 &&
+      (signals.hasWorldModelFamilySignal || signals.earlyStageDrivingFit) &&
+      signals.hasTopicAnchor &&
+      signals.focusMatchScore >= 0.20 &&
       (
+        signals.strongTermHitCount >= 1 ||
         signals.matchedQueries.length >= 1 ||
-        signals.discoveryScore >= 0.7 ||
-        signals.hasWorldModelFamilySignal
+        signals.discoveryScore >= 0.20 ||
+        signals.stageContinuityEvidenceScore >= 1
       )
     )
   }
 
   return (
-    signals.hasWorldModelFamilySignal &&
-    signals.focusMatchScore >= 0.52 &&
-    signals.strongTermHitCount >= 1 &&
-    signals.matchedQueries.length >= 1 &&
-    signals.discoveryScore >= 0.74
+    signals.hasTopicAnchor &&
+    (signals.hasWorldModelFamilySignal || signals.earlyStageDrivingFit || signals.matchedQueries.length >= 1) &&
+    signals.focusMatchScore >= 0.15 &&
+    signals.discoveryScore >= 0.15
   )
 }
 
@@ -2549,12 +3493,18 @@ function enforceTopicAdmissionGuard(args: {
   paper: ArxivPaper
   topicDef: TopicDefinitionLike
   queries: string[]
+  admissionContext?: TopicAdmissionContext
 }) {
-  if (args.candidate.status !== 'admitted') {
+  if (args.candidate.status === 'rejected') {
     return args.candidate
   }
 
-  const signals = buildTopicAdmissionSignals(args.paper, args.topicDef, args.queries)
+  const signals = buildTopicAdmissionSignals(
+    args.paper,
+    args.topicDef,
+    args.queries,
+    args.admissionContext,
+  )
   const normalizedCandidateType = normalizeCandidateTypeBySignals(
     args.candidate.candidateType,
     signals,
@@ -2562,7 +3512,7 @@ function enforceTopicAdmissionGuard(args: {
   const normalizedCandidate =
     normalizedCandidateType === args.candidate.candidateType
       ? args.candidate
-      : {
+      : ({
           ...args.candidate,
           candidateType: normalizedCandidateType,
           citeIntent:
@@ -2575,26 +3525,88 @@ function enforceTopicAdmissionGuard(args: {
             `${args.candidate.why} Reclassified as ${normalizedCandidateType} because the paper does not state an explicit autonomous-driving world-model match strongly enough for the mainline.`,
             220,
           ),
-        }
+        } satisfies PaperCandidate)
 
   if (
     passesTopicAdmissionGuard({
       paper: args.paper,
       topicDef: args.topicDef,
       queries: args.queries,
+      admissionContext: args.admissionContext,
       candidateType: normalizedCandidateType,
     })
   ) {
     return normalizedCandidate
   }
 
+  const rejectReasons: string[] = []
+  
+  if (!signals.hasTopicAnchor) {
+    rejectReasons.push('missing_topic_anchor')
+  }
+  if (!signals.directTopicLexicalFit && !signals.earlyStageDrivingFit) {
+    rejectReasons.push('no_lexical_fit')
+  }
+  if (normalizedCandidateType === 'direct' && signals.focusMatchScore < 0.68) {
+    rejectReasons.push(`focusMatchScore_${signals.focusMatchScore.toFixed(2)}_below_0.68`)
+  }
+  if (normalizedCandidateType === 'branch' && signals.focusMatchScore < 0.56) {
+    rejectReasons.push(`focusMatchScore_${signals.focusMatchScore.toFixed(2)}_below_0.56`)
+  }
+  if (!signals.hasWorldModelFamilySignal) {
+    rejectReasons.push('missing_world_model_signal')
+  }
+  if (signals.strongTermHitCount < 1) {
+    rejectReasons.push(`strongTermHitCount_${signals.strongTermHitCount}_below_1`)
+  }
+  if (signals.earlyStageNoiseSignal) {
+    rejectReasons.push('early_stage_noise')
+  }
+
+  const clearlyOffTopic =
+    !signals.hasTopicAnchor ||
+    (!signals.directTopicLexicalFit &&
+      !signals.earlyStageDrivingFit &&
+      !signals.hasWorldModelFamilySignal)
+
+  if (clearlyOffTopic) {
+    return {
+      ...normalizedCandidate,
+      status: 'rejected' as const,
+      why: clipText(
+        `${normalizedCandidate.why} Rejected by the topic-domain guard (discoveryScore=${signals.discoveryScore.toFixed(2)}). Filters: ${rejectReasons.join(', ')}`,
+        220,
+      ),
+      rejectReason: rejectReasons.join('; '),
+      rejectFilter: 'topicAdmissionGuard',
+      rejectScore: signals.discoveryScore,
+    }
+  }
+
+  if (signals.discoveryScore >= 0.15) {
+    return {
+      ...normalizedCandidate,
+      status: 'candidate' as const,
+      why: clipText(
+        `${normalizedCandidate.why} Sent to candidate pool (discoveryScore=${signals.discoveryScore.toFixed(2)}) for manual review. Filters: ${rejectReasons.join(', ')}`,
+        220,
+      ),
+      rejectReason: rejectReasons.join('; '),
+      rejectFilter: 'topicAdmissionGuard',
+      rejectScore: signals.discoveryScore,
+    }
+  }
+
   return {
     ...normalizedCandidate,
     status: 'rejected' as const,
     why: clipText(
-      `${normalizedCandidate.why} Rejected by the topic-domain guard because the title and abstract do not overlap enough with the topic mainline.`,
+      `${normalizedCandidate.why} Rejected by the topic-domain guard (discoveryScore=${signals.discoveryScore.toFixed(2)} < 0.10). Filters: ${rejectReasons.join(', ')}`,
       220,
     ),
+    rejectReason: rejectReasons.join('; '),
+    rejectFilter: 'topicAdmissionGuard',
+    rejectScore: signals.discoveryScore,
   }
 }
 
@@ -2605,7 +3617,14 @@ function buildHeuristicCandidate(args: {
   stageIndex: number
   windowMonths?: number
   bootstrapMode?: boolean
+  topicDef?: TopicDefinitionLike
+  queries?: string[]
+  admissionContext?: TopicAdmissionContext
 }) {
+  const admissionSignals =
+    args.topicDef && args.queries
+      ? buildTopicAdmissionSignals(args.paper, args.topicDef, args.queries, args.admissionContext)
+      : null
   const directTopicLexicalFit =
     /\bworld model\b|\bworld models\b/u.test(
       `${args.paper.title} ${args.paper.summary}`.toLowerCase(),
@@ -2613,17 +3632,38 @@ function buildHeuristicCandidate(args: {
     /\bautonomous driving\b|\bself-driving\b|\bself driving\b/u.test(
       `${args.paper.title} ${args.paper.summary}`.toLowerCase(),
     )
+  const stageAlignedBranchFit =
+    admissionSignals?.earlyStageDrivingFit === true &&
+    admissionSignals.earlyStageNoiseSignal !== true
   const directHeuristicFit =
-    directTopicLexicalFit || (args.queryHits.length >= 2 && args.confidence >= 0.82)
-  const admitted =
-    args.bootstrapMode === true
-      ? directTopicLexicalFit || (args.queryHits.length >= 1 && args.confidence >= 0.52)
-      : directHeuristicFit || (args.queryHits.length >= 1 && args.confidence >= 0.64)
+    directTopicLexicalFit || (args.queryHits.length >= 1 && args.confidence >= 0.25)
+
+  let status: 'admitted' | 'candidate' | 'rejected'
+  
+  if (args.bootstrapMode === true) {
+    if (directTopicLexicalFit || args.queryHits.length >= 1 || args.confidence >= 0.20) {
+      status = 'admitted'
+    } else if (args.confidence >= 0.10) {
+      status = 'candidate'
+    } else {
+      status = 'rejected'
+    }
+  } else {
+    if (directHeuristicFit) {
+      status = 'admitted'
+    } else if (stageAlignedBranchFit || args.queryHits.length >= 1) {
+      status = 'admitted'
+    } else if (args.confidence >= 0.15 && (admissionSignals?.hasWorldModelFamilySignal || false)) {
+      status = 'candidate'
+    } else {
+      status = 'rejected'
+    }
+  }
 
   const candidateType =
     directHeuristicFit
       ? 'direct'
-      : args.queryHits.length >= 1 && args.confidence >= 0.6
+      : stageAlignedBranchFit || (args.queryHits.length >= 1 && args.confidence >= 0.6)
         ? 'branch'
         : 'transfer'
   const citeIntent =
@@ -2634,11 +3674,15 @@ function buildHeuristicCandidate(args: {
         : 'method-using'
 
   const why =
-    args.queryHits.length > 0
+    stageAlignedBranchFit
+      ? `Heuristic fit from stage-aligned autonomous-driving continuity in ${args.admissionContext?.stageLabel ?? `stage ${args.stageIndex}`}.`
+      : args.queryHits.length > 0
       ? `Heuristic fit from stage-aligned query overlap: ${args.queryHits.join(', ')}.`
       : directTopicLexicalFit
         ? 'Heuristic fit from a direct autonomous-driving world-model match.'
-        : 'Heuristic fallback from lexical and temporal relevance.'
+        : status === 'candidate'
+          ? `Candidate pool entry (confidence=${args.confidence.toFixed(2)}) for manual review.`
+          : 'Heuristic fallback from lexical and temporal relevance.'
 
   return {
     paperId: args.paper.id,
@@ -2648,7 +3692,7 @@ function buildHeuristicCandidate(args: {
     authors: args.paper.authors,
     candidateType,
     confidence: args.confidence,
-    status: admitted ? ('admitted' as const) : ('rejected' as const),
+    status,
     why,
     citeIntent,
     earliestWindowMonths: args.windowMonths ?? 6,
@@ -2656,6 +3700,7 @@ function buildHeuristicCandidate(args: {
     queryHits: args.queryHits,
     discoveryChannels: [args.paper.discoverySource ?? 'arxiv-api'],
     arxivData: args.paper,
+    discoverySource: args.paper.discoverySource,
   } satisfies PaperCandidate
 }
 
@@ -2741,24 +3786,35 @@ function constrainBootstrapCandidatesToAnchorWindow(
 }
 
 function shouldAdmitCandidate(evaluation: {
-  verdict: 'admit' | 'reject'
+  verdict: 'admit' | 'candidate' | 'reject'
   candidateType: 'direct' | 'branch' | 'transfer'
   confidence: number
   citeIntent?: 'supporting' | 'contrasting' | 'method-using' | 'background'
-}) {
+}): 'admitted' | 'candidate' | 'rejected' {
+  // 广纳贤文: Return status based on verdict
   if (evaluation.verdict === 'admit') {
-    return true
+    return 'admitted'
   }
 
+  if (evaluation.verdict === 'candidate') {
+    return 'candidate'
+  }
+
+  // High-confidence papers can override reject verdict
   if (evaluation.candidateType === 'direct' && evaluation.confidence >= 0.82) {
-    return true
+    return 'admitted'
   }
 
   if (evaluation.candidateType === 'branch' && evaluation.confidence >= 0.78) {
-    return true
+    return 'admitted'
   }
 
-  return false
+  // Medium confidence goes to candidate pool
+  if (evaluation.confidence >= 0.35) {
+    return 'candidate'
+  }
+
+  return 'rejected'
 }
 
 async function evaluateCandidates(args: {
@@ -2770,7 +3826,15 @@ async function evaluateCandidates(args: {
   input: PaperTrackerInput
   context: SkillContext
   bootstrapMode?: boolean
+  admissionContext?: TopicAdmissionContext
+  maxCandidates?: number // 动态配置：每阶段上限
+  admissionThreshold?: number // 动态配置：准入阈值
 }) {
+  // 从配置获取maxCandidates，默认使用硬编码值
+  const maxCandidatesLimit = args.maxCandidates ?? PAPER_EVALUATION_LLM_MAX_CANDIDATES
+  // 从配置获取admissionThreshold，默认使用0.55
+  const admissionThreshold = args.admissionThreshold ?? 0.55
+  
   const existingKeys = buildExistingPaperKeySet(args.topic)
   const candidateSeeds = args.papers
     .filter(
@@ -2781,7 +3845,12 @@ async function evaluateCandidates(args: {
     )
     .map((paper) => ({
       paper,
-      confidence: calculateSimpleRelevance(paper, args.topicDef, args.queries),
+      confidence: calculateSimpleRelevance(
+        paper,
+        args.topicDef,
+        args.queries,
+        args.admissionContext,
+      ),
       queryHits: collectMatchedQueries(paper, args.queries),
     }))
 
@@ -2795,10 +3864,14 @@ async function evaluateCandidates(args: {
           stageIndex: args.targetStageIndex,
           windowMonths: args.input.windowMonths,
           bootstrapMode: true,
+          topicDef: args.topicDef,
+          queries: args.queries,
+          admissionContext: args.admissionContext,
         }),
         paper: seed.paper,
         topicDef: args.topicDef,
         queries: args.queries,
+        admissionContext: args.admissionContext,
       }),
     )
 
@@ -2806,8 +3879,11 @@ async function evaluateCandidates(args: {
     return heuristicCandidates
   }
 
+// 放宽启发式准入条件: 使用动态admissionThreshold或confidence >= 0.55 或有queryHits即可进入启发式评估路径
+  // 从原来的 0.82 && queryHits 降低到更宽松的条件，确保更多论文能被评估
+  const heuristicThreshold = Math.min(admissionThreshold, 0.55)
   const heuristicCandidates = candidateSeeds
-    .filter((seed) => seed.confidence >= 0.82 && seed.queryHits.length > 0)
+    .filter((seed) => seed.confidence >= heuristicThreshold || seed.queryHits.length > 0)
     .map((seed) =>
       enforceTopicAdmissionGuard({
         candidate: buildHeuristicCandidate({
@@ -2816,18 +3892,24 @@ async function evaluateCandidates(args: {
           queryHits: seed.queryHits,
           stageIndex: args.targetStageIndex,
           windowMonths: args.input.windowMonths,
+          topicDef: args.topicDef,
+          queries: args.queries,
+          admissionContext: args.admissionContext,
         }),
         paper: seed.paper,
         topicDef: args.topicDef,
         queries: args.queries,
+        admissionContext: args.admissionContext,
       }),
     )
+  // llmSeeds: 不满足启发式条件的论文走LLM评估路径
   const llmSeeds = candidateSeeds
-    .filter((seed) => !(seed.confidence >= 0.82 && seed.queryHits.length > 0))
-    .slice(0, PAPER_EVALUATION_LLM_MAX_CANDIDATES)
+    .filter((seed) => !(seed.confidence >= heuristicThreshold || seed.queryHits.length > 0))
+    .slice(0, maxCandidatesLimit)
+  // overflowHeuristicCandidates: 超出LLM评估容量的论文，仍走启发式评估
   const overflowHeuristicCandidates = candidateSeeds
-    .filter((seed) => !(seed.confidence >= 0.82 && seed.queryHits.length > 0))
-    .slice(PAPER_EVALUATION_LLM_MAX_CANDIDATES)
+    .filter((seed) => !(seed.confidence >= heuristicThreshold || seed.queryHits.length > 0))
+    .slice(maxCandidatesLimit)
     .map((seed) =>
       enforceTopicAdmissionGuard({
         candidate: buildHeuristicCandidate({
@@ -2836,10 +3918,14 @@ async function evaluateCandidates(args: {
           queryHits: seed.queryHits,
           stageIndex: args.targetStageIndex,
           windowMonths: args.input.windowMonths,
+          topicDef: args.topicDef,
+          queries: args.queries,
+          admissionContext: args.admissionContext,
         }),
         paper: seed.paper,
         topicDef: args.topicDef,
         queries: args.queries,
+        admissionContext: args.admissionContext,
       }),
     )
   const llmCandidates = await mapWithConcurrency(
@@ -2852,6 +3938,7 @@ async function evaluateCandidates(args: {
           topicDef: args.topicDef,
           targetStageIndex: args.targetStageIndex,
           input: args.input,
+          admissionContext: args.admissionContext,
         })
 
         return enforceTopicAdmissionGuard({
@@ -2863,7 +3950,7 @@ async function evaluateCandidates(args: {
           authors: seed.paper.authors,
           candidateType: evaluation.candidateType,
           confidence: evaluation.confidence,
-          status: shouldAdmitCandidate(evaluation) ? ('admitted' as const) : ('rejected' as const),
+          status: shouldAdmitCandidate(evaluation),
           why: evaluation.why,
           citeIntent: evaluation.citeIntent,
           earliestWindowMonths: args.input.windowMonths ?? 6,
@@ -2875,6 +3962,7 @@ async function evaluateCandidates(args: {
           paper: seed.paper,
           topicDef: args.topicDef,
           queries: args.queries,
+          admissionContext: args.admissionContext,
         })
       } catch (error) {
         args.context.logger.warn('LLM candidate evaluation failed; using heuristic fallback', {
@@ -2889,10 +3977,14 @@ async function evaluateCandidates(args: {
             queryHits: seed.queryHits,
             stageIndex: args.targetStageIndex,
             windowMonths: args.input.windowMonths,
+            topicDef: args.topicDef,
+            queries: args.queries,
+            admissionContext: args.admissionContext,
           }),
           paper: seed.paper,
           topicDef: args.topicDef,
           queries: args.queries,
+          admissionContext: args.admissionContext,
         })
       }
     },
@@ -2928,6 +4020,122 @@ function determineBranchAction(candidates: PaperCandidate[], allowMerge = true) 
   }
 }
 
+/**
+ * 广纳贤文: Persist candidates to the candidate pool for audit and review
+ * Logs all papers including rejected ones for transparency
+ */
+async function persistCandidatePool(args: {
+  topicId: string
+  candidates: PaperCandidate[]
+  context: SkillContext
+  discoveryRound: 1 | 2
+}) {
+  const poolEntries = []
+
+  for (const candidate of args.candidates) {
+    try {
+      // Create entry in candidate pool
+      const poolEntry = await (prisma as any).paperCandidatePool.create({
+        data: {
+          topicId: args.topicId,
+          title: candidate.title,
+          authors: JSON.stringify(candidate.authors ?? []),
+          published: candidate.published ? new Date(candidate.published) : null,
+          summary: candidate.arxivData?.summary ?? null,
+          arxivUrl: candidate.arxivData?.arxivUrl ?? null,
+          pdfUrl: candidate.arxivData?.pdfUrl ?? null,
+          status: candidate.status, // admitted, candidate, or rejected
+          confidence: candidate.confidence,
+          candidateType: candidate.candidateType,
+          discoverySource: candidate.discoverySource ?? candidate.arxivData?.discoverySource ?? null,
+          discoveryChannels: JSON.stringify(candidate.discoveryChannels ?? []),
+          queryHits: JSON.stringify(candidate.queryHits ?? []),
+          // Rejection audit
+          rejectReason: candidate.rejectReason ?? null,
+          rejectFilter: candidate.rejectFilter ?? null,
+          rejectScore: candidate.rejectScore ?? null,
+          // Link to actual paper if admitted
+          paperId: candidate.status === 'admitted' ? candidate.paperId : null,
+        },
+      })
+      
+      poolEntries.push(poolEntry)
+      
+      args.context.logger.info('[广纳贤文] Candidate pool entry created', {
+        topicId: args.topicId,
+        title: candidate.title,
+        status: candidate.status,
+        confidence: candidate.confidence,
+        rejectReason: candidate.rejectReason,
+      })
+    } catch (error) {
+      // Check if entry already exists
+      const existingEntry = await (prisma as any).paperCandidatePool.findFirst({
+        where: {
+          topicId: args.topicId,
+          title: candidate.title,
+        },
+      })
+      
+      if (existingEntry) {
+        // Update existing entry
+        await (prisma as any).paperCandidatePool.update({
+          where: { id: existingEntry.id },
+          data: {
+            status: candidate.status,
+            confidence: candidate.confidence,
+            discoveryChannels: JSON.stringify([
+              ...JSON.parse(existingEntry.discoveryChannels || '[]'),
+              ...(candidate.discoveryChannels ?? []),
+            ]),
+            queryHits: JSON.stringify([
+              ...JSON.parse(existingEntry.queryHits || '[]'),
+              ...(candidate.queryHits ?? []),
+            ]),
+            rejectReason: candidate.rejectReason ?? existingEntry.rejectReason,
+            rejectFilter: candidate.rejectFilter ?? existingEntry.rejectFilter,
+          },
+        })
+        poolEntries.push(existingEntry)
+      } else {
+        args.context.logger.error('[广纳贤文] Failed to persist candidate pool entry', {
+          title: candidate.title,
+          error,
+        })
+      }
+    }
+  }
+
+  return poolEntries
+}
+
+/**
+ * Generate audit report for rejected papers
+ */
+function generateRejectionAuditReport(candidates: PaperCandidate[]): string {
+  const rejected = candidates.filter(c => c.status === 'rejected')
+  
+  if (rejected.length === 0) {
+    return 'No papers rejected in this discovery round.'
+  }
+  
+  const reportLines = [
+    `## Rejection Audit Report (${rejected.length} papers rejected)`,
+    '',
+    '| Title | Confidence | Reject Filter | Reject Reason |',
+    '|-------|-----------|---------------|---------------|',
+  ]
+  
+  for (const paper of rejected) {
+    const titleShort = paper.title.slice(0, 50)
+    reportLines.push(
+      `| ${titleShort} | ${paper.confidence.toFixed(2)} | ${paper.rejectFilter ?? 'unknown'} | ${paper.rejectReason ?? paper.why.slice(0, 40)} |`
+    )
+  }
+  
+  return reportLines.join('\n')
+}
+
 async function saveResultsToDatabase(args: {
   topicId: string
   candidates: PaperCandidate[]
@@ -2960,7 +4168,9 @@ async function saveResultsToDatabase(args: {
         authors: JSON.stringify(candidate.authors ?? []),
         published: new Date(candidate.published),
         arxivUrl: candidate.arxivData?.arxivUrl ?? null,
-        pdfUrl: candidate.arxivData?.pdfUrl ?? null,
+        pdfUrl:
+          normalizePdfUrl(candidate.arxivData?.pdfUrl ?? candidate.arxivData?.arxivUrl ?? null) ||
+          null,
         figurePaths: '[]',
         tablePaths: '[]',
         tags: JSON.stringify(
@@ -3000,6 +4210,377 @@ async function saveResultsToDatabase(args: {
   }
 }
 
+function resolveCandidatePdfUrl(candidate: PaperCandidate) {
+  return (
+    normalizePdfUrl(candidate.arxivData?.pdfUrl ?? candidate.arxivData?.arxivUrl ?? null) || ''
+  )
+}
+
+async function groundPersistedCandidatesFromPdf(args: {
+  candidates: PaperCandidate[]
+  context: SkillContext
+}) {
+  const queue = args.candidates.filter((candidate) => {
+    const paperId = candidate.paperId?.trim()
+    return Boolean(paperId) && Boolean(resolveCandidatePdfUrl(candidate))
+  })
+
+  const outcomes = await mapWithConcurrency(
+    queue,
+    TRACKER_PDF_GROUNDING_CONCURRENCY,
+    async (candidate) => {
+      const paperId = candidate.paperId.trim()
+      const pdfUrl = resolveCandidatePdfUrl(candidate)
+
+      try {
+        const result = await extractAndPersistPaperPdfFromUrl({
+          paperId,
+          paperTitle: candidate.titleZh || candidate.title,
+          pdfUrl,
+          force: false,
+        })
+
+        if (result.status === 'grounded') {
+          args.context.logger.info('Grounded admitted paper from PDF during tracker commit', {
+            paperId,
+            sections: result.extractedCounts.sections,
+            figures: result.extractedCounts.figures,
+            tables: result.extractedCounts.tables,
+            formulas: result.extractedCounts.formulas,
+          })
+        } else {
+          args.context.logger.info('Skipped PDF grounding for admitted paper during tracker commit', {
+            paperId,
+            reason: result.reason,
+          })
+        }
+
+        return result
+      } catch (error) {
+        args.context.logger.warn('Failed to ground admitted paper PDF during tracker commit', {
+          paperId,
+          pdfUrl,
+          error,
+        })
+        return null
+      }
+    },
+  )
+
+  const groundedPaperIds: string[] = []
+  let groundedCount = 0
+  let skippedCount = 0
+
+  for (const outcome of outcomes) {
+    if (!outcome) continue
+    if (outcome.status === 'grounded') {
+      groundedCount += 1
+      groundedPaperIds.push(outcome.paperId)
+      continue
+    }
+    skippedCount += 1
+  }
+
+  return {
+    attempted: queue.length,
+    groundedCount,
+    skippedCount,
+    groundedPaperIds,
+  }
+}
+
+function toTrackerStagePaper(paper: any): TrackerStagePaper {
+  return {
+    id: paper.id,
+    title: paper.title,
+    titleZh: paper.titleZh ?? null,
+    titleEn: paper.titleEn ?? null,
+    summary: paper.summary ?? '',
+    explanation: paper.explanation ?? null,
+    coverPath: paper.coverPath ?? null,
+    figures: Array.isArray(paper.figures)
+      ? paper.figures.map((figure: any) => ({
+          id: figure.id,
+          imagePath: figure.imagePath,
+          caption: figure.caption,
+          analysis: figure.analysis ?? null,
+        }))
+      : [],
+  }
+}
+
+async function materializeTrackerStageCoverage(args: {
+  topicId: string
+  stageIndex: number
+  stageLabel: string
+  stageStartDate: Date
+  stageEndDateExclusive: Date
+  stageWindowMonths: number
+  admittedPaperIds: string[]
+  artifactMode?: TrackerStageMaterializationMode
+  maxPapersPerNode?: number // 动态配置：每节点论文上限
+  context: SkillContext
+}): Promise<TrackerStageMaterializationResult> {
+  const schedulerRuntime = enhancedTaskScheduler as unknown as {
+    buildFallbackOrchestration: (input: {
+      topic: any
+      stage: any
+      existingNodes: any[]
+      candidatePapers: TrackerStagePaper[]
+    }) => {
+      stageTitle: string
+      stageTitleEn: string
+      stageSummary: string
+      shouldAdvanceStage: boolean
+      rationale: string
+      nodeActions: Array<{
+        action: 'create' | 'update' | 'merge' | 'strengthen'
+        nodeId?: string
+        mergeIntoNodeId?: string
+        title: string
+        titleEn: string
+        subtitle: string
+        summary: string
+        explanation: string
+        paperIds: string[]
+        primaryPaperId: string
+        rationale: string
+      }>
+      openQuestions: string[]
+    }
+    applyResearchNodeActions: (input: {
+      topicId: string
+      stageIndex: number
+      stageTitle: string
+      orchestration: {
+        stageTitle: string
+        stageTitleEn: string
+        stageSummary: string
+        shouldAdvanceStage: boolean
+        rationale: string
+        nodeActions: Array<{
+          action: 'create' | 'update' | 'merge' | 'strengthen'
+          nodeId?: string
+          mergeIntoNodeId?: string
+          title: string
+          titleEn: string
+          subtitle: string
+          summary: string
+          explanation: string
+          paperIds: string[]
+          primaryPaperId: string
+          rationale: string
+        }>
+        openQuestions: string[]
+      }
+      candidatePapers: TrackerStagePaper[]
+    }) => Promise<{ affectedNodeIds: string[] }>
+  }
+  const artifactMode = args.artifactMode ?? 'deferred'
+  const stageQuery = {
+    topicId: args.topicId,
+    stageIndex: args.stageIndex,
+  }
+
+  const stagePaperWhereOr: Prisma.papersWhereInput[] = [
+    {
+      published: {
+        gte: args.stageStartDate,
+        lt: args.stageEndDateExclusive,
+      },
+    },
+  ]
+  if (args.admittedPaperIds.length > 0) {
+    stagePaperWhereOr.push({ id: { in: args.admittedPaperIds } })
+  }
+
+  const topicStageMaterializationInclude = {
+    topic_stages: {
+      where: { order: args.stageIndex },
+      orderBy: { order: 'asc' as const },
+    },
+    research_nodes: {
+      where: stageQuery,
+      include: {
+        node_papers: {
+          include: {
+            papers: {
+              select: {
+                id: true,
+              },
+            },
+          },
+          orderBy: { order: 'asc' as const },
+        },
+      },
+      orderBy: [{ createdAt: 'asc' as const }],
+    },
+    papers: {
+      where: {
+        OR: stagePaperWhereOr,
+      },
+      include: {
+        figures: {
+          orderBy: { number: 'asc' as const },
+        },
+      },
+      orderBy: [{ published: 'asc' as const }, { createdAt: 'asc' as const }],
+    },
+  } satisfies Prisma.topicsInclude
+
+  type TopicStageMaterializationRecord = Prisma.topicsGetPayload<{
+    include: typeof topicStageMaterializationInclude
+  }>
+
+  const topicRecord: TopicStageMaterializationRecord | null = await prisma.topics.findUnique({
+    where: { id: args.topicId },
+    include: topicStageMaterializationInclude,
+  })
+
+  const topic = topicRecord
+    ? {
+        ...topicRecord,
+        stages: topicRecord.topic_stages,
+        nodes: topicRecord.research_nodes.map((node) => ({
+          ...node,
+          papers: node.node_papers.map((entry) => ({
+            ...entry,
+            paper: entry.papers,
+          })),
+        })),
+        papers: topicRecord.papers,
+      }
+    : null
+
+  if (!topic) {
+    throw new Error(`Topic not found in database during stage materialization: ${args.topicId}`)
+  }
+
+  const stagePaperIds = new Set<string>(args.admittedPaperIds)
+  for (const paper of topic.papers) {
+    stagePaperIds.add(paper.id)
+  }
+  for (const node of topic.nodes) {
+    for (const entry of node.papers) {
+      if (entry.paperId) {
+        stagePaperIds.add(entry.paperId)
+      } else if (entry.paper?.id) {
+        stagePaperIds.add(entry.paper.id)
+      }
+    }
+  }
+
+  const orderedStagePaperIds = [...stagePaperIds]
+  const stagePapers =
+    orderedStagePaperIds.length > 0
+      ? await prisma.papers.findMany({
+          where: {
+            topicId: args.topicId,
+            id: { in: orderedStagePaperIds },
+          },
+          include: {
+            figures: {
+              orderBy: { number: 'asc' },
+            },
+          },
+          orderBy: [{ published: 'asc' }, { createdAt: 'asc' }],
+        })
+      : []
+  const candidatePapers = stagePapers.map((paper: any) => toTrackerStagePaper(paper))
+  const stage = topic.stages[0] ?? {
+    order: args.stageIndex,
+    name: args.stageLabel,
+    nameEn: args.stageLabel,
+    description: `Collects the papers mapped into ${args.stageLabel}.`,
+    descriptionEn: `Collects the papers mapped into ${args.stageLabel}.`,
+  }
+
+const orchestration = schedulerRuntime.buildFallbackOrchestration({
+    topic: {
+      id: topic.id,
+      language: topic.language,
+      nameZh: topic.nameZh,
+      nameEn: topic.nameEn,
+      summary: topic.summary,
+      focusLabel: topic.focusLabel,
+      maxPapersPerNode: args.maxPapersPerNode ?? 20, // 使用动态每节点论文上限（嵌入到topic对象）
+    },
+    stage,
+    existingNodes: topic.nodes,
+    candidatePapers,
+  })
+
+  const nodeActionResult = await schedulerRuntime.applyResearchNodeActions({
+    topicId: args.topicId,
+    stageIndex: args.stageIndex,
+    stageTitle: pickText(stage.name, args.stageLabel, `Stage ${args.stageIndex}`),
+    orchestration,
+    candidatePapers,
+  })
+
+  const affectedNodeIds = new Set(nodeActionResult.affectedNodeIds)
+  const removedNodeIds = topic.nodes
+    .map((node: any) => node.id)
+    .filter((nodeId: string) => !affectedNodeIds.has(nodeId))
+
+  if (removedNodeIds.length > 0) {
+    await prisma.node_papers.deleteMany({
+      where: {
+        nodeId: { in: removedNodeIds },
+      },
+    })
+    await prisma.research_nodes.deleteMany({
+      where: {
+        topicId: args.topicId,
+        stageIndex: args.stageIndex,
+        id: { in: removedNodeIds },
+      },
+    })
+  }
+
+  await saveTopicStageConfig(args.topicId, args.stageWindowMonths)
+  await syncConfiguredTopicWorkflowSnapshot(args.topicId)
+
+  let warmedNodeCount = 0
+  let warmedPaperCount = 0
+  if (artifactMode !== 'off') {
+    const warmed = await orchestrateTopicReaderArtifacts(args.topicId, {
+      limit: Math.max(affectedNodeIds.size, orderedStagePaperIds.length, 1),
+      mode: artifactMode === 'quick' ? 'quick' : artifactMode === 'full' ? 'full' : 'deferred',
+      entityIds: {
+        nodeIds: [...affectedNodeIds],
+        paperIds: orderedStagePaperIds,
+      },
+    })
+    warmedNodeCount = warmed.warmedNodeCount
+    warmedPaperCount = warmed.warmedPaperCount
+
+    await refreshTopicViewModelSnapshot(args.topicId, {
+      mode: artifactMode === 'full' ? 'full' : artifactMode === 'quick' ? 'quick' : 'deferred',
+      stageWindowMonths: args.stageWindowMonths,
+    })
+    await syncConfiguredTopicWorkflowSnapshot(args.topicId)
+  }
+
+  args.context.logger.info('Paper tracker stage coverage materialized.', {
+    topicId: args.topicId,
+    stageIndex: args.stageIndex,
+    stagePaperCount: orderedStagePaperIds.length,
+    nodeCount: affectedNodeIds.size,
+    removedNodeCount: removedNodeIds.length,
+    artifactMode,
+  })
+
+  return {
+    stageIndex: args.stageIndex,
+    stagePaperIds: orderedStagePaperIds,
+    affectedNodeIds: [...affectedNodeIds],
+    removedNodeIds,
+    warmedNodeCount,
+    warmedPaperCount,
+  }
+}
+
 export async function executePaperTracker(
   input: SkillInput<PaperTrackerInput>,
   context: SkillContext,
@@ -3017,6 +4598,10 @@ export async function executePaperTracker(
     }
 
     const topicDef = await resolveTopicDefinition(params.topicId, topic)
+    
+    // 加载研究追踪配置参数
+    const researchConfig = await getResearchConfigParams(params.topicId)
+    
     const requestedWindowMonths = await resolveTrackerStageWindowMonths(
       params.topicId,
       params.windowMonths,
@@ -3025,21 +4610,38 @@ export async function executePaperTracker(
       topic,
       requestedWindowMonths,
       requestedStageIndex: params.stageIndex,
+      requestedBranchId: params.branchId,
       stageMode: params.stageMode,
       bootstrapWindowDays: topicDef.defaults.bootstrapWindowDays,
     })
     const currentStageIndex = temporalStageWindow.currentStageIndex
     const targetStageIndex = temporalStageWindow.targetStageIndex
+    const admissionContext: TopicAdmissionContext = {
+      topicId: params.topicId,
+      targetStageIndex,
+      bootstrapMode: temporalStageWindow.bootstrapMode,
+      stageLabel: temporalStageWindow.stageLabel,
+      anchorPaperTitles: temporalStageWindow.anchorPapers.map(
+        (paper: DiscoveryStageWindow['anchorPapers'][number]) => paper.title,
+      ),
+      anchorNodeTexts: temporalStageWindow.anchorNodes.flatMap(
+        (node: DiscoveryStageWindow['anchorNodes'][number]) => [node.title, node.summary],
+      ),
+    }
 
-    const discoveryPlan = buildDiscoveryPlan({
+const discoveryPlan = buildDiscoveryPlan({
       topic,
       topicDef,
       input: params,
       stageWindow: temporalStageWindow,
+      discoveryQueryLimit: researchConfig.discoveryQueryLimit, // 使用动态发现查询上限
+      discoveryRounds: researchConfig.discoveryRounds, // 使用动态发现轮数
+      semanticScholarLimit: researchConfig.semanticScholarLimit, // 使用动态Semantic Scholar上限
+      maxPapersPerNode: researchConfig.maxPapersPerNode, // 使用动态每节点论文上限
     })
 
     const discoveredPapers = await discoverPapers(discoveryPlan, topicDef, context)
-    const evaluatedCandidates = await evaluateCandidates({
+const evaluatedCandidates = await evaluateCandidates({
       papers: discoveredPapers,
       topic,
       topicDef,
@@ -3048,6 +4650,9 @@ export async function executePaperTracker(
       input: params,
       context,
       bootstrapMode: temporalStageWindow.bootstrapMode,
+      admissionContext,
+      maxCandidates: researchConfig.maxCandidatesPerStage, // 使用动态配置
+      admissionThreshold: researchConfig.admissionThreshold, // 使用动态准入阈值
     })
     const bootstrapConstraint =
       temporalStageWindow.bootstrapMode
@@ -3059,11 +4664,35 @@ export async function executePaperTracker(
     const candidates = bootstrapConstraint.candidates
     const admittedCandidates = candidates.filter((candidate) => candidate.status === 'admitted')
     const branchDecision = determineBranchAction(candidates, params.allowMerge !== false)
+    let stageMaterialization: TrackerStageMaterializationResult | null = null
+    let pdfGroundingSummary: {
+      attempted: number
+      groundedCount: number
+      skippedCount: number
+      groundedPaperIds: string[]
+    } | null = null
 
     if (params.mode !== 'dry-run' && params.mode !== 'inspect' && admittedCandidates.length > 0) {
       await saveResultsToDatabase({
         topicId: params.topicId,
         candidates: admittedCandidates,
+        context,
+      })
+      pdfGroundingSummary = await groundPersistedCandidatesFromPdf({
+        candidates: admittedCandidates,
+        context,
+      })
+
+stageMaterialization = await materializeTrackerStageCoverage({
+        topicId: params.topicId,
+        stageIndex: targetStageIndex,
+        stageLabel: discoveryPlan.stageLabel,
+        stageStartDate: discoveryPlan.startDate,
+        stageEndDateExclusive: discoveryPlan.endDateExclusive,
+        stageWindowMonths: discoveryPlan.windowMonths,
+        admittedPaperIds: admittedCandidates.map((candidate) => candidate.paperId),
+        artifactMode: 'deferred',
+        maxPapersPerNode: discoveryPlan.maxPapersPerNode, // 使用动态每节点论文上限
         context,
       })
 
@@ -3107,11 +4736,13 @@ export async function executePaperTracker(
       branchDecisionRationale: branchDecision.rationale,
       branchAction: branchDecision.action,
       selectedBranch: branchDecision.selectedBranch,
+      pdfGroundingSummary,
       stageWindow: {
         stageIndex: targetStageIndex,
         windowMonths: discoveryPlan.windowMonths,
         paperCount: admittedCandidates.length,
       },
+      stageMaterialization,
       stageWindowDecision: {
         shouldAdvance: admittedCandidates.length >= 3,
         rationale:
@@ -3192,6 +4823,7 @@ export const __testing = {
   constrainBootstrapCandidatesToAnchorWindow,
   resolveTemporalDiscoveryWindow,
   buildDiscoveryPlan,
+  materializeTrackerStageCoverage,
   parsePaperEvaluationJson,
   parsePaperEvaluationLines,
   inferPaperEvaluationFromText,

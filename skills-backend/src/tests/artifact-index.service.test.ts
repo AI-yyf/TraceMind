@@ -151,7 +151,7 @@ test('artifact index persists reader article summaries and prioritizes local ent
     assert.equal(stageContext.artifactIndex.length >= 2, true)
     assert.equal(stageContext.artifactIndex[0]?.stageIndex, 2)
   } finally {
-    await prisma.systemConfig.deleteMany({
+    await prisma.system_configs.deleteMany({
       where: {
         key: {
           in: [storageKey],

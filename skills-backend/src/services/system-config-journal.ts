@@ -199,7 +199,7 @@ export async function readVersionedSystemConfig<T>(options: {
   parse: (value: unknown) => T | null
   fallback: T
 }): Promise<VersionedSystemConfigRecord<T>> {
-  const record = await prisma.systemConfig.findUnique({
+  const record = await prisma.system_configs.findUnique({
     where: { key: options.key },
   })
 
@@ -242,7 +242,7 @@ export async function listVersionedSystemConfigHistory(
   key: string,
   limit = MAX_CONFIG_HISTORY_ENTRIES,
 ): Promise<VersionedSystemConfigHistoryEntry[]> {
-  const record = await prisma.systemConfig.findUnique({
+  const record = await prisma.system_configs.findUnique({
     where: { key: historyKey(key) },
   })
 
@@ -292,15 +292,17 @@ export async function writeVersionedSystemConfig<T>(options: {
   }
 
   await Promise.all([
-    prisma.systemConfig.upsert({
+    prisma.system_configs.upsert({
       where: { key: options.key },
-      update: { value: serialized },
-      create: { key: options.key, value: serialized },
+      update: { value: serialized, updatedAt: new Date() },
+      create: { id: crypto.randomUUID(), key: options.key, value: serialized, updatedAt: new Date() },
     }),
-    prisma.systemConfig.upsert({
+    prisma.system_configs.upsert({
       where: { key: historyKey(options.key) },
-      update: { value: JSON.stringify(historyState) },
+      update: { value: JSON.stringify(historyState), updatedAt: new Date() },
       create: {
+        id: crypto.randomUUID(),
+        updatedAt: new Date(),
         key: historyKey(options.key),
         value: JSON.stringify(historyState),
       },

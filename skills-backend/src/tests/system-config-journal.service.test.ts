@@ -66,7 +66,7 @@ test('system config journal versions records and flags abrupt config shrinkage',
     assert.equal(history[0]?.warnings.some((item) => item.startsWith('size-drop:')), true)
     assert.equal(history[0]?.warnings.some((item) => item.startsWith('key-drop:')), true)
   } finally {
-    await prisma.systemConfig.deleteMany({
+    await prisma.system_configs.deleteMany({
       where: {
         key: {
           in: [key, historyKey],

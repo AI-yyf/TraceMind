@@ -7,29 +7,38 @@ import { __testing } from '../routes/topic-gen'
 import { createApp } from '../server'
 import { enhancedTaskScheduler } from '../services/enhanced-scheduler'
 
+function createConfigRecord(key: string, value: string) {
+  return {
+    id: `system-config-${key}`,
+    key,
+    value,
+    updatedAt: new Date(),
+  }
+}
+
 async function withDisabledModelConfig(userId: string, run: () => Promise<void>) {
   const configKey = `alpha:user-model-config:${userId}`
-  const originalRecord = await prisma.systemConfig.findUnique({
+  const originalRecord = await prisma.system_configs.findUnique({
     where: { key: configKey },
   })
 
-  await prisma.systemConfig.upsert({
+  await prisma.system_configs.upsert({
     where: { key: configKey },
-    update: { value: JSON.stringify({ language: null, multimodal: null }) },
-    create: { key: configKey, value: JSON.stringify({ language: null, multimodal: null }) },
+    update: { value: JSON.stringify({ language: null, multimodal: null }), updatedAt: new Date() },
+    create: createConfigRecord(configKey, JSON.stringify({ language: null, multimodal: null })),
   })
 
   try {
     await run()
   } finally {
     if (originalRecord) {
-      await prisma.systemConfig.upsert({
-        where: { key: configKey },
-        update: { value: originalRecord.value },
-        create: { key: configKey, value: originalRecord.value },
-      })
+        await prisma.system_configs.upsert({
+          where: { key: configKey },
+          update: { value: originalRecord.value, updatedAt: originalRecord.updatedAt },
+          create: createConfigRecord(configKey, originalRecord.value),
+        })
     } else {
-      await prisma.systemConfig.deleteMany({
+      await prisma.system_configs.deleteMany({
         where: { key: configKey },
       })
     }
@@ -82,6 +91,8 @@ test('topic generation fallback repair keeps zh source labels grounded when comp
       en: 'Build a sustained research topic around autonomous-driving VLA world models, including vision-language-action closed loops and driving world models.',
     },
   })
+  const fallbackLocales = fallback.locales
+  assert.ok(fallbackLocales)
 
   const repairedPreview = __testing.repairPreviewWithFallback(
     {
@@ -93,9 +104,9 @@ test('topic generation fallback repair keeps zh source labels grounded when comp
         { zh: 'including', en: 'Including' },
       ],
       locales: {
-        ...fallback.locales,
+        ...fallbackLocales,
         zh: {
-          ...fallback.locales.zh,
+          ...fallbackLocales.zh,
           focusLabel: 'autonomous-driving',
         },
       },
@@ -107,6 +118,7 @@ test('topic generation fallback repair keeps zh source labels grounded when comp
   assert.equal(repairedPreview.focusLabelZh, fallback.focusLabelZh)
   assert.equal(repairedPreview.nameEn, fallback.nameEn)
   assert.equal(repairedPreview.keywords[0]?.zh, fallback.keywords[0]?.zh)
+  assert.equal(typeof fallbackLocales.en.name, 'string')
 })
 
 test('POST /api/topic-gen/preview returns a multilingual preview for non-zh source languages', async () => {
@@ -238,7 +250,7 @@ test('POST /api/topic-gen/create stores multilingual localization and exposes it
           'string',
         )
 
-        const creationRecord = await prisma.systemConfig.findUnique({
+        const creationRecord = await prisma.system_configs.findUnique({
           where: { key: `topic:${topicId}:creation` },
         })
 
@@ -258,14 +270,14 @@ test('POST /api/topic-gen/create stores multilingual localization and exposes it
         assert.equal(Boolean(creationPayload.anchorDescriptions?.en?.length), true)
       } finally {
         await new Promise((resolve) => setTimeout(resolve, 500))
-        await prisma.systemConfig.deleteMany({
+        await prisma.system_configs.deleteMany({
           where: {
             key: {
               startsWith: `topic:${topicId}:`,
             },
           },
         })
-        await prisma.topic.delete({
+        await prisma.topics.delete({
           where: { id: topicId },
         })
       }
@@ -369,14 +381,14 @@ test('POST /api/topic-gen/create keeps the preview-first flow compatible with mu
         )
       } finally {
         await new Promise((resolve) => setTimeout(resolve, 500))
-        await prisma.systemConfig.deleteMany({
+        await prisma.system_configs.deleteMany({
           where: {
             key: {
               startsWith: `topic:${topicId}:`,
             },
           },
         })
-        await prisma.topic.delete({
+        await prisma.topics.delete({
           where: { id: topicId },
         })
       }

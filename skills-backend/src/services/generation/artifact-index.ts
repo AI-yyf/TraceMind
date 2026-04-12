@@ -60,26 +60,6 @@ function uniqueStrings(values: Array<string | null | undefined>, limit: number, 
   return output
 }
 
-function isNodeViewModel(value: unknown): value is NodeViewModel {
-  return Boolean(
-    value &&
-      typeof value === 'object' &&
-      !Array.isArray(value) &&
-      typeof (value as { nodeId?: unknown }).nodeId === 'string' &&
-      typeof (value as { title?: unknown }).title === 'string',
-  )
-}
-
-function isPaperViewModel(value: unknown): value is PaperViewModel {
-  return Boolean(
-    value &&
-      typeof value === 'object' &&
-      !Array.isArray(value) &&
-      typeof (value as { paperId?: unknown }).paperId === 'string' &&
-      typeof (value as { title?: unknown }).title === 'string',
-  )
-}
-
 function buildNodeArtifactEntry(viewModel: NodeViewModel): GenerationArtifactContextEntry {
   return {
     id: `node:${viewModel.nodeId}`,
@@ -157,7 +137,7 @@ export function extractTopicArtifactIndexEntry(
 }
 
 export async function loadTopicArtifactIndex(topicId: string): Promise<TopicArtifactIndexState> {
-  const record = await prisma.systemConfig.findUnique({
+  const record = await prisma.system_configs.findUnique({
     where: { key: topicArtifactIndexKey(topicId) },
   })
 
@@ -178,10 +158,10 @@ async function saveTopicArtifactIndex(state: TopicArtifactIndexState) {
       .slice(0, MAX_TOPIC_ARTIFACT_ENTRIES),
   }
 
-  await prisma.systemConfig.upsert({
+  await prisma.system_configs.upsert({
     where: { key: topicArtifactIndexKey(state.topicId) },
-    update: { value: JSON.stringify(nextState) },
-    create: { key: topicArtifactIndexKey(state.topicId), value: JSON.stringify(nextState) },
+    update: { value: JSON.stringify(nextState), updatedAt: new Date() },
+    create: { id: crypto.randomUUID(), key: topicArtifactIndexKey(state.topicId), value: JSON.stringify(nextState), updatedAt: new Date() },
   })
 
   return nextState

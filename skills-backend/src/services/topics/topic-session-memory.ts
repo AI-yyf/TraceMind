@@ -524,7 +524,7 @@ function safeParseJson<T>(value: string): T | null {
   }
 }
 
-function extractOpenQuestionsFromText(value: string) {
+function _extractOpenQuestionsFromText(value: string) {
   return uniqueStrings(
     value
       .split(/[?\n！？]/u)
@@ -657,7 +657,7 @@ async function buildLLMSummary(
 ): Promise<TopicSessionMemorySummary> {
   const runtime = await getGenerationRuntimeConfig()
   const [topic, latestResearchReport, template] = await Promise.all([
-    prisma.topic.findUnique({
+    prisma.topics.findUnique({
       where: { id: topicId },
       select: {
         id: true,
@@ -770,17 +770,22 @@ async function persistMemory(memory: TopicSessionMemoryState) {
     updatedAt: new Date().toISOString(),
   }
 
-  await prisma.systemConfig.upsert({
+  await prisma.system_configs.upsert({
     where: { key: topicSessionMemoryKey(memory.topicId) },
-    update: { value: JSON.stringify(payload) },
-    create: { key: topicSessionMemoryKey(memory.topicId), value: JSON.stringify(payload) },
+    update: { value: JSON.stringify(payload), updatedAt: new Date() },
+    create: {
+      id: crypto.randomUUID(),
+      key: topicSessionMemoryKey(memory.topicId),
+      value: JSON.stringify(payload),
+      updatedAt: new Date(),
+    },
   })
 
   return payload
 }
 
 export async function loadTopicSessionMemory(topicId: string): Promise<TopicSessionMemoryState> {
-  const record = await prisma.systemConfig.findUnique({
+  const record = await prisma.system_configs.findUnique({
     where: { key: topicSessionMemoryKey(topicId) },
   })
 

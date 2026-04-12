@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 test('normalizeChatAnswerText salvages the final answer from reasoning-heavy compatible responses', async () => {
-  const imported = await import('../services/topics/alpha-topic')
+  const imported = await import('../services/topics/alpha-topic.js')
   const root =
     ((imported as { default?: unknown }).default as { default?: unknown; __testing?: unknown } | undefined) ??
     (imported as unknown as { default?: unknown; __testing?: unknown })

@@ -68,7 +68,7 @@ function normalizePdfUrl(rawUrl: string | null | undefined) {
 }
 
 async function loadPaperLookup(paperId: string) {
-  const paper = await prisma.paper.findUnique({
+  const paper = await prisma.papers.findUnique({
     where: { id: paperId },
     select: {
       id: true,
@@ -112,6 +112,7 @@ async function resolvePdfExtractionRequest(body: {
 
 function buildFigureRows(paperId: string, result: PDFExtractionResult) {
   return result.figures.map((figure) => ({
+    id: crypto.randomUUID(),
     paperId,
     number: figure.number,
     caption: figure.caption,
@@ -122,6 +123,7 @@ function buildFigureRows(paperId: string, result: PDFExtractionResult) {
 
 function buildTableRows(paperId: string, result: PDFExtractionResult) {
   return result.tables.map((table) => ({
+    id: crypto.randomUUID(),
     paperId,
     number: table.number,
     caption: table.caption,
@@ -134,6 +136,7 @@ function buildTableRows(paperId: string, result: PDFExtractionResult) {
 
 function buildFormulaRows(paperId: string, result: PDFExtractionResult) {
   return result.formulas.map((formula) => ({
+    id: crypto.randomUUID(),
     paperId,
     number: formula.number,
     latex: formula.latex,
@@ -300,6 +303,7 @@ function buildPageEditorialTitle(index: number, explicitTitle: string | null | u
 
 function buildPaperSectionRowsFromExtraction(paperId: string, result: PDFExtractionResult) {
   const rows: Array<{
+    id: string
     paperId: string
     sourceSectionTitle: string
     editorialTitle: string
@@ -313,6 +317,7 @@ function buildPaperSectionRowsFromExtraction(paperId: string, result: PDFExtract
     if (cleanedParagraphs.length === 0) return
 
     rows.push({
+      id: crypto.randomUUID(),
       paperId,
       sourceSectionTitle,
       editorialTitle,
@@ -368,29 +373,29 @@ async function persistExtractionResult(args: {
 
   await prisma.$transaction(async (tx) => {
     await Promise.all([
-      tx.figure.deleteMany({ where: { paperId } }),
-      tx.table.deleteMany({ where: { paperId } }),
-      tx.formula.deleteMany({ where: { paperId } }),
-      tx.paperSection.deleteMany({ where: { paperId } }),
+      tx.figures.deleteMany({ where: { paperId } }),
+      tx.tables.deleteMany({ where: { paperId } }),
+      tx.formulas.deleteMany({ where: { paperId } }),
+      tx.paper_sections.deleteMany({ where: { paperId } }),
     ])
 
     if (figureRows.length > 0) {
-      await tx.figure.createMany({ data: figureRows })
+      await tx.figures.createMany({ data: figureRows })
     }
 
     if (tableRows.length > 0) {
-      await tx.table.createMany({ data: tableRows })
+      await tx.tables.createMany({ data: tableRows })
     }
 
     if (formulaRows.length > 0) {
-      await tx.formula.createMany({ data: formulaRows })
+      await tx.formulas.createMany({ data: formulaRows })
     }
 
     if (sectionRows.length > 0) {
-      await tx.paperSection.createMany({ data: sectionRows })
+      await tx.paper_sections.createMany({ data: sectionRows })
     }
 
-    await tx.paper.update({
+    await tx.papers.update({
       where: { id: paperId },
       data: {
         pdfUrl: pdfUrl ?? undefined,
@@ -559,7 +564,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const { paperId } = req.params
 
-    const paper = await prisma.paper.findUnique({
+    const paper = await prisma.papers.findUnique({
       where: { id: paperId },
       include: {
         figures: true,

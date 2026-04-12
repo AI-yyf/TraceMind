@@ -7,14 +7,14 @@
  * npm run scheduler:start -- --task=discover-topic-1 --now  // 立即执行
  */
 
-import { taskScheduler, type TaskConfig, type TaskResult } from '../services/scheduler'
+import { taskScheduler, type TaskConfig } from '../services/scheduler'
 import { PrismaClient } from '@prisma/client'
 
 const prisma = new PrismaClient()
 
 async function loadTasksFromDB() {
   try {
-    const configs = await prisma.systemConfig.findMany({
+    const configs = await prisma.system_configs.findMany({
       where: { key: { startsWith: 'task:' } },
     })
 
@@ -55,10 +55,10 @@ async function listTasks(): Promise<void> {
 async function addTask(config: TaskConfig): Promise<void> {
   const success = taskScheduler.addTask(config)
   if (success) {
-    await prisma.systemConfig.upsert({
+    await prisma.system_configs.upsert({
       where: { key: `task:${config.id}` },
-      update: { value: JSON.stringify(config) },
-      create: { key: `task:${config.id}`, value: JSON.stringify(config) },
+      update: { value: JSON.stringify(config), updatedAt: new Date() },
+      create: { id: crypto.randomUUID(), key: `task:${config.id}`, value: JSON.stringify(config), updatedAt: new Date() },
     })
     console.log(`[CLI] Task added and saved: ${config.id}`)
   }
@@ -66,7 +66,7 @@ async function addTask(config: TaskConfig): Promise<void> {
 
 async function main() {
   const args = process.argv.slice(2)
-  const commands = args.reduce((acc, arg, i) => {
+  const commands = args.reduce((acc, arg) => {
     if (arg.startsWith('--')) {
       const [key, value] = arg.slice(2).split('=')
       acc[key] = value || true

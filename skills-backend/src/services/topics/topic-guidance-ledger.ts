@@ -155,12 +155,25 @@ const COMMAND_PATTERNS = [
   /停止研究/u,
   /延长研究/u,
   /导出/u,
+  /研究を続ける/u,
+  /研究を開始/u,
+  /研究を停止/u,
+  /계속 연구/u,
+  /연구 계속/u,
+  /연구 시작/u,
+  /continuar investigaci(?:ó|o)n/iu,
+  /continuar investigando/iu,
+  /исследован/u,
+  /продолжайт[еь].*исслед/u,
 ]
 
 const STYLE_PATTERNS = [
   /\bstyle\b/iu,
   /\btone\b/iu,
   /\bwrite\b.+\b(?:more|less|like|with)\b/iu,
+  /continuous article/iu,
+  /mechanical bullet/iu,
+  /clearer judgment/iu,
   /\bless\s+ai\b/iu,
   /风格/u,
   /语气/u,
@@ -175,6 +188,14 @@ const STYLE_PATTERNS = [
   /更简洁/u,
   /不要.*AI/u,
   /不要.*机器/u,
+  /文体/u,
+  /文章らしく/u,
+  /スタイル/u,
+  /もっと記事/u,
+  /문체/u,
+  /더.*글/u,
+  /estilo/iu,
+  /artículo continuo/iu,
 ]
 
 const FOCUS_PATTERNS = [
@@ -190,6 +211,15 @@ const FOCUS_PATTERNS = [
   /不要扩题/u,
   /不要扩主题/u,
   /聚焦/u,
+  /このノード/u,
+  /この論文/u,
+  /集中/u,
+  /広げない/u,
+  /여기에 집중/u,
+  /지금 읽고 있는/u,
+  /확장하지 마/u,
+  /centrarse en/iu,
+  /no ampliar/iu,
 ]
 
 const CHALLENGE_PATTERNS = [
@@ -206,6 +236,13 @@ const CHALLENGE_PATTERNS = [
   /不清楚/u,
   /不准确/u,
   /有偏差/u,
+  /異議/u,
+  /おかしい/u,
+  /見直して/u,
+  /의문/u,
+  /재검토/u,
+  /cuestionar/iu,
+  /poner en duda/iu,
 ]
 
 const SUGGEST_PATTERNS = [
@@ -220,6 +257,13 @@ const SUGGEST_PATTERNS = [
   /把重点/u,
   /请优先/u,
   /请保持/u,
+  /提案/u,
+  /〜したい/u,
+  /優先して/u,
+  /제안/u,
+  /우선/u,
+  /sugiero/iu,
+  /propongo/iu,
 ]
 
 const ASK_PATTERNS = [
@@ -680,7 +724,7 @@ export function classifyTopicGuidanceMessage(
 export async function loadTopicGuidanceLedger(
   topicId: string,
 ): Promise<TopicGuidanceLedgerState> {
-  const record = await prisma.systemConfig.findUnique({
+  const record = await prisma.system_configs.findUnique({
     where: { key: topicGuidanceLedgerKey(topicId) },
   })
 
@@ -708,12 +752,14 @@ export async function saveTopicGuidanceLedger(
     ledger: nextState,
   }
 
-  await prisma.systemConfig.upsert({
+  await prisma.system_configs.upsert({
     where: { key: topicGuidanceLedgerKey(nextState.topicId) },
-    update: { value: JSON.stringify(payload) },
+    update: { value: JSON.stringify(payload), updatedAt: new Date() },
     create: {
+      id: crypto.randomUUID(),
       key: topicGuidanceLedgerKey(nextState.topicId),
       value: JSON.stringify(payload),
+      updatedAt: new Date(),
     },
   })
 

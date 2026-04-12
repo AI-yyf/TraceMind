@@ -19,12 +19,12 @@ import { getModelConfigFingerprint } from '../omni/config-store'
 import { omniGateway } from '../omni/gateway'
 import { inferResearchRoleForTemplate } from '../omni/routing'
 import {
-  getStageLocalization,
   getTopicLocalization,
   type TopicLocalizationLanguage,
   type StageLocaleMap,
   type TopicLocalizationPayload,
 } from './localization'
+import { pickMeaningfulDisplayText } from './display-text'
 import {
   DEFAULT_STAGE_WINDOW_MONTHS,
   MAX_STAGE_WINDOW_MONTHS,
@@ -63,13 +63,13 @@ import {
 import { loadTopicStageConfig } from './topic-stage-config'
 import { buildTopicCognitiveMemory } from './topic-cognitive-memory'
 import { parseTopicChatCommand } from './topic-chat-command'
+import { ensureConfiguredTopicMaterialized } from './topic-config-sync'
 import {
   classifyTopicGuidanceMessage,
   compactTopicGuidanceContext,
   loadTopicGuidanceLedger,
   recordTopicGuidanceDirective,
   type TopicGuidanceDirective,
-  type TopicGuidanceReceipt,
   type TopicGuidanceScopeType,
 } from './topic-guidance-ledger'
 import type {
@@ -271,6 +271,8 @@ export interface TopicViewModel {
     stageCount: number
     nodeCount: number
     paperCount: number
+    mappedPaperCount: number
+    unmappedPaperCount: number
     evidenceCount: number
   }
   timeline: {
@@ -296,6 +298,9 @@ export interface TopicViewModel {
     branchLabel: string
     branchColor: string
     editorial: TopicStageEditorial
+    trackedPaperCount: number
+    mappedPaperCount: number
+    unmappedPaperCount: number
     nodes: TopicNodeCard[]
   }>
   papers: Array<{
@@ -314,6 +319,20 @@ export interface TopicViewModel {
     tablesCount: number
     formulasCount: number
     sectionsCount: number
+  }>
+  unmappedPapers: Array<{
+    paperId: string
+    anchorId: string
+    route: string
+    title: string
+    titleEn: string
+    summary: string
+    publishedAt: string
+    authors: string[]
+    citationCount: number | null
+    coverImage: string | null
+    stageIndex: number | null
+    stageLabel: string
   }>
   narrativeArticle: string
   closingEditorial: TopicClosingEditorial
@@ -342,7 +361,7 @@ interface TopicResearchSignals {
   nodeReaderById: Map<string, NodeViewModel>
 }
 
-const TOPIC_VIEW_MODEL_SCHEMA = 'topic-workbench-v10'
+const TOPIC_VIEW_MODEL_SCHEMA = 'topic-workbench-v11'
 
 export interface EvidencePayload {
   anchorId: string
@@ -408,6 +427,7 @@ const DEFERRED_TOPIC_ARTIFACTS_DISABLED =
   process.execArgv.includes('--test') ||
   process.env.NODE_TEST_CONTEXT === 'child-v8' ||
   process.env.NODE_ENV === 'test'
+const TOPIC_ARTIFACT_BACKGROUND_REFRESH_MS = 5 * 60 * 1000
 
 function parseJsonArray(value: string | null | undefined): string[] {
   if (!value) return []
@@ -577,10 +597,10 @@ async function mapWithConcurrency<TInput, TOutput>(
 }
 
 function sanitizeString(value: unknown, fallback: string) {
-  return typeof value === 'string' && value.trim() ? value.trim() : fallback
+  return pickMeaningfulDisplayText(typeof value === 'string' ? value : null, fallback)
 }
 
-function sanitizeParagraphs(value: unknown, fallback: string[]) {
+function _sanitizeParagraphs(value: unknown, fallback: string[]) {
   if (!Array.isArray(value)) return fallback
   const next = value
     .filter((item): item is string => typeof item === 'string')
@@ -603,6 +623,118 @@ function uniqueStrings(values: Array<string | null | undefined>, limit = 8, maxL
   }
 
   return output
+}
+
+function normalizePaperDisplayFields(paper: any) {
+  const title = pickMeaningfulDisplayText(
+    paper?.title,
+    paper?.titleEn,
+    paper?.titleZh,
+    'Untitled paper',
+  )
+  const titleEn = pickMeaningfulDisplayText(
+    paper?.titleEn,
+    paper?.title,
+    paper?.titleZh,
+    title,
+  )
+  const titleZh = pickMeaningfulDisplayText(
+    paper?.titleZh,
+    paper?.titleEn,
+    paper?.title,
+    title,
+  )
+
+  return {
+    ...paper,
+    title,
+    titleEn,
+    titleZh,
+  }
+}
+
+function normalizeNodeDisplayFields(node: any) {
+  const primaryPaperTitle = pickMeaningfulDisplayText(
+    node?.primaryPaper?.titleZh,
+    node?.primaryPaper?.titleEn,
+    node?.primaryPaper?.title,
+  )
+
+  return {
+    ...node,
+    nodeLabel: pickMeaningfulDisplayText(
+      node?.nodeLabel,
+      node?.nodeSubtitle,
+      primaryPaperTitle,
+      'Research node',
+    ),
+    nodeSubtitle: pickMeaningfulDisplayText(
+      node?.nodeSubtitle,
+      node?.primaryPaper?.titleEn,
+      node?.primaryPaper?.title,
+      '',
+    ),
+  }
+}
+
+function normalizeTopicDisplayFields(topic: any) {
+  const papers = Array.isArray(topic?.papers)
+    ? topic.papers.map((paper: any) => normalizePaperDisplayFields(paper))
+    : []
+  const paperById = new Map(papers.map((paper: { id: string }) => [paper.id, paper] as const))
+
+  const rawNodes = Array.isArray(topic?.research_nodes)
+    ? topic.research_nodes
+    : Array.isArray(topic?.nodes)
+      ? topic.nodes
+      : []
+
+  const nodes = rawNodes.length > 0
+    ? topic.research_nodes.map((node: any) => {
+        const primaryPaper = node?.primaryPaper
+          ? normalizePaperDisplayFields(node.papers)
+          : (node?.primaryPaperId ? paperById.get(node.primaryPaperId) : null)
+        const nodePapers = Array.isArray(node?.papers)
+          ? node.node_papers.map((item: any) => ({
+              ...item,
+              paper: item?.paper ? normalizePaperDisplayFields(item.paper) : item?.paper,
+            }))
+          : node?.papers
+
+        return normalizeNodeDisplayFields({
+          ...node,
+          primaryPaper,
+          papers: nodePapers,
+        })
+      })
+    : []
+
+  const nameEn = pickMeaningfulDisplayText(
+    topic?.nameEn,
+    topic?.nameZh,
+    'Research topic',
+  )
+  const nameZh = pickMeaningfulDisplayText(
+    topic?.nameZh,
+    topic?.nameEn,
+    nameEn,
+  )
+
+  return {
+    ...topic,
+    nameZh,
+    nameEn,
+    focusLabel: pickMeaningfulDisplayText(
+      topic?.focusLabel,
+      nameEn,
+      nameZh,
+      'Research focus',
+    ),
+    summary: pickMeaningfulDisplayText(topic?.summary, topic?.description, ''),
+    description: pickMeaningfulDisplayText(topic?.description, topic?.summary, ''),
+    papers,
+    nodes,
+  }
 }
 
 function pickTopicMapNodePaperIds(args: {
@@ -708,10 +840,10 @@ function buildNodeCoverImage(args: {
   node: {
     nodeCoverImage: string | null
     primaryPaperId: string | null
-    papers: Array<{ paperId: string | null }>
-    primaryPaper: {
+    node_papers: Array<{ paperId: string | null }>
+    papers: {
       coverPath: string | null
-    }
+    } | null
   }
   reader: NodeViewModel | null
   rawPaperById: Map<string, TopicDisplayPaperShape>
@@ -722,7 +854,7 @@ function buildNodeCoverImage(args: {
     new Set(
       (paperIds?.length
         ? paperIds
-        : [node.primaryPaperId, ...node.papers.map((item) => item.paperId)]
+        : [node.primaryPaperId, ...node.node_papers.map((item) => item.paperId)]
       ).filter((paperId): paperId is string => typeof paperId === 'string' && Boolean(paperId.trim())),
     ),
   )
@@ -748,7 +880,7 @@ function buildNodeCoverImage(args: {
     relatedFigureImage ??
     reader?.paperRoles.find((item) => item.coverImage)?.coverImage ??
     relatedPapers.find((paper) => Boolean(paper?.coverPath))?.coverPath ??
-    node.primaryPaper.coverPath ??
+    node.papers?.coverPath ??
     null
   )
 }
@@ -959,7 +1091,7 @@ function scoreTopicRelatedPaper(
   }
 }
 
-function collectNodeDisplayPaperIds(args: {
+function _collectNodeDisplayPaperIds(args: {
   node: {
     primaryPaperId: string | null
     nodeLabel: string
@@ -1088,6 +1220,11 @@ const TOPIC_MAP_CARD_NOISE_PATTERNS = [
   /currently mainly supported by a single paper/iu,
   /evidence vacuum/iu,
   /prematurely elevated/iu,
+  /topic map/iu,
+  /paper cards?/iu,
+  /same stage window/iu,
+  /让主题页看到的是/iu,
+  /零散的论文卡片/iu,
 ]
 
 const TOPIC_MAP_CARD_PROMPT_LEAK_PATTERNS = [
@@ -1268,6 +1405,40 @@ function sanitizeTopicUserFacingParagraphs(
   return fallbackParagraphs
 }
 
+const TOPIC_NODE_MAP_BOILERPLATE_PATTERNS = [
+  /当前锚点论文是/u,
+  /当前先以《/u,
+  /该节点当前以《/u,
+  /把这些论文放进同一个节点/u,
+  /共享几个关键词/u,
+  /主要由一篇论文支撑/u,
+  /entry point/iu,
+  /anchor paper/iu,
+  /currently serves as the entry/iu,
+  /currently groups \d+/iu,
+  /same-stage papers/iu,
+  /problem line around/iu,
+  /put these papers into the same node/iu,
+]
+
+function looksLikeTopicNodeMapBoilerplate(value: string | null | undefined) {
+  const normalized = stripTopicTrailingPunctuation(stripTopicMapCardIds(value))
+  if (!normalized) return true
+  if (looksLikeTopicPromptLeak(normalized) || looksLikeTopicProcessLeak(normalized)) return true
+  return TOPIC_NODE_MAP_BOILERPLATE_PATTERNS.some((pattern) => pattern.test(normalized))
+}
+
+function collectTopicNodeMapCandidates(
+  values: Array<string | null | undefined>,
+  limit = 2,
+  maxLength = 160,
+) {
+  return collectTopicMapCardSentences(values, Math.max(limit * 3, limit), maxLength)
+    .map((sentence) => sanitizeTopicUserFacingSentence(sentence, '', maxLength))
+    .filter((sentence) => sentence && !looksLikeTopicNodeMapBoilerplate(sentence))
+    .slice(0, limit)
+}
+
 function buildTopicPaperSummary(args: {
   paperTitle: string
   summary: string | null | undefined
@@ -1359,7 +1530,8 @@ function compactTopicMapNodeTitle(args: {
   return clipText(rawTitle || primaryPaperTitle || '研究节点', 24)
 }
 
-function buildTopicMapNodeSummary(args: {
+/*
+function _buildTopicMapNodeSummary(args: {
   nodeTitle: string
   primaryPaperTitle: string
   paperCount: number
@@ -1367,6 +1539,49 @@ function buildTopicMapNodeSummary(args: {
 }) {
   const focusLabel = stripTopicTrailingPunctuation(args.nodeTitle) || stripTopicTrailingPunctuation(args.primaryPaperTitle) || '当前节点'
   const primaryPaperTitle = stripTopicTrailingPunctuation(args.primaryPaperTitle) || focusLabel
+  const summaryKey = normalizeTopicMapCardKey(args.summary)
+  const picked = collectTopicMapCardSentences(args.candidates, 3, 160).filter(
+    (sentence) => normalizeTopicMapCardKey(sentence) !== summaryKey,
+  )
+
+  if (picked.length > 0) {
+    return clipText(picked.slice(0, 2).join(' '), 188)
+  }
+
+  if (args.paperCount > 1) {
+    return clipText(
+      `这一节点把同一阶段内与「${focusLabel}」直接相关的 ${args.paperCount} 篇论文放在一起，阅读时先看代表论文如何定义对象，再比较其余论文在哪些方法、证据和边界上补强或分岔。`,
+      188,
+    )
+  }
+
+  return clipText(
+    `这一节点目前只纳入 1 篇论文，重点是读清《${primaryPaperTitle}》如何界定「${focusLabel}」、采用什么方法，以及证据边界停在什么位置。`,
+    188,
+  )
+  const picked = collectTopicMapCardSentences(args.candidates, 1, 118)[0]
+
+  if (picked) {
+    const normalizedPicked = stripTopicTrailingPunctuation(picked)
+    if (/(entry|problem line|entry point|evidence entry|鍏ュ彛|闂绾?|璇佹嵁鍏ュ彛)/iu.test(normalizedPicked)) {
+      return picked
+    }
+
+    const entryClause = /[\p{Script=Han}]/u.test(`${focusLabel}${normalizedPicked}`)
+      ? `褰撳墠鍏堜互銆?${primaryPaperTitle}銆嬩负鍏ュ彛锛屾槑纭€?{focusLabel}銆嶈繖鏉￠棶棰樼嚎銆俙`
+      : `${primaryPaperTitle} currently serves as the entry into this problem line for ${focusLabel}.`
+
+    return clipText(`${entryClause} ${normalizedPicked}`, 118)
+  }
+
+  if (args.paperCount > 1) {
+    return clipText(
+      `该节点当前纳入 ${args.paperCount} 篇同阶段论文，围绕「${focusLabel}」比较它们如何推进同一条问题线。`,
+      118,
+    )
+  }
+
+  return clipText(`该节点当前以《${primaryPaperTitle}》为入口，先说明「${focusLabel}」这条问题线。`, 118)
 
   if (args.paperCount > 1) {
     return clipText(`该节点当前纳入 ${args.paperCount} 篇论文，核心聚焦「${focusLabel}」。`, 118)
@@ -1432,6 +1647,281 @@ function buildTopicMapNodeExplanation(args: {
     `这一节点目前主要以《${args.primaryPaperTitle || '代表论文'}》为入口，帮助读者先抓住「${args.nodeTitle}」的核心问题、方法线索与证据边界。`,
     188,
   )
+}
+*/
+
+function _buildTopicMapNodeSummary(args: {
+  nodeTitle: string
+  primaryPaperTitle: string
+  paperCount: number
+  candidates: Array<string | null | undefined>
+}) {
+  const focusLabel =
+    stripTopicTrailingPunctuation(args.nodeTitle) ||
+    stripTopicTrailingPunctuation(args.primaryPaperTitle) ||
+    'Current node'
+  const primaryPaperTitle = stripTopicTrailingPunctuation(args.primaryPaperTitle) || focusLabel
+  const picked = collectTopicMapCardSentences(args.candidates, 1, 118)[0]
+  const prefersChinese = /[\p{Script=Han}]/u.test(`${focusLabel}${primaryPaperTitle}${picked ?? ''}`)
+
+  if (picked && args.paperCount > 1) {
+    return buildTopicMapNodeSummaryFinal(args)
+  }
+
+  if (picked) {
+    const normalizedPicked = stripTopicTrailingPunctuation(picked)
+    if (/(entry|problem line|entry point|evidence entry|入口|问题线|证据入口)/iu.test(normalizedPicked)) {
+      return picked
+    }
+
+    const entryClause = prefersChinese
+      ? `该节点当前以《${primaryPaperTitle}》为入口，先说明“${focusLabel}”这条问题线。`
+      : `${primaryPaperTitle} is currently the entry point for reading the problem line around ${focusLabel}.`
+
+    return clipText(`${entryClause} ${normalizedPicked}`, 118)
+  }
+
+  return buildTopicMapNodeSummaryFinal(args)
+}
+
+function _buildTopicMapNodeSummaryClean(args: {
+  nodeTitle: string
+  primaryPaperTitle: string
+  paperCount: number
+  candidates: Array<string | null | undefined>
+}) {
+  const focusLabel =
+    stripTopicTrailingPunctuation(args.nodeTitle) ||
+    stripTopicTrailingPunctuation(args.primaryPaperTitle) ||
+    'Current node'
+  const primaryPaperTitle = stripTopicTrailingPunctuation(args.primaryPaperTitle) || focusLabel
+  const picked = collectTopicMapCardSentences(args.candidates, 1, 118)[0]
+  const prefersChinese = /[\p{Script=Han}]/u.test(`${focusLabel}${primaryPaperTitle}${picked ?? ''}`)
+
+  if (picked && args.paperCount > 1) return picked
+
+  if (picked) {
+    const normalizedPicked = stripTopicTrailingPunctuation(picked)
+    const lowSignalAnchorOnly =
+      /^(?:当前锚点论文是|当前先以《.+?》为入口|the anchor paper is|use .+? as the entry|.+? is currently the entry point)/iu.test(
+        normalizedPicked,
+      )
+    if (lowSignalAnchorOnly && args.paperCount > 1) {
+      // Fall through to the problem-line summary so multi-paper nodes stay informative on the map.
+    } else {
+    if (/(entry|problem line|entry point|evidence entry|入口|问题线|证据入口)/iu.test(normalizedPicked)) {
+      return picked
+    }
+
+    const entryClause = prefersChinese
+      ? ['当前先以《', primaryPaperTitle, '》为入口，明确“', focusLabel, '”这条问题线。'].join('')
+      : `${primaryPaperTitle} currently serves as the entry into this problem line for ${focusLabel}.`
+
+    return clipText(`${entryClause} ${normalizedPicked}`, 118)
+    }
+  }
+
+  if (args.paperCount > 1) {
+    return prefersChinese
+      ? clipText(`该节点当前纳入 ${args.paperCount} 篇同阶段论文，围绕“${focusLabel}”比较它们如何推进同一条问题线。`, 118)
+      : clipText(
+          `This node currently groups ${args.paperCount} same-stage papers and compares how they advance the same problem line around ${focusLabel}.`,
+          118,
+        )
+  }
+
+  return prefersChinese
+    ? clipText(`该节点当前以《${primaryPaperTitle}》为入口，先说明“${focusLabel}”这条问题线。`, 118)
+    : clipText(
+        `${primaryPaperTitle} is currently the entry point for reading the problem line around ${focusLabel}.`,
+        118,
+      )
+}
+
+function buildTopicMapNodeSummaryFinal(args: {
+  nodeTitle: string
+  primaryPaperTitle: string
+  paperCount: number
+  candidates: Array<string | null | undefined>
+}) {
+  const focusLabel =
+    stripTopicTrailingPunctuation(args.nodeTitle) ||
+    stripTopicTrailingPunctuation(args.primaryPaperTitle) ||
+    'Current node'
+  const primaryPaperTitle = stripTopicTrailingPunctuation(args.primaryPaperTitle) || focusLabel
+  const picked = collectTopicMapCardSentences(args.candidates, 1, 118)[0]
+  const prefersChinese = /[\p{Script=Han}]/u.test(`${focusLabel}${primaryPaperTitle}${picked ?? ''}`)
+
+  if (picked) {
+    const normalizedPicked = stripTopicTrailingPunctuation(picked)
+    const normalizedFocusKey = normalizeTopicMapCardKey(focusLabel)
+    const normalizedPickedKey = normalizeTopicMapCardKey(normalizedPicked)
+    const mentionsProblemLine = /(entry|problem line|entry point|evidence entry|入口|问题线|证据入口)/iu.test(
+      normalizedPicked,
+    )
+    const lowSignalPicked =
+      args.paperCount > 1 &&
+      normalizedPicked.length < 96 &&
+      (!normalizedFocusKey || !normalizedPickedKey.includes(normalizedFocusKey)) &&
+      !mentionsProblemLine
+
+    if (!lowSignalPicked) {
+      if (mentionsProblemLine) {
+        return picked
+      }
+
+      const entryClause = prefersChinese
+        ? ['当前先以《', primaryPaperTitle, '》为入口，明确“', focusLabel, '”这条问题线。'].join('')
+        : `${primaryPaperTitle} currently serves as the entry into this problem line for ${focusLabel}.`
+
+      return clipText(`${entryClause} ${normalizedPicked}`, 118)
+    }
+  }
+
+  if (args.paperCount > 1) {
+    return prefersChinese
+      ? clipText(`该节点当前纳入 ${args.paperCount} 篇同阶段论文，围绕“${focusLabel}”比较它们如何推进同一条问题线。`, 118)
+      : clipText(
+          `This node currently groups ${args.paperCount} same-stage papers and compares how they advance the same problem line around ${focusLabel}.`,
+          118,
+        )
+  }
+
+  return prefersChinese
+    ? clipText(`该节点当前以《${primaryPaperTitle}》为入口，先说明“${focusLabel}”这条问题线。`, 118)
+    : clipText(
+        `${primaryPaperTitle} is currently the entry point for reading the problem line around ${focusLabel}.`,
+        118,
+      )
+}
+
+function _buildTopicMapNodeExplanation(args: {
+  nodeTitle: string
+  primaryPaperTitle: string
+  paperCount: number
+  summary: string
+  candidates: Array<string | null | undefined>
+}) {
+  const focusLabel =
+    stripTopicTrailingPunctuation(args.nodeTitle) ||
+    stripTopicTrailingPunctuation(args.primaryPaperTitle) ||
+    '当前节点'
+  const primaryPaperTitle = stripTopicTrailingPunctuation(args.primaryPaperTitle) || focusLabel
+  const summaryKey = normalizeTopicMapCardKey(args.summary)
+  const picked = collectTopicMapCardSentences(args.candidates, 3, 160).filter(
+    (sentence) => normalizeTopicMapCardKey(sentence) !== summaryKey,
+  )
+
+  if (picked.length > 0) {
+    return clipText(picked.slice(0, 2).join(' '), 188)
+  }
+
+  if (args.paperCount > 1) {
+    return clipText(
+      `这一节点把同一阶段内与「${focusLabel}」直接相关的 ${args.paperCount} 篇论文放在一起，阅读时先看代表论文如何定义对象，再比较其余论文在哪些方法、证据和边界上补强或分岔。`,
+      188,
+    )
+  }
+
+  return clipText(
+    `这一节点目前只纳入 1 篇论文，重点是读清《${primaryPaperTitle}》如何界定「${focusLabel}」、采用什么方法，以及证据边界停在什么位置。`,
+    188,
+  )
+}
+
+function buildTopicMapNodeSummaryDisplay(args: {
+  nodeTitle: string
+  primaryPaperTitle: string
+  paperCount: number
+  candidates: Array<string | null | undefined>
+}) {
+  const focusLabel =
+    stripTopicTrailingPunctuation(args.nodeTitle) ||
+    stripTopicTrailingPunctuation(args.primaryPaperTitle) ||
+    'Current node'
+  const primaryPaperTitle = stripTopicTrailingPunctuation(args.primaryPaperTitle) || focusLabel
+  const picked = collectTopicNodeMapCandidates(args.candidates, 1, 118)[0]
+  const prefersChinese = /[\p{Script=Han}]/u.test(`${focusLabel}${primaryPaperTitle}${picked ?? ''}`)
+
+  if (picked) {
+    const normalizedPicked = stripTopicTrailingPunctuation(picked)
+    if (/(entry|problem line|entry point|evidence entry|入口|问题线|证据入口)/iu.test(normalizedPicked)) {
+      return clipText(picked, 118)
+    }
+
+    const entryClause = prefersChinese
+      ? `该节点当前以《${primaryPaperTitle}》为入口，先说明“${focusLabel}”这条问题线。`
+      : `${primaryPaperTitle} is currently the entry point for reading the problem line around ${focusLabel}.`
+
+    return clipText(`${entryClause} ${normalizedPicked}`, 118)
+  }
+
+  if (args.paperCount > 1) {
+    return prefersChinese
+      ? clipText(
+          `这一节点收拢同一阶段围绕「${focusLabel}」推进的 ${args.paperCount} 篇论文，重点比较问题如何被改写、方法怎样分化，以及证据在哪些地方真正闭合。`,
+          118,
+        )
+      : clipText(
+          `This node gathers ${args.paperCount} same-stage papers around ${focusLabel} so the map can show how the question, method, and evidence all move inside one bounded research line.`,
+          118,
+        )
+  }
+
+  return prefersChinese
+    ? clipText(
+        `这一节点围绕《${primaryPaperTitle}》展开，重点读清它怎样界定「${focusLabel}」、搭起方法链条，并用什么证据把结论落下来。`,
+        118,
+      )
+    : clipText(
+        `This node centers on "${primaryPaperTitle}" and makes the map readable by showing how ${focusLabel} is framed, solved, and evidenced inside one paper.`,
+        118,
+      )
+}
+
+function buildTopicMapNodeExplanationDisplay(args: {
+  nodeTitle: string
+  primaryPaperTitle: string
+  paperCount: number
+  summary: string
+  candidates: Array<string | null | undefined>
+}) {
+  const focusLabel =
+    stripTopicTrailingPunctuation(args.nodeTitle) ||
+    stripTopicTrailingPunctuation(args.primaryPaperTitle) ||
+    'Current node'
+  const primaryPaperTitle = stripTopicTrailingPunctuation(args.primaryPaperTitle) || focusLabel
+  const summaryKey = normalizeTopicMapCardKey(args.summary)
+  const picked = collectTopicNodeMapCandidates(args.candidates, 3, 160).filter(
+    (sentence) => normalizeTopicMapCardKey(sentence) !== summaryKey,
+  )
+  const prefersChinese = /[\p{Script=Han}]/u.test(`${focusLabel}${primaryPaperTitle}${picked.join(' ')}`)
+
+  if (picked.length > 0) {
+    return clipText(picked.slice(0, 2).join(' '), 188)
+  }
+
+  if (args.paperCount > 1) {
+    return prefersChinese
+      ? clipText(
+          `阅读这一节点时，先看代表论文怎样把「${focusLabel}」的问题立起来，再顺着其余 ${Math.max(args.paperCount - 1, 1)} 篇论文比较方法、实验边界和关键证据是如何接力变化的。`,
+          188,
+        )
+      : clipText(
+          `Read this node by starting with the paper that frames ${focusLabel}, then move through the remaining same-stage papers to compare how method choices, evidence boundaries, and practical trade-offs evolve.`,
+          188,
+        )
+  }
+
+  return prefersChinese
+    ? clipText(
+        `这一节点目前只纳入 1 篇论文，重点是把《${primaryPaperTitle}》读透：它如何界定「${focusLabel}」、采用什么方法、关键图表和公式说明了什么，以及证据边界最终停在何处。`,
+        188,
+      )
+    : clipText(
+        `This node currently contains one paper, so the article should stay focused on how "${primaryPaperTitle}" defines ${focusLabel}, what method it proposes, and where its evidence boundary actually stops.`,
+        188,
+      )
 }
 
 function toResearchQuestion(value: string | null | undefined, prefix: string) {
@@ -1635,11 +2125,13 @@ function buildNodeResearchContent(args: {
         (action.stageIndex === stageIndex && action.title.trim() === node.title.trim()),
     ) ?? []
 
-  const digest = buildTopicMapNodeSummary({
+  const digest = buildTopicMapNodeSummaryDisplay({
     nodeTitle: node.title,
     primaryPaperTitle,
     paperCount: node.paperCount,
     candidates: [
+      reader?.coreJudgment?.content,
+      reader?.coreJudgment?.contentEn,
       reader?.summary,
       fullContentSummary.oneLine,
       fullContentSummary.keyContribution,
@@ -1651,12 +2143,14 @@ function buildNodeResearchContent(args: {
     ],
   })
 
-  const explanation = buildTopicMapNodeExplanation({
+  const explanation = buildTopicMapNodeExplanationDisplay({
     nodeTitle: node.title,
     primaryPaperTitle,
     paperCount: node.paperCount,
     summary: digest,
     candidates: [
+      reader?.coreJudgment?.content,
+      reader?.coreJudgment?.contentEn,
       reportNodeActions[0]?.rationale,
       reader?.explanation,
       reader?.comparisonBlocks[0]?.summary,
@@ -1726,7 +2220,7 @@ function buildNodeResearchContent(args: {
   }
 }
 
-function buildTopicNarrativeSegments(args: {
+function _buildTopicNarrativeSegments(args: {
   topic: Awaited<ReturnType<typeof loadTopicForArtifact>>
   stages: TopicViewModel['stages']
   latestResearchReport: ResearchRunReport | null
@@ -1750,7 +2244,7 @@ function buildTopicNarrativeSegments(args: {
   )
 }
 
-function buildTopicClosingFallback(args: {
+function _buildTopicClosingFallback(args: {
   topic: Awaited<ReturnType<typeof loadTopicForArtifact>>
   stages: TopicViewModel['stages']
   latestResearchReport: ResearchRunReport | null
@@ -1774,7 +2268,7 @@ function buildTopicClosingFallback(args: {
       pipelineOverview.globalOpenQuestions[0]
         ? `研究编排层目前仍保留一个关键追问：${pipelineOverview.globalOpenQuestions[0]}`
         : '',
-      `从结构上看，这个主题当前形成了 ${stages.length} 个阶段、${topic.nodes.length} 个节点和 ${displayPaperCount} 篇论文组成的主链路，但真正稳固的判断仍然要回到节点内部的证据与跨论文比较。`,
+      `从结构上看，这个主题当前形成了 ${stages.length} 个阶段、${topic.research_nodes.length} 个节点和 ${displayPaperCount} 篇论文组成的主链路，但真正稳固的判断仍然要回到节点内部的证据与跨论文比较。`,
     ],
     3,
     260,
@@ -1795,7 +2289,7 @@ function buildTopicClosingFallback(args: {
   } satisfies TopicClosingEditorial
 }
 
-function buildTopicSuggestedQuestions(args: {
+function _buildTopicSuggestedQuestions(args: {
   topic: Awaited<ReturnType<typeof loadTopicForArtifact>>
   latestResearchReport: ResearchRunReport | null
   pipelineOverview: TopicPipelineContext
@@ -1830,7 +2324,7 @@ async function loadTopicResearchSignals(
     collectTopicSessionMemoryContext(topicId, { recentLimit: 6 }),
     quick
       ? Promise.resolve([] as Array<readonly [string, NodeViewModel]>)
-      : mapWithConcurrency(topic.nodes, 2, async (node) => {
+      : mapWithConcurrency(topic.research_nodes, 2, async (node) => {
           try {
             const viewModel = await rebuildNodeViewModel(node.id, {
               stageWindowMonths: options?.stageWindowMonths,
@@ -1887,7 +2381,7 @@ type TopicDisplayPaperShape = {
     latex: string
     rawText: string | null
   }>
-  sections: Array<{
+paper_sections: Array<{
     id: string
     editorialTitle: string | null
     sourceSectionTitle: string
@@ -1895,26 +2389,91 @@ type TopicDisplayPaperShape = {
   }>
 }
 
+function looksLikeBarePaperIdentifier(value: string | null | undefined) {
+  const text = (value ?? '').trim()
+  if (!text) return true
+
+  return /^(?:\d{4}\.\d{4,5}(?:v\d+)?|[a-z-]+(?:\.[A-Z]{2})?\/\d{7}(?:v\d+)?)$/iu.test(text)
+}
+
+function isTopicPaperReaderReady(paper: TopicDisplayPaperShape) {
+  const preferredTitle = paper.titleZh || paper.titleEn || paper.title
+  return !looksLikeBarePaperIdentifier(preferredTitle)
+}
+
 type TopicDisplayNodeShape = {
   primaryPaperId: string | null
-  papers: Array<{
-    paperId: string | null
+  node_papers: Array<{
+    paperId: string
   }>
+}
+
+type TopicDisplayNodeFullShape = {
+  id: string
+  stageIndex: number
+  nodeLabel: string
+  nodeSubtitle: string | null
+  nodeSummary: string
+  nodeExplanation: string | null
+  nodeCoverImage: string | null
+  fullContent: string | null
+  isMergeNode: boolean
+  provisional: boolean
+  status: string
+  updatedAt: Date
+  createdAt: Date
+  primaryPaperId: string | null
+  primaryPaper: TopicDisplayPaperShape
+  papers: Array<{
+    id: string
+    nodeId: string
+    paperId: string
+    order: number
+    paper?: TopicDisplayPaperShape | null
+  }>
+}
+
+type _TopicDisplayFullShape = {
+  id: string
+  nameZh: string
+  nameEn: string
+  focusLabel: string
+  summary: string
+  description: string
+  language: string
+  status: string
+  createdAt: Date
+  updatedAt: Date
+  stages: Array<{
+    id: string
+    name: string
+    nameEn: string | null
+    description: string | null
+    descriptionEn: string | null
+    topicId: string
+    order: number
+  }>
+  papers: TopicDisplayPaperShape[]
+  research_nodes: TopicDisplayNodeFullShape[]
+}
+
+function isReaderVisibleTopicStage(stage: TopicViewModel['stages'][number]) {
+  return stage.nodes.length > 0 || stage.mappedPaperCount > 0
 }
 
 function selectTopicPapersByNodeOrder<
   TPaper extends { id: string },
   TTopic extends {
     papers: TPaper[]
-    nodes: TopicDisplayNodeShape[]
+    research_nodes: TopicDisplayNodeShape[]
   },
 >(topic: TTopic): TPaper[] {
   const paperById = new Map(topic.papers.map((paper) => [paper.id, paper]))
   const orderedPaperIds: string[] = []
   const seenPaperIds = new Set<string>()
 
-  for (const node of topic.nodes) {
-    const candidateIds = [node.primaryPaperId, ...node.papers.map((paper) => paper.paperId)].filter(
+  for (const node of topic.research_nodes) {
+    const candidateIds = [node.primaryPaperId, ...node.node_papers.map((paper) => paper.paperId)].filter(
       (paperId): paperId is string => typeof paperId === 'string' && Boolean(paperId),
     )
 
@@ -1939,16 +2498,19 @@ function selectTopicDisplayPapers<
   TPaper extends TopicDisplayPaperShape,
   TTopic extends {
     papers: TPaper[]
-    nodes: TopicDisplayNodeShape[]
+    research_nodes: TopicDisplayNodeShape[]
   },
 >(topic: TTopic): TPaper[] {
-  return selectTopicPapersByNodeOrder<TPaper, TTopic>(topic)
+  const ordered = selectTopicPapersByNodeOrder<TPaper, TTopic>(topic)
+  const readerReady = ordered.filter((paper) => isTopicPaperReaderReady(paper))
+
+  return readerReady.length > 0 ? readerReady : ordered
 }
 
-function countPaperEvidence(papers: Array<Pick<TopicDisplayPaperShape, 'figures' | 'tables' | 'formulas' | 'sections'>>) {
+function countPaperEvidence(papers: Array<Pick<TopicDisplayPaperShape, 'figures' | 'tables' | 'formulas' | 'paper_sections'>>) {
   return papers.reduce(
     (count, paper) =>
-      count + paper.figures.length + paper.tables.length + paper.formulas.length + paper.sections.length,
+      count + paper.figures.length + paper.tables.length + paper.formulas.length + paper.paper_sections.length,
     0,
   )
 }
@@ -1983,7 +2545,7 @@ function laneSide(laneIndex: number): 'left' | 'center' | 'right' {
   return laneIndex < 0 ? 'left' : 'right'
 }
 
-function splitParagraphs(value: string | null | undefined, maxParts = 3) {
+function _splitParagraphs(value: string | null | undefined, maxParts = 3) {
   return (value ?? '')
     .split(/\n+/u)
     .map((item) => item.trim())
@@ -1995,8 +2557,9 @@ function formatStageDateLabel(value: Date | null | undefined, mode: 'year' | 'mo
   if (!value) return mode === 'year' ? '未知' : '时间待定'
   const year = value.getFullYear()
   if (mode === 'year') return String(year)
+  const shortYear = `${year}`.slice(-2)
   const month = `${value.getMonth() + 1}`.padStart(2, '0')
-  return `${year}.${month}`
+  return `${shortYear}.${month}`
 }
 
 function formatMonthDayLabel(value: Date | null | undefined) {
@@ -2009,6 +2572,12 @@ function formatMonthDayLabel(value: Date | null | undefined) {
 function formatPreciseDateLabel(value: Date | null | undefined) {
   if (!value) return '时间待定'
   return `${value.getFullYear()}.${formatMonthDayLabel(value)}`
+}
+
+function looksLikeTemporalWindowLabel(value: string | null | undefined) {
+  const text = (value ?? '').replace(/\s+/gu, ' ').trim()
+  if (!text) return false
+  return /^(?:\d{4}\.\d{2})(?:\s*[-–]\s*\d{4}\.\d{2})?$/u.test(text)
 }
 
 function buildLaneSummaries(nodes: TopicGraphNode[]): TopicGraphLane[] {
@@ -2030,7 +2599,7 @@ function buildLaneSummaries(nodes: TopicGraphNode[]): TopicGraphLane[] {
       const periodLabel =
         firstNode.timeLabel === latestNode.timeLabel
           ? latestNode.timeLabel
-          : `${firstNode.timeLabel}—${latestNode.timeLabel}`
+          : `${firstNode.timeLabel} - ${latestNode.timeLabel}`
 
       return {
         id: latestNode.layoutHint.isMainline
@@ -2164,7 +2733,9 @@ function buildGraphLayout(stages: TopicViewModel['stages']) {
         branchColor,
         branchPathId,
         parentNodeIds: [...new Set(parentNodeIds)],
-        timeLabel: formatMonthDayLabel(new Date(node.updatedAt)),
+        timeLabel: looksLikeTemporalWindowLabel(stage.title)
+          ? stage.title
+          : formatStageDateLabel(new Date(node.updatedAt)),
         layoutHint: {
           column: laneToColumn(laneIndex),
           span: 1,
@@ -2205,7 +2776,7 @@ function buildTopicSnapshot(topic: Awaited<ReturnType<typeof loadTopicForArtifac
     language: topic.language,
     status: topic.status,
     stageCount: stages.length,
-    nodeCount: topic.nodes.length,
+    nodeCount: topic.research_nodes.length,
     paperCount: displayPapers.length,
     stages: stages.map((stage) => ({
       stageIndex: stage.stageIndex,
@@ -2363,7 +2934,7 @@ async function generateTopicHero(
         summary: topic.summary ?? '',
         description: topic.description ?? '',
         paperCount,
-        nodeCount: topic.nodes.length,
+        nodeCount: topic.research_nodes.length,
       },
       stages: stages.map((stage) => ({
         stageIndex: stage.stageIndex,
@@ -2409,7 +2980,7 @@ async function generateTopicClosing(
       })),
       totals: {
         stageCount: stages.length,
-        nodeCount: topic.nodes.length,
+        nodeCount: topic.research_nodes.length,
         paperCount,
       },
     },
@@ -2499,23 +3070,31 @@ type TopicChatCatalogSourcePaper = {
   explanation: string | null
 }
 
-type TopicChatCatalogSourceNode = TopicDisplayNodeShape & {
+type TopicChatCatalogSourceNode = {
   id: string
-  stageIndex: number | null
+  stageIndex: number
   nodeLabel: string
   nodeSummary: string
   nodeExplanation: string | null
+  primaryPaperId: string | null
+  node_papers: Array<{ paperId: string }>
 }
 
 type TopicChatCatalogSource = {
   id: string
   nameZh: string
+  topic_stages: Array<{
+    order: number
+    name: string
+  }>
+  research_nodes: TopicChatCatalogSourceNode[]
+  papers: TopicChatCatalogSourcePaper[]
+  // Alias properties for backward compatibility
   stages: Array<{
     order: number
     name: string
   }>
   nodes: TopicChatCatalogSourceNode[]
-  papers: TopicChatCatalogSourcePaper[]
 }
 
 const ASCII_QUESTION_STOPWORDS = new Set([
@@ -2726,11 +3305,11 @@ function selectTopicChatChunks(question: string, corpus: TopicCorpusChunk[]) {
     .map((entry) => entry.chunk)
 }
 
-async function loadTopicForArtifact(topicId: string) {
-  const topic = await prisma.topic.findUnique({
+async function loadPersistedTopicForArtifact(topicId: string) {
+  return prisma.topics.findUnique({
     where: { id: topicId },
     include: {
-      stages: {
+      topic_stages: {
         orderBy: { order: 'asc' },
       },
       papers: {
@@ -2738,16 +3317,16 @@ async function loadTopicForArtifact(topicId: string) {
           figures: true,
           tables: true,
           formulas: true,
-          sections: {
+          paper_sections: {
             orderBy: { order: 'asc' },
           },
         },
         orderBy: { published: 'desc' },
       },
-      nodes: {
+      research_nodes: {
         include: {
-          primaryPaper: true,
-          papers: {
+          papers: true,
+          node_papers: {
             orderBy: { order: 'asc' },
           },
         },
@@ -2755,6 +3334,27 @@ async function loadTopicForArtifact(topicId: string) {
       },
     },
   })
+}
+
+async function loadTopicForArtifact(topicId: string) {
+  let topic = await loadPersistedTopicForArtifact(topicId)
+
+  const needsConfiguredMaterialization =
+    !topic || (topic.papers.length === 0 && topic.research_nodes.length === 0)
+
+  if (needsConfiguredMaterialization) {
+    const materialized = await ensureConfiguredTopicMaterialized(topicId).catch((error) => {
+      logger.warn('Configured topic materialization failed while loading topic artifact.', {
+        topicId,
+        error,
+      })
+      return false
+    })
+
+    if (materialized) {
+      topic = await loadPersistedTopicForArtifact(topicId)
+    }
+  }
 
   if (!topic) {
     throw new AppError(404, 'Topic not found.')
@@ -2765,6 +3365,7 @@ async function loadTopicForArtifact(topicId: string) {
 
 type ArtifactTopicRecord = Awaited<ReturnType<typeof loadTopicForArtifact>>
 type ArtifactTopicPaper = ArtifactTopicRecord['papers'][number]
+type ArtifactTopicNode = ArtifactTopicRecord['research_nodes'][number]
 
 const FALLBACK_NODE_TOPIC_KEYWORDS = new Set([
   'autonomous driving',
@@ -2988,8 +3589,44 @@ function stripFallbackPaperPrefix(title: string) {
 }
 
 function buildFallbackPaperLeadTitle(paper: ArtifactTopicPaper) {
-  const title = paper.titleZh || paper.titleEn || paper.title
+  const title = pickMeaningfulDisplayText(
+    paper.titleZh,
+    paper.titleEn,
+    paper.title,
+  )
   return clipText(stripFallbackPaperPrefix(title), 54)
+}
+
+function normalizeTopicPaperDisplayFields<T extends {
+  title?: string | null
+  titleZh?: string | null
+  titleEn?: string | null
+}>(paper: T | null | undefined) {
+  const title = pickMeaningfulDisplayText(
+    paper?.titleZh,
+    paper?.titleEn,
+    paper?.title,
+    'Untitled paper',
+  )
+  const titleEn = pickMeaningfulDisplayText(
+    paper?.titleEn,
+    paper?.title,
+    paper?.titleZh,
+    title,
+  )
+  const titleZh = pickMeaningfulDisplayText(
+    paper?.titleZh,
+    paper?.titleEn,
+    paper?.title,
+    title,
+  )
+
+  return {
+    ...paper,
+    title,
+    titleEn,
+    titleZh,
+  }
 }
 
 function joinFallbackPaperTitles(papers: ArtifactTopicPaper[], limit = 2) {
@@ -3069,6 +3706,7 @@ function buildFallbackNodeSubtitle(papers: ArtifactTopicPaper[]) {
   return clipText(subtitle.join(' / '), 72)
 }
 
+/*
 function buildFallbackNodeSummary(args: {
   label: string
   papers: ArtifactTopicPaper[]
@@ -3127,6 +3765,51 @@ function buildFallbackNodeExplanation(args: {
 
   return clipText(
     `当前先用「${firstPaperTitle}」做入口，再把同月问题相近的论文并入这个节点，帮助读者在不跳出阶段边界的前提下，看清「${args.label}」怎样从 ${theme.subtitle.replace(/。$/u, '')}，以及还有哪些证据没有闭合。`,
+    220,
+  )
+}
+*/
+
+function buildFallbackNodeSummary(args: {
+  label: string
+  papers: ArtifactTopicPaper[]
+}) {
+  const primaryPaper = chooseFallbackPrimaryPaper(args.papers)
+  const theme = detectFallbackNodeTheme(args.papers)
+  const label = stripTopicTrailingPunctuation(args.label) || stripTopicTrailingPunctuation(theme.label) || '当前节点'
+
+  if (args.papers.length <= 1) {
+    return clipText(
+      `${theme.summaryLead}。当前先以《${buildFallbackPaperLeadTitle(primaryPaper)}》为入口，说明「${label}」的问题设定与证据边界。`,
+      200,
+    )
+  }
+
+  return clipText(
+    `这一节点把同阶段的 ${args.papers.length} 篇论文收拢到「${label}」之下，先用 ${joinFallbackPaperTitles(args.papers)} 建立主线，再比较它们在方法、对象与证据上的关键分岔。`,
+    200,
+  )
+}
+
+function buildFallbackNodeExplanation(args: {
+  label: string
+  papers: ArtifactTopicPaper[]
+}) {
+  const primaryPaper = chooseFallbackPrimaryPaper(args.papers)
+  const theme = detectFallbackNodeTheme(args.papers)
+  const label = stripTopicTrailingPunctuation(args.label) || stripTopicTrailingPunctuation(theme.label) || '当前节点'
+  const firstPaperTitle = primaryPaper.titleZh || primaryPaper.title
+
+  if (args.papers.length <= 1) {
+    return clipText(
+      primaryPaper.explanation ||
+        `先从《${firstPaperTitle}》读起，用它建立「${label}」的起点判断，再沿着论文里的方法设计、实验对象和失败边界去核对这条主线是否站得住。`,
+      220,
+    )
+  }
+
+  return clipText(
+    `当前先用《${firstPaperTitle}》做入口，再把同阶段问题相近的论文并入这个节点，帮助读者在不跳出阶段边界的前提下，看清「${label}」怎样从${theme.subtitle.replace(/。?/u, '')}，以及还有哪些证据没有闭合。`,
     220,
   )
 }
@@ -3220,24 +3903,31 @@ function shouldResynthesizeFallbackNodes(
   stageWindowMonths: number,
 ) {
   if (topic.papers.length === 0) return false
-  if (topic.nodes.length === 0) return true
+  if (topic.research_nodes.length === 0) return true
 
-  const allFallbackNodes = topic.nodes.every((node) => node.status === 'fallback')
+  const allFallbackNodes = topic.research_nodes.every((node) => node.status === 'fallback')
   if (allFallbackNodes) {
     const temporalBuckets = deriveTemporalStageBuckets({
-      papers: topic.papers.map((paper) => ({
-        id: paper.id,
-        published: paper.published,
-      })),
-      windowMonths: stageWindowMonths,
+papers: topic.papers.map((paper) => ({
+      id: paper.id,
+      published: paper.published,
+    })),
+    nodes: topic.research_nodes.map((node) => ({
+      id: node.id,
+      primaryPaperId: node.primaryPaperId,
+      papers: node.node_papers.map((item) => ({ paperId: item.paperId })),
+      updatedAt: node.updatedAt,
+      createdAt: node.createdAt,
+    })),
+    windowMonths: stageWindowMonths,
       fallbackDate: topic.createdAt,
     })
     const assignedStageIndexes = new Set(
       Array.from(temporalBuckets.paperAssignments.values()).map((assignment) => assignment.stageIndex),
     )
-    const nodeStageIndexes = new Set(topic.nodes.map((node) => node.stageIndex))
+    const nodeStageIndexes = new Set(topic.research_nodes.map((node) => node.stageIndex))
     const coveredPaperIds = new Set(
-      topic.nodes.flatMap((node) => node.papers.map((paper) => paper.paperId)),
+      topic.research_nodes.flatMap((node) => node.node_papers.map((np) => np.paperId)),
     )
 
     if (topic.papers.some((paper) => !coveredPaperIds.has(paper.id))) {
@@ -3249,14 +3939,14 @@ function shouldResynthesizeFallbackNodes(
     }
   }
 
-  const legacyNodeCount = topic.nodes.filter((node) => isLegacyFallbackNodeLabel(node.nodeLabel)).length
-  if (legacyNodeCount === topic.nodes.length) {
+  const legacyNodeCount = topic.research_nodes.filter((node) => isLegacyFallbackNodeLabel(node.nodeLabel)).length
+  if (legacyNodeCount === topic.research_nodes.length) {
     return true
   }
 
   return (
-    legacyNodeCount >= Math.max(3, Math.ceil(topic.nodes.length * 0.8)) &&
-    topic.nodes.every((node) => node.status === 'active')
+    legacyNodeCount >= Math.max(3, Math.ceil(topic.research_nodes.length * 0.8)) &&
+    topic.research_nodes.every((node) => node.status === 'active')
   )
 }
 
@@ -3267,10 +3957,10 @@ async function syncTopicTemporalStructure(topicId: string, stageWindowMonths: nu
       id: paper.id,
       published: paper.published,
     })),
-    nodes: topic.nodes.map((node) => ({
+    nodes: topic.research_nodes.map((node) => ({
       id: node.id,
       primaryPaperId: node.primaryPaperId,
-      papers: node.papers.map((item) => ({ paperId: item.paperId })),
+      papers: node.node_papers.map((item) => ({ paperId: item.paperId })),
       updatedAt: node.updatedAt,
       createdAt: node.createdAt,
     })),
@@ -3279,11 +3969,12 @@ async function syncTopicTemporalStructure(topicId: string, stageWindowMonths: nu
   })
 
   await prisma.$transaction(async (tx) => {
-    await tx.topicStage.deleteMany({ where: { topicId } })
+    await tx.topic_stages.deleteMany({ where: { topicId } })
 
     if (temporalBuckets.buckets.length > 0) {
-      await tx.topicStage.createMany({
+      await tx.topic_stages.createMany({
         data: temporalBuckets.buckets.map((bucket) => ({
+          id: crypto.randomUUID(),
           topicId,
           order: bucket.stageIndex,
           name: bucket.label,
@@ -3294,14 +3985,14 @@ async function syncTopicTemporalStructure(topicId: string, stageWindowMonths: nu
       })
     }
 
-    for (const node of topic.nodes) {
+    for (const node of topic.research_nodes) {
       const nextStageIndex =
         temporalBuckets.nodeAssignments.get(node.id)?.stageIndex ??
         temporalBuckets.fallbackAssignment?.stageIndex ??
         node.stageIndex
 
       if (nextStageIndex !== node.stageIndex) {
-        await tx.researchNode.update({
+        await tx.research_nodes.update({
           where: { id: node.id },
           data: { stageIndex: nextStageIndex },
         })
@@ -3337,8 +4028,8 @@ async function ensureFallbackResearchNodesFromPapers(topicId: string, stageWindo
   }
 
   await prisma.$transaction(async (tx) => {
-    if (topic.nodes.length > 0) {
-      await tx.researchNode.deleteMany({ where: { topicId } })
+    if (topic.research_nodes.length > 0) {
+      await tx.research_nodes.deleteMany({ where: { topicId } })
     }
 
     for (const [stageIndex, stagePapers] of papersByStage.entries()) {
@@ -3349,8 +4040,10 @@ async function ensureFallbackResearchNodesFromPapers(topicId: string, stageWindo
         const subtitle = buildFallbackNodeSubtitle(cluster)
         const summary = buildFallbackNodeSummary({ label, papers: cluster })
         const explanation = buildFallbackNodeExplanation({ label, papers: cluster })
-        const node = await tx.researchNode.create({
+        const node = await tx.research_nodes.create({
           data: {
+            id: crypto.randomUUID(),
+            updatedAt: new Date(),
             topicId,
             stageIndex,
             nodeLabel: label,
@@ -3365,11 +4058,12 @@ async function ensureFallbackResearchNodesFromPapers(topicId: string, stageWindo
           },
         })
 
-        await tx.nodePaper.createMany({
-          data: cluster.map((paper, order) => ({
+        await tx.node_papers.createMany({
+          data: cluster.map((paper, index) => ({
+            id: crypto.randomUUID(),
             nodeId: node.id,
             paperId: paper.id,
-            order,
+            order: index,
           })),
         })
       }
@@ -3381,19 +4075,19 @@ async function ensureFallbackResearchNodesFromPapers(topicId: string, stageWindo
     stageWindowMonths,
     paperCount: topic.papers.length,
     stageCount: papersByStage.size,
-    regeneratedExistingNodes: topic.nodes.length > 0,
+    regeneratedExistingNodes: topic.research_nodes.length > 0,
   })
 
   return true
 }
 
 async function loadTopicChatCatalogSource(topicId: string): Promise<TopicChatCatalogSource> {
-  const topic = await prisma.topic.findUnique({
+  const topic = await prisma.topics.findUnique({
     where: { id: topicId },
     select: {
       id: true,
       nameZh: true,
-      stages: {
+      topic_stages: {
         select: {
           order: true,
           name: true,
@@ -3411,7 +4105,7 @@ async function loadTopicChatCatalogSource(topicId: string): Promise<TopicChatCat
         },
         orderBy: { published: 'desc' },
       },
-      nodes: {
+      research_nodes: {
         select: {
           id: true,
           stageIndex: true,
@@ -3419,7 +4113,7 @@ async function loadTopicChatCatalogSource(topicId: string): Promise<TopicChatCat
           nodeSummary: true,
           nodeExplanation: true,
           primaryPaperId: true,
-          papers: {
+          node_papers: {
             select: {
               paperId: true,
             },
@@ -3435,7 +4129,34 @@ async function loadTopicChatCatalogSource(topicId: string): Promise<TopicChatCat
     throw new AppError(404, 'Topic not found.')
   }
 
-  return topic
+  // Add alias properties for backward compatibility
+  const result: TopicChatCatalogSource = {
+    id: topic.id,
+    nameZh: topic.nameZh,
+    topic_stages: topic.topic_stages,
+    research_nodes: topic.research_nodes.map(node => ({
+      id: node.id,
+      stageIndex: node.stageIndex,
+      nodeLabel: node.nodeLabel,
+      nodeSummary: node.nodeSummary,
+      nodeExplanation: node.nodeExplanation,
+      primaryPaperId: node.primaryPaperId,
+      node_papers: node.node_papers,
+    })),
+    papers: topic.papers,
+    stages: topic.topic_stages,
+    nodes: topic.research_nodes.map(node => ({
+      id: node.id,
+      stageIndex: node.stageIndex,
+      nodeLabel: node.nodeLabel,
+      nodeSummary: node.nodeSummary,
+      nodeExplanation: node.nodeExplanation,
+      primaryPaperId: node.primaryPaperId,
+      node_papers: node.node_papers,
+      papers: node.node_papers,
+    })),
+  }
+  return result
 }
 
 async function buildTopicArtifactFingerprint(
@@ -3472,7 +4193,7 @@ async function buildTopicArtifactFingerprint(
       description: topic.description,
       language: topic.language,
       status: topic.status,
-      stages: topic.stages.map((stage) => ({
+      stages: topic.topic_stages.map((stage) => ({
         id: stage.id,
         order: stage.order,
         name: stage.name,
@@ -3480,7 +4201,7 @@ async function buildTopicArtifactFingerprint(
         description: stage.description,
         descriptionEn: stage.descriptionEn,
       })),
-      nodes: topic.nodes.map((node) => ({
+      nodes: topic.research_nodes.map((node) => ({
         id: node.id,
         stageIndex: node.stageIndex,
         updatedAt: node.updatedAt.toISOString(),
@@ -3493,15 +4214,15 @@ async function buildTopicArtifactFingerprint(
         isMergeNode: node.isMergeNode,
         provisional: node.provisional,
         primaryPaperId: node.primaryPaperId,
-        primaryPaper: {
-          id: node.primaryPaper.id,
-          title: node.primaryPaper.title,
-          titleZh: node.primaryPaper.titleZh,
-          titleEn: node.primaryPaper.titleEn,
-          coverPath: node.primaryPaper.coverPath,
-          published: node.primaryPaper.published.toISOString(),
-        },
-        paperIds: node.papers.map((item) => item.paperId),
+        primaryPaper: node.papers ? {
+          id: node.papers.id,
+          title: node.papers.title,
+          titleZh: node.papers.titleZh,
+          titleEn: node.papers.titleEn,
+          coverPath: node.papers.coverPath,
+          published: node.papers.published.toISOString(),
+        } : null,
+        paperIds: node.node_papers.map((item) => item.paperId),
       })),
       papers: topic.papers.map((paper) => ({
         id: paper.id,
@@ -3518,7 +4239,7 @@ async function buildTopicArtifactFingerprint(
         figureCount: paper.figures.length,
         tableCount: paper.tables.length,
         formulaCount: paper.formulas.length,
-        sectionCount: paper.sections.length,
+        sectionCount: paper.paper_sections.length,
       })),
     },
     localization,
@@ -3536,445 +4257,21 @@ export async function buildTopicViewModel(
   options?: TopicViewModelBuildOptions,
 ): Promise<TopicViewModel> {
   const resolvedStageWindowMonths = resolveStageWindowMonths(options?.stageWindowMonths)
-  await syncTopicTemporalStructure(topicId, resolvedStageWindowMonths)
-  await ensureFallbackResearchNodesFromPapers(topicId, resolvedStageWindowMonths)
-  await syncTopicTemporalStructure(topicId, resolvedStageWindowMonths)
-  return buildTopicViewModelResearchAware(topicId, {
+  if (options?.quick === true) {
+    const topic = await loadTopicForArtifact(topicId)
+    if (shouldResynthesizeFallbackNodes(topic, resolvedStageWindowMonths)) {
+      await ensureFallbackResearchNodesFromPapers(topicId, resolvedStageWindowMonths)
+    }
+  } else {
+    await syncTopicTemporalStructure(topicId, resolvedStageWindowMonths)
+    await ensureFallbackResearchNodesFromPapers(topicId, resolvedStageWindowMonths)
+    await syncTopicTemporalStructure(topicId, resolvedStageWindowMonths)
+  }
+
+return buildTopicViewModelResearchAware(topicId, {
     ...options,
     stageWindowMonths: resolvedStageWindowMonths,
   })
-
-  const quick = options?.quick === true
-  const stageWindowMonths = resolveStageWindowMonths(options?.stageWindowMonths)
-  const [topic, localization] = await Promise.all([
-    loadTopicForArtifact(topicId),
-    getTopicLocalization(topicId),
-  ])
-  const temporalBuckets = deriveTemporalStageBuckets({
-    papers: topic.papers.map((paper) => ({
-      id: paper.id,
-      published: paper.published,
-    })),
-    nodes: topic.nodes.map((node) => ({
-      id: node.id,
-      primaryPaperId: node.primaryPaperId,
-      papers: node.papers.map((item) => ({ paperId: item.paperId })),
-      updatedAt: node.updatedAt,
-      createdAt: node.createdAt,
-    })),
-    windowMonths: stageWindowMonths,
-    fallbackDate: topic.createdAt,
-  })
-  const stageBucketByIndex = new Map(
-    temporalBuckets.buckets.map((bucket) => [bucket.stageIndex, bucket] as const),
-  )
-  const stageMap = new Map(
-    temporalBuckets.buckets.map((bucket) => [
-      bucket.stageIndex,
-      {
-        name: bucket.label,
-        nameEn: bucket.labelEn,
-        description: bucket.description,
-      },
-    ] as const),
-  )
-  const nodesByStage = new Map<number, typeof topic.nodes>()
-
-  for (const node of topic.nodes) {
-    const current = nodesByStage.get(node.stageIndex) ?? []
-    current.push(node)
-    nodesByStage.set(node.stageIndex, current)
-  }
-
-  const stageKeys = [...new Set([...nodesByStage.keys(), ...topic.stages.map((stage) => stage.order)])].sort((left, right) => left - right)
-
-  const baseStages: TopicViewModel['stages'] = stageKeys.map((stageIndex, stageListIndex) => {
-      const stage = stageMap.get(stageIndex)
-    const stageLocalization = null as { locales: StageLocaleMap } | null
-      const stageNodes = nodesByStage.get(stageIndex) ?? []
-      const branchColor = pickBranchColor(stageListIndex)
-      const stageTitle =
-        stageLocalization?.locales.zh.name ?? stage?.name ?? `闃舵 ${stageIndex}`
-      const stageTitleEn =
-        stageLocalization?.locales.en.name ?? stage?.nameEn ?? `Stage ${stageIndex}`
-      const stageDescription =
-        stageLocalization?.locales.zh.description ??
-        stage?.description ??
-        `${topic.nameZh} 在这一阶段开始形成更明确的研究分支与代表节点。`
-
-      return {
-        stageIndex,
-        title: stage?.name ?? `阶段 ${stageIndex}`,
-        titleEn: stage?.nameEn ?? `Stage ${stageIndex}`,
-        description:
-          stage?.description ?? `${topic.nameZh} 在这一阶段开始形成更明确的研究分支与代表节点。`,
-        branchLabel: stage?.name ?? `阶段 ${stageIndex}`,
-        branchColor,
-        locales: stageLocalization?.locales,
-        editorial: {
-          kicker: `Stage ${stageIndex}`,
-          summary: clipText(stage?.description ?? `${topic.nameZh} 在这一阶段围绕同一问题线继续分化与汇流。`, 120),
-          transition: clipText(`这一阶段真正重要的是：研究主线开始围绕“${stage?.name ?? `阶段 ${stageIndex}`}”形成更明确的节点分工。`, 120),
-        },
-        nodes: stageNodes.map((node) => {
-          const fullContent = parseJsonValue<Record<string, unknown>>(node.fullContent)
-          const summarySection = fullContent?.summary as Record<string, unknown> | undefined
-          const summaryOverride =
-            typeof summarySection?.oneLine === 'string' ? summarySection.oneLine : undefined
-          const compactTitle = compactTopicMapNodeTitle({
-            nodeTitle: node.nodeLabel,
-            nodeSubtitle: node.nodeSubtitle,
-            primaryPaperTitle: node.primaryPaper.titleZh || node.primaryPaper.title,
-          })
-          const titleEn =
-            typeof fullContent?.titleEn === 'string'
-              ? String(fullContent.titleEn)
-              : compactTitle === node.nodeLabel
-                ? node.nodeSubtitle || node.primaryPaper.titleEn || node.primaryPaper.title
-                : compactTitle
-          const digest = summaryOverride ?? node.nodeSummary
-          const explanation = node.nodeExplanation ?? node.nodeSummary
-
-          return {
-            nodeId: node.id,
-            anchorId: `node:${node.id}`,
-            route: nodeRoute(node.id),
-            title: compactTitle,
-            titleEn,
-            subtitle: node.nodeSubtitle ?? '',
-            summary: digest,
-            explanation,
-            paperCount: node.papers.length,
-            paperIds: node.papers.map((item) => item.paperId),
-            primaryPaperTitle: node.primaryPaper.titleZh || node.primaryPaper.title,
-            primaryPaperId: node.primaryPaper.id,
-            coverImage: node.nodeCoverImage ?? node.primaryPaper.coverPath,
-            isMergeNode: node.isMergeNode,
-            provisional: node.provisional,
-            updatedAt: node.updatedAt.toISOString(),
-            branchLabel: stage?.name ?? `阶段 ${stageIndex}`,
-            branchColor,
-            editorial: {
-              eyebrow: node.isMergeNode ? '汇流研究节点' : '研究节点',
-              digest: clipText(digest, 120),
-              whyNow: clipText(explanation, 110),
-              nextQuestion: clipText(`下一步需要继续追问：${node.primaryPaper.titleZh || node.primaryPaper.title} 之后还有哪些证据能真正把这个节点坐实？`, 110),
-            },
-          }
-        }),
-      }
-    })
-
-  await updateTopicSnapshot(topic.id, buildTopicSnapshot(topic, baseStages))
-
-  const stageThesisByIndex = new Map<number, string>()
-  const stageGenerationResults = quick
-    ? []
-    : await mapWithConcurrency(baseStages, 3, (stage, index) =>
-        generateStageEditorial(
-          topic.id,
-          topic,
-          stage,
-          index > 0 ? baseStages[index - 1] : null,
-        ),
-      )
-
-  const stagedShells: TopicViewModel['stages'] = baseStages.map((stage, index) => {
-    const generated = stageGenerationResults[index]?.output
-    const merged = {
-      ...stage,
-      title: sanitizeString(generated?.title, stage.title),
-      titleEn: sanitizeString(generated?.titleEn, stage.titleEn),
-      branchLabel: sanitizeString(generated?.title, stage.branchLabel),
-      editorial: {
-        kicker: sanitizeString(generated?.kicker, stage.editorial.kicker),
-        summary: sanitizeString(generated?.summary, stage.editorial.summary),
-        transition: sanitizeString(generated?.transition, stage.editorial.transition),
-      },
-      nodes: stage.nodes.map((node) => ({
-        ...node,
-        branchLabel: sanitizeString(generated?.title, node.branchLabel),
-      })),
-    }
-
-    stageThesisByIndex.set(
-      stage.stageIndex,
-      sanitizeString(generated?.stageThesis, clipText(merged.editorial.summary, 110)),
-    )
-
-    return merged
-  })
-
-  const nodeGenerationResults: Array<{ stageIndex: number; nodeId: string; usedFallback: boolean }> = []
-  const stages: TopicViewModel['stages'] = quick
-    ? stagedShells
-    : await mapWithConcurrency(stagedShells, 3, async (stage) => {
-        const generatedNodes = await mapWithConcurrency(stage.nodes, 3, async (node) => {
-          const result = await generateNodeCardEditorial(topic.id, topic, stage, node)
-          nodeGenerationResults.push({
-            stageIndex: stage.stageIndex,
-            nodeId: node.nodeId,
-            usedFallback: result.usedFallback,
-          })
-
-          return {
-            ...node,
-            editorial: {
-              eyebrow: sanitizeString(result.output.eyebrow, node.editorial.eyebrow),
-              digest: sanitizeString(result.output.digest, node.editorial.digest),
-              whyNow: sanitizeString(result.output.whyNow, node.editorial.whyNow),
-              nextQuestion: sanitizeString(result.output.nextQuestion, node.editorial.nextQuestion),
-            },
-          } satisfies TopicNodeCard
-        })
-
-        return {
-          ...stage,
-          nodes: generatedNodes,
-        }
-      })
-
-  if (!quick) {
-    await updateTopicSnapshot(topic.id, buildTopicSnapshot(topic, stages))
-  }
-
-  const displayPapers = selectTopicDisplayPapers(topic)
-  const papers = displayPapers.map((paper) => ({
-    paperId: paper.id,
-    anchorId: `paper:${paper.id}`,
-    route: paperRoute(paper.id),
-    title: paper.titleZh || paper.title,
-    titleEn: paper.titleEn ?? paper.title,
-    summary: paper.summary,
-    explanation: paper.explanation ?? paper.summary,
-    publishedAt: paper.published.toISOString(),
-    authors: parseJsonArray(paper.authors),
-    citationCount: paper.citationCount ?? null,
-    coverImage: paper.coverPath,
-    figuresCount: paper.figures.length,
-    tablesCount: paper.tables.length,
-    formulasCount: paper.formulas.length,
-    sectionsCount: paper.sections.length,
-  }))
-
-  const evidenceCount = countPaperEvidence(displayPapers)
-
-  const timelineStages = stages.map((stage) => {
-    const stageBucket = stageBucketByIndex.get(stage.stageIndex)
-
-    return {
-      ...stage,
-      yearLabel: stageBucket?.yearLabel ?? '',
-      dateLabel: stageBucket?.dateLabel ?? stage.title,
-      timeLabel: stageBucket?.timeLabel ?? stage.title,
-      stageThesis: stageThesisByIndex.get(stage.stageIndex) ?? clipText(stage.editorial.summary, 110),
-    }
-  })
-
-  const graph = buildGraphLayout(stages)
-  const heroFallback: GeneratedTopicHero = {
-    kicker: '主题编年',
-    title: `从问题源头到当前分支：${topic.nameZh}`,
-    standfirst: clipText(topic.summary ?? topic.description ?? `${topic.nameZh} 的研究脉络正在持续展开。`, 220),
-    strapline: topic.focusLabel ?? topic.nameEn ?? '研究焦点',
-    thesis: clipText(topic.summary ?? topic.description ?? `${topic.nameZh} 的核心判断仍在形成。`, 160),
-  }
-
-  const summaryPanel: TopicSummaryPanel = {
-    thesis: clipText(topic.summary ?? topic.description ?? `${topic.nameZh} 的主线仍在持续推进。`, 180),
-    metaRows: [
-      { label: 'language', value: topic.language },
-      { label: 'status', value: topic.status },
-      { label: 'createdAt', value: topic.createdAt.toISOString() },
-      { label: 'updatedAt', value: topic.updatedAt.toISOString() },
-    ],
-    stats: [
-      { label: 'stages', value: stages.length },
-      { label: 'nodes', value: topic.nodes.length },
-      { label: 'papers', value: displayPapers.length },
-      { label: 'evidence', value: evidenceCount },
-    ],
-    actions: [
-      { id: 'start', label: 'Start' },
-      { id: 'edit', label: 'Edit' },
-      { id: 'export', label: 'Export' },
-      { id: 'delete', label: 'Delete' },
-      { id: 'rebuild', label: 'Refresh' },
-    ],
-  }
-
-  const narrativeSegments = [
-    topic.summary,
-    topic.description,
-    ...stages.map((stage) => `${stage.title}：${stage.editorial.summary}`),
-  ].filter(Boolean)
-
-  const closingParagraphs = [
-    clipText(topic.description ?? topic.summary ?? `${topic.nameZh} 仍在继续展开。`, 220),
-    clipText(
-      `从阶段组织来看，这个主题已经形成 ${stages.length} 个阶段、${topic.nodes.length} 个节点和 ${displayPapers.length} 篇论文组成的主链路，但真正稳固的结论仍然要回到节点内部的证据与跨论文比较。`,
-      220,
-    ),
-  ].filter(Boolean)
-
-  const closingFallback: TopicClosingEditorial = {
-    title: '这一主题现在走到哪里？',
-    paragraphs: closingParagraphs,
-    reviewerNote: clipText(
-      '如果只看主题级时间线而不进入节点文章，读者仍可能高估主线清晰度。真正的难点仍在于多篇论文之间的分工、证据强弱和未解决问题。',
-      180,
-    ),
-  }
-  const [heroResult, closingResult] = quick
-    ? [
-        { output: heroFallback, usedFallback: true },
-        { output: closingFallback, usedFallback: true },
-      ]
-    : await Promise.all([
-        generateTopicHero(topic.id, topic, stages, displayPapers.length),
-        generateTopicClosing(topic.id, topic, stages, closingFallback, displayPapers.length),
-      ])
-
-  summaryPanel.thesis = sanitizeString(
-    heroResult.output.thesis,
-    clipText(topic.summary ?? topic.description ?? `${topic.nameZh} 的主线仍在继续推进。`, 180),
-  )
-
-  const resources = [
-    ...stages.slice(0, 2).map((stage) => ({
-      id: `stage:${stage.stageIndex}`,
-      kind: 'stage' as const,
-      title: stage.title,
-      subtitle: stage.titleEn,
-      description: stage.editorial.summary,
-      route: `/topic/${topic.id}?anchor=stage:${stage.stageIndex}`,
-      anchorId: `stage:${stage.stageIndex}`,
-    })),
-    ...stages.flatMap((stage) => stage.nodes.slice(0, 1)).slice(0, 2).map((node) => ({
-      id: `node:${node.nodeId}`,
-      kind: 'node' as const,
-      title: node.title,
-      subtitle: node.titleEn,
-      description: node.editorial.digest,
-      route: node.route,
-      anchorId: node.anchorId,
-    })),
-    ...papers.slice(0, 2).map((paper) => ({
-      id: `paper:${paper.paperId}`,
-      kind: 'paper' as const,
-      title: paper.title,
-      subtitle: paper.titleEn,
-      description: paper.explanation,
-      route: paper.route,
-      anchorId: paper.anchorId,
-    })),
-  ]
-
-  const resolvedHero = {
-    kicker: sanitizeString(heroResult.output.kicker, '主题编年'),
-    title: sanitizeString(heroResult.output.title, `从问题源头到当前分支：${topic.nameZh}`),
-    standfirst: sanitizeString(
-      heroResult.output.standfirst,
-      clipText(topic.summary ?? topic.description ?? `${topic.nameZh} 的研究脉络正在持续展开。`, 220),
-    ),
-    strapline: sanitizeString(heroResult.output.strapline, topic.focusLabel ?? topic.nameEn ?? '研究焦点'),
-  }
-
-  const generationState: TopicViewModel['generationState'] = {
-    hero: quick || heroResult.usedFallback ? 'pending' : 'ready',
-    stageTimeline: quick || stageGenerationResults.some((result) => result.usedFallback) ? 'pending' : 'ready',
-    nodeCards: quick || nodeGenerationResults.some((result) => result.usedFallback) ? 'pending' : 'ready',
-    closing: quick || closingResult.usedFallback ? 'pending' : 'ready',
-  }
-
-  const resolvedClosingEditorial: TopicClosingEditorial = {
-    title: sanitizeString(closingResult.output.title, closingFallback.title),
-    paragraphs: sanitizeParagraphs(closingResult.output.paragraphs, closingFallback.paragraphs),
-    reviewerNote: sanitizeString(closingResult.output.reviewerNote, closingFallback.reviewerNote),
-  }
-
-  const localizedTopicTitle =
-    localization?.topic.locales.zh.name ?? topic.nameZh
-  const localizedTopicTitleEn =
-    localization?.topic.locales.en.name ?? topic.nameEn ?? topic.nameZh
-  const localizedFocusLabel =
-    localization?.topic.locales.zh.focusLabel ?? topic.focusLabel ?? topic.nameEn ?? '研究焦点'
-  const localizedSummary =
-    localization?.topic.locales.zh.summary ??
-    topic.summary ??
-    topic.description ??
-    '该主题正在等待生成摘要。'
-  const localizedDescription =
-    localization?.topic.locales.zh.description ?? topic.description ?? topic.summary ?? ''
-
-  const viewModel: TopicViewModel = {
-    schemaVersion: TOPIC_VIEW_MODEL_SCHEMA,
-    topicId: topic.id,
-    title: topic.nameZh,
-    titleEn: topic.nameEn ?? topic.nameZh,
-    subtitle: topic.focusLabel ?? topic.nameEn ?? '主题研究编年',
-    focusLabel: topic.focusLabel ?? topic.nameEn ?? '研究焦点',
-    summary: topic.summary ?? topic.description ?? '该主题正在等待生成摘要。',
-    description: topic.description ?? topic.summary ?? '',
-    language: topic.language,
-    status: topic.status,
-    createdAt: topic.createdAt.toISOString(),
-    updatedAt: topic.updatedAt.toISOString(),
-    generatedAt: new Date().toISOString(),
-    localization,
-    hero: {
-      kicker: '主题编年',
-      title: `从问题源头到当前分支：${topic.nameZh}`,
-      standfirst: clipText(topic.summary ?? topic.description ?? `${topic.nameZh} 的研究脉络正在持续展开。`, 220),
-      strapline: topic.focusLabel ?? topic.nameEn ?? '研究焦点',
-    },
-    stageConfig: {
-      windowMonths: stageWindowMonths,
-      defaultWindowMonths: DEFAULT_STAGE_WINDOW_MONTHS,
-      minWindowMonths: MIN_STAGE_WINDOW_MONTHS,
-      maxWindowMonths: MAX_STAGE_WINDOW_MONTHS,
-      adjustable: true,
-    },
-    summaryPanel,
-    stats: {
-      stageCount: stages.length,
-      nodeCount: topic.nodes.length,
-      paperCount: displayPapers.length,
-      evidenceCount,
-    },
-    timeline: {
-      stages: timelineStages,
-    },
-    graph,
-    generationState: {
-      hero: 'ready',
-      stageTimeline: 'ready',
-      nodeCards: 'ready',
-      closing: 'ready',
-    },
-    stages,
-    papers,
-    narrativeArticle: narrativeSegments.join('\n\n'),
-    closingEditorial: {
-      title: '这一主题现在走到了哪里',
-      paragraphs: closingParagraphs,
-      reviewerNote: clipText('如果只看主题级时间线而不进入节点文章，读者仍然可能高估主线清晰度。真正的难点仍在于多篇论文之间的分工、证据强弱和未解决问题。', 180),
-    },
-    resources,
-    chatContext: {
-      suggestedQuestions: [
-        '这个主题目前最关键的研究转折是什么？',
-        `请按阶段解释 ${topic.nameZh} 的演进路线。`,
-        '如果我现在开始读这个主题，应该先看哪个节点？为什么？',
-      ],
-    },
-  }
-
-  viewModel.hero = resolvedHero
-  viewModel.generationState = generationState
-  viewModel.closingEditorial = resolvedClosingEditorial
-
-  return viewModel
 }
 
 function buildTopicHeroFallbackV2(args: {
@@ -4129,7 +4426,7 @@ function buildTopicNarrativeSegmentsV2(args: {
       ),
       ensureTopicSentence(
         firstStage || lastStage
-          ? `从结构上看，目前这条主线已经展开为${stages.length}个阶段、${topic.nodes.length}个节点，关键转折主要落在${stageSpine || quoteTopicLabel(firstStage?.title) || '各个阶段'}，如今的判断重心落在${currentAnchor}`
+          ? `从结构上看，目前这条主线已经展开为${stages.length}个阶段、${topic.research_nodes.length}个节点，关键转折主要落在${stageSpine || quoteTopicLabel(firstStage?.title) || '各个阶段'}，如今的判断重心落在${currentAnchor}`
           : '当前主题已经开始从若干零散论文，收束成一条可以按阶段阅读的研究链条',
       ),
       ensureTopicSentence(
@@ -4204,7 +4501,7 @@ function buildTopicClosingFallbackV2(args: {
             : '读到这里，这个主题已经不再只是若干相关论文的并列，而是开始收束成一条可以按阶段重读的研究主线',
         ),
         ensureTopicSentence(
-          `从结构上看，它目前被整理成${stages.length}个阶段、${topic.nodes.length}个节点与${displayPaperCount}篇论文，当前最需要回看的位置，是${currentAnchor}`,
+          `从结构上看，它目前被整理成${stages.length}个阶段、${topic.research_nodes.length}个节点与${displayPaperCount}篇论文，当前最需要回看的位置，是${currentAnchor}`,
         ),
         ensureTopicSentence(
           openQuestion
@@ -4291,17 +4588,17 @@ async function buildTopicArtifactFingerprintV2(
       id: paper.id,
       published: paper.published,
     })),
-    nodes: topic.nodes.map((node) => ({
+    nodes: topic.research_nodes.map((node) => ({
       id: node.id,
       primaryPaperId: node.primaryPaperId,
-      papers: node.papers.map((item) => ({ paperId: item.paperId })),
+      papers: node.node_papers.map((item) => ({ paperId: item.paperId })),
       updatedAt: node.updatedAt,
       createdAt: node.createdAt,
     })),
     windowMonths: stageWindowMonths,
     fallbackDate: topic.createdAt,
   })
-  const nodeArtifactFingerprints = await mapWithConcurrency(topic.nodes, 3, async (node) => {
+  const nodeArtifactFingerprints = await mapWithConcurrency(topic.research_nodes, 3, async (node) => {
     try {
       return {
         nodeId: node.id,
@@ -4339,7 +4636,7 @@ async function buildTopicArtifactFingerprintV2(
       description: topic.description,
       language: topic.language,
       status: topic.status,
-      stages: topic.stages.map((stage) => ({
+      stages: topic.topic_stages.map((stage) => ({
         id: stage.id,
         order: stage.order,
         name: stage.name,
@@ -4347,7 +4644,7 @@ async function buildTopicArtifactFingerprintV2(
         description: stage.description,
         descriptionEn: stage.descriptionEn,
       })),
-      nodes: topic.nodes.map((node) => ({
+      nodes: topic.research_nodes.map((node) => ({
         id: node.id,
         stageIndex: node.stageIndex,
         updatedAt: node.updatedAt.toISOString(),
@@ -4360,15 +4657,15 @@ async function buildTopicArtifactFingerprintV2(
         isMergeNode: node.isMergeNode,
         provisional: node.provisional,
         primaryPaperId: node.primaryPaperId,
-        primaryPaper: {
-          id: node.primaryPaper.id,
-          title: node.primaryPaper.title,
-          titleZh: node.primaryPaper.titleZh,
-          titleEn: node.primaryPaper.titleEn,
-          coverPath: node.primaryPaper.coverPath,
-          published: node.primaryPaper.published.toISOString(),
-        },
-        paperIds: node.papers.map((item) => item.paperId),
+        primaryPaper: node.papers ? {
+          id: node.papers.id,
+          title: node.papers.title,
+          titleZh: node.papers.titleZh,
+          titleEn: node.papers.titleEn,
+          coverPath: node.papers.coverPath,
+          published: node.papers.published.toISOString(),
+        } : null,
+        paperIds: node.node_papers.map((item) => item.paperId),
       })),
       papers: topic.papers.map((paper) => ({
         id: paper.id,
@@ -4385,7 +4682,7 @@ async function buildTopicArtifactFingerprintV2(
         figureCount: paper.figures.length,
         tableCount: paper.tables.length,
         formulaCount: paper.formulas.length,
-        sectionCount: paper.sections.length,
+        sectionCount: paper.paper_sections.length,
       })),
     },
     temporalBuckets: temporalBuckets.buckets.map((bucket) => ({
@@ -4423,36 +4720,61 @@ async function buildTopicViewModelResearchAware(
 ): Promise<TopicViewModel> {
   const quick = options?.quick === true
   const stageWindowMonths = resolveStageWindowMonths(options?.stageWindowMonths)
-  const [topic, localization] = await Promise.all([
+  const [loadedTopic, localization] = await Promise.all([
     loadTopicForArtifact(topicId),
     getTopicLocalization(topicId),
   ])
+  const topic = normalizeTopicDisplayFields(loadedTopic)
   const researchSignals = await loadTopicResearchSignals(topicId, topic, {
     quick,
     stageWindowMonths,
   })
-  const rawPaperById = new Map(topic.papers.map((paper) => [paper.id, paper]))
-  const localizedTopicTitle = localization?.topic.locales.zh.name ?? topic.nameZh
-  const localizedTopicTitleEn =
-    localization?.topic.locales.en.name ?? topic.nameEn ?? topic.nameZh
-  const localizedFocusLabel =
-    localization?.topic.locales.zh.focusLabel ?? topic.focusLabel ?? topic.nameEn ?? '研究焦点'
-  const localizedSummary =
+  const rawPaperById = new Map<string, TopicDisplayPaperShape>(topic.papers.map((paper: TopicDisplayPaperShape) => [paper.id, paper] as [string, TopicDisplayPaperShape]))
+  const localizedTopicTitle = pickMeaningfulDisplayText(
+    localization?.topic.locales.zh.name,
+    topic.nameZh,
+    topic.nameEn,
+  )
+  const localizedTopicTitleEn = pickMeaningfulDisplayText(
+    localization?.topic.locales.en.name,
+    topic.nameEn,
+    topic.nameZh,
+  )
+  const localizedFocusLabel = pickMeaningfulDisplayText(
+    localization?.topic.locales.zh.focusLabel,
+    topic.focusLabel,
+    topic.nameEn,
+    topic.nameZh,
+    'Research focus',
+  )
+  const localizedSummarySeed =
     localization?.topic.locales.zh.summary ??
     topic.summary ??
     topic.description ??
     '该主题正在等待更完整的研究摘要。'
-  const localizedDescription =
+  const localizedDescriptionSeed =
     localization?.topic.locales.zh.description ?? topic.description ?? topic.summary ?? ''
-  const temporalBuckets = deriveTemporalStageBuckets({
-    papers: topic.papers.map((paper) => ({
+  const localizedSummary = pickMeaningfulDisplayText(
+    localization?.topic.locales.zh.summary,
+    topic.summary,
+    topic.description,
+    localizedSummarySeed,
+  )
+  const localizedDescription = pickMeaningfulDisplayText(
+    localization?.topic.locales.zh.description,
+    topic.description,
+    topic.summary,
+    localizedDescriptionSeed,
+  )
+const temporalBuckets = deriveTemporalStageBuckets({
+    papers: topic.papers.map((paper: ArtifactTopicPaper) => ({
       id: paper.id,
       published: paper.published,
     })),
-    nodes: topic.nodes.map((node) => ({
+    nodes: topic.research_nodes.map((node: ArtifactTopicNode) => ({
       id: node.id,
       primaryPaperId: node.primaryPaperId,
-      papers: node.papers.map((item) => ({ paperId: item.paperId })),
+      papers: node.node_papers.map((item: { paperId: string }) => ({ paperId: item.paperId })),
       updatedAt: node.updatedAt,
       createdAt: node.createdAt,
     })),
@@ -4472,14 +4794,26 @@ async function buildTopicViewModelResearchAware(
       },
     ] as const),
   )
-  const nodesByStage = new Map<number, typeof topic.nodes>()
+  const nodesByStage = new Map<number, typeof topic.research_nodes>()
+  const displayPapers = selectTopicDisplayPapers(topic)
+  const displayPaperById = new Map(displayPapers.map((paper) => [paper.id, paper] as const))
+  const trackedPaperIdsByStage = new Map<number, string[]>()
 
-  for (const node of topic.nodes) {
+  for (const node of topic.research_nodes) {
     const stageAssignment = temporalBuckets.nodeAssignments.get(node.id) ?? temporalBuckets.fallbackAssignment
     const stageIndex = stageAssignment?.stageIndex ?? 1
     const current = nodesByStage.get(stageIndex) ?? []
     current.push(node)
     nodesByStage.set(stageIndex, current)
+  }
+
+  for (const paper of displayPapers) {
+    const stageAssignment =
+      temporalBuckets.paperAssignments.get(paper.id) ?? temporalBuckets.fallbackAssignment
+    const stageIndex = stageAssignment?.stageIndex ?? 1
+    const current = trackedPaperIdsByStage.get(stageIndex) ?? []
+    current.push(paper.id)
+    trackedPaperIdsByStage.set(stageIndex, current)
   }
 
   const stageKeys = temporalBuckets.buckets.map((bucket) => bucket.stageIndex)
@@ -4499,6 +4833,7 @@ async function buildTopicViewModelResearchAware(
     }
     const stageLocalization = null as { locales: StageLocaleMap } | null
     const stageNodes = nodesByStage.get(stageIndex) ?? []
+    const stageTrackedPaperIds = trackedPaperIdsByStage.get(stageIndex) ?? []
     const branchColor = pickBranchColor(stageListIndex)
     const stageTitle = stageLocalization?.locales.zh.name ?? stage?.name ?? `阶段 ${stageIndex}`
     const stageTitleEn = stageLocalization?.locales.en.name ?? stage?.nameEn ?? `Stage ${stageIndex}`
@@ -4507,11 +4842,7 @@ async function buildTopicViewModelResearchAware(
       stage?.description ??
       `${topic.nameZh} 在这一阶段开始形成更明确的研究分支与代表节点。`
     const stagePipeline = buildResearchPipelineContext(researchSignals.pipelineState, {
-      paperIds: uniqueStrings(
-        stageNodes.flatMap((node) => node.papers.map((item) => item.paperId)),
-        16,
-        80,
-      ),
+      paperIds: uniqueStrings(stageTrackedPaperIds, 16, 80),
       historyLimit: 6,
     })
     const previousStageIndex = stageListIndex > 0 ? stageKeys[stageListIndex - 1] : null
@@ -4523,10 +4854,25 @@ async function buildTopicViewModelResearchAware(
       previousStageRecord?.name ??
       (typeof previousStageIndex === 'number' ? `阶段 ${previousStageIndex}` : null)
 
-    const stageCards = stageNodes.map((node) => {
+    const stageCards = stageNodes.map((node: ArtifactTopicNode & { primaryPaper: ArtifactTopicPaper }) => {
       const fullContent = parseJsonValue<Record<string, unknown>>(node.fullContent)
       const fullContentSummary = readFullContentSummary(fullContent)
       const reader = researchSignals.nodeReaderById.get(node.id) ?? null
+      const normalizedPrimaryPaper = normalizeTopicPaperDisplayFields(node.papers)
+      const resolvedNodeTitle = pickMeaningfulDisplayText(
+        node.nodeLabel,
+        node.nodeSubtitle,
+        normalizedPrimaryPaper.title,
+        normalizedPrimaryPaper.titleEn,
+        'Research node',
+      )
+      const resolvedNodeSubtitle = pickMeaningfulDisplayText(
+        node.nodeSubtitle,
+        reader?.subtitle,
+        normalizedPrimaryPaper.titleEn,
+        normalizedPrimaryPaper.title,
+        '',
+      )
       const nodeAssignment = temporalBuckets.nodeAssignments.get(node.id) ?? temporalBuckets.fallbackAssignment
       const stageScopedPaperIds = nodeAssignment
         ? new Set(
@@ -4536,20 +4882,20 @@ async function buildTopicViewModelResearchAware(
           )
         : null
       const compactTitle = compactTopicMapNodeTitle({
-        nodeTitle: node.nodeLabel,
-        nodeSubtitle: node.nodeSubtitle,
-        primaryPaperTitle: node.primaryPaper.titleZh || node.primaryPaper.title,
+        nodeTitle: resolvedNodeTitle,
+        nodeSubtitle: resolvedNodeSubtitle,
+        primaryPaperTitle: normalizedPrimaryPaper.title,
       })
       const titleEn =
         typeof fullContent?.titleEn === 'string'
           ? String(fullContent.titleEn)
-          : compactTitle === node.nodeLabel
-            ? reader?.titleEn || node.nodeSubtitle || node.primaryPaper.titleEn || node.primaryPaper.title
+          : compactTitle === resolvedNodeTitle
+            ? reader?.titleEn || resolvedNodeSubtitle || normalizedPrimaryPaper.titleEn || normalizedPrimaryPaper.title || ''
             : compactTitle
       const digest = fullContentSummary.oneLine || reader?.headline || node.nodeSummary
       const explanation = reader?.standfirst || node.nodeExplanation || node.nodeSummary
       const nodeDisplayPaperIds = pickTopicMapNodePaperIds({
-        nodePaperIds: node.papers.map((item) => item.paperId),
+        nodePaperIds: node.node_papers.map((item: { paperId: string }) => item.paperId),
         stageScopedPaperIds,
         readerPaperIds: reader?.paperRoles.map((paper) => paper.paperId),
       })
@@ -4565,13 +4911,13 @@ async function buildTopicViewModelResearchAware(
         route: nodeRoute(node.id),
         title: compactTitle,
         titleEn,
-        subtitle: node.nodeSubtitle ?? reader?.subtitle ?? '',
+        subtitle: resolvedNodeSubtitle,
         summary: digest,
         explanation,
         paperCount: nodeDisplayPaperIds.length,
         paperIds: nodeDisplayPaperIds,
-        primaryPaperTitle: node.primaryPaper.titleZh || node.primaryPaper.title,
-        primaryPaperId: node.primaryPaper.id,
+        primaryPaperTitle: normalizedPrimaryPaper.title,
+        primaryPaperId: node.papers?.id ?? node.primaryPaperId ?? '',
         coverImage,
         isMergeNode: node.isMergeNode,
         provisional: node.provisional,
@@ -4583,7 +4929,7 @@ async function buildTopicViewModelResearchAware(
           digest: clipText(digest, 140),
           whyNow: clipText(explanation, 180),
           nextQuestion: clipText(
-            `下一步需要继续追问：${node.primaryPaper.titleZh || node.primaryPaper.title} 之后还有哪些证据能真正把这个节点坐实？`,
+            `下一步需要继续追问：${normalizedPrimaryPaper.title || '该节点'} 之后还有哪些证据能真正把这个节点坐实？`,
             140,
           ),
         },
@@ -4612,6 +4958,10 @@ async function buildTopicViewModelResearchAware(
       }
     })
 
+    const mappedPaperCount = new Set(stageCards.flatMap((node: TopicNodeCard) => node.paperIds)).size
+    const trackedPaperCount = stageTrackedPaperIds.length
+    const unmappedPaperCount = Math.max(0, trackedPaperCount - mappedPaperCount)
+
     const baseStage: TopicViewModel['stages'][number] = {
       stageIndex,
       title: stageTitle,
@@ -4631,6 +4981,9 @@ async function buildTopicViewModelResearchAware(
           140,
         ),
       },
+      trackedPaperCount,
+      mappedPaperCount,
+      unmappedPaperCount,
       nodes: stageCards,
     }
 
@@ -4728,7 +5081,7 @@ async function buildTopicViewModelResearchAware(
           })
           const safeSummary = sanitizeTopicUserFacingSentence(
             node.summary,
-            buildTopicMapNodeSummary({
+                buildTopicMapNodeSummaryDisplay({
               nodeTitle: compactTitle,
               primaryPaperTitle: node.primaryPaperTitle,
               paperCount: node.paperCount,
@@ -4780,61 +5133,106 @@ async function buildTopicViewModelResearchAware(
         }
       })
 
+  const visibleStages = stages.filter((stage) => isReaderVisibleTopicStage(stage))
+  const effectiveStages = visibleStages
+  const visibleNodeCount = effectiveStages.reduce((count, stage) => count + stage.nodes.length, 0)
+
   if (!quick) {
-    await updateTopicSnapshot(topic.id, buildTopicSnapshot(topic, stages))
+    await updateTopicSnapshot(topic.id, buildTopicSnapshot(topic, effectiveStages))
   }
 
-  const displayPapers = selectTopicDisplayPapers(topic)
-  const papers = displayPapers.map((paper) => ({
-    paperId: paper.id,
-    anchorId: `paper:${paper.id}`,
-    route: paperRoute(paper.id),
-    title: paper.titleZh || paper.title,
-    titleEn: paper.titleEn ?? paper.title,
-    summary: buildTopicPaperSummary({
-      paperTitle: paper.titleZh || paper.title,
-      summary: paper.summary,
-      explanation: paper.explanation,
-    }),
-    explanation: buildTopicPaperExplanation({
-      paperTitle: paper.titleZh || paper.title,
-      summary: paper.summary,
-      explanation: paper.explanation,
-    }),
-    publishedAt: paper.published.toISOString(),
-    authors: parseJsonArray(paper.authors),
-    citationCount: paper.citationCount ?? null,
-    coverImage: paper.coverPath ?? pickRepresentativeFigureImage(paper),
-    figuresCount: paper.figures.length,
-    tablesCount: paper.tables.length,
-    formulasCount: paper.formulas.length,
-    sectionsCount: paper.sections.length,
-  }))
+  const papers = displayPapers.map((paper) => {
+    const normalizedPaper = normalizeTopicPaperDisplayFields(paper)
+
+    return {
+      paperId: paper.id,
+      anchorId: `paper:${paper.id}`,
+      route: paperRoute(paper.id),
+      title: normalizedPaper.title,
+      titleEn: normalizedPaper.titleEn,
+      summary: buildTopicPaperSummary({
+        paperTitle: normalizedPaper.title,
+        summary: paper.summary,
+        explanation: paper.explanation,
+      }),
+      explanation: buildTopicPaperExplanation({
+        paperTitle: normalizedPaper.title,
+        summary: paper.summary,
+        explanation: paper.explanation,
+      }),
+      publishedAt: paper.published.toISOString(),
+      authors: parseJsonArray(paper.authors),
+      citationCount: paper.citationCount ?? null,
+      coverImage: paper.coverPath ?? pickRepresentativeFigureImage(paper),
+      figuresCount: paper.figures.length,
+      tablesCount: paper.tables.length,
+      formulasCount: paper.formulas.length,
+      sectionsCount: paper.paper_sections.length,
+    }
+  })
+
+  const mappedPaperIdSet = new Set(
+    effectiveStages.flatMap((stage) => stage.nodes.flatMap((node) => node.paperIds)),
+  )
+  const unmappedPapers = papers
+    .filter((paper) => !mappedPaperIdSet.has(paper.paperId))
+    .map((paper) => {
+      const assignment =
+        temporalBuckets.paperAssignments.get(paper.paperId) ?? temporalBuckets.fallbackAssignment
+
+      return {
+        paperId: paper.paperId,
+        anchorId: paper.anchorId,
+        route: paper.route,
+        title: paper.title,
+        titleEn: paper.titleEn,
+        summary: paper.summary,
+        publishedAt: paper.publishedAt,
+        authors: paper.authors,
+        citationCount: paper.citationCount,
+        coverImage: paper.coverImage,
+        stageIndex: assignment?.stageIndex ?? null,
+        stageLabel: assignment?.label ?? '',
+      }
+    })
+    .sort((left, right) => {
+      const leftStage = left.stageIndex ?? Number.MAX_SAFE_INTEGER
+      const rightStage = right.stageIndex ?? Number.MAX_SAFE_INTEGER
+      if (leftStage !== rightStage) return leftStage - rightStage
+      return +new Date(left.publishedAt) - +new Date(right.publishedAt)
+    })
 
   const evidenceCount = countPaperEvidence(displayPapers)
 
-  const timelineStages = stages.map((stage) => {
+  const timelineStages = effectiveStages.map((stage) => {
     const stageSourceNodes = nodesByStage.get(stage.stageIndex) ?? []
-    const stageDates = stageSourceNodes
-      .map((node) => node.primaryPaper?.published ?? node.updatedAt)
+    const stageTrackedPaperIds = trackedPaperIdsByStage.get(stage.stageIndex) ?? []
+    const stageDates = [
+      ...stageSourceNodes.map((node: ArtifactTopicNode & { primaryPaper: ArtifactTopicPaper }) => node.papers?.published ?? node.updatedAt),
+      ...stageTrackedPaperIds.map((paperId) => displayPaperById.get(paperId)?.published ?? null),
+    ]
       .filter((value): value is Date => value instanceof Date)
     const leadDate = [...stageDates].sort((left, right) => +left - +right)[0] ?? null
 
     return {
       ...stage,
       yearLabel: formatStageDateLabel(leadDate, 'year'),
-      dateLabel: formatMonthDayLabel(leadDate),
-      timeLabel: formatPreciseDateLabel(leadDate),
+      dateLabel: looksLikeTemporalWindowLabel(stage.title)
+        ? stage.title
+        : formatMonthDayLabel(leadDate),
+      timeLabel: looksLikeTemporalWindowLabel(stage.title)
+        ? stage.title
+        : formatPreciseDateLabel(leadDate),
       stageThesis: stageThesisByIndex.get(stage.stageIndex) ?? clipText(stage.editorial.summary, 110),
     }
   })
 
-  const graph = buildGraphLayout(stages)
+  const graph = buildGraphLayout(effectiveStages)
   const heroFallback = buildTopicHeroFallbackV2({
     localizedTopicTitle,
     localizedTopicTitleEn,
     localizedFocusLabel,
-    stages,
+    stages: effectiveStages,
     latestResearchReport: researchSignals.latestResearchReport,
     pipelineOverview: researchSignals.pipelineOverview,
     sessionMemory: researchSignals.sessionMemory,
@@ -4849,9 +5247,9 @@ async function buildTopicViewModelResearchAware(
       { label: 'updatedAt', value: topic.updatedAt.toISOString() },
     ],
     stats: [
-      { label: 'stages', value: stages.length },
-      { label: 'nodes', value: topic.nodes.length },
-      { label: 'papers', value: displayPapers.length },
+      { label: 'stages', value: effectiveStages.length },
+      { label: 'nodes', value: visibleNodeCount },
+      { label: 'papers', value: papers.length },
       { label: 'evidence', value: evidenceCount },
     ],
     actions: [
@@ -4865,14 +5263,14 @@ async function buildTopicViewModelResearchAware(
 
   const narrativeSegments = buildTopicNarrativeSegmentsV2({
     topic,
-    stages,
+    stages: effectiveStages,
     latestResearchReport: researchSignals.latestResearchReport,
     pipelineOverview: researchSignals.pipelineOverview,
     sessionMemory: researchSignals.sessionMemory,
   })
   const closingFallback = buildTopicClosingFallbackV2({
     topic,
-    stages,
+    stages: effectiveStages,
     latestResearchReport: researchSignals.latestResearchReport,
     pipelineOverview: researchSignals.pipelineOverview,
     generationContext: researchSignals.generationContext,
@@ -4884,8 +5282,8 @@ async function buildTopicViewModelResearchAware(
         { output: closingFallback, usedFallback: true },
       ]
     : await Promise.all([
-        generateTopicHero(topic.id, topic, stages, displayPapers.length),
-        generateTopicClosing(topic.id, topic, stages, closingFallback, displayPapers.length),
+        generateTopicHero(topic.id, topic, effectiveStages, displayPapers.length),
+        generateTopicClosing(topic.id, topic, effectiveStages, closingFallback, displayPapers.length),
       ])
 
   summaryPanel.thesis = sanitizeTopicUserFacingSentence(
@@ -4895,7 +5293,7 @@ async function buildTopicViewModelResearchAware(
   )
 
   const resources = [
-    ...stages.slice(0, 2).map((stage) => ({
+    ...effectiveStages.slice(0, 2).map((stage) => ({
       id: `stage:${stage.stageIndex}`,
       kind: 'stage' as const,
       title: stage.title,
@@ -4904,7 +5302,7 @@ async function buildTopicViewModelResearchAware(
       route: `/topic/${topic.id}?anchor=stage:${stage.stageIndex}`,
       anchorId: `stage:${stage.stageIndex}`,
     })),
-    ...stages
+    ...effectiveStages
       .flatMap((stage) => stage.nodes.slice(0, 1))
       .slice(0, 2)
       .map((node) => ({
@@ -4983,9 +5381,11 @@ async function buildTopicViewModelResearchAware(
     },
     summaryPanel,
     stats: {
-      stageCount: stages.length,
-      nodeCount: topic.nodes.length,
+      stageCount: effectiveStages.length,
+      nodeCount: visibleNodeCount,
       paperCount: displayPapers.length,
+      mappedPaperCount: mappedPaperIdSet.size,
+      unmappedPaperCount: unmappedPapers.length,
       evidenceCount,
     },
     timeline: {
@@ -4993,8 +5393,9 @@ async function buildTopicViewModelResearchAware(
     },
     graph,
     generationState,
-    stages,
+    stages: effectiveStages,
     papers,
+    unmappedPapers,
     narrativeArticle:
       sanitizeTopicUserFacingParagraphs(
         narrativeSegments,
@@ -5034,12 +5435,14 @@ async function persistTopicArtifact(
     viewModel,
   }
 
-  await prisma.systemConfig.upsert({
+  await prisma.system_configs.upsert({
     where: { key: topicArtifactKey(topicId, stageWindowMonths) },
-    update: { value: JSON.stringify(payload) },
+    update: { value: JSON.stringify(payload), updatedAt: new Date() },
     create: {
+      id: crypto.randomUUID(),
       key: topicArtifactKey(topicId, stageWindowMonths),
       value: JSON.stringify(payload),
+      updatedAt: new Date(),
     },
   })
 }
@@ -5073,12 +5476,58 @@ function buildDeferredTopicArtifactFingerprint(fingerprint: string | null, topic
   return fingerprint ? `quick:${fingerprint}` : `quick:${topicId}:${Date.now()}`
 }
 
+function readCachedTopicArtifactUpdatedAt(parsed: TopicArtifactRecord | TopicViewModel) {
+  if ('viewModel' in parsed && typeof parsed.updatedAt === 'string') {
+    return parsed.updatedAt
+  }
+
+  if ('generatedAt' in parsed && typeof parsed.generatedAt === 'string') {
+    return parsed.generatedAt
+  }
+
+  return null
+}
+
+function shouldQueueBackgroundTopicArtifactRefresh(args: {
+  cachedFingerprint: string | null
+  cachedUpdatedAt: string | null
+}) {
+  if (DEFERRED_TOPIC_ARTIFACTS_DISABLED) return false
+  if (!args.cachedFingerprint) return true
+  if (args.cachedFingerprint.startsWith('quick:')) return true
+  if (!args.cachedUpdatedAt) return true
+
+  const cachedTimestamp = Date.parse(args.cachedUpdatedAt)
+  if (Number.isNaN(cachedTimestamp)) return true
+
+  return Date.now() - cachedTimestamp >= TOPIC_ARTIFACT_BACKGROUND_REFRESH_MS
+}
+
+function queueTopicArtifactRebuildInBackground(
+  topicId: string,
+  stageWindowMonths: number,
+  reason: string,
+) {
+  if (DEFERRED_TOPIC_ARTIFACTS_DISABLED) return
+
+  void queueTopicArtifactRebuild(topicId, { stageWindowMonths }).catch((error) => {
+    if (error instanceof AppError && error.statusCode === 404) {
+      return
+    }
+
+    logger.warn(reason, {
+      topicId,
+      error,
+    })
+  })
+}
+
 export async function getTopicViewModel(
   topicId: string,
   options?: TopicViewModelBuildOptions,
 ): Promise<TopicViewModel> {
   const stageWindowMonths = await resolveTopicStageWindowMonths(topicId, options?.stageWindowMonths)
-  const artifactRecord = await prisma.systemConfig.findUnique({
+  const artifactRecord = await prisma.system_configs.findUnique({
     where: { key: topicArtifactKey(topicId, stageWindowMonths) },
   })
 
@@ -5094,54 +5543,41 @@ export async function getTopicViewModel(
         !Number.isNaN(Date.parse(cachedViewModel.updatedAt))
 
       if (cachedViewModel.schemaVersion === TOPIC_VIEW_MODEL_SCHEMA && hasDates) {
-        const fingerprint =
-          cachedFingerprint && 'viewModel' in parsed
-            ? await buildTopicArtifactFingerprint(topicId, { stageWindowMonths })
-            : null
-
-        if (cachedFingerprint && cachedFingerprint === fingerprint) {
-          return ensureTopicGraphLanes(cachedViewModel)
-        }
-
-        const quickViewModel = await buildTopicViewModel(topicId, { quick: true, stageWindowMonths })
-        await persistTopicArtifact(
-          topicId,
-          quickViewModel,
-          buildDeferredTopicArtifactFingerprint(fingerprint, topicId),
-          { stageWindowMonths },
-        )
-        if (!DEFERRED_TOPIC_ARTIFACTS_DISABLED) {
-          void queueTopicArtifactRebuild(topicId, { stageWindowMonths }).catch((error) => {
-            if (error instanceof AppError && error.statusCode === 404) {
-              return
-            }
-
-            logger.warn('Deferred topic artifact rebuild failed while serving quick topic view model.', {
-              topicId,
-              error,
-            })
+        if (
+          shouldQueueBackgroundTopicArtifactRefresh({
+            cachedFingerprint,
+            cachedUpdatedAt: readCachedTopicArtifactUpdatedAt(parsed),
           })
+        ) {
+          queueTopicArtifactRebuildInBackground(
+            topicId,
+            stageWindowMonths,
+            'Deferred topic artifact rebuild failed while serving cached topic view model.',
+          )
         }
-        return ensureTopicGraphLanes(quickViewModel)
+
+        return ensureTopicGraphLanes(cachedViewModel)
       }
     } catch (error) {
       logger.warn('Failed to parse cached topic artifact, rebuilding.', { topicId, error })
     }
   }
 
-  if (!DEFERRED_TOPIC_ARTIFACTS_DISABLED) {
-    void queueTopicArtifactRebuild(topicId, { stageWindowMonths }).catch((error) => {
-      if (error instanceof AppError && error.statusCode === 404) {
-        return
-      }
+  const quickViewModel = await buildTopicViewModel(topicId, { quick: true, stageWindowMonths })
+  await persistTopicArtifact(
+    topicId,
+    quickViewModel,
+    buildDeferredTopicArtifactFingerprint(null, topicId),
+    { stageWindowMonths },
+  )
 
-      logger.warn('Deferred topic artifact rebuild failed while serving uncached topic view model.', {
-        topicId,
-        error,
-      })
-    })
-  }
-  return buildTopicViewModel(topicId, { quick: true, stageWindowMonths })
+  queueTopicArtifactRebuildInBackground(
+    topicId,
+    stageWindowMonths,
+    'Deferred topic artifact rebuild failed while serving uncached topic view model.',
+  )
+
+  return ensureTopicGraphLanes(quickViewModel)
 }
 
 export async function rebuildTopicViewModel(
@@ -5170,25 +5606,21 @@ export async function refreshTopicViewModelSnapshot(
     return rebuildTopicViewModel(topicId, { stageWindowMonths })
   }
 
-  const [quickViewModel, fingerprint] = await Promise.all([
-    buildTopicViewModel(topicId, { quick: true, stageWindowMonths }),
-    buildTopicArtifactFingerprint(topicId, { stageWindowMonths }),
-  ])
+  const quickViewModel = await buildTopicViewModel(topicId, { quick: true, stageWindowMonths })
 
   await persistTopicArtifact(
     topicId,
     quickViewModel,
-    buildDeferredTopicArtifactFingerprint(fingerprint, topicId),
+    buildDeferredTopicArtifactFingerprint(null, topicId),
     { stageWindowMonths },
   )
 
   if (mode === 'deferred') {
-    void queueTopicArtifactRebuild(topicId, { stageWindowMonths }).catch((error) => {
-      if (error instanceof AppError && error.statusCode === 404) {
-        return
-      }
-      logger.warn('Deferred topic artifact rebuild failed.', { topicId, error })
-    })
+    queueTopicArtifactRebuildInBackground(
+      topicId,
+      stageWindowMonths,
+      'Deferred topic artifact rebuild failed.',
+    )
   }
 
   return quickViewModel
@@ -5203,7 +5635,7 @@ function buildTopicScopeChunks(
   >(topic)
   const chunks: TopicCorpusChunk[] = []
 
-  for (const node of topic.nodes) {
+  for (const node of topic.research_nodes) {
     chunks.push({
       anchorId: `node:${node.id}`,
       type: 'node',
@@ -5231,12 +5663,22 @@ function buildTopicScopeChunks(
 function buildTopicCorpusFromTopic(
   topic: Awaited<ReturnType<typeof loadTopicForArtifact>>,
 ): TopicCorpusChunk[] {
+  // Convert to TopicChatCatalogSource format with alias properties
+  const catalogSource: TopicChatCatalogSource = {
+    id: topic.id,
+    nameZh: topic.nameZh,
+    topic_stages: topic.topic_stages,
+    research_nodes: topic.research_nodes,
+    papers: topic.papers,
+    stages: topic.topic_stages,
+    nodes: topic.research_nodes,
+  }
   const displayPapers = selectTopicDisplayPapers(topic)
-  const chunks = buildTopicScopeChunks(topic)
+  const chunks = buildTopicScopeChunks(catalogSource)
 
   for (const paper of displayPapers) {
 
-    for (const section of paper.sections) {
+    for (const section of paper.paper_sections) {
       chunks.push({
         anchorId: `section:${section.id}`,
         type: 'section',
@@ -5284,7 +5726,7 @@ function buildTopicCorpusFromTopic(
   return chunks
 }
 
-async function buildTopicCorpus(topicId: string): Promise<TopicCorpusChunk[]> {
+async function _buildTopicCorpus(topicId: string): Promise<TopicCorpusChunk[]> {
   const topic = await loadTopicForArtifact(topicId)
   return buildTopicCorpusFromTopic(topic)
 }
@@ -5296,14 +5738,14 @@ function buildTopicChatCatalog(
     TopicChatCatalogSourcePaper,
     TopicChatCatalogSource
   >(topic)
-  const stageTitleByIndex = new Map(topic.stages.map((stage) => [stage.order, stage.name]))
+  const stageTitleByIndex = new Map(topic.topic_stages.map((stage) => [stage.order, stage.name]))
 
   const papers = displayPapers.map((paper) => {
     const linkedNode =
-      topic.nodes.find(
+      topic.research_nodes.find(
         (node) =>
           node.primaryPaperId === paper.id ||
-          node.papers.some((paperLink) => paperLink.paperId === paper.id),
+          node.node_papers.some((paperLink) => paperLink.paperId === paper.id),
       ) ?? null
     const aliases = Array.from(
       new Set(
@@ -5343,8 +5785,8 @@ function buildTopicChatCatalog(
   return {
     topicId: topic.id,
     topicTitle: topic.nameZh,
-    stageCount: topic.stages.length,
-    nodeCount: topic.nodes.length,
+    stageCount: topic.topic_stages.length,
+    nodeCount: topic.research_nodes.length,
     paperCount: papers.length,
     papers,
   }
@@ -6049,7 +6491,7 @@ async function buildTopicGuidanceAuthorContext(
   }
 }
 
-function buildTopicChatPrompt(
+function _buildTopicChatPrompt(
   question: string,
   chunks: TopicCorpusChunk[],
   authorContext: Awaited<ReturnType<typeof buildTopicChatAuthorContext>>,
@@ -6928,10 +7370,10 @@ export async function getEvidenceByAnchorId(anchorId: string): Promise<EvidenceP
   }
 
   if (type === 'node') {
-    const node = await prisma.researchNode.findUnique({
+    const node = await prisma.research_nodes.findUnique({
       where: { id: entityId },
       include: {
-        primaryPaper: true,
+        papers: true,
       },
     })
     if (!node) throw new AppError(404, 'Evidence not found.')
@@ -6950,20 +7392,20 @@ export async function getEvidenceByAnchorId(anchorId: string): Promise<EvidenceP
       metadata: {
         topicId: node.topicId,
         primaryPaperId: node.primaryPaperId,
-        primaryPaperTitle: node.primaryPaper.titleZh || node.primaryPaper.title,
+        primaryPaperTitle: node.papers?.titleZh || node.papers?.title || '',
         updatedAt: node.updatedAt.toISOString(),
       },
     }
   }
 
   if (type === 'paper') {
-    const paper = await prisma.paper.findUnique({
+    const paper = await prisma.papers.findUnique({
       where: { id: entityId },
       include: {
         figures: true,
         tables: true,
         formulas: true,
-        sections: true,
+        paper_sections: true,
       },
     })
     if (!paper) throw new AppError(404, 'Evidence not found.')
@@ -6986,16 +7428,16 @@ export async function getEvidenceByAnchorId(anchorId: string): Promise<EvidenceP
         figuresCount: paper.figures.length,
         tablesCount: paper.tables.length,
         formulasCount: paper.formulas.length,
-        sectionsCount: paper.sections.length,
+        sectionsCount: paper.paper_sections.length,
       },
     }
   }
 
   if (type === 'section') {
-    const section = await prisma.paperSection.findUnique({
+    const section = await prisma.paper_sections.findUnique({
       where: { id: entityId },
       include: {
-        paper: true,
+        papers: true,
       },
     })
     if (!section) throw new AppError(404, 'Evidence not found.')
@@ -7005,24 +7447,24 @@ export async function getEvidenceByAnchorId(anchorId: string): Promise<EvidenceP
       type: 'section',
       route: paperRoute(section.paperId, anchorId),
       title: section.editorialTitle || section.sourceSectionTitle,
-      label: `${section.paper.titleZh || section.paper.title} / ${section.editorialTitle || section.sourceSectionTitle}`,
+      label: `${section.papers?.titleZh || section.papers?.title || ''} / ${section.editorialTitle || section.sourceSectionTitle}`,
       quote: clipText(section.paragraphs),
       content: section.paragraphs,
       whyItMatters: '这一段正文承担了论证链里的文本证据角色，用来支撑节点或论文页中的具体判断。',
       placementHint: 'inline-text',
       importance: 0.62,
       metadata: {
-        topicId: section.paper.topicId,
+        topicId: section.papers?.topicId,
         paperId: section.paperId,
       },
     }
   }
 
   if (type === 'figure') {
-    const figure = await prisma.figure.findUnique({
+    const figure = await prisma.figures.findUnique({
       where: { id: entityId },
       include: {
-        paper: true,
+        papers: true,
       },
     })
     if (!figure) throw new AppError(404, 'Evidence not found.')
@@ -7032,7 +7474,7 @@ export async function getEvidenceByAnchorId(anchorId: string): Promise<EvidenceP
       type: 'figure',
       route: paperRoute(figure.paperId, undefined, anchorId),
       title: `Figure ${figure.number}`,
-      label: `${figure.paper.titleZh || figure.paper.title} / Figure ${figure.number}`,
+      label: `${figure.papers?.titleZh || figure.papers?.title || ''} / Figure ${figure.number}`,
       quote: clipText(figure.caption),
       content: `${figure.caption}\n\n${figure.analysis ?? ''}`,
       whyItMatters: '这张图不是配图，而是论证中的可视化证据，需要说明它究竟证明了哪一段判断。',
@@ -7040,7 +7482,7 @@ export async function getEvidenceByAnchorId(anchorId: string): Promise<EvidenceP
       importance: 0.91,
       thumbnailPath: figure.imagePath,
       metadata: {
-        topicId: figure.paper.topicId,
+        topicId: figure.papers?.topicId,
         paperId: figure.paperId,
         imagePath: figure.imagePath,
         page: figure.page,
@@ -7049,10 +7491,10 @@ export async function getEvidenceByAnchorId(anchorId: string): Promise<EvidenceP
   }
 
   if (type === 'table') {
-    const table = await prisma.table.findUnique({
+    const table = await prisma.tables.findUnique({
       where: { id: entityId },
       include: {
-        paper: true,
+        papers: true,
       },
     })
     if (!table) throw new AppError(404, 'Evidence not found.')
@@ -7062,14 +7504,14 @@ export async function getEvidenceByAnchorId(anchorId: string): Promise<EvidenceP
       type: 'table',
       route: paperRoute(table.paperId, undefined, anchorId),
       title: `Table ${table.number}`,
-      label: `${table.paper.titleZh || table.paper.title} / Table ${table.number}`,
+      label: `${table.papers?.titleZh || table.papers?.title || ''} / Table ${table.number}`,
       quote: clipText(table.caption),
       content: `${table.caption}\n\n${table.rawText}`,
       whyItMatters: '这张表通常直接决定论文与基线之间的优劣关系是否成立，需要解释比较条件和结论边界。',
       placementHint: 'inline-table',
       importance: 0.84,
       metadata: {
-        topicId: table.paper.topicId,
+        topicId: table.papers?.topicId,
         paperId: table.paperId,
         page: table.page,
         headers: parseJsonArray(table.headers),
@@ -7079,10 +7521,10 @@ export async function getEvidenceByAnchorId(anchorId: string): Promise<EvidenceP
   }
 
   if (type === 'formula') {
-    const formula = await prisma.formula.findUnique({
+    const formula = await prisma.formulas.findUnique({
       where: { id: entityId },
       include: {
-        paper: true,
+        papers: true,
       },
     })
     if (!formula) throw new AppError(404, 'Evidence not found.')
@@ -7092,14 +7534,14 @@ export async function getEvidenceByAnchorId(anchorId: string): Promise<EvidenceP
       type: 'formula',
       route: paperRoute(formula.paperId, undefined, anchorId),
       title: `Formula ${formula.number}`,
-      label: `${formula.paper.titleZh || formula.paper.title} / Formula ${formula.number}`,
+      label: `${formula.papers?.titleZh || formula.papers?.title || ''} / Formula ${formula.number}`,
       quote: clipText(formula.rawText || formula.latex),
       content: `${formula.latex}\n\n${formula.rawText}`,
       whyItMatters: '这个公式说明方法真正依赖的目标、约束或更新方式，需要解释它在论证中的位置。',
       placementHint: 'inline-formula',
       importance: 0.78,
       metadata: {
-        topicId: formula.paper.topicId,
+        topicId: formula.papers?.topicId,
         paperId: formula.paperId,
         page: formula.page,
       },
@@ -7110,6 +7552,7 @@ throw new AppError(404, 'Evidence not found.')
 }
 
 export const __testing = {
+  loadTopicForArtifact,
   buildGraphLayout,
   BRANCH_LANES,
   MAINLINE_BRANCH_COLOR,
@@ -7119,7 +7562,7 @@ export const __testing = {
   looksLikeReasoningLeak,
   selectTopicDisplayPapers,
   compactTopicMapNodeTitle,
-  buildTopicMapNodeSummary,
+  buildTopicMapNodeSummary: buildTopicMapNodeSummaryDisplay,
   sanitizeTopicUserFacingSentence,
   sanitizeTopicUserFacingParagraphs,
   looksLikeTopicProcessLeak,

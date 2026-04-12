@@ -218,7 +218,7 @@ function summarizeEntry(entry: ResearchPipelineEntry) {
 }
 
 export async function loadResearchPipelineState(topicId: string): Promise<ResearchPipelineState> {
-  const record = await prisma.systemConfig.findUnique({
+  const record = await prisma.system_configs.findUnique({
     where: { key: researchPipelineStateKey(topicId) },
   })
 
@@ -226,10 +226,10 @@ export async function loadResearchPipelineState(topicId: string): Promise<Resear
 }
 
 export async function saveResearchPipelineState(state: ResearchPipelineState) {
-  await prisma.systemConfig.upsert({
+  await prisma.system_configs.upsert({
     where: { key: researchPipelineStateKey(state.topicId) },
-    update: { value: JSON.stringify(state) },
-    create: { key: researchPipelineStateKey(state.topicId), value: JSON.stringify(state) },
+    update: { value: JSON.stringify(state), updatedAt: new Date() },
+    create: { id: crypto.randomUUID(), key: researchPipelineStateKey(state.topicId), value: JSON.stringify(state), updatedAt: new Date() },
   })
 }
 

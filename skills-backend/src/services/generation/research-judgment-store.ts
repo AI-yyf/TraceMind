@@ -189,43 +189,6 @@ function shareTopicAnchor(left: string, right: string) {
   return shared >= 2
 }
 
-function hasNegationCue(value: string) {
-  const normalized = normalizeJudgmentContent(value)
-  return [
-    ' not ',
-    ' no ',
-    ' never ',
-    ' fail ',
-    ' fails ',
-    ' failed ',
-    ' failing ',
-    ' underperform ',
-    ' limitation ',
-    ' limitations ',
-    ' contradict ',
-    ' contradic',
-    ' however ',
-    ' but ',
-    ' although ',
-    ' rather than ',
-    ' except ',
-    '不是',
-    '并非',
-    '不再',
-    '不应',
-    '不能',
-    '无法',
-    '缺陷',
-    '局限',
-    '限制',
-    '反驳',
-    '失败',
-    '然而',
-    '但是',
-    '不过',
-  ].some((cue) => normalized.includes(cue.trim()))
-}
-
 function judgmentsAreComparable(left: StoredJudgment, right: ResearchJudgment) {
   if (left.subjectType !== right.subjectType) return false
   if (left.scopeId !== right.scopeId) return false
@@ -589,7 +552,7 @@ export function upsertResearchJudgmentsInState(
   const judgments = Array.from(existing.values())
     .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))
     .slice(0, MAX_JUDGMENTS)
-    .map(({ updatedAt, ...judgment }) => judgment)
+    .map(({ updatedAt: _updatedAt, ...judgment }) => judgment)
 
   return {
     ...state,
@@ -601,7 +564,7 @@ export function upsertResearchJudgmentsInState(
 export async function loadTopicResearchJudgmentState(
   topicId: string,
 ): Promise<TopicResearchJudgmentState> {
-  const record = await prisma.systemConfig.findUnique({
+  const record = await prisma.system_configs.findUnique({
     where: { key: researchJudgmentKey(topicId) },
   })
 
@@ -620,10 +583,10 @@ async function saveTopicResearchJudgmentState(state: TopicResearchJudgmentState)
     judgments: state.judgments.slice(0, MAX_JUDGMENTS),
   } satisfies TopicResearchJudgmentState)
 
-  await prisma.systemConfig.upsert({
+  await prisma.system_configs.upsert({
     where: { key: researchJudgmentKey(state.topicId) },
-    update: { value: payload },
-    create: { key: researchJudgmentKey(state.topicId), value: payload },
+    update: { value: payload, updatedAt: new Date() },
+    create: { id: crypto.randomUUID(), key: researchJudgmentKey(state.topicId), value: payload, updatedAt: new Date() },
   })
 }
 

@@ -3,6 +3,10 @@ import { prisma } from '../../../shared/db'
 import { researchMemory } from '../../../shared/research-memory'
 import { getTopicDefinition } from '../../../topic-config/index'
 import { omniGateway } from '../../../src/services/omni/gateway'
+import {
+  getEditorialSystemPrompt,
+  getPaperEditorialInstructions,
+} from '../../../shared/editorial-prompt'
 
 interface ContentGenesisInput {
   paperId: string
@@ -185,11 +189,25 @@ async function generateThreeLayerContent(args: {
       .join(' / '),
   }
 
+  const editorialPrompt = getPaperEditorialInstructions('zh')
+  const figureCount = args.paper.figures?.length || 0
+  const tableCount = args.paper.tables?.length || 0
+  const formulaCount = args.paper.formulas?.length || 0
+  const evidenceSummary = figureCount + tableCount + formulaCount === 0
+    ? '当前还没有保留下来的图、表或公式证据。'
+    : `当前保留了 ${figureCount} 张图、${tableCount} 张表和 ${formulaCount} 个公式。`
+
   const promptPack = [
     {
       key: 'summary',
       prompt: [
-        'Write a 180-260 word Chinese summary.',
+        `${editorialPrompt}`,
+        '',
+        'Write a 180-260 word Chinese summary that:',
+        '1. Explains why this paper appears at this position in the research timeline',
+        '2. What specific problem line it advances',
+        '3. What it leaves for later papers to solve',
+        '',
         `Topic: ${args.topicDef.nameZh} / ${args.topicDef.focusLabel}`,
         `Paper: ${paperInfo.title}`,
         `Summary: ${paperInfo.summary}`,
@@ -200,12 +218,23 @@ async function generateThreeLayerContent(args: {
     {
       key: 'narrative',
       prompt: [
-        'Write a 500-800 word Chinese narrative with judgment, evidence awareness, and limitations.',
+        `${editorialPrompt}`,
+        '',
+        'Write a 500-800 word Chinese narrative that:',
+        '1. Positions the paper in the research chronology - why it appears NOW',
+        '2. Explains the actual method with SPECIFIC evidence (cite figures, tables, formulas)',
+        '3. Discusses contribution with CONSERVATIVE claims',
+        '4. Points out limitations and what reviewers would question',
+        '5. Ends with a handoff - what the next paper must solve',
+        '',
+        'Do NOT write developer text like "this paper is mapped to...". Write for a reader.',
+        '',
         `Topic: ${args.topicDef.nameZh} / ${args.topicDef.focusLabel}`,
         `Paper: ${paperInfo.title}`,
         `Authors: ${paperInfo.authors.join(', ')}`,
         `Published: ${paperInfo.published}`,
         `Related papers: ${paperInfo.relatedTitles || 'None'}`,
+        `Evidence: ${evidenceSummary}`,
         `Summary: ${paperInfo.summary}`,
       ].join('\n'),
       temperature: args.input.temperature ?? 0.28,
@@ -214,10 +243,16 @@ async function generateThreeLayerContent(args: {
     {
       key: 'evidence',
       prompt: [
-        'Write a 220-360 word Chinese evidence note.',
-        `Figures: ${args.paper.figures?.length || 0}`,
-        `Tables: ${args.paper.tables?.length || 0}`,
-        `Formulas: ${args.paper.formulas?.length || 0}`,
+        `你要解释图、表、公式在论证中的作用，而不是只描述它们长什么样。`,
+        '',
+        `Evidence available: ${evidenceSummary}`,
+        `Figures: ${figureCount}, Tables: ${tableCount}, Formulas: ${formulaCount}`,
+        '',
+        'Write a 220-360 word Chinese evidence note explaining:',
+        '1. What each evidence piece aims to prove',
+        '2. How it supports specific claims in the paper',
+        '3. Any alternative interpretations or boundary conditions',
+        '',
         `Summary: ${paperInfo.summary}`,
       ].join('\n'),
       temperature: 0.22,
@@ -225,19 +260,38 @@ async function generateThreeLayerContent(args: {
     },
     {
       key: 'highlight',
-      prompt: `Write one Chinese highlight under 40 characters for ${paperInfo.title}.`,
+      prompt: [
+        '写一句强判断（40字以内），直接说明这篇论文的历史位置和核心推进。',
+        '不要写"这篇论文很重要"，要写它到底推进了什么。',
+        '',
+        `Paper: ${paperInfo.title}`,
+        `Topic: ${args.topicDef.focusLabel}`,
+      ].join('\n'),
       temperature: 0.45,
       maxTokens: 80,
     },
     {
       key: 'cardDigest',
-      prompt: `Write one Chinese card blurb under 80 characters for ${paperInfo.title}.`,
+      prompt: [
+        '写一句卡片简介（80字以内），说明"为什么点开这篇论文值得"。',
+        '要能说明这篇论文解决了什么具体问题，不要泛泛而谈。',
+        '',
+        `Paper: ${paperInfo.title}`,
+        `Topic: ${args.topicDef.focusLabel}`,
+        `Summary: ${clipText(paperInfo.summary, 200)}`,
+      ].join('\n'),
       temperature: 0.4,
       maxTokens: 120,
     },
     {
       key: 'timelineDigest',
-      prompt: `Write one Chinese timeline sentence under 60 characters for ${paperInfo.title}.`,
+      prompt: [
+        '写一句时间线标注（60字以内），说明"这一跳为什么成立"。',
+        '要点明这篇论文在研究主线中的转折意义。',
+        '',
+        `Paper: ${paperInfo.title}`,
+        `Topic: ${args.topicDef.nameZh}`,
+      ].join('\n'),
       temperature: 0.35,
       maxTokens: 100,
     },

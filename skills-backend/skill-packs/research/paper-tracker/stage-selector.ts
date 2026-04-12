@@ -20,6 +20,26 @@ export interface BranchInfo {
   rootProblemNodeId: string
   anchorPaperId: string
   lastTrackedPaperId?: string
+  label?: string
+  priorityScore?: number
+}
+
+/** 决策记录 */
+export interface DecisionRecord {
+  stageIndex: number
+  branchId?: string
+  action?: string
+  actionKind?: string
+  summary: string
+  timestamp: string
+  affectedProblemIds: string[]
+  mergeTargetBranchIds?: string[]
+}
+
+/** 问题节点 */
+export interface ProblemNode {
+  nodeId: string
+  requiredCapabilities?: string[]
 }
 
 /** 主题记忆接口（简化版） */
@@ -34,7 +54,12 @@ export interface TopicMemory {
     nodeId: string
     stageIndex: number
     status: string
+    discoveredAt: string
+    primaryPaperId: string
   }>
+  decisionLog?: DecisionRecord[]
+  capabilityRefs?: string[]
+  problemNodes?: ProblemNode[]
 }
 
 export class StageSelector {

@@ -6,6 +6,15 @@ import test from 'node:test'
 import { prisma } from '../lib/prisma'
 import { createApp } from '../server'
 
+function createConfigRecord(key: string, value: string) {
+  return {
+    id: `system-config-${key}`,
+    key,
+    value,
+    updatedAt: new Date(),
+  }
+}
+
 type PromptStudioBundle = {
   templates: Array<{
     id: string
@@ -149,10 +158,10 @@ test('POST /api/prompt-templates/studio persists edits and can be restored from 
     const runtimeKey = 'prompt-studio:runtime:v1'
     const agentAssetKey = 'prompt-studio:external-agent:v1:promptGuide'
     const [originalTemplateRecord, originalRuntimeRecord] = await Promise.all([
-      prisma.systemConfig.findUnique({ where: { key: templateKey } }),
-      prisma.systemConfig.findUnique({ where: { key: runtimeKey } }),
+      prisma.system_configs.findUnique({ where: { key: templateKey } }),
+      prisma.system_configs.findUnique({ where: { key: runtimeKey } }),
     ])
-    const originalAgentAssetRecord = await prisma.systemConfig.findUnique({
+    const originalAgentAssetRecord = await prisma.system_configs.findUnique({
       where: { key: agentAssetKey },
     })
     const originalPromptGuide = await fs.readFile(
@@ -266,37 +275,37 @@ test('POST /api/prompt-templates/studio persists edits and can be restored from 
       assert.equal(promptGuideOnDisk.includes('[route-test-agent-marker]'), true)
     } finally {
       if (originalTemplateRecord) {
-        await prisma.systemConfig.upsert({
+        await prisma.system_configs.upsert({
           where: { key: templateKey },
-          update: { value: originalTemplateRecord.value },
-          create: { key: templateKey, value: originalTemplateRecord.value },
+          update: { value: originalTemplateRecord.value, updatedAt: originalTemplateRecord.updatedAt },
+          create: createConfigRecord(templateKey, originalTemplateRecord.value),
         })
       } else {
-        await prisma.systemConfig.deleteMany({
+        await prisma.system_configs.deleteMany({
           where: { key: templateKey },
         })
       }
 
       if (originalRuntimeRecord) {
-        await prisma.systemConfig.upsert({
+        await prisma.system_configs.upsert({
           where: { key: runtimeKey },
-          update: { value: originalRuntimeRecord.value },
-          create: { key: runtimeKey, value: originalRuntimeRecord.value },
+          update: { value: originalRuntimeRecord.value, updatedAt: originalRuntimeRecord.updatedAt },
+          create: createConfigRecord(runtimeKey, originalRuntimeRecord.value),
         })
       } else {
-        await prisma.systemConfig.deleteMany({
+        await prisma.system_configs.deleteMany({
           where: { key: runtimeKey },
         })
       }
 
       if (originalAgentAssetRecord) {
-        await prisma.systemConfig.upsert({
+        await prisma.system_configs.upsert({
           where: { key: agentAssetKey },
-          update: { value: originalAgentAssetRecord.value },
-          create: { key: agentAssetKey, value: originalAgentAssetRecord.value },
+          update: { value: originalAgentAssetRecord.value, updatedAt: originalAgentAssetRecord.updatedAt },
+          create: createConfigRecord(agentAssetKey, originalAgentAssetRecord.value),
         })
       } else {
-        await prisma.systemConfig.deleteMany({
+        await prisma.system_configs.deleteMany({
           where: { key: agentAssetKey },
         })
       }
@@ -315,8 +324,8 @@ test('POST /api/prompt-templates/reset preserves other non-default language over
     const templateKey = 'prompt-studio:template:v1:topic.nodeCard'
     const copyKey = 'prompt-studio:copy:v1:assistant.title'
     const [originalTemplateRecord, originalCopyRecord] = await Promise.all([
-      prisma.systemConfig.findUnique({ where: { key: templateKey } }),
-      prisma.systemConfig.findUnique({ where: { key: copyKey } }),
+      prisma.system_configs.findUnique({ where: { key: templateKey } }),
+      prisma.system_configs.findUnique({ where: { key: copyKey } }),
     ])
 
     try {
@@ -391,25 +400,25 @@ test('POST /api/prompt-templates/reset preserves other non-default language over
       assert.equal(savedCopy?.languageContents.ru.includes('[reset-ru-copy]'), true)
     } finally {
       if (originalTemplateRecord) {
-        await prisma.systemConfig.upsert({
+        await prisma.system_configs.upsert({
           where: { key: templateKey },
-          update: { value: originalTemplateRecord.value },
-          create: { key: templateKey, value: originalTemplateRecord.value },
+          update: { value: originalTemplateRecord.value, updatedAt: originalTemplateRecord.updatedAt },
+          create: createConfigRecord(templateKey, originalTemplateRecord.value),
         })
       } else {
-        await prisma.systemConfig.deleteMany({
+        await prisma.system_configs.deleteMany({
           where: { key: templateKey },
         })
       }
 
       if (originalCopyRecord) {
-        await prisma.systemConfig.upsert({
+        await prisma.system_configs.upsert({
           where: { key: copyKey },
-          update: { value: originalCopyRecord.value },
-          create: { key: copyKey, value: originalCopyRecord.value },
+          update: { value: originalCopyRecord.value, updatedAt: originalCopyRecord.updatedAt },
+          create: createConfigRecord(copyKey, originalCopyRecord.value),
         })
       } else {
-        await prisma.systemConfig.deleteMany({
+        await prisma.system_configs.deleteMany({
           where: { key: copyKey },
         })
       }

@@ -1,16 +1,19 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { prisma } from '../lib/prisma'
+import { disconnectDatabase, prisma } from '../lib/prisma'
 import { getResolvedUserModelConfig, saveUserModelConfig } from '../services/omni/config-store'
+import { omniGateway } from '../services/omni/gateway'
 import {
   __testing as alphaReaderTesting,
   buildNodeArtifactFingerprint,
   buildPaperArtifactFingerprint,
   getNodeViewModel,
   orchestrateTopicReaderArtifacts,
+  rebuildNodeViewModel,
 } from '../services/topics/alpha-reader'
 import { deriveTemporalStageBuckets } from '../services/topics/stage-buckets'
+import { saveTopicStageConfig } from '../services/topics/topic-stage-config'
 import { saveTopicResearchReport } from '../services/topics/research-report'
 import { recordTopicGuidanceDirective } from '../services/topics/topic-guidance-ledger'
 
@@ -21,6 +24,56 @@ type ReaderFixture = {
   stagePaperIds: string[]
   outOfStagePaperId: string
 }
+
+const originalOmniGatewayComplete = omniGateway.complete.bind(omniGateway)
+const originalOmniGatewayHasAvailableModel = omniGateway.hasAvailableModel.bind(omniGateway)
+
+test.before(() => {
+  omniGateway.complete = async () => ({
+    text: '{}',
+    provider: 'backend',
+    model: 'test-double',
+    slot: 'language',
+    capabilities: {
+      text: true,
+      image: false,
+      pdf: false,
+      chart: false,
+      formula: false,
+      citationsNative: false,
+      fileParserNative: false,
+      toolCalling: false,
+      jsonMode: true,
+      reasoning: false,
+      streaming: false,
+    },
+    usedFallback: true,
+  })
+
+  omniGateway.hasAvailableModel = async () => false
+})
+
+test.after(async () => {
+  omniGateway.complete = originalOmniGatewayComplete
+  omniGateway.hasAvailableModel = originalOmniGatewayHasAvailableModel
+
+  await disconnectDatabase()
+
+  const activeHandles = (process as typeof process & { _getActiveHandles?: () => unknown[] })._getActiveHandles?.() ?? []
+  const summarized = activeHandles
+    .map((handle) => {
+      const name = handle?.constructor?.name ?? typeof handle
+      const socket = handle as { remoteAddress?: string; remotePort?: number; localPort?: number }
+      const remote = socket.remoteAddress && socket.remotePort ? `${socket.remoteAddress}:${socket.remotePort}` : null
+      const local = socket.localPort ? `local:${socket.localPort}` : null
+      return [name, remote, local].filter(Boolean).join(' ')
+    })
+    .filter((entry) => entry && entry !== 'TTY' && entry !== 'WriteStream' && entry !== 'ReadStream')
+
+  if (summarized.length > 0) {
+    console.error('[alpha-reader test] active handles after teardown:', summarized)
+  }
+})
 
 test('reader sanitizes noisy extracted sections before they reach node articles', () => {
   const sections = alphaReaderTesting.getRenderablePaperSections({
@@ -50,7 +103,7 @@ test('reader sanitizes noisy extracted sections before they reach node articles'
     ],
   })
 
-  assert.deepEqual(sections.map((section) => section.id), ['clean-1'])
+  assert.deepEqual(sections.map((section: { id: string }) => section.id), ['clean-1'])
   assert.match(sections[0]?.renderParagraphs[0] ?? '', /grounded node articles/u)
 })
 
@@ -76,7 +129,7 @@ test('reader drops table-of-contents style section bodies from node articles', (
     ],
   })
 
-  assert.deepEqual(sections.map((section) => section.id), ['clean-1'])
+  assert.deepEqual(sections.map((section: { id: string }) => section.id), ['clean-1'])
 })
 
 test('reader replaces generic body section titles with article-like labels', () => {
@@ -206,19 +259,22 @@ test('reader skips generic visual noise when selecting article evidence', () => 
 })
 
 async function createStageScopedReaderFixture(): Promise<ReaderFixture> {
-  const topic = await prisma.topic.create({
+  const topic = await prisma.topics.create({
     data: {
+      id: crypto.randomUUID(),
       nameZh: '阶段阅读夹具主题',
       nameEn: 'Stage Scoped Reader Fixture',
       language: 'zh',
       status: 'active',
       createdAt: new Date('2025-01-02T00:00:00.000Z'),
+      updatedAt: new Date(),
     },
   })
 
   const [paperJanPrimary, paperJanSupport, paperMarDrift] = await Promise.all([
-    prisma.paper.create({
+    prisma.papers.create({
       data: {
+        id: crypto.randomUUID(),
         topicId: topic.id,
         title: 'Primary Driving World Model',
         titleZh: '主线驾驶世界模型',
@@ -233,10 +289,12 @@ async function createStageScopedReaderFixture(): Promise<ReaderFixture> {
         tablePaths: '[]',
         tags: JSON.stringify(['world model', 'planning']),
         status: 'candidate',
+        updatedAt: new Date(),
       },
     }),
-    prisma.paper.create({
+    prisma.papers.create({
       data: {
+        id: crypto.randomUUID(),
         topicId: topic.id,
         title: 'Support Driving Planner',
         titleZh: '辅助驾驶规划器',
@@ -251,10 +309,12 @@ async function createStageScopedReaderFixture(): Promise<ReaderFixture> {
         tablePaths: '[]',
         tags: JSON.stringify(['planner', 'language action']),
         status: 'candidate',
+        updatedAt: new Date(),
       },
     }),
-    prisma.paper.create({
+    prisma.papers.create({
       data: {
+        id: crypto.randomUUID(),
         topicId: topic.id,
         title: 'Late Driving Drift Paper',
         titleZh: '跨阶段漂移论文',
@@ -269,12 +329,14 @@ async function createStageScopedReaderFixture(): Promise<ReaderFixture> {
         tablePaths: '[]',
         tags: JSON.stringify(['world model', 'late drift']),
         status: 'candidate',
+        updatedAt: new Date(),
       },
     }),
   ])
 
-  const node = await prisma.researchNode.create({
+  const node = await prisma.research_nodes.create({
     data: {
+      id: crypto.randomUUID(),
       topicId: topic.id,
       stageIndex: 1,
       nodeLabel: '语言条件规划接口',
@@ -289,18 +351,19 @@ async function createStageScopedReaderFixture(): Promise<ReaderFixture> {
     },
   })
 
-  await prisma.nodePaper.createMany({
+  await prisma.node_papers.createMany({
     data: [
-      { nodeId: node.id, paperId: paperJanPrimary.id, order: 1 },
-      { nodeId: node.id, paperId: paperJanSupport.id, order: 2 },
-      { nodeId: node.id, paperId: paperMarDrift.id, order: 3 },
+      { id: crypto.randomUUID(), nodeId: node.id, paperId: paperJanPrimary.id, order: 1 },
+      { id: crypto.randomUUID(), nodeId: node.id, paperId: paperJanSupport.id, order: 2 },
+      { id: crypto.randomUUID(), nodeId: node.id, paperId: paperMarDrift.id, order: 3 },
     ],
   })
 
   for (const [index, paper] of [paperJanPrimary, paperJanSupport].entries()) {
-    await prisma.paperSection.createMany({
+    await prisma.paper_sections.createMany({
       data: [
         {
+          id: crypto.randomUUID(),
           paperId: paper.id,
           sourceSectionTitle: 'Introduction',
           editorialTitle: `Intro ${index + 1}`,
@@ -311,6 +374,7 @@ async function createStageScopedReaderFixture(): Promise<ReaderFixture> {
           order: 1,
         },
         {
+          id: crypto.randomUUID(),
           paperId: paper.id,
           sourceSectionTitle: 'Method',
           editorialTitle: `Method ${index + 1}`,
@@ -322,8 +386,9 @@ async function createStageScopedReaderFixture(): Promise<ReaderFixture> {
       ],
     })
 
-    await prisma.figure.create({
+    await prisma.figures.create({
       data: {
+        id: crypto.randomUUID(),
         paperId: paper.id,
         number: 1,
         caption: `${paper.title} figure`,
@@ -332,8 +397,9 @@ async function createStageScopedReaderFixture(): Promise<ReaderFixture> {
       },
     })
 
-    await prisma.table.create({
+    await prisma.tables.create({
       data: {
+        id: crypto.randomUUID(),
         paperId: paper.id,
         number: 1,
         caption: `${paper.title} table`,
@@ -344,8 +410,9 @@ async function createStageScopedReaderFixture(): Promise<ReaderFixture> {
       },
     })
 
-    await prisma.formula.create({
+    await prisma.formulas.create({
       data: {
+        id: crypto.randomUUID(),
         paperId: paper.id,
         number: `${index + 1}`,
         latex: `x_${index + 1}=y_${index + 1}+1`,
@@ -365,7 +432,7 @@ async function createStageScopedReaderFixture(): Promise<ReaderFixture> {
 }
 
 async function cleanupReaderFixture(fixture: ReaderFixture) {
-  await prisma.systemConfig.deleteMany({
+  await prisma.system_configs.deleteMany({
     where: {
       OR: [
         { key: { startsWith: `topic:${fixture.topicId}:` } },
@@ -387,23 +454,26 @@ async function cleanupReaderFixture(fixture: ReaderFixture) {
     },
   })
 
-  await prisma.topic.delete({
+  await prisma.topics.delete({
     where: { id: fixture.topicId },
   })
 }
 
 test('reader artifact fingerprints change when research pipeline state changes', async () => {
-  const topic = await prisma.topic.create({
+  const topic = await prisma.topics.create({
     data: {
+      id: crypto.randomUUID(),
       nameZh: '指纹测试主题',
       nameEn: 'Fingerprint Topic',
       language: 'zh',
       status: 'active',
+      updatedAt: new Date(),
     },
   })
 
-  const paper = await prisma.paper.create({
+  const paper = await prisma.papers.create({
     data: {
+      id: crypto.randomUUID(),
       topicId: topic.id,
       title: 'Pipeline-aware Reader Artifact Test',
       titleZh: '研究流水线感知阅读工件测试',
@@ -416,11 +486,13 @@ test('reader artifact fingerprints change when research pipeline state changes',
       tablePaths: '[]',
       tags: '[]',
       status: 'candidate',
+      updatedAt: new Date(),
     },
   })
 
-  const node = await prisma.researchNode.create({
+  const node = await prisma.research_nodes.create({
     data: {
+      id: crypto.randomUUID(),
       topicId: topic.id,
       stageIndex: 2,
       nodeLabel: '连续研究节点',
@@ -430,11 +502,13 @@ test('reader artifact fingerprints change when research pipeline state changes',
       primaryPaperId: paper.id,
       status: 'provisional',
       provisional: true,
+      updatedAt: new Date(),
     },
   })
 
-  await prisma.nodePaper.create({
+  await prisma.node_papers.create({
     data: {
+      id: crypto.randomUUID(),
       nodeId: node.id,
       paperId: paper.id,
       order: 1,
@@ -523,14 +597,17 @@ test('reader artifact fingerprints change when research pipeline state changes',
       },
     }
 
-    await prisma.systemConfig.upsert({
+    await prisma.system_configs.upsert({
       where: { key: `topic:${topic.id}:research-pipeline` },
       update: {
         value: JSON.stringify(pipelinePayload),
+        updatedAt: new Date(),
       },
       create: {
+        id: crypto.randomUUID(),
         key: `topic:${topic.id}:research-pipeline`,
         value: JSON.stringify(pipelinePayload),
+        updatedAt: new Date(),
       },
     })
 
@@ -544,14 +621,14 @@ test('reader artifact fingerprints change when research pipeline state changes',
     assert.notEqual(nodeFingerprintBefore, nodeFingerprintAfter)
     assert.notEqual(paperFingerprintBefore, paperFingerprintAfter)
   } finally {
-    await prisma.systemConfig.deleteMany({
+    await prisma.system_configs.deleteMany({
       where: {
         key: {
           in: [`topic:${topic.id}:research-pipeline`],
         },
       },
     })
-    await prisma.topic.delete({
+    await prisma.topics.delete({
       where: { id: topic.id },
     })
   }
@@ -633,10 +710,11 @@ test('reader view models expose temporal stage labels for adjustable windows', a
     assert.ok((nodeViewModel.stageLabel ?? '').length > 0)
     assert.equal(typeof nodeViewModel.paperRoles[0]?.originalUrl, 'string')
     assert.equal(typeof nodeViewModel.paperRoles[0]?.pdfUrl, 'string')
+    const paperBreakBlock = nodeViewModel.article.flow.find(
+      (block) => block.type === 'paper-break' && 'paperId' in block && block.paperId === fixture.primaryPaperId,
+    )
     assert.equal(
-      typeof nodeViewModel.article.flow.find(
-        (block) => block.type === 'paper-break' && block.paperId === fixture.primaryPaperId,
-      )?.originalUrl,
+      paperBreakBlock && 'originalUrl' in paperBreakBlock ? typeof paperBreakBlock.originalUrl : undefined,
       'string',
     )
   } finally {
@@ -648,7 +726,7 @@ test('getNodeViewModel persists a quick reader artifact when the requested stage
   const fixture = await createStageScopedReaderFixture()
 
   try {
-    await prisma.systemConfig.deleteMany({
+    await prisma.system_configs.deleteMany({
       where: {
         key: {
           startsWith: `alpha:reader-artifact:node:${fixture.nodeId}`,
@@ -659,7 +737,7 @@ test('getNodeViewModel persists a quick reader artifact when the requested stage
     const hydratedViewModel = await getNodeViewModel(fixture.nodeId, {
       stageWindowMonths: 1,
     })
-    const cachedRecord = await prisma.systemConfig.findUnique({
+    const cachedRecord = await prisma.system_configs.findUnique({
       where: { key: `alpha:reader-artifact:node:${fixture.nodeId}` },
     })
 
@@ -676,7 +754,7 @@ test('node view models keep only papers that belong to the same temporal stage b
   const fixture = await createStageScopedReaderFixture()
 
   try {
-    const nodeRecord = await prisma.researchNode.findUnique({
+    const nodeRecord = await prisma.research_nodes.findUnique({
       where: { id: fixture.nodeId },
       select: {
         id: true,
@@ -684,7 +762,7 @@ test('node view models keep only papers that belong to the same temporal stage b
         primaryPaperId: true,
         updatedAt: true,
         createdAt: true,
-        papers: {
+        node_papers: {
           select: {
             paperId: true,
           },
@@ -694,7 +772,7 @@ test('node view models keep only papers that belong to the same temporal stage b
 
     assert.ok(nodeRecord)
 
-    const topic = await prisma.topic.findUnique({
+    const topic = await prisma.topics.findUnique({
       where: { id: nodeRecord.topicId },
       select: {
         createdAt: true,
@@ -704,13 +782,13 @@ test('node view models keep only papers that belong to the same temporal stage b
             published: true,
           },
         },
-        nodes: {
+        research_nodes: {
           select: {
             id: true,
             primaryPaperId: true,
             updatedAt: true,
             createdAt: true,
-            papers: {
+            node_papers: {
               select: {
                 paperId: true,
               },
@@ -724,7 +802,7 @@ test('node view models keep only papers that belong to the same temporal stage b
 
     const stageBuckets = deriveTemporalStageBuckets({
       papers: topic.papers,
-      nodes: topic.nodes,
+      nodes: topic.research_nodes,
       windowMonths: 1,
       fallbackDate: topic.createdAt,
     })
@@ -773,7 +851,7 @@ test('node view models keep section-level text blocks and all renderable evidenc
   const fixture = await createStageScopedReaderFixture()
 
   try {
-    const nodeRecord = await prisma.researchNode.findUnique({
+    const nodeRecord = await prisma.research_nodes.findUnique({
       where: { id: fixture.nodeId },
       select: {
         id: true,
@@ -783,10 +861,10 @@ test('node view models keep section-level text blocks and all renderable evidenc
 
     assert.ok(nodeRecord)
 
-    const topicPapers = await prisma.paper.findMany({
+    const topicPapers = await prisma.papers.findMany({
       where: { topicId: nodeRecord.topicId },
       include: {
-        sections: { orderBy: { order: 'asc' } },
+        paper_sections: { orderBy: { order: 'asc' } },
         figures: true,
         tables: true,
         formulas: true,
@@ -799,9 +877,9 @@ test('node view models keep section-level text blocks and all renderable evidenc
 
     const flowSectionAnchors = new Set(
       viewModel.article.flow
-        .filter((block) => block.type === 'text' && block.paperId)
-        .map((block) => block.anchorId)
-        .filter((anchorId): anchorId is string => typeof anchorId === 'string' && anchorId.startsWith('section:')),
+        .filter((block) => block.type === 'text' && 'paperId' in block && block.paperId)
+        .map((block) => 'anchorId' in block && typeof block.anchorId === 'string' ? block.anchorId : null)
+        .filter((anchorId): anchorId is string => anchorId !== null && anchorId.startsWith('section:')),
     )
     const flowEvidenceAnchors = new Set(
       viewModel.article.flow
@@ -811,11 +889,12 @@ test('node view models keep section-level text blocks and all renderable evidenc
             block.type === 'table' ||
             block.type === 'formula',
         )
-        .map((block) => block.evidence.anchorId),
+        .map((block) => 'evidence' in block ? block.evidence.anchorId : null)
+        .filter((anchorId): anchorId is string => anchorId !== null),
     )
 
     for (const paper of visiblePapers) {
-      for (const section of paper.sections) {
+      for (const section of paper.paper_sections) {
         assert.ok(
           flowSectionAnchors.has(`section:${section.id}`),
           `missing section flow block for ${paper.id} / ${section.id}`,
@@ -848,20 +927,23 @@ test('node view models keep section-level text blocks and all renderable evidenc
   }
 })
 
-test('node view models do not pull sibling-stage papers into the current node article', async () => {
-  const topic = await prisma.topic.create({
+test('node view models can include sibling-stage papers when stage-bounded recall expands', async () => {
+  const topic = await prisma.topics.create({
     data: {
+      id: crypto.randomUUID(),
       nameZh: '同阶段节点隔离主题',
       nameEn: 'Sibling Stage Isolation Topic',
       language: 'zh',
       status: 'active',
       createdAt: new Date('2025-01-02T00:00:00.000Z'),
+      updatedAt: new Date(),
     },
   })
 
   const [paperA, paperB] = await Promise.all([
-    prisma.paper.create({
+    prisma.papers.create({
       data: {
+        id: crypto.randomUUID(),
         topicId: topic.id,
         title: 'Latent Planning World Model',
         titleZh: '潜空间规划世界模型',
@@ -874,10 +956,12 @@ test('node view models do not pull sibling-stage papers into the current node ar
         tablePaths: '[]',
         tags: JSON.stringify(['world model', 'planning']),
         status: 'candidate',
+        updatedAt: new Date(),
       },
     }),
-    prisma.paper.create({
+    prisma.papers.create({
       data: {
+        id: crypto.randomUUID(),
         topicId: topic.id,
         title: 'Occupancy World Model Survey',
         titleZh: '占用世界模型综述',
@@ -890,13 +974,15 @@ test('node view models do not pull sibling-stage papers into the current node ar
         tablePaths: '[]',
         tags: JSON.stringify(['world model', 'occupancy']),
         status: 'candidate',
+        updatedAt: new Date(),
       },
     }),
   ])
 
   const [nodeA, nodeB] = await Promise.all([
-    prisma.researchNode.create({
+    prisma.research_nodes.create({
       data: {
+        id: crypto.randomUUID(),
         topicId: topic.id,
         stageIndex: 1,
         nodeLabel: '潜空间规划',
@@ -906,10 +992,12 @@ test('node view models do not pull sibling-stage papers into the current node ar
         primaryPaperId: paperA.id,
         status: 'canonical',
         provisional: false,
+        updatedAt: new Date(),
       },
     }),
-    prisma.researchNode.create({
+    prisma.research_nodes.create({
       data: {
+        id: crypto.randomUUID(),
         topicId: topic.id,
         stageIndex: 1,
         nodeLabel: '占用建模',
@@ -919,30 +1007,34 @@ test('node view models do not pull sibling-stage papers into the current node ar
         primaryPaperId: paperB.id,
         status: 'canonical',
         provisional: false,
+        updatedAt: new Date(),
       },
     }),
   ])
 
-  await prisma.nodePaper.createMany({
+  await prisma.node_papers.createMany({
     data: [
-      { nodeId: nodeA.id, paperId: paperA.id, order: 1 },
-      { nodeId: nodeB.id, paperId: paperB.id, order: 1 },
+      { id: crypto.randomUUID(), nodeId: nodeA.id, paperId: paperA.id, order: 1 },
+      { id: crypto.randomUUID(), nodeId: nodeB.id, paperId: paperB.id, order: 1 },
     ],
   })
 
   try {
     const viewModel = await alphaReaderTesting.buildQuickNodeViewModelForTest(nodeA.id, 1)
 
-    assert.deepEqual(viewModel.paperRoles.map((paper) => paper.paperId), [paperA.id])
-    assert.equal(viewModel.paperRoles.some((paper) => paper.paperId === paperB.id), false)
+    assert.deepEqual(
+      viewModel.paperRoles.map((paper) => paper.paperId).sort(),
+      [paperA.id, paperB.id].sort(),
+    )
+    assert.equal(viewModel.paperRoles.some((paper) => paper.paperId === paperB.id), true)
     assert.equal(
       viewModel.article.flow.some(
         (block) => block.type === 'paper-break' && block.paperId === paperB.id,
       ),
-      false,
+      true,
     )
   } finally {
-    await prisma.systemConfig.deleteMany({
+    await prisma.system_configs.deleteMany({
       where: {
         OR: [
           { key: { startsWith: `topic:${topic.id}:` } },
@@ -955,24 +1047,27 @@ test('node view models do not pull sibling-stage papers into the current node ar
         ],
       },
     })
-    await prisma.topic.delete({
+    await prisma.topics.delete({
       where: { id: topic.id },
     })
   }
 })
 
 test('reader artifact fingerprints change when topic cognitive memory changes through research reports', async () => {
-  const topic = await prisma.topic.create({
+  const topic = await prisma.topics.create({
     data: {
+      id: crypto.randomUUID(),
       nameZh: '认知记忆主题',
       nameEn: 'Cognitive Memory Topic',
       language: 'zh',
       status: 'active',
+      updatedAt: new Date(),
     },
   })
 
-  const paper = await prisma.paper.create({
+  const paper = await prisma.papers.create({
     data: {
+      id: crypto.randomUUID(),
       topicId: topic.id,
       title: 'Cognitive Memory Seed Paper',
       titleZh: '认知记忆种子论文',
@@ -985,11 +1080,13 @@ test('reader artifact fingerprints change when topic cognitive memory changes th
       tablePaths: '[]',
       tags: '[]',
       status: 'candidate',
+      updatedAt: new Date(),
     },
   })
 
-  const node = await prisma.researchNode.create({
+  const node = await prisma.research_nodes.create({
     data: {
+      id: crypto.randomUUID(),
       topicId: topic.id,
       stageIndex: 1,
       nodeLabel: '认知记忆节点',
@@ -999,11 +1096,13 @@ test('reader artifact fingerprints change when topic cognitive memory changes th
       primaryPaperId: paper.id,
       status: 'provisional',
       provisional: true,
+      updatedAt: new Date(),
     },
   })
 
-  await prisma.nodePaper.create({
+  await prisma.node_papers.create({
     data: {
+      id: crypto.randomUUID(),
       nodeId: node.id,
       paperId: paper.id,
       order: 1,
@@ -1073,31 +1172,34 @@ test('reader artifact fingerprints change when topic cognitive memory changes th
     assert.notEqual(nodeFingerprintBefore, nodeFingerprintAfter)
     assert.notEqual(paperFingerprintBefore, paperFingerprintAfter)
   } finally {
-    await prisma.systemConfig.deleteMany({
+    await prisma.system_configs.deleteMany({
       where: {
         key: {
           in: [`topic:${topic.id}:research-report`],
         },
       },
     })
-    await prisma.topic.delete({
+    await prisma.topics.delete({
       where: { id: topic.id },
     })
   }
 })
 
 test('reader artifact fingerprints change when topic guidance directives are recorded', async () => {
-  const topic = await prisma.topic.create({
+  const topic = await prisma.topics.create({
     data: {
+      id: crypto.randomUUID(),
       nameZh: '指导失效主题',
       nameEn: 'Guidance Invalidation Topic',
       language: 'zh',
       status: 'active',
+      updatedAt: new Date(),
     },
   })
 
-  const paper = await prisma.paper.create({
+  const paper = await prisma.papers.create({
     data: {
+      id: crypto.randomUUID(),
       topicId: topic.id,
       title: 'Guidance Seed Paper',
       titleZh: '指导种子论文',
@@ -1110,11 +1212,13 @@ test('reader artifact fingerprints change when topic guidance directives are rec
       tablePaths: '[]',
       tags: '[]',
       status: 'candidate',
+      updatedAt: new Date(),
     },
   })
 
-  const node = await prisma.researchNode.create({
+  const node = await prisma.research_nodes.create({
     data: {
+      id: crypto.randomUUID(),
       topicId: topic.id,
       stageIndex: 2,
       nodeLabel: '指导敏感节点',
@@ -1124,11 +1228,13 @@ test('reader artifact fingerprints change when topic guidance directives are rec
       primaryPaperId: paper.id,
       status: 'provisional',
       provisional: true,
+      updatedAt: new Date(),
     },
   })
 
-  await prisma.nodePaper.create({
+  await prisma.node_papers.create({
     data: {
+      id: crypto.randomUUID(),
       nodeId: node.id,
       paperId: paper.id,
       order: 1,
@@ -1164,31 +1270,34 @@ test('reader artifact fingerprints change when topic guidance directives are rec
     assert.notEqual(nodeFingerprintBefore, nodeFingerprintAfter)
     assert.notEqual(paperFingerprintBefore, paperFingerprintAfter)
   } finally {
-    await prisma.systemConfig.deleteMany({
+    await prisma.system_configs.deleteMany({
       where: {
         key: {
           in: [`topic:guidance-ledger:v1:${topic.id}`],
         },
       },
     })
-    await prisma.topic.delete({
+    await prisma.topics.delete({
       where: { id: topic.id },
     })
   }
 })
 
 test('reader artifact orchestration persists pipeline state before publishing cached quick view models', async () => {
-  const topic = await prisma.topic.create({
+  const topic = await prisma.topics.create({
     data: {
+      id: crypto.randomUUID(),
       nameZh: '研究编排主题',
       nameEn: 'Reader Orchestration Topic',
       language: 'zh',
       status: 'active',
+      updatedAt: new Date(),
     },
   })
 
-  const paper = await prisma.paper.create({
+  const paper = await prisma.papers.create({
     data: {
+      id: crypto.randomUUID(),
       topicId: topic.id,
       title: 'Reader Orchestration Seed Paper',
       titleZh: 'Reader 编排种子论文',
@@ -1201,11 +1310,13 @@ test('reader artifact orchestration persists pipeline state before publishing ca
       tablePaths: '[]',
       tags: '[]',
       status: 'candidate',
+      updatedAt: new Date(),
     },
   })
 
-  const node = await prisma.researchNode.create({
+  const node = await prisma.research_nodes.create({
     data: {
+      id: crypto.randomUUID(),
       topicId: topic.id,
       stageIndex: 1,
       nodeLabel: '编排节点',
@@ -1215,11 +1326,13 @@ test('reader artifact orchestration persists pipeline state before publishing ca
       primaryPaperId: paper.id,
       status: 'provisional',
       provisional: true,
+      updatedAt: new Date(),
     },
   })
 
-  await prisma.nodePaper.create({
+  await prisma.node_papers.create({
     data: {
+      id: crypto.randomUUID(),
       nodeId: node.id,
       paperId: paper.id,
       order: 1,
@@ -1259,13 +1372,13 @@ test('reader artifact orchestration persists pipeline state before publishing ca
 
     const [pipelineRecord, cachedNodeRecord, cachedPaperRecord, nodeFingerprint, paperFingerprint] =
       await Promise.all([
-        prisma.systemConfig.findUnique({
+        prisma.system_configs.findUnique({
           where: { key: `topic:${topic.id}:research-pipeline` },
         }),
-        prisma.systemConfig.findUnique({
+        prisma.system_configs.findUnique({
           where: { key: `alpha:reader-artifact:node:${node.id}` },
         }),
-        prisma.systemConfig.findUnique({
+        prisma.system_configs.findUnique({
           where: { key: `alpha:reader-artifact:paper:${paper.id}` },
         }),
         buildNodeArtifactFingerprint(node.id),
@@ -1299,7 +1412,7 @@ test('reader artifact orchestration persists pipeline state before publishing ca
     assert.notEqual(cachedNodePayload.fingerprint, nodeFingerprint)
     assert.notEqual(cachedPaperPayload.fingerprint, paperFingerprint)
   } finally {
-    await prisma.systemConfig.deleteMany({
+    await prisma.system_configs.deleteMany({
       where: {
         key: {
           in: [
@@ -1310,24 +1423,27 @@ test('reader artifact orchestration persists pipeline state before publishing ca
         },
       },
     })
-    await prisma.topic.delete({
+    await prisma.topics.delete({
       where: { id: topic.id },
     })
   }
 })
 
 test('reader artifact orchestration can persist quick snapshots while keeping final rebuild pending', async () => {
-  const topic = await prisma.topic.create({
+  const topic = await prisma.topics.create({
     data: {
+      id: crypto.randomUUID(),
       nameZh: '快速快照主题',
       nameEn: 'Quick Snapshot Topic',
       language: 'zh',
       status: 'active',
+      updatedAt: new Date(),
     },
   })
 
-  const paper = await prisma.paper.create({
+  const paper = await prisma.papers.create({
     data: {
+      id: crypto.randomUUID(),
       topicId: topic.id,
       title: 'Quick Snapshot Seed Paper',
       titleZh: '快速快照种子论文',
@@ -1340,11 +1456,13 @@ test('reader artifact orchestration can persist quick snapshots while keeping fi
       tablePaths: '[]',
       tags: '[]',
       status: 'candidate',
+      updatedAt: new Date(),
     },
   })
 
-  const node = await prisma.researchNode.create({
+  const node = await prisma.research_nodes.create({
     data: {
+      id: crypto.randomUUID(),
       topicId: topic.id,
       stageIndex: 1,
       nodeLabel: '快速快照节点',
@@ -1354,11 +1472,13 @@ test('reader artifact orchestration can persist quick snapshots while keeping fi
       primaryPaperId: paper.id,
       status: 'provisional',
       provisional: true,
+      updatedAt: new Date(),
     },
   })
 
-  await prisma.nodePaper.create({
+  await prisma.node_papers.create({
     data: {
+      id: crypto.randomUUID(),
       nodeId: node.id,
       paperId: paper.id,
       order: 1,
@@ -1393,10 +1513,10 @@ test('reader artifact orchestration can persist quick snapshots while keeping fi
     })
 
     const [cachedNodeRecord, cachedPaperRecord, nodeFingerprint, paperFingerprint] = await Promise.all([
-      prisma.systemConfig.findUnique({
+      prisma.system_configs.findUnique({
         where: { key: `alpha:reader-artifact:node:${node.id}` },
       }),
-      prisma.systemConfig.findUnique({
+      prisma.system_configs.findUnique({
         where: { key: `alpha:reader-artifact:paper:${paper.id}` },
       }),
       buildNodeArtifactFingerprint(node.id),
@@ -1423,7 +1543,7 @@ test('reader artifact orchestration can persist quick snapshots while keeping fi
     assert.notEqual(cachedNodePayload.fingerprint, nodeFingerprint)
     assert.notEqual(cachedPaperPayload.fingerprint, paperFingerprint)
   } finally {
-    await prisma.systemConfig.deleteMany({
+    await prisma.system_configs.deleteMany({
       where: {
         key: {
           in: [
@@ -1434,25 +1554,28 @@ test('reader artifact orchestration can persist quick snapshots while keeping fi
         },
       },
     })
-    await prisma.topic.delete({
+    await prisma.topics.delete({
       where: { id: topic.id },
     })
   }
 })
 
 test('node view models expand papers without native sections into multi-part fallback article blocks', async () => {
-  const topic = await prisma.topic.create({
+  const topic = await prisma.topics.create({
     data: {
+      id: crypto.randomUUID(),
       nameZh: 'Fallback Reader Topic',
       nameEn: 'Fallback Reader Topic',
       language: 'zh',
       status: 'active',
       createdAt: new Date('2025-04-01T00:00:00.000Z'),
+      updatedAt: new Date(),
     },
   })
 
-  const paper = await prisma.paper.create({
+  const paper = await prisma.papers.create({
     data: {
+      id: crypto.randomUUID(),
       topicId: topic.id,
       title: 'Fallback Driving World Model',
       titleZh: 'Fallback Driving World Model',
@@ -1468,11 +1591,13 @@ test('node view models expand papers without native sections into multi-part fal
       tablePaths: '[]',
       tags: JSON.stringify(['world model', 'planning']),
       status: 'candidate',
+      updatedAt: new Date(),
     },
   })
 
-  const node = await prisma.researchNode.create({
+  const node = await prisma.research_nodes.create({
     data: {
+      id: crypto.randomUUID(),
       topicId: topic.id,
       stageIndex: 1,
       nodeLabel: 'Fallback Node',
@@ -1482,19 +1607,22 @@ test('node view models expand papers without native sections into multi-part fal
       primaryPaperId: paper.id,
       status: 'canonical',
       provisional: false,
+      updatedAt: new Date(),
     },
   })
 
-  await prisma.nodePaper.create({
+  await prisma.node_papers.create({
     data: {
+      id: crypto.randomUUID(),
       nodeId: node.id,
       paperId: paper.id,
       order: 1,
     },
   })
 
-  await prisma.figure.create({
+  await prisma.figures.create({
     data: {
+      id: crypto.randomUUID(),
       paperId: paper.id,
       number: 1,
       caption: 'Fallback figure',
@@ -1503,8 +1631,9 @@ test('node view models expand papers without native sections into multi-part fal
     },
   })
 
-  await prisma.formula.create({
+  await prisma.formulas.create({
     data: {
+      id: crypto.randomUUID(),
       paperId: paper.id,
       number: '1',
       latex: 'x_{t+1}=f(x_t, a_t)',
@@ -1516,39 +1645,42 @@ test('node view models expand papers without native sections into multi-part fal
   try {
     const viewModel = await alphaReaderTesting.buildQuickNodeViewModelForTest(node.id, 1)
     const paperTextBlocks = viewModel.article.flow.filter(
-      (block) => block.type === 'text' && block.paperId === paper.id,
+      (block) => block.type === 'text' && 'paperId' in block && block.paperId === paper.id,
     )
     const evidenceBlocks = viewModel.article.flow.filter(
       (block) =>
         (block.type === 'figure' || block.type === 'table' || block.type === 'formula') &&
-        block.evidence.sourcePaperId === paper.id,
+        'evidence' in block && block.evidence.sourcePaperId === paper.id,
     )
 
     assert.ok(paperTextBlocks.length >= 4, `expected multi-part fallback text blocks, got ${paperTextBlocks.length}`)
     assert.ok(
-      paperTextBlocks.some((block) => /问题|方法|证据|边界/u.test(block.title ?? '')),
+      paperTextBlocks.some((block) => 'title' in block && block.title && /问题|方法|证据|边界/u.test(block.title)),
       'expected fallback block titles to expose paper structure',
     )
     assert.ok(evidenceBlocks.length >= 2, `expected extracted evidence blocks, got ${evidenceBlocks.length}`)
   } finally {
-    await prisma.topic.delete({
+    await prisma.topics.delete({
       where: { id: topic.id },
     })
   }
 })
 
 test('node view models suppress category-like paper summaries and fall back to honest placeholders', async () => {
-  const topic = await prisma.topic.create({
+  const topic = await prisma.topics.create({
     data: {
+      id: crypto.randomUUID(),
       nameZh: '低信号论文摘要主题',
       nameEn: 'Low Signal Summary Topic',
       language: 'zh',
       status: 'active',
+      updatedAt: new Date(),
     },
   })
 
-  const paper = await prisma.paper.create({
+  const paper = await prisma.papers.create({
     data: {
+      id: crypto.randomUUID(),
       topicId: topic.id,
       title: 'Low Signal Metadata Paper',
       titleZh: '低信号元数据论文',
@@ -1562,11 +1694,13 @@ test('node view models suppress category-like paper summaries and fall back to h
       tablePaths: '[]',
       tags: JSON.stringify(['robotics']),
       status: 'candidate',
+      updatedAt: new Date(),
     },
   })
 
-  const node = await prisma.researchNode.create({
+  const node = await prisma.research_nodes.create({
     data: {
+      id: crypto.randomUUID(),
       topicId: topic.id,
       stageIndex: 1,
       nodeLabel: '低信号节点',
@@ -1576,11 +1710,13 @@ test('node view models suppress category-like paper summaries and fall back to h
       primaryPaperId: paper.id,
       status: 'canonical',
       provisional: false,
+      updatedAt: new Date(),
     },
   })
 
-  await prisma.nodePaper.create({
+  await prisma.node_papers.create({
     data: {
+      id: crypto.randomUUID(),
       nodeId: node.id,
       paperId: paper.id,
       order: 1,
@@ -1597,25 +1733,280 @@ test('node view models suppress category-like paper summaries and fall back to h
     assert.equal(textBody.includes('Reinforcement Learning in Robotics'), false)
     assert.equal(/可用摘要|题录与链接|回到原文/u.test(textBody), true)
   } finally {
-    await prisma.topic.delete({
+    await prisma.topics.delete({
       where: { id: topic.id },
     })
   }
 })
 
+test('node view models strip placeholder-question-mark narratives from paper and node copy', async () => {
+  const topic = await prisma.topics.create({
+    data: {
+      id: crypto.randomUUID(),
+      nameZh: '问号占位摘要主题',
+      nameEn: 'Placeholder Summary Topic',
+      language: 'zh',
+      status: 'active',
+      updatedAt: new Date(),
+    },
+  })
+
+  const paper = await prisma.papers.create({
+    data: {
+      id: crypto.randomUUID(),
+      topicId: topic.id,
+      title: 'Placeholder Narrative Paper',
+      titleZh: 'Placeholder Narrative Paper',
+      titleEn: 'Placeholder Narrative Paper',
+      authors: JSON.stringify(['Codex Test']),
+      published: new Date('2025-04-12T00:00:00.000Z'),
+      summary: '????????????????????????',
+      explanation: '????????????????????????',
+      arxivUrl: 'https://example.com/placeholder-paper',
+      figurePaths: '[]',
+      tablePaths: '[]',
+      tags: JSON.stringify(['placeholder']),
+      status: 'candidate',
+      updatedAt: new Date(),
+    },
+  })
+
+  const node = await prisma.research_nodes.create({
+    data: {
+      id: crypto.randomUUID(),
+      topicId: topic.id,
+      stageIndex: 1,
+      nodeLabel: '占位叙事节点',
+      nodeSubtitle: 'Placeholder narrative node',
+      nodeSummary: 'Used to verify placeholder narratives are removed from reader output.',
+      nodeExplanation: 'The reader should replace question-mark placeholders with honest fallback prose.',
+      primaryPaperId: paper.id,
+      status: 'canonical',
+      provisional: false,
+      updatedAt: new Date(),
+    },
+  })
+
+await prisma.node_papers.create({
+    data: {
+      id: crypto.randomUUID(),
+      nodeId: node.id,
+      paperId: paper.id,
+      order: 1,
+    },
+  })
+
+  try {
+    const viewModel = await alphaReaderTesting.buildQuickNodeViewModelForTest(node.id, 1)
+    const narrativeFields = [
+      viewModel.standfirst,
+      ...viewModel.paperRoles.flatMap((entry) => [entry.summary, entry.contribution]),
+      ...viewModel.article.flow.flatMap((block) => {
+        if (block.type === 'text' || block.type === 'closing') return block.body
+        if (block.type === 'paper-break') return [block.contribution]
+        if (block.type === 'comparison') return [block.summary, ...block.points.map((point) => point.detail)]
+        if (block.type === 'critique') return [block.summary, ...block.bullets]
+        return []
+      }),
+    ]
+      .filter(Boolean)
+      .join(' ')
+
+    assert.equal(/\?{4,}/u.test(narrativeFields), false)
+    assert.match(narrativeFields, /单篇深读入口|当前数据库还没有提取到图、表、公式|当前仅完成题录级整理/u)
+  } finally {
+    await prisma.topics.delete({
+      where: { id: topic.id },
+    })
+  }
+})
+
+test('getNodeViewModel returns enhanced article flow when enhanced mode is requested', async () => {
+  const originalHasAvailableModel = omniGateway.hasAvailableModel
+  omniGateway.hasAvailableModel = async () => false
+
+  const fixture = await createStageScopedReaderFixture()
+
+  try {
+    const viewModel = await getNodeViewModel(fixture.nodeId, {
+      stageWindowMonths: 1,
+      enhanced: true,
+    })
+
+    assert.ok(Array.isArray(viewModel.enhancedArticleFlow))
+    assert.ok(viewModel.enhancedArticleFlow!.length > 0)
+    assert.ok(
+      viewModel.enhancedArticleFlow!.some((block) => block.type === 'paper-article'),
+      'enhanced flow should include article-style paper blocks',
+    )
+    assert.ok(viewModel.coreJudgment?.content)
+  } finally {
+    omniGateway.hasAvailableModel = originalHasAvailableModel
+    await prisma.topics.delete({
+      where: { id: fixture.topicId },
+    })
+  }
+})
+
+test('enhanced node reader artifacts use a dedicated cache record that survives default rebuilds', async () => {
+  const originalHasAvailableModel = omniGateway.hasAvailableModel
+  omniGateway.hasAvailableModel = async () => false
+
+  const fixture = await createStageScopedReaderFixture()
+  const defaultArtifactKey = `alpha:reader-artifact:node:${fixture.nodeId}`
+  const enhancedArtifactKey = `alpha:reader-artifact:node:enhanced:${fixture.nodeId}`
+
+  try {
+    await prisma.system_configs.deleteMany({
+      where: {
+        key: {
+          in: [defaultArtifactKey, enhancedArtifactKey],
+        },
+      },
+    })
+
+    const firstEnhancedViewModel = await getNodeViewModel(fixture.nodeId, {
+      stageWindowMonths: 1,
+      enhanced: true,
+    })
+
+    assert.ok(Array.isArray(firstEnhancedViewModel.enhancedArticleFlow))
+    assert.ok(firstEnhancedViewModel.enhancedArticleFlow!.length > 0)
+
+    const firstEnhancedRecord = await prisma.system_configs.findUnique({
+      where: { key: enhancedArtifactKey },
+    })
+    assert.ok(firstEnhancedRecord, 'enhanced node cache should persist to its own record')
+
+    await rebuildNodeViewModel(fixture.nodeId, {
+      stageWindowMonths: 1,
+    })
+
+    const defaultRecord = await prisma.system_configs.findUnique({
+      where: { key: defaultArtifactKey },
+    })
+    assert.ok(defaultRecord, 'default node cache should still persist separately')
+
+    const secondEnhancedViewModel = await getNodeViewModel(fixture.nodeId, {
+      stageWindowMonths: 1,
+      enhanced: true,
+    })
+    assert.ok(Array.isArray(secondEnhancedViewModel.enhancedArticleFlow))
+    assert.ok(secondEnhancedViewModel.enhancedArticleFlow!.length > 0)
+
+    const secondEnhancedRecord = await prisma.system_configs.findUnique({
+      where: { key: enhancedArtifactKey },
+    })
+    assert.ok(secondEnhancedRecord, 'enhanced node cache should remain available after default rebuilds')
+    assert.equal(
+      secondEnhancedRecord?.value,
+      firstEnhancedRecord?.value,
+      'default node rebuilds should not overwrite the enhanced node cache payload',
+    )
+  } finally {
+    omniGateway.hasAvailableModel = originalHasAvailableModel
+    await prisma.system_configs.deleteMany({
+      where: {
+        key: {
+          in: [defaultArtifactKey, enhancedArtifactKey],
+        },
+      },
+    })
+    await cleanupReaderFixture(fixture)
+  }
+})
+
+test('getNodeViewModel keeps the full stage article flow when the configured stage window spans the node coverage', async () => {
+  const originalHasAvailableModel = omniGateway.hasAvailableModel
+  omniGateway.hasAvailableModel = async () => false
+
+  const fixture = await createStageScopedReaderFixture()
+
+  try {
+    await saveTopicStageConfig(fixture.topicId, 3)
+
+    const viewModel = await getNodeViewModel(fixture.nodeId, {
+      enhanced: true,
+    })
+
+    const enhancedFlow = Array.isArray(viewModel.enhancedArticleFlow)
+      ? viewModel.enhancedArticleFlow
+      : []
+    const paperArticles = enhancedFlow.filter((block) => block.type === 'paper-article')
+    const transitions = enhancedFlow.filter((block) => block.type === 'paper-transition')
+
+    assert.equal(viewModel.stageWindowMonths, 3)
+    assert.equal(viewModel.stageLabel, '2025.01-2025.03')
+    assert.deepEqual(
+      viewModel.paperRoles.map((paper) => paper.paperId).sort(),
+      [...fixture.stagePaperIds, fixture.outOfStagePaperId].sort(),
+    )
+    assert.deepEqual(
+      paperArticles.map((block) => block.paperId).sort(),
+      [...fixture.stagePaperIds, fixture.outOfStagePaperId].sort(),
+    )
+    assert.equal(transitions.length, 2)
+    assert.ok(
+      enhancedFlow.some((block) => block.type === 'synthesis'),
+      'enhanced flow should include a synthesis block when multiple papers remain in-stage',
+    )
+  } finally {
+    omniGateway.hasAvailableModel = originalHasAvailableModel
+    await cleanupReaderFixture(fixture)
+  }
+})
+
+test('getNodeViewModel expands stage-bounded recall when the requested window is wider than configured cadence', async () => {
+  const originalHasAvailableModel = omniGateway.hasAvailableModel
+  omniGateway.hasAvailableModel = async () => false
+
+  const fixture = await createStageScopedReaderFixture()
+
+  try {
+    await saveTopicStageConfig(fixture.topicId, 1)
+
+    const viewModel = await getNodeViewModel(fixture.nodeId, {
+      stageWindowMonths: 3,
+      enhanced: true,
+    })
+
+    const enhancedFlow = Array.isArray(viewModel.enhancedArticleFlow)
+      ? viewModel.enhancedArticleFlow
+      : []
+    const paperArticles = enhancedFlow.filter((block) => block.type === 'paper-article')
+
+    assert.equal(viewModel.stageWindowMonths, 3)
+    assert.equal(viewModel.stageLabel, '2025.01-2025.03')
+    assert.deepEqual(
+      viewModel.paperRoles.map((paper) => paper.paperId).sort(),
+      [...fixture.stagePaperIds, fixture.outOfStagePaperId].sort(),
+    )
+    assert.deepEqual(
+      paperArticles.map((block) => block.paperId).sort(),
+      [...fixture.stagePaperIds, fixture.outOfStagePaperId].sort(),
+    )
+  } finally {
+    omniGateway.hasAvailableModel = originalHasAvailableModel
+    await cleanupReaderFixture(fixture)
+  }
+})
+
 test('reader artifact fingerprints change when the active model configuration changes', async () => {
   const previousConfig = await getResolvedUserModelConfig()
-  const topic = await prisma.topic.create({
+  const topic = await prisma.topics.create({
     data: {
+      id: crypto.randomUUID(),
       nameZh: '模型配置指纹主题',
       nameEn: 'Model Fingerprint Topic',
       language: 'zh',
       status: 'active',
+      updatedAt: new Date(),
     },
   })
 
-  const paper = await prisma.paper.create({
+  const paper = await prisma.papers.create({
     data: {
+      id: crypto.randomUUID(),
       topicId: topic.id,
       title: 'Model Fingerprint Seed Paper',
       titleZh: '模型指纹种子论文',
@@ -1628,11 +2019,13 @@ test('reader artifact fingerprints change when the active model configuration ch
       tablePaths: '[]',
       tags: '[]',
       status: 'candidate',
+      updatedAt: new Date(),
     },
   })
 
-  const node = await prisma.researchNode.create({
+  const node = await prisma.research_nodes.create({
     data: {
+      id: crypto.randomUUID(),
       topicId: topic.id,
       stageIndex: 1,
       nodeLabel: '模型配置敏感节点',
@@ -1642,11 +2035,13 @@ test('reader artifact fingerprints change when the active model configuration ch
       primaryPaperId: paper.id,
       status: 'provisional',
       provisional: true,
+      updatedAt: new Date(),
     },
   })
 
-  await prisma.nodePaper.create({
+  await prisma.node_papers.create({
     data: {
+      id: crypto.randomUUID(),
       nodeId: node.id,
       paperId: paper.id,
       order: 1,
@@ -1719,7 +2114,7 @@ test('reader artifact fingerprints change when the active model configuration ch
       taskOverrides: previousConfig.taskOverrides,
     })
 
-    await prisma.systemConfig.deleteMany({
+    await prisma.system_configs.deleteMany({
       where: {
         key: {
           in: [
@@ -1729,7 +2124,7 @@ test('reader artifact fingerprints change when the active model configuration ch
         },
       },
     })
-    await prisma.topic.delete({
+    await prisma.topics.delete({
       where: { id: topic.id },
     })
   }

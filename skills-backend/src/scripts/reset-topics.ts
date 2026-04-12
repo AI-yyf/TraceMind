@@ -22,13 +22,13 @@ async function clearTopicUploads() {
 }
 
 async function main() {
-  const topics = await prisma.topic.findMany({
+  const topics = await prisma.topics.findMany({
     select: {
       id: true,
       papers: {
         select: { id: true },
       },
-      nodes: {
+      research_nodes: {
         select: { id: true },
       },
     },
@@ -36,11 +36,11 @@ async function main() {
 
   const topicIds = uniqueIds(topics.map((topic) => topic.id))
   const paperIds = uniqueIds(topics.flatMap((topic) => topic.papers.map((paper) => paper.id)))
-  const nodeIds = uniqueIds(topics.flatMap((topic) => topic.nodes.map((node) => node.id)))
+  const nodeIds = uniqueIds(topics.flatMap((topic) => topic.research_nodes.map((node) => node.id)))
 
   await prisma.$transaction([
-    prisma.researchSession.deleteMany({}),
-    prisma.topic.deleteMany({}),
+    prisma.research_sessions.deleteMany({}),
+    prisma.topics.deleteMany({}),
   ])
 
   const keyFilters = [
@@ -55,7 +55,7 @@ async function main() {
     ...nodeIds.map((id) => ({ key: { contains: id } })),
   ]
 
-  const deletedConfigs = await prisma.systemConfig.deleteMany({
+  const deletedConfigs = await prisma.system_configs.deleteMany({
     where: {
       OR: keyFilters,
     },

@@ -5,7 +5,12 @@ import { logger } from '../utils/logger'
  * Redis client configuration
  */
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379'
-const REDIS_ENABLED = process.env.REDIS_ENABLED !== 'false' // Default enabled
+const REDIS_ENABLED =
+  process.env.REDIS_ENABLED !== 'false' &&
+  !process.argv.includes('--test') &&
+  !process.execArgv.includes('--test') &&
+  process.env.NODE_TEST_CONTEXT !== 'child-v8' &&
+  process.env.NODE_ENV !== 'test' // Default enabled outside tests
 
 /**
  * In-memory fallback storage when Redis is unavailable
@@ -301,8 +306,3 @@ export async function clearAllSessions(pattern: string = '*'): Promise<number> {
   
   return keys.length
 }
-
-// Initialize on module load (non-blocking)
-initializeClient().catch((err) => {
-  logger.warn('Redis initialization failed on startup', { error: err.message })
-})

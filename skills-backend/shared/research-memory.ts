@@ -109,12 +109,15 @@ export class ResearchMemory {
   async addDiscoveryBatch(topicId: string, discoveries: DiscoveryRecord[]): Promise<void> {
     try {
       for (const discovery of discoveries) {
-        await prisma.systemConfig.upsert({
+        await prisma.system_configs.upsert({
           where: { key: `discovery:${topicId}:${discovery.paperId}` },
           update: {
+            updatedAt: new Date(),
             value: JSON.stringify(discovery),
           },
           create: {
+            id: crypto.randomUUID(),
+            updatedAt: new Date(),
             key: `discovery:${topicId}:${discovery.paperId}`,
             value: JSON.stringify(discovery),
           },
@@ -127,12 +130,15 @@ export class ResearchMemory {
 
   async addContentGeneration(paperId: string, content: ContentGenerationRecord): Promise<void> {
     try {
-      await prisma.systemConfig.upsert({
+      await prisma.system_configs.upsert({
         where: { key: `content:${paperId}` },
         update: {
+          updatedAt: new Date(),
           value: JSON.stringify(content),
         },
         create: {
+          id: crypto.randomUUID(),
+          updatedAt: new Date(),
           key: `content:${paperId}`,
           value: JSON.stringify(content),
         },
@@ -144,7 +150,7 @@ export class ResearchMemory {
 
   async getDiscoveryHistory(topicId: string): Promise<DiscoveryRecord[]> {
     try {
-      const records = await prisma.systemConfig.findMany({
+      const records = await prisma.system_configs.findMany({
         where: {
           key: {
             startsWith: `discovery:${topicId}:`,
@@ -152,7 +158,7 @@ export class ResearchMemory {
         },
       })
 
-      return records.map((record) => JSON.parse(record.value) as DiscoveryRecord)
+      return records.map((record: { value: string }) => JSON.parse(record.value) as DiscoveryRecord)
     } catch (error) {
       console.error('Failed to get discovery history:', error)
       return []
@@ -161,7 +167,7 @@ export class ResearchMemory {
 
   async getContentGeneration(paperId: string): Promise<ContentGenerationRecord | null> {
     try {
-      const record = await prisma.systemConfig.findUnique({
+      const record = await prisma.system_configs.findUnique({
         where: { key: `content:${paperId}` },
       })
 

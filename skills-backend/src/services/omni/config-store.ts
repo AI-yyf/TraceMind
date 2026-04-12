@@ -83,6 +83,37 @@ function providerAuthEnvVars(provider: string) {
   return PROVIDER_CATALOG.find((entry) => entry.provider === provider)?.providerAuthEnvVars ?? []
 }
 
+function orderedProviderAuthEnvVars(
+  provider: string,
+  context?: { model?: string | null; baseUrl?: string | null },
+) {
+  const defaults = providerAuthEnvVars(provider)
+  if (provider !== 'openai_compatible') {
+    return defaults
+  }
+
+  const haystack = `${context?.model ?? ''} ${context?.baseUrl ?? ''}`.toLowerCase()
+  const preferred: string[] = []
+
+  if (/(?:kimi|moonshot|1seey\.com)/iu.test(haystack)) {
+    preferred.push('MOONSHOT_API_KEY')
+  }
+  if (/(?:openrouter)/iu.test(haystack)) {
+    preferred.push('OPENROUTER_API_KEY')
+  }
+  if (/(?:dashscope|aliyuncs|qwen)/iu.test(haystack)) {
+    preferred.push('DASHSCOPE_API_KEY')
+  }
+  if (/(?:deepseek)/iu.test(haystack)) {
+    preferred.push('DEEPSEEK_API_KEY')
+  }
+  if (/(?:openai)/iu.test(haystack)) {
+    preferred.push('OPENAI_API_KEY')
+  }
+
+  return Array.from(new Set([...preferred, ...defaults]))
+}
+
 function getDefaultEnvValue(key: string) {
   const value = process.env[`${DEFAULT_ENV_PREFIX}_${key}`]?.trim()
   return value ? value : undefined
@@ -305,13 +336,19 @@ function inheritResolvedRoleConfig(
   if (!fallbackSlotConfig) return roleConfig
   if (roleConfig.provider !== fallbackSlotConfig.provider) return roleConfig
 
+  const inheritsFallbackSecret = !roleConfig.apiKeyRef
+
   return {
     provider: roleConfig.provider,
     model: roleConfig.model,
     baseUrl: roleConfig.baseUrl?.trim() || fallbackSlotConfig.baseUrl,
     apiKeyRef: roleConfig.apiKeyRef ?? fallbackSlotConfig.apiKeyRef,
-    apiKey: roleConfig.apiKey ?? fallbackSlotConfig.apiKey,
-    apiKeyPreview: roleConfig.apiKeyPreview ?? fallbackSlotConfig.apiKeyPreview,
+    // Role entries that only override model/options should inherit the slot secret
+    // instead of replacing it with a generic provider env key discovered at hydrate time.
+    apiKey: inheritsFallbackSecret ? fallbackSlotConfig.apiKey ?? roleConfig.apiKey : roleConfig.apiKey,
+    apiKeyPreview: inheritsFallbackSecret
+      ? fallbackSlotConfig.apiKeyPreview ?? roleConfig.apiKeyPreview
+      : roleConfig.apiKeyPreview,
     providerOptions: normalizeProviderOptions({
       ...(fallbackSlotConfig.providerOptions ?? {}),
       ...(roleConfig.providerOptions ?? {}),
@@ -336,7 +373,7 @@ async function getRawUserConfig(userId: string): Promise<UserModelConfig | null>
 async function getSecret(secretRef?: string): Promise<{ key: string; preview: string } | null> {
   if (!secretRef) return null
 
-  const record = await prisma.systemConfig.findUnique({
+  const record = await prisma.system_configs.findUnique({
     where: { key: secretKey(secretRef) },
   })
   if (!record) return null
@@ -370,8 +407,11 @@ async function getSecret(secretRef?: string): Promise<{ key: string; preview: st
   }
 }
 
-function getEnvSecret(provider: string): { key: string; preview: string } | null {
-  for (const envVar of providerAuthEnvVars(provider)) {
+function getEnvSecret(
+  provider: string,
+  context?: { model?: string | null; baseUrl?: string | null },
+): { key: string; preview: string } | null {
+  for (const envVar of orderedProviderAuthEnvVars(provider, context)) {
     const value = process.env[envVar]?.trim()
     if (!value) continue
 
@@ -479,7 +519,7 @@ function getEnvBootstrapConfig(args: {
   if (!provider || !model) return null
 
   const localSecret = args.getSecret()
-  const providerSecret = !localSecret ? getEnvSecret(provider) : null
+  const providerSecret = !localSecret ? getEnvSecret(provider, { model, baseUrl }) : null
 
   return {
     provider,
@@ -522,10 +562,10 @@ async function storeSecret(provider: string, apiKey: string): Promise<{ apiKeyRe
     updatedAt: new Date().toISOString(),
   }
 
-  await prisma.systemConfig.upsert({
+await prisma.system_configs.upsert({
     where: { key: secretKey(apiKeyRef) },
-    update: { value: JSON.stringify(payload) },
-    create: { key: secretKey(apiKeyRef), value: JSON.stringify(payload) },
+    update: { value: JSON.stringify(payload), updatedAt: new Date() },
+    create: { id: crypto.randomUUID(), key: secretKey(apiKeyRef), value: JSON.stringify(payload), updatedAt: new Date() },
   })
   secretRecordCache.delete(apiKeyRef)
 
@@ -550,7 +590,10 @@ async function hydrateSlot(
 ): Promise<ResolvedProviderModelConfig> {
   const secret = await getSecret(config.apiKeyRef)
   const slotEnvSecret = !secret && slot ? getSlotEnvSecret(slot) : null
-  const envSecret = !secret && !slotEnvSecret ? getEnvSecret(config.provider) : null
+  const envSecret =
+    !secret && !slotEnvSecret
+      ? getEnvSecret(config.provider, { model: config.model, baseUrl: config.baseUrl })
+      : null
   return {
     provider: config.provider,
     model: config.model,

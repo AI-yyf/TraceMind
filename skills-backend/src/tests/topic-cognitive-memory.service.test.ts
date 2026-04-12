@@ -42,8 +42,6 @@ test('topic cognitive memory separates project, feedback, and reference memory l
       evidenceWatchpoints: ['Evidence still concentrates on narrow benchmarks.'],
       continuityThreads: ['Stage 2 tightened the comparison frame.'],
       evolutionChains: ['Refined: "Old planning claim" -> "Planning fidelity is the stronger claim."'],
-      researchJudgments: [],
-      sameScopeJudgments: [],
     },
     sessionMemory: {
       updatedAt: '2026-04-04T00:00:00.000Z',

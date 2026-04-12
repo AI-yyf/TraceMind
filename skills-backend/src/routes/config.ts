@@ -6,7 +6,7 @@ const router = Router()
 
 // 获取系统配置
 router.get('/', asyncHandler(async (req, res) => {
-  const configs = await prisma.systemConfig.findMany()
+  const configs = await prisma.system_configs.findMany()
   const configMap = configs.reduce((acc, c) => {
     acc[c.key] = JSON.parse(c.value)
     return acc
@@ -17,7 +17,7 @@ router.get('/', asyncHandler(async (req, res) => {
 
 // 获取特定配置
 router.get('/:key', asyncHandler(async (req, res) => {
-  const config = await prisma.systemConfig.findUnique({
+  const config = await prisma.system_configs.findUnique({
     where: { key: req.params.key }
   })
   
@@ -33,10 +33,10 @@ router.post('/:key', asyncHandler(async (req, res) => {
   const { key } = req.params
   const { value } = req.body
 
-  const config = await prisma.systemConfig.upsert({
+  const config = await prisma.system_configs.upsert({
     where: { key },
     update: { value: JSON.stringify(value) },
-    create: { key, value: JSON.stringify(value) }
+    create: { id: crypto.randomUUID(), key, value: JSON.stringify(value), updatedAt: new Date() }
   })
 
   res.json({ success: true, data: config })

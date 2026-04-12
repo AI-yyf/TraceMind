@@ -39,7 +39,7 @@ export interface MergeConflict {
   type: 'paper_count_exceeded' | 'time_span_exceeded' | 'contradictory_merge'
   description: string
   affectedPaperIds: string[]
-  suggestedAction: 'split' | 'warn' | 'ignore'
+  suggestedAction: 'split' | 'warn' | 'ignore' | 'review'
 }
 
 /** 论文分组 */
@@ -96,6 +96,7 @@ export interface EnrichedResearchNode extends ResearchNode {
       closingHandoff: string
     }
   }
+  nodeExplanation?: string
   assets?: {
     figures: CompleteFigure[]
     tables: PDFExtractionResult['tables']
@@ -150,8 +151,8 @@ export class NodeMerger {
     const provisionalNodes = await this.mergeCandidates(nextCandidates, stageContext, conflicts, mergeRecords, true)
 
     // 3. 验证节点约束
-    const validatedCurrentNodes = this.validateNodeConstraints(currentNodes, conflicts)
-    const validatedProvisionalNodes = this.validateNodeConstraints(provisionalNodes, conflicts)
+    const validatedCurrentNodes = await this.validateNodeConstraints(currentNodes, conflicts)
+    const validatedProvisionalNodes = await this.validateNodeConstraints(provisionalNodes, conflicts)
 
     // 4. 生成统计
     const stats = this.generateStats(currentCandidates, validatedCurrentNodes)
@@ -313,7 +314,7 @@ export class NodeMerger {
     if (!timeSpanCheck.valid) {
       return {
         merge: false,
-        reason: timeSpanCheck.reason,
+        reason: timeSpanCheck.reason || '时间跨度超出限制',
         confidence: 1.0,
       }
     }
@@ -621,8 +622,10 @@ ${paperIds.map((id) => `- ${id}`).join('\n')}
   /**
    * 验证节点约束
    */
-  private validateNodeConstraints(nodes: ResearchNode[], conflicts: MergeConflict[]): ResearchNode[] {
-    return nodes.map((node) => {
+  private async validateNodeConstraints(nodes: ResearchNode[], conflicts: MergeConflict[]): Promise<ResearchNode[]> {
+    const validatedNodes: ResearchNode[] = []
+    
+    for (const node of nodes) {
       const warnings: string[] = []
 
       // 检查论文数量
@@ -652,8 +655,10 @@ ${paperIds.map((id) => `- ${id}`).join('\n')}
         node.warnings = warnings
       }
 
-      return node
-    })
+      validatedNodes.push(node)
+    }
+    
+    return validatedNodes
   }
 
   /**

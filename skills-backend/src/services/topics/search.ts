@@ -94,7 +94,7 @@ type RankTuple = [
 
 const DEFAULT_TYPES: SearchKind[] = ['topic', 'node', 'paper', 'section', 'figure', 'table', 'formula']
 const GROUP_ORDER: SearchGroupKind[] = ['topic', 'node', 'paper', 'evidence']
-const GROUP_LABELS: Record<SearchGroupKind, string> = {
+const _GROUP_LABELS: Record<SearchGroupKind, string> = {
   topic: '主题',
   node: '节点',
   paper: '论文',
@@ -259,7 +259,7 @@ function nodeRoute(nodeId: string) {
   return `/node/${nodeId}`
 }
 
-function fallbackStageLabel(stageIndex: number) {
+function _fallbackStageLabel(stageIndex: number) {
   return `阶段 ${stageIndex}`
 }
 
@@ -284,7 +284,8 @@ function pickNodeChronologyDate(args: {
   node: {
     id: string
     primaryPaperId?: string | null
-    papers: Array<{ paperId: string }>
+    papers?: Array<{ paperId: string }>
+    node_papers?: Array<{ paperId: string }>
     updatedAt: Date
   }
   paperPublishedAtById: Map<string, Date>
@@ -294,7 +295,7 @@ function pickNodeChronologyDate(args: {
     new Set(
       [
         ...(args.node.primaryPaperId ? [args.node.primaryPaperId] : []),
-        ...args.node.papers.map((entry) => entry.paperId),
+        ...(args.node.papers ?? args.node.node_papers ?? []).map((entry) => entry.paperId),
       ].filter((paperId): paperId is string => Boolean(paperId)),
     ),
   )
@@ -574,7 +575,7 @@ function groupRankedResults(
 async function loadTopicKeywordMap(topicIds: string[]) {
   if (topicIds.length === 0) return new Map<string, string[]>()
 
-  const configs = await prisma.systemConfig.findMany({
+  const configs = await prisma.system_configs.findMany({
     where: {
       key: {
         in: topicIds.map((topicId) => `topic:${topicId}:keywords`),
@@ -646,27 +647,27 @@ export async function searchResearchCorpus({
   const nodeWhere = scope === 'topic' ? { topicId } : undefined
 
   const [fetchedTopics, fetchedPapers, fetchedNodes] = await Promise.all([
-    prisma.topic.findMany({
+    prisma.topics.findMany({
       where: topicWhere,
       orderBy: { updatedAt: 'desc' },
     }),
-    prisma.paper.findMany({
+    prisma.papers.findMany({
       where: paperWhere,
       include: {
-        sections: { orderBy: { order: 'asc' } },
+        paper_sections: { orderBy: { order: 'asc' } },
         figures: true,
         tables: true,
         formulas: true,
       },
       orderBy: { published: 'desc' },
     }),
-    prisma.researchNode.findMany({
+    prisma.research_nodes.findMany({
       where: nodeWhere,
       include: {
-        papers: {
+        node_papers: {
           select: {
             paperId: true,
-            paper: {
+            papers: {
               select: {
                 tags: true,
               },
@@ -702,7 +703,7 @@ export async function searchResearchCorpus({
     nodes: visibleNodes.map((node) => ({
       id: node.id,
       primaryPaperId: node.primaryPaperId,
-      papers: node.papers,
+      papers: node.node_papers.map((entry) => ({ paperId: entry.paperId })),
       updatedAt: node.updatedAt,
       createdAt: node.createdAt,
     })),
@@ -713,7 +714,7 @@ export async function searchResearchCorpus({
   for (const node of visibleNodes) {
     const stageLabel =
       temporalStages.nodeAssignments.get(node.id)?.label ?? resolveStageLabelFallback(node.stageIndex)
-    const nodeTopicTitle = topicTitleMap.get(node.topicId) ?? ''
+    const _nodeTopicTitle = topicTitleMap.get(node.topicId) ?? ''
     const location = {
       nodeId: node.id,
       title: node.nodeLabel,
@@ -724,7 +725,7 @@ export async function searchResearchCorpus({
     const linkedPaperIds = Array.from(
       new Set([
         node.primaryPaperId,
-        ...node.papers.map((entry) => entry.paperId),
+        ...node.node_papers.map((entry) => entry.paperId),
       ].filter((paperId): paperId is string => Boolean(paperId))),
     )
 
@@ -784,7 +785,7 @@ export async function searchResearchCorpus({
     for (const node of visibleNodes) {
       const tags = Array.from(
         new Set(
-          node.papers.flatMap((entry) => parseJsonArray(entry.paper?.tags)),
+          node.node_papers.flatMap((entry) => parseJsonArray(entry.papers?.tags)),
         ),
       )
       const nodeTopicTitle = topicTitleMap.get(node.topicId) ?? ''
@@ -810,7 +811,7 @@ export async function searchResearchCorpus({
         kind: 'node',
         group: 'node',
         title: node.nodeLabel,
-        subtitle: node.nodeSubtitle ?? `${nodeTopicTitle} / 第 ${node.stageIndex} 阶段`,
+        subtitle: node.nodeSubtitle ?? `${nodeTopicTitle} / �?${node.stageIndex} 阶段`,
         excerpt: clipText(node.nodeSummary || node.nodeExplanation),
         route: nodeRoute(node.id),
         anchorId: `node:${node.id}`,
@@ -922,7 +923,7 @@ export async function searchResearchCorpus({
     }
 
     if (allowedTypes.has('section')) {
-      for (const section of paper.sections) {
+      for (const section of paper.paper_sections) {
         candidates.push({
           id: section.id,
           kind: 'section',

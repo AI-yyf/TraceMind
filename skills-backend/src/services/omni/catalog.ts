@@ -458,6 +458,13 @@ export const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
 
 export const MODEL_PRESETS: ModelPreset[] = [
   {
+    id: 'china-hybrid',
+    label: 'China Hybrid',
+    description: 'Balanced GLM dual-stack for Chinese deployment.',
+    language: { provider: 'bigmodel', model: 'glm-5' },
+    multimodal: { provider: 'bigmodel', model: 'glm-4.6v' },
+  },
+  {
     id: 'compatible-kimi-dual',
     label: 'Compatible Kimi Dual-Slot',
     description: 'One OpenAI-compatible gateway, Kimi on both default slots, and research roles inherit unless you override them.',
@@ -484,13 +491,6 @@ export const MODEL_PRESETS: ModelPreset[] = [
     description: 'Top-end domestic reasoning plus multimodal pairing.',
     language: { provider: 'deepseek', model: 'deepseek-reasoner' },
     multimodal: { provider: 'dashscope', model: 'qwen3-vl-plus' },
-  },
-  {
-    id: 'china-hybrid',
-    label: 'China Hybrid',
-    description: 'Balanced GLM dual-stack for Chinese deployment.',
-    language: { provider: 'bigmodel', model: 'glm-5' },
-    multimodal: { provider: 'bigmodel', model: 'glm-4.6v' },
   },
 ]
 

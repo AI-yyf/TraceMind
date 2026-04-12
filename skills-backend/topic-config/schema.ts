@@ -28,6 +28,7 @@ export interface TopicDefaults {
   maxPaperIntervalDays: number
   maxCandidates: number
   windowPolicy: 'auto' | 'fixed'
+  defaultStageWindowMonths?: number
   minStageWindowMonths: number
   maxStageWindowMonths: number
   maxActiveBranches: number
@@ -121,6 +122,12 @@ export function assertTopicDefaults(value: unknown): asserts value is TopicDefau
   assertString(value.windowPolicy, 'TopicDefaults.windowPolicy')
   if (value.windowPolicy !== 'auto' && value.windowPolicy !== 'fixed') {
     throw new Error('TopicDefaults.windowPolicy must be auto or fixed.')
+  }
+  if (
+    value.defaultStageWindowMonths !== undefined &&
+    value.defaultStageWindowMonths !== null
+  ) {
+    assertNumber(value.defaultStageWindowMonths, 'TopicDefaults.defaultStageWindowMonths')
   }
   assertNumber(value.minStageWindowMonths, 'TopicDefaults.minStageWindowMonths')
   assertNumber(value.maxStageWindowMonths, 'TopicDefaults.maxStageWindowMonths')

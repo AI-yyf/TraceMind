@@ -73,25 +73,11 @@ async function main() {
   const limit = Math.max(1, Number.parseInt(readArg('--limit') ?? '100', 10) || 100)
   const concurrency = Math.max(1, Math.min(4, Number.parseInt(readArg('--concurrency') ?? '2', 10) || 2))
 
-  const topic = await prisma.topic.findUnique({
+  const topic = await prisma.topics.findUnique({
     where: { id: topicId },
     select: {
       id: true,
       nameZh: true,
-      papers: {
-        orderBy: { published: 'asc' },
-        select: {
-          id: true,
-          title: true,
-          titleZh: true,
-          arxivUrl: true,
-          pdfUrl: true,
-          figures: { select: { id: true } },
-          tables: { select: { id: true } },
-          formulas: { select: { id: true } },
-          sections: { select: { id: true } },
-        },
-      },
     },
   })
 
@@ -99,11 +85,28 @@ async function main() {
     throw new Error(`Topic not found: ${topicId}`)
   }
 
-  const queue = topic.papers
+  // Query papers separately since papers relation may not be nested in topics
+  const papers = await prisma.papers.findMany({
+    where: { topicId },
+    orderBy: { published: 'asc' },
+    select: {
+      id: true,
+      title: true,
+      titleZh: true,
+      arxivUrl: true,
+      pdfUrl: true,
+      figures: { select: { id: true } },
+      tables: { select: { id: true } },
+      formulas: { select: { id: true } },
+      paper_sections: { select: { id: true } },
+    },
+  })
+
+  const queue = papers
     .map((paper) => {
       const pdfUrl = normalizePdfUrl(paper.pdfUrl || paper.arxivUrl)
       const extractedCount =
-        paper.figures.length + paper.tables.length + paper.formulas.length + paper.sections.length
+        paper.figures.length + paper.tables.length + paper.formulas.length + paper.paper_sections.length
       return {
         ...paper,
         pdfUrl,

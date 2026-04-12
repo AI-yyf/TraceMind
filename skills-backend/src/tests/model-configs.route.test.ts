@@ -31,7 +31,7 @@ async function withServer(run: (origin: string) => Promise<void>) {
 test('POST /api/model-configs rejects malformed payloads without overwriting the stored config', async () => {
   const userId = 'test-model-configs-route'
   const configKey = `alpha:user-model-config:${userId}`
-  const originalRecord = await prisma.systemConfig.findUnique({
+  const originalRecord = await prisma.system_configs.findUnique({
     where: { key: configKey },
   })
 
@@ -207,13 +207,13 @@ test('POST /api/model-configs rejects malformed payloads without overwriting the
     })
   } finally {
     if (originalRecord) {
-      await prisma.systemConfig.upsert({
+      await prisma.system_configs.upsert({
         where: { key: configKey },
         update: { value: originalRecord.value },
-        create: { key: configKey, value: originalRecord.value },
+        create: { id: crypto.randomUUID(), key: configKey, value: originalRecord.value, updatedAt: new Date() },
       })
     } else {
-      await prisma.systemConfig.deleteMany({
+      await prisma.system_configs.deleteMany({
         where: { key: configKey },
       })
     }
@@ -223,13 +223,19 @@ test('POST /api/model-configs rejects malformed payloads without overwriting the
 test('GET /api/model-configs treats provider environment variables as usable API keys', async () => {
   const userId = 'test-model-configs-env-fallback'
   const configKey = `alpha:user-model-config:${userId}`
-  const originalRecord = await prisma.systemConfig.findUnique({
+  const originalRecord = await prisma.system_configs.findUnique({
     where: { key: configKey },
   })
-  const envKeys = ['MOONSHOT_API_KEY', 'OMNI_DEFAULT_API_KEY', 'OMNI_LANGUAGE_API_KEY'] as const
+  const envKeys = [
+    'MOONSHOT_API_KEY',
+    'OPENAI_API_KEY',
+    'OMNI_DEFAULT_API_KEY',
+    'OMNI_LANGUAGE_API_KEY',
+  ] as const
   const originalEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]))
 
   process.env.MOONSHOT_API_KEY = 'env-fallback-key'
+  process.env.OPENAI_API_KEY = 'generic-openai-key'
   delete process.env.OMNI_DEFAULT_API_KEY
   delete process.env.OMNI_LANGUAGE_API_KEY
 
@@ -290,13 +296,13 @@ test('GET /api/model-configs treats provider environment variables as usable API
     }
 
     if (originalRecord) {
-      await prisma.systemConfig.upsert({
+      await prisma.system_configs.upsert({
         where: { key: configKey },
         update: { value: originalRecord.value },
-        create: { key: configKey, value: originalRecord.value },
+        create: { id: crypto.randomUUID(), key: configKey, value: originalRecord.value, updatedAt: new Date() },
       })
     } else {
-      await prisma.systemConfig.deleteMany({
+      await prisma.system_configs.deleteMany({
         where: { key: configKey },
       })
     }
@@ -306,7 +312,7 @@ test('GET /api/model-configs treats provider environment variables as usable API
 test('GET /api/model-configs bootstraps a language slot entirely from OMNI_LANGUAGE_* env vars', async () => {
   const userId = 'test-model-configs-slot-env-bootstrap'
   const configKey = `alpha:user-model-config:${userId}`
-  const originalRecord = await prisma.systemConfig.findUnique({
+  const originalRecord = await prisma.system_configs.findUnique({
     where: { key: configKey },
   })
   const envKeys = [
@@ -328,7 +334,7 @@ test('GET /api/model-configs bootstraps a language slot entirely from OMNI_LANGU
   process.env.OMNI_LANGUAGE_THINKING = 'off'
   process.env.OMNI_LANGUAGE_MAX_TOKENS = '256'
 
-  await prisma.systemConfig.deleteMany({
+  await prisma.system_configs.deleteMany({
     where: { key: configKey },
   })
 
@@ -411,13 +417,13 @@ test('GET /api/model-configs bootstraps a language slot entirely from OMNI_LANGU
     }
 
     if (originalRecord) {
-      await prisma.systemConfig.upsert({
+      await prisma.system_configs.upsert({
         where: { key: configKey },
         update: { value: originalRecord.value },
-        create: { key: configKey, value: originalRecord.value },
+        create: { id: crypto.randomUUID(), key: configKey, value: originalRecord.value, updatedAt: new Date() },
       })
     } else {
-      await prisma.systemConfig.deleteMany({
+      await prisma.system_configs.deleteMany({
         where: { key: configKey },
       })
     }
@@ -427,7 +433,7 @@ test('GET /api/model-configs bootstraps a language slot entirely from OMNI_LANGU
 test('GET /api/model-configs bootstraps both default slots from OMNI_DEFAULT_* plus slot model ids', async () => {
   const userId = 'test-model-configs-default-env-bootstrap'
   const configKey = `alpha:user-model-config:${userId}`
-  const originalRecord = await prisma.systemConfig.findUnique({
+  const originalRecord = await prisma.system_configs.findUnique({
     where: { key: configKey },
   })
   const envKeys = [
@@ -447,7 +453,7 @@ test('GET /api/model-configs bootstraps both default slots from OMNI_DEFAULT_* p
   process.env.OMNI_LANGUAGE_MODEL = 'Kimi-K2.5'
   process.env.OMNI_MULTIMODAL_MODEL = 'Kimi-K2.5'
 
-  await prisma.systemConfig.deleteMany({
+  await prisma.system_configs.deleteMany({
     where: { key: configKey },
   })
 
@@ -527,13 +533,13 @@ test('GET /api/model-configs bootstraps both default slots from OMNI_DEFAULT_* p
     }
 
     if (originalRecord) {
-      await prisma.systemConfig.upsert({
+      await prisma.system_configs.upsert({
         where: { key: configKey },
         update: { value: originalRecord.value },
-        create: { key: configKey, value: originalRecord.value },
+        create: { id: crypto.randomUUID(), key: configKey, value: originalRecord.value, updatedAt: new Date() },
       })
     } else {
-      await prisma.systemConfig.deleteMany({
+      await prisma.system_configs.deleteMany({
         where: { key: configKey },
       })
     }
@@ -543,7 +549,7 @@ test('GET /api/model-configs bootstraps both default slots from OMNI_DEFAULT_* p
 test('GET /api/model-configs lets research roles inherit a compatible gateway while overriding only role model ids', async () => {
   const userId = 'test-model-configs-role-env-inheritance'
   const configKey = `alpha:user-model-config:${userId}`
-  const originalRecord = await prisma.systemConfig.findUnique({
+  const originalRecord = await prisma.system_configs.findUnique({
     where: { key: configKey },
   })
   const envKeys = [
@@ -569,7 +575,7 @@ test('GET /api/model-configs lets research roles inherit a compatible gateway wh
   process.env.OMNI_ROLE_VISION_READER_MODEL = 'Kimi-K2.5-Vision'
   process.env.OMNI_ROLE_VISION_READER_PARSER = 'native'
 
-  await prisma.systemConfig.deleteMany({
+  await prisma.system_configs.deleteMany({
     where: { key: configKey },
   })
 
@@ -651,13 +657,13 @@ test('GET /api/model-configs lets research roles inherit a compatible gateway wh
     }
 
     if (originalRecord) {
-      await prisma.systemConfig.upsert({
+      await prisma.system_configs.upsert({
         where: { key: configKey },
         update: { value: originalRecord.value },
-        create: { key: configKey, value: originalRecord.value },
+        create: { id: crypto.randomUUID(), key: configKey, value: originalRecord.value, updatedAt: new Date() },
       })
     } else {
-      await prisma.systemConfig.deleteMany({
+      await prisma.system_configs.deleteMany({
         where: { key: configKey },
       })
     }
@@ -667,7 +673,7 @@ test('GET /api/model-configs lets research roles inherit a compatible gateway wh
 test('GET /api/model-configs lets stored research roles inherit slot secrets and defaults when only role model ids differ', async () => {
   const userId = 'test-model-configs-stored-role-slot-inheritance'
   const configKey = `alpha:user-model-config:${userId}`
-  const originalRecord = await prisma.systemConfig.findUnique({
+  const originalRecord = await prisma.system_configs.findUnique({
     where: { key: configKey },
   })
 
@@ -806,13 +812,13 @@ test('GET /api/model-configs lets stored research roles inherit slot secrets and
     })
   } finally {
     if (originalRecord) {
-      await prisma.systemConfig.upsert({
+      await prisma.system_configs.upsert({
         where: { key: configKey },
         update: { value: originalRecord.value },
-        create: { key: configKey, value: originalRecord.value },
+        create: { id: crypto.randomUUID(), key: configKey, value: originalRecord.value, updatedAt: new Date() },
       })
     } else {
-      await prisma.systemConfig.deleteMany({
+      await prisma.system_configs.deleteMany({
         where: { key: configKey },
       })
     }
@@ -822,7 +828,7 @@ test('GET /api/model-configs lets stored research roles inherit slot secrets and
 test('POST /api/model-configs preserves existing slots and roles during partial updates while respecting explicit clears', async () => {
   const userId = 'test-model-configs-partial-updates'
   const configKey = `alpha:user-model-config:${userId}`
-  const originalRecord = await prisma.systemConfig.findUnique({
+  const originalRecord = await prisma.system_configs.findUnique({
     where: { key: configKey },
   })
   const envKeys = [
@@ -1000,13 +1006,13 @@ test('POST /api/model-configs preserves existing slots and roles during partial 
     }
 
     if (originalRecord) {
-      await prisma.systemConfig.upsert({
+      await prisma.system_configs.upsert({
         where: { key: configKey },
         update: { value: originalRecord.value },
-        create: { key: configKey, value: originalRecord.value },
+        create: { id: crypto.randomUUID(), key: configKey, value: originalRecord.value, updatedAt: new Date() },
       })
     } else {
-      await prisma.systemConfig.deleteMany({
+      await prisma.system_configs.deleteMany({
         where: { key: configKey },
       })
     }
@@ -1016,7 +1022,7 @@ test('POST /api/model-configs preserves existing slots and roles during partial 
 test('GET /api/model-capabilities respects x-alpha-user-id scoped config', async () => {
   const userId = 'test-model-capabilities-user-scope'
   const configKey = `alpha:user-model-config:${userId}`
-  const originalRecord = await prisma.systemConfig.findUnique({
+  const originalRecord = await prisma.system_configs.findUnique({
     where: { key: configKey },
   })
   const originalMoonshotKey = process.env.MOONSHOT_API_KEY
@@ -1075,13 +1081,13 @@ test('GET /api/model-capabilities respects x-alpha-user-id scoped config', async
     }
 
     if (originalRecord) {
-      await prisma.systemConfig.upsert({
+      await prisma.system_configs.upsert({
         where: { key: configKey },
         update: { value: originalRecord.value },
-        create: { key: configKey, value: originalRecord.value },
+        create: { id: crypto.randomUUID(), key: configKey, value: originalRecord.value, updatedAt: new Date() },
       })
     } else {
-      await prisma.systemConfig.deleteMany({
+      await prisma.system_configs.deleteMany({
         where: { key: configKey },
       })
     }
@@ -1091,7 +1097,7 @@ test('GET /api/model-capabilities respects x-alpha-user-id scoped config', async
 test('GET /api/model-capabilities exposes effective research roles even when only default slots are configured', async () => {
   const userId = 'test-model-capabilities-research-roles'
   const configKey = `alpha:user-model-config:${userId}`
-  const originalRecord = await prisma.systemConfig.findUnique({
+  const originalRecord = await prisma.system_configs.findUnique({
     where: { key: configKey },
   })
 
@@ -1167,13 +1173,13 @@ test('GET /api/model-capabilities exposes effective research roles even when onl
     })
   } finally {
     if (originalRecord) {
-      await prisma.systemConfig.upsert({
+      await prisma.system_configs.upsert({
         where: { key: configKey },
         update: { value: originalRecord.value },
-        create: { key: configKey, value: originalRecord.value },
+        create: { id: crypto.randomUUID(), key: configKey, value: originalRecord.value, updatedAt: new Date() },
       })
     } else {
-      await prisma.systemConfig.deleteMany({
+      await prisma.system_configs.deleteMany({
         where: { key: configKey },
       })
     }

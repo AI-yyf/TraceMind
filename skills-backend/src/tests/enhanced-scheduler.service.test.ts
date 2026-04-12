@@ -159,6 +159,101 @@ test('heuristic fallback orchestration groups overlapping papers into a shared n
   assert.ok(orchestration.nodeActions.some((action) => action.paperIds.length > 1))
   assert.ok(orchestration.openQuestions.length > 0)
 })
+
+test('heuristic fallback orchestration splits autonomous-driving bridge papers into problem-based node lines', () => {
+  const orchestration = __testing.buildHeuristicFallbackOrchestration({
+    topic: {
+      id: 'autonomous-driving',
+      language: 'en',
+    },
+    stage: {
+      order: 2,
+      name: '2016.10-2017.03',
+      nameEn: '2016.10-2017.03',
+    },
+    existingNodes: [],
+    candidatePapers: [
+      {
+        id: 'paper-recovery-a',
+        title: 'Virtual to Real Reinforcement Learning for Autonomous Driving',
+        titleZh: 'Virtual to Real Reinforcement Learning for Autonomous Driving',
+        titleEn: 'Virtual to Real Reinforcement Learning for Autonomous Driving',
+        summary: 'Studies virtual-to-real transfer and reinforcement learning for closed-loop autonomous driving.',
+        explanation: 'Focuses on simulation transfer, recovery behaviour, and intervention-efficient policy learning.',
+        coverPath: null,
+        figures: [],
+      },
+      {
+        id: 'paper-recovery-b',
+        title: 'Query-Efficient Imitation Learning for End-to-End Autonomous Driving',
+        titleZh: 'Query-Efficient Imitation Learning for End-to-End Autonomous Driving',
+        titleEn: 'Query-Efficient Imitation Learning for End-to-End Autonomous Driving',
+        summary: 'Builds query-efficient imitation learning and recovery policies for end-to-end driving.',
+        explanation: 'The paper keeps the same recovery-policy line while changing the data-collection loop.',
+        coverPath: null,
+        figures: [],
+      },
+      {
+        id: 'paper-attention',
+        title: 'Brain-Inspired Cognitive Model with Attention for Self-Driving Cars',
+        titleZh: 'Brain-Inspired Cognitive Model with Attention for Self-Driving Cars',
+        titleEn: 'Brain-Inspired Cognitive Model with Attention for Self-Driving Cars',
+        summary: 'Introduces a cognitive map and attention mechanism for interpretable self-driving control.',
+        explanation: 'Emphasizes attention, cognitive maps, and interpretability in end-to-end driving.',
+        coverPath: null,
+        figures: [],
+      },
+      {
+        id: 'paper-event',
+        title: 'DDD17: End-To-End DAVIS Driving Dataset',
+        titleZh: 'DDD17: End-To-End DAVIS Driving Dataset',
+        titleEn: 'DDD17: End-To-End DAVIS Driving Dataset',
+        summary: 'Uses DAVIS event-camera signals to build an end-to-end driving dataset.',
+        explanation: 'The work sits on the event-based and neuromorphic driving line rather than general control.',
+        coverPath: null,
+        figures: [],
+      },
+    ],
+  })
+
+  assert.ok(orchestration.nodeActions.length >= 3)
+  assert.ok(
+    orchestration.nodeActions.some(
+      (action) =>
+        /Recovery Policies and Simulation Transfer/u.test(action.titleEn) &&
+        action.paperIds.length === 2,
+    ),
+  )
+  assert.ok(
+    orchestration.nodeActions.some((action) =>
+      /Attention, Cognitive Maps, and Interpretable Driving/u.test(action.titleEn),
+    ),
+  )
+  assert.ok(
+    orchestration.nodeActions.some((action) =>
+      /Event-based and Neuromorphic Driving/u.test(action.titleEn),
+    ),
+  )
+  assert.match(orchestration.stageSummary, /problem-focused node lines/u)
+})
+
+test('scheduler estimates total stage capacity from the topic timeline instead of collapsing to one stored stage', () => {
+  const totalStages = __testing.estimateTopicProgressTotalStages({
+    topic: {
+      createdAt: new Date('2026-04-09T00:00:00.000Z'),
+      papers: [
+        {
+          published: new Date('2016-04-25T00:00:00.000Z'),
+        },
+      ],
+    },
+    existingStageCount: 1,
+    windowMonths: 6,
+  })
+
+  assert.ok(totalStages >= 20)
+})
+
 test('scheduler stop clears stale active session handles so a new duration run can start immediately', async () => {
   const topicId = `scheduler-stop-${Date.now()}`
   const taskId = `topic-research:${topicId}`
@@ -238,7 +333,7 @@ test('scheduler stop clears stale active session handles so a new duration run c
     schedulerState.progress.delete(taskId)
     schedulerState.executionHistory.delete(taskId)
     schedulerState.activeSessions.delete(taskId)
-    await prisma.systemConfig.deleteMany({
+    await prisma.system_configs.deleteMany({
       where: {
         OR: [
           { key: `task-progress:${taskId}` },

@@ -510,7 +510,7 @@ function parseMemory(value: string | null | undefined) {
 }
 
 export async function loadTopicGenerationMemory(topicId: string): Promise<TopicGenerationMemory> {
-  const record = await prisma.systemConfig.findUnique({
+  const record = await prisma.system_configs.findUnique({
     where: { key: generationMemoryKey(topicId) },
   })
 
@@ -533,10 +533,10 @@ export async function saveTopicGenerationMemory(memory: TopicGenerationMemory) {
   }
   const { payload, serialized } = compactPersistedMemory(basePayload)
 
-  await prisma.systemConfig.upsert({
+  await prisma.system_configs.upsert({
     where: { key: generationMemoryKey(memory.topicId) },
-    update: { value: serialized },
-    create: { key: generationMemoryKey(memory.topicId), value: serialized },
+    update: { value: serialized, updatedAt: new Date() },
+    create: { id: crypto.randomUUID(), key: generationMemoryKey(memory.topicId), value: serialized, updatedAt: new Date() },
   })
 
   return payload

@@ -759,6 +759,7 @@ function compileTopicsInternal(args?: { resetOrigin?: boolean }) {
         nameEn: topic.nameEn,
         focusLabel: topic.focusLabel,
         originPaperId: topic.origin.originPaperId,
+        configuredPaperIds: topic.papers.map((paper) => paper.id),
         frontendSummary: topic.frontendSummary,
         topicMemory: topicMemory[topic.id],
         paperCatalog,
@@ -908,11 +909,7 @@ function validateCompiledData(compiled: ReturnType<typeof compileTopicsInternal>
   return { errors, warnings }
 }
 
-function writeCompiledOutput(compiled: ReturnType<typeof compileTopics>) {
-  if (!compiled.compiled) {
-    throw new Error('Missing compiled payload.')
-  }
-  const payload = compiled.compiled
+function writeCompiledOutput(payload: ReturnType<typeof compileTopicsInternal>) {
   ensureDir(generatedRoot)
   ensureDir(workflowRoot)
   ensureDir(trackerContentRoot)

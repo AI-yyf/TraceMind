@@ -7,7 +7,7 @@ const router = Router()
 
 // 获取所有模型配置
 router.get('/', asyncHandler(async (req, res) => {
-  const models = await prisma.modelConfig.findMany({
+  const models = await prisma.model_configs.findMany({
     orderBy: { createdAt: 'desc' }
   })
 
@@ -25,8 +25,10 @@ router.get('/', asyncHandler(async (req, res) => {
 router.post('/', asyncHandler(async (req, res) => {
   const data = req.body
 
-  const model = await prisma.modelConfig.create({
+  const model = await prisma.model_configs.create({
     data: {
+      id: crypto.randomUUID(),
+      updatedAt: new Date(),
       modelId: data.id,
       name: data.name,
       provider: data.provider,
@@ -64,7 +66,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
   if (data.capabilities) updateData.capabilities = JSON.stringify(data.capabilities)
   if (data.enabled !== undefined) updateData.enabled = data.enabled
 
-  const model = await prisma.modelConfig.update({
+  const model = await prisma.model_configs.update({
     where: { id },
     data: updateData
   })
@@ -81,7 +83,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
 
 // 删除模型配置
 router.delete('/:id', asyncHandler(async (req, res) => {
-  await prisma.modelConfig.delete({
+  await prisma.model_configs.delete({
     where: { id: req.params.id }
   })
 
@@ -92,7 +94,7 @@ router.delete('/:id', asyncHandler(async (req, res) => {
 router.post('/:id/test', asyncHandler(async (req, res) => {
   const { id } = req.params
 
-  const model = await prisma.modelConfig.findUnique({
+  const model = await prisma.model_configs.findUnique({
     where: { id }
   })
 

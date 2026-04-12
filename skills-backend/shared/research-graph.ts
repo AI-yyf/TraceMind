@@ -441,20 +441,83 @@ export function buildResearchNodesFromStageLedger(
 
 export function normalizeResearchNodes(nodes: unknown): ResearchGraphNode[] {
   if (!Array.isArray(nodes)) return []
-  return nodes
-    .map((node) => normalizeGraphNode(node))
-    .filter((node): node is ResearchGraphNode => Boolean(node))
-    .sort((left, right) => {
-      const leftBranch = left.branchId ?? left.sourceBranchIds[0] ?? ''
-      const rightBranch = right.branchId ?? right.sourceBranchIds[0] ?? ''
-      if (leftBranch !== rightBranch) {
-        return leftBranch.localeCompare(rightBranch)
-      }
-      if (left.stageIndex !== right.stageIndex) {
-        return left.stageIndex - right.stageIndex
-      }
-      return left.nodeId.localeCompare(right.nodeId)
+  const byNodeId = new Map<string, ResearchGraphNode>()
+  const pickEarlierDate = (left: string, right: string) => {
+    const leftTime = Date.parse(left)
+    const rightTime = Date.parse(right)
+    if (Number.isNaN(leftTime)) return right
+    if (Number.isNaN(rightTime)) return left
+    return leftTime <= rightTime ? left : right
+  }
+  const pickLaterDate = (left: string, right: string) => {
+    const leftTime = Date.parse(left)
+    const rightTime = Date.parse(right)
+    if (Number.isNaN(leftTime)) return right
+    if (Number.isNaN(rightTime)) return left
+    return leftTime >= rightTime ? left : right
+  }
+
+  for (const node of nodes) {
+    const normalized = normalizeGraphNode(node)
+    if (!normalized) continue
+
+    const existing = byNodeId.get(normalized.nodeId)
+    if (!existing) {
+      byNodeId.set(normalized.nodeId, normalized)
+      continue
+    }
+
+    byNodeId.set(normalized.nodeId, {
+      ...existing,
+      topicId: existing.topicId || normalized.topicId,
+      stageIndex: Math.min(existing.stageIndex, normalized.stageIndex),
+      paperIds: uniqueStrings([...existing.paperIds, ...normalized.paperIds]),
+      sourceBranchIds: uniqueStrings([...existing.sourceBranchIds, ...normalized.sourceBranchIds]),
+      sourceProblemNodeIds: uniqueStrings([
+        ...existing.sourceProblemNodeIds,
+        ...normalized.sourceProblemNodeIds,
+      ]),
+      status:
+        existing.status === 'canonical' || normalized.status === 'canonical'
+          ? 'canonical'
+          : existing.status === 'archived' || normalized.status === 'archived'
+            ? 'archived'
+            : existing.status === 'deprecated' || normalized.status === 'deprecated'
+              ? 'deprecated'
+              : 'provisional',
+      provisional: existing.provisional && normalized.provisional,
+      nodeLabel:
+        existing.nodeLabel.length >= normalized.nodeLabel.length
+          ? existing.nodeLabel
+          : normalized.nodeLabel,
+      nodeSummary:
+        existing.nodeSummary.length >= normalized.nodeSummary.length
+          ? existing.nodeSummary
+          : normalized.nodeSummary,
+      isMergeNode: existing.isMergeNode || normalized.isMergeNode,
+      tags: uniqueStrings([...existing.tags, ...normalized.tags]),
+      discoveredAt: pickEarlierDate(existing.discoveredAt, normalized.discoveredAt),
+      createdAt: pickEarlierDate(existing.createdAt, normalized.createdAt),
+      updatedAt: pickLaterDate(existing.updatedAt, normalized.updatedAt),
+      version: Math.max(existing.version, normalized.version),
+      branchId: existing.branchId || normalized.branchId,
+      title: existing.title || normalized.title,
+      summary: existing.summary || normalized.summary,
+      isKeyPaper: existing.isKeyPaper || normalized.isKeyPaper,
     })
+  }
+
+  return [...byNodeId.values()].sort((left, right) => {
+    const leftBranch = left.branchId ?? left.sourceBranchIds[0] ?? ''
+    const rightBranch = right.branchId ?? right.sourceBranchIds[0] ?? ''
+    if (leftBranch !== rightBranch) {
+      return leftBranch.localeCompare(rightBranch)
+    }
+    if (left.stageIndex !== right.stageIndex) {
+      return left.stageIndex - right.stageIndex
+    }
+    return left.nodeId.localeCompare(right.nodeId)
+  })
 }
 
 export function buildFallbackBranchRegistry(args: {

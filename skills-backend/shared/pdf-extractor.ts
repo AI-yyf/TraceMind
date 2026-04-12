@@ -227,11 +227,11 @@ export class PDFExtractor {
   private async saveExtractionResult(result: PDFExtractionResult, paperId: string): Promise<void> {
     try {
       // 查找对应的论文记录
-      const paper = await prisma.paper.findFirst({
+      const paper = await prisma.papers.findFirst({
         where: {
           OR: [
             { id: paperId },
-            { arxivId: paperId }
+            { arxivUrl: paperId }
           ]
         }
       })
@@ -243,43 +243,45 @@ export class PDFExtractor {
 
       // 保存图表
       for (const figure of result.figures) {
-        await prisma.figure.upsert({
+        await prisma.figures.upsert({
           where: { id: figure.id },
           update: {
+            number: figure.number,
             caption: figure.caption,
             page: figure.page,
-            path: figure.imagePath,
-            width: figure.width,
-            height: figure.height,
+            imagePath: figure.imagePath,
           },
           create: {
             id: figure.id,
             paperId: paper.id,
+            number: figure.number,
             caption: figure.caption,
             page: figure.page,
-            path: figure.imagePath,
-            width: figure.width,
-            height: figure.height,
+            imagePath: figure.imagePath,
           }
         })
       }
 
       // 保存表格
       for (const table of result.tables) {
-        await prisma.table.upsert({
+        await prisma.tables.upsert({
           where: { id: table.id },
           update: {
+            number: table.number,
             caption: table.caption,
             page: table.page,
-            data: table.rows,
+            headers: Array.isArray(table.headers) ? JSON.stringify(table.headers) : (table.headers || ''),
+            rows: Array.isArray(table.rows) ? JSON.stringify(table.rows) : String(table.rows),
             rawText: table.rawText,
           },
           create: {
             id: table.id,
             paperId: paper.id,
+            number: table.number,
             caption: table.caption,
             page: table.page,
-            data: table.rows,
+            headers: Array.isArray(table.headers) ? JSON.stringify(table.headers) : (table.headers || ''),
+            rows: Array.isArray(table.rows) ? JSON.stringify(table.rows) : String(table.rows),
             rawText: table.rawText,
           }
         })
@@ -287,9 +289,10 @@ export class PDFExtractor {
 
       // 保存公式
       for (const formula of result.formulas) {
-        await prisma.formula.upsert({
+        await prisma.formulas.upsert({
           where: { id: formula.id },
           update: {
+            number: formula.number || '',
             latex: formula.latex,
             rawText: formula.rawText,
             page: formula.page,
@@ -297,6 +300,7 @@ export class PDFExtractor {
           create: {
             id: formula.id,
             paperId: paper.id,
+            number: formula.number || '',
             latex: formula.latex,
             rawText: formula.rawText,
             page: formula.page,

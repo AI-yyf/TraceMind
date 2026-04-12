@@ -74,12 +74,12 @@ test('collectNodeRelatedPaperIds broadens world-model nodes toward visual, conce
         '这一阶段把 end-to-end driving 推向 latent world model，通过内部仿真器建模状态转移。',
       nodeExplanation:
         '关键是用 world model、latent state transition 和 kinematics-aware dynamics 来补足直接映射的不足。',
-      primaryPaper: {
+      papers: {
         title: 'Autonomous Driving World Models',
         titleZh: '自动驾驶世界模型',
         titleEn: 'Autonomous Driving World Models',
       },
-      papers: [{ paperId: 'paper-2' }],
+      node_papers: [{ paperId: 'paper-2' }],
     },
     papers,
   })
@@ -127,12 +127,12 @@ test('collectNodeRelatedPaperIds pulls multimodal, figure-backed papers into thi
         '这一阶段从生成式世界模型推进到 multimodal understanding，让系统理解语言指令与跨模态场景。',
       nodeExplanation:
         '重点不是单纯大模型，而是 multimodal world model、language instruction 和 unified multimodal generation 的结合。',
-      primaryPaper: {
+      papers: {
         title: 'LMDrive: Language-Enhanced End-to-End Driving',
         titleZh: 'LMDrive：语言增强的端到端驾驶',
         titleEn: 'LMDrive: Language-Enhanced End-to-End Driving',
       },
-      papers: [{ paperId: 'paper-5' }],
+      node_papers: [{ paperId: 'paper-5' }],
     },
     papers,
   })
@@ -168,12 +168,12 @@ test('collectNodeRelatedPaperIds includes papers directly referenced in node pro
         'This node compares paper-1 against paper-5《LMDrive》 to explain how language context changes the planning interface.',
       nodeExplanation:
         'The article prose repeatedly returns to paper-5 as the clearest bridge between planning and instruction-grounded driving.',
-      primaryPaper: {
+      papers: {
         title: 'UniAD: Planning-Oriented Autonomous Driving',
         titleZh: 'UniAD',
         titleEn: 'UniAD: Planning-Oriented Autonomous Driving',
       },
-      papers: [{ paperId: 'paper-1' }],
+      node_papers: [{ paperId: 'paper-1' }],
     },
     papers,
   })
@@ -218,15 +218,64 @@ test('collectNodeRelatedPaperIds respects stage-scoped paper allowlists', () => 
         'This node should only compare the seed paper against same-stage evidence about latent world modeling.',
       nodeExplanation:
         'The later dynflow paper is relevant in content, but it belongs to a later stage and must not leak into this node.',
-      primaryPaper: {
+      papers: {
         title: 'Autonomous Driving World Models',
         titleZh: '自动驾驶世界模型',
         titleEn: 'Autonomous Driving World Models',
       },
-      papers: [{ paperId: 'paper-2' }],
+      node_papers: [{ paperId: 'paper-2' }],
     },
     papers,
   })
 
   assert.deepEqual(relatedIds, ['paper-2', 'kinematics-paper'])
+})
+
+test('collectNodeRelatedPaperIds keeps all same-stage strong matches instead of truncating to five papers', () => {
+  const papers = [
+    createPaper({
+      id: 'paper-seed',
+      title: 'Autonomous Driving World Models',
+      summary: 'Seed paper for stage-local world-model evidence.',
+    }),
+    ...Array.from({ length: 7 }, (_, index) =>
+      createPaper({
+        id: `paper-support-${index + 1}`,
+        title: `Latent Driving World Model Variant ${index + 1}`,
+        summary:
+          'A latent world model for autonomous driving with planning, closed-loop simulation, and kinematics-aware dynamics.',
+        figures: 4 + (index % 2),
+        cover: index % 2 === 0,
+        publishedAt: `2026-03-${`${index + 2}`.padStart(2, '0')}T00:00:00.000Z`,
+      }),
+    ),
+  ]
+
+  const relatedIds = collectNodeRelatedPaperIds({
+    stageTitle: 'World-model evidence in 2026.03',
+    allowedPaperIds: papers.map((paper) => paper.id),
+    node: {
+      primaryPaperId: 'paper-seed',
+      nodeLabel: 'World-model evidence',
+      nodeSubtitle: 'Latent prediction and dynamics',
+      nodeSummary:
+        'This node should retain same-stage autonomous-driving world-model papers with strong latent-dynamics and planning overlap.',
+      nodeExplanation:
+        'Every same-stage paper here directly reinforces world model, latent dynamics, and closed-loop driving evidence.',
+      papers: {
+        title: 'Autonomous Driving World Models',
+        titleZh: '自动驾驶世界模型',
+        titleEn: 'Autonomous Driving World Models',
+      },
+      node_papers: [{ paperId: 'paper-seed' }],
+    },
+    papers,
+  })
+
+  assert.equal(relatedIds.length, 8)
+  assert.equal(relatedIds[0], 'paper-seed')
+  assert.deepEqual(
+    new Set(relatedIds),
+    new Set(papers.map((paper) => paper.id)),
+  )
 })

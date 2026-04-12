@@ -10,19 +10,19 @@ const prisma = new PrismaClient()
 async function main() {
   console.log('开始填充示例数据...')
 
-  await prisma.nodePaper.deleteMany()
-  await prisma.figure.deleteMany()
-  await prisma.table.deleteMany()
-  await prisma.formula.deleteMany()
-  await prisma.paperSection.deleteMany()
-  await prisma.researchNode.deleteMany()
-  await prisma.paper.deleteMany()
-  await prisma.topicStage.deleteMany()
-  await prisma.topic.deleteMany()
+  await prisma.node_papers.deleteMany()
+  await prisma.figures.deleteMany()
+  await prisma.tables.deleteMany()
+  await prisma.formulas.deleteMany()
+  await prisma.paper_sections.deleteMany()
+  await prisma.research_nodes.deleteMany()
+  await prisma.papers.deleteMany()
+  await prisma.topic_stages.deleteMany()
+  await prisma.topics.deleteMany()
 
   console.log('已清空现有数据')
 
-  const topic = await prisma.topic.create({
+  const topic = await prisma.topics.create({
     data: {
       id: 'topic-1',
       nameZh: '自动驾驶世界模型',
@@ -31,24 +31,25 @@ async function main() {
       summary: '研究自动驾驶领域中基于世界模型的端到端学习方法',
       description: '本主题追踪自动驾驶领域从传统模块化方法到端到端世界模型的重要演进。',
       status: 'active',
+      updatedAt: new Date(),
     },
   })
 
   const stages = await Promise.all([
-    prisma.topicStage.create({
-      data: { topicId: topic.id, order: 1, name: '问题提出', description: '自动驾驶的挑战与机遇' },
+    prisma.topic_stages.create({
+      data: { id: crypto.randomUUID(), topicId: topic.id, order: 1, name: '问题提出', description: '自动驾驶的挑战与机遇' },
     }),
-    prisma.topicStage.create({
-      data: { topicId: topic.id, order: 2, name: '基础方法', description: '早期端到端自动驾驶探索' },
+    prisma.topic_stages.create({
+      data: { id: crypto.randomUUID(), topicId: topic.id, order: 2, name: '基础方法', description: '早期端到端自动驾驶探索' },
     }),
-    prisma.topicStage.create({
-      data: { topicId: topic.id, order: 3, name: '技术改进', description: '世界模型与仿真环境' },
+    prisma.topic_stages.create({
+      data: { id: crypto.randomUUID(), topicId: topic.id, order: 3, name: '技术改进', description: '世界模型与仿真环境' },
     }),
-    prisma.topicStage.create({
-      data: { topicId: topic.id, order: 4, name: '应用拓展', description: '多模态融合与泛化' },
+    prisma.topic_stages.create({
+      data: { id: crypto.randomUUID(), topicId: topic.id, order: 4, name: '应用拓展', description: '多模态融合与泛化' },
     }),
-    prisma.topicStage.create({
-      data: { topicId: topic.id, order: 5, name: '综合分析', description: '最新进展与未来方向' },
+    prisma.topic_stages.create({
+      data: { id: crypto.randomUUID(), topicId: topic.id, order: 5, name: '综合分析', description: '最新进展与未来方向' },
     }),
   ])
 
@@ -134,7 +135,7 @@ async function main() {
   ]
 
   for (const paperData of papersData) {
-    await prisma.paper.create({
+    await prisma.papers.create({
       data: {
         ...paperData,
         topicId: topic.id,
@@ -142,6 +143,7 @@ async function main() {
         coverPath: null,
         tablePaths: JSON.stringify([]),
         contentMode: 'editorial',
+        updatedAt: new Date(),
       },
     })
   }
@@ -247,27 +249,31 @@ async function main() {
   ]
 
   for (const nodeData of nodesData) {
-    await prisma.researchNode.create({
-      data: nodeData,
+    await prisma.research_nodes.create({
+      data: {
+        ...nodeData,
+        updatedAt: new Date(),
+      },
     })
   }
 
-  await prisma.nodePaper.createMany({
+  await prisma.node_papers.createMany({
     data: [
-      { nodeId: 'node-1', paperId: 'paper-1', order: 0 },
-      { nodeId: 'node-2', paperId: 'paper-2', order: 0 },
-      { nodeId: 'node-3', paperId: 'paper-3', order: 0 },
-      { nodeId: 'node-4', paperId: 'paper-4', order: 0 },
-      { nodeId: 'node-5', paperId: 'paper-5', order: 0 },
+      { id: crypto.randomUUID(), nodeId: 'node-1', paperId: 'paper-1', order: 0 },
+      { id: crypto.randomUUID(), nodeId: 'node-2', paperId: 'paper-2', order: 0 },
+      { id: crypto.randomUUID(), nodeId: 'node-3', paperId: 'paper-3', order: 0 },
+      { id: crypto.randomUUID(), nodeId: 'node-4', paperId: 'paper-4', order: 0 },
+      { id: crypto.randomUUID(), nodeId: 'node-5', paperId: 'paper-5', order: 0 },
     ],
   })
 
   console.log('创建 ' + nodesData.length + ' 个研究节点')
   console.log('创建节点-论文关联')
 
-  await prisma.modelConfig.createMany({
+  await prisma.model_configs.createMany({
     data: [
       {
+        id: crypto.randomUUID(),
         modelId: 'gpt-4o-vision',
         name: 'GPT-4o Vision',
         provider: 'openai',
@@ -276,8 +282,10 @@ async function main() {
         parameters: JSON.stringify({ temperature: 0.3, maxTokens: 4000, topP: 1 }),
         capabilities: JSON.stringify(['vision', 'text', 'analysis']),
         enabled: true,
+        updatedAt: new Date(),
       },
       {
+        id: crypto.randomUUID(),
         modelId: 'claude-3-opus',
         name: 'Claude 3 Opus',
         provider: 'anthropic',
@@ -286,17 +294,18 @@ async function main() {
         parameters: JSON.stringify({ temperature: 0.4, maxTokens: 8000, topP: 1 }),
         capabilities: JSON.stringify(['text', 'code', 'math']),
         enabled: true,
+        updatedAt: new Date(),
       },
     ],
   })
 
-  await prisma.taskMapping.createMany({
+  await prisma.task_mappings.createMany({
     data: [
-      { taskName: 'figureAnalysis', modelId: 'gpt-4o-vision' },
-      { taskName: 'contentGeneration', modelId: 'claude-3-opus' },
-      { taskName: 'formulaRecognition', modelId: 'gpt-4o-vision' },
-      { taskName: 'ocr', modelId: 'gpt-4o-vision' },
-      { taskName: 'tableExtraction', modelId: 'gpt-4o-vision' },
+      { id: crypto.randomUUID(), taskName: 'figureAnalysis', modelId: 'gpt-4o-vision' },
+      { id: crypto.randomUUID(), taskName: 'contentGeneration', modelId: 'claude-3-opus' },
+      { id: crypto.randomUUID(), taskName: 'formulaRecognition', modelId: 'gpt-4o-vision' },
+      { id: crypto.randomUUID(), taskName: 'ocr', modelId: 'gpt-4o-vision' },
+      { id: crypto.randomUUID(), taskName: 'tableExtraction', modelId: 'gpt-4o-vision' },
     ],
   })
 

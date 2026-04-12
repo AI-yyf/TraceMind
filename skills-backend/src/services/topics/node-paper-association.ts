@@ -22,13 +22,13 @@ export type AssociationNodeLike = {
   nodeSubtitle?: string | null
   nodeSummary: string
   nodeExplanation?: string | null
-  primaryPaper: {
+  papers: {
     title: string
     titleZh?: string | null
     titleEn?: string | null
-  }
-  papers: Array<{
-    paperId: string | null
+  } | null
+  node_papers: Array<{
+    paperId: string
   }>
 }
 
@@ -477,7 +477,7 @@ export function collectNodeRelatedPaperIds<TPaper extends AssociationPaperLike>(
   ])
   const linkedIds = uniqueIds([
     args.node.primaryPaperId,
-    ...args.node.papers.map((item) => item.paperId),
+    ...args.node.node_papers.map((item) => item.paperId),
     ...directlyMentionedPaperIds,
   ]).filter((paperId) => !allowedPaperIds || allowedPaperIds.has(paperId))
   const scopedPapers = allowedPaperIds
@@ -489,9 +489,9 @@ export function collectNodeRelatedPaperIds<TPaper extends AssociationPaperLike>(
     args.node.nodeSubtitle,
     args.node.nodeSummary,
     args.node.nodeExplanation,
-    args.node.primaryPaper.titleZh,
-    args.node.primaryPaper.titleEn,
-    args.node.primaryPaper.title,
+    args.node.papers?.titleZh,
+    args.node.papers?.titleEn,
+    args.node.papers?.title,
     args.stageTitle,
   ]
   const keywords = collectTopicRelationKeywords(referenceValues)
@@ -540,7 +540,6 @@ export function collectNodeRelatedPaperIds<TPaper extends AssociationPaperLike>(
           paper.relation.strongMatchCount >= 2 &&
           (paper.relation.conceptScore > 0 || paper.relation.assetScore > 0)),
     )
-    .slice(0, primaryLooksThin ? 5 : 4)
     .map((paper) => paper.paperId)
 
   const broadenedVisualIds =
@@ -553,7 +552,7 @@ export function collectNodeRelatedPaperIds<TPaper extends AssociationPaperLike>(
                 paper.relation.keywordScore >= 4 ||
                 paper.relation.titleMatchCount >= 1),
           )
-          .slice(0, 3)
+          .slice(0, 6)
           .map((paper) => paper.paperId)
       : []
 
@@ -568,7 +567,7 @@ export function collectNodeRelatedPaperIds<TPaper extends AssociationPaperLike>(
                 paper.relation.assetScore > 0 ||
                 paper.relation.titleMatchCount > 0),
           )
-          .slice(0, 3)
+          .slice(0, 8)
           .map((paper) => paper.paperId)
       : []
 
@@ -577,5 +576,5 @@ export function collectNodeRelatedPaperIds<TPaper extends AssociationPaperLike>(
     ...strongSupplementalIds,
     ...broadenedVisualIds,
     ...relevanceFallbackIds,
-  ]).slice(0, primaryLooksThin ? 6 : 5)
+  ])
 }

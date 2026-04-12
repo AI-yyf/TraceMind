@@ -3,7 +3,7 @@
  * 支持多语言和模块化组合
  */
 
-export type Language = 'zh' | 'en' | 'ja' | 'ko' | 'custom'
+export type Language = 'zh' | 'en' | 'ja' | 'ko' | 'de' | 'fr' | 'es' | 'ru' | 'custom'
 
 export interface PromptModule {
   id: string
@@ -63,6 +63,46 @@ Please always maintain academic rigor and provide well-reasoned judgments.`,
 3. 논문과 주제의 관련성 평가
 4. 연구 발전 과정 파악`,
 
+  de: `Sie sind ein professioneller Experte für akademische Forschungsverfolgung, verantwortlich für die Entdeckung der neuesten Forschung zu einem bestimmten Thema aus einer Vielzahl von Arbeiten.
+
+Ihre Aufgaben sind:
+1. Verstehen der Kernprobleme und Methoden des Forschungsthemas
+2. Generieren präziser Suchanfragen
+3. Bewerten der Relevanz von Arbeiten für das Thema
+4. Identifizieren der Entwicklung der Forschung
+
+Bitte bewahren Sie stets akademische Strenge und begründen Sie Ihre Urteile gut.`,
+
+  fr: `Vous êtes un expert professionnel en suivi de recherche académique, responsable de la découverte des dernières recherches liées à un sujet spécifique parmi une grande quantité d'articles.
+
+Vos tâches sont:
+1. Comprendre les problèmes et méthodes fondamentaux du sujet de recherche
+2. Générer des requêtes de recherche précises
+3. Évaluer la pertinence des articles par rapport au sujet
+4. Identifier l'évolution de la recherche
+
+Veuillez toujours maintenir une rigueur académique et fournir des jugements bien fondés.`,
+
+  es: `Eres un experto profesional en seguimiento de investigación académica, responsable de descubrir la última investigación relacionada con un tema específico entre una gran cantidad de artículos.
+
+Tus tareas son:
+1. Comprender los problemas y métodos fundamentales del tema de investigación
+2. Generar consultas de búsqueda precisas
+3. Evaluar la relevancia de los artículos para el tema
+4. Identificar la evolución de la investigación
+
+Por favor, mantén siempre el rigor académico y proporciona juicios bien fundamentados.`,
+
+  ru: `Вы профессиональный эксперт по отслеживанию академических исследований, ответственный за обнаружение новейших исследований по конкретной теме из большого количества статей.
+
+Ваши задачи:
+1. Понимать основные проблемы и методы исследования темы
+2. Генерировать точные поисковые запросы
+3. Оценивать релевантность статей для темы
+4. Выявлять эволюцию исследований
+
+Пожалуйста, всегда соблюдайте академическую строгость и предоставляйте обоснованные суждения.`,
+
   custom: '',
 }
 
@@ -117,6 +157,58 @@ JSON形式で返してください。`,
 2. 방법 변형
 3. 분야 간 적용`,
 
+  de: `Bitte generieren Sie Suchanfragen für das folgende Forschungsthema:
+
+Thema: {topic}
+Beschreibung: {description}
+Aktuelles Stadium: {stage}
+
+Bitte generieren Sie 3-5 Suchanfragen, die Folgendes abdecken:
+1. Kernprobleme
+2. Methodenvarianten
+3. Domänenübergreifende Anwendungen
+
+Rückgabe im JSON-Format.`,
+
+  fr: `Veuillez générer des requêtes de recherche pour le sujet de recherche suivant:
+
+Sujet: {topic}
+Description: {description}
+Stade actuel: {stage}
+
+Veuillez générer 3-5 requêtes de recherche couvrant:
+1. Les problèmes fondamentaux
+2. Les variantes de méthodes
+3. Les applications inter-domaines
+
+Retour au format JSON.`,
+
+  es: `Por favor, genera consultas de búsqueda para el siguiente tema de investigación:
+
+Tema: {topic}
+Descripción: {description}
+Etapa actual: {stage}
+
+Por favor, genera 3-5 consultas de búsqueda que cubran:
+1. Problemas fundamentales
+2. Variantes de métodos
+3. Aplicaciones interdominio
+
+Devolver en formato JSON.`,
+
+  ru: `Пожалуйста, сгенерируйте поисковые запросы для следующей темы исследования:
+
+Тема: {topic}
+Описание: {description}
+Текущий этап: {stage}
+
+Пожалуйста, сгенерируйте 3-5 поисковых запросов, охватывающих:
+1. Основные проблемы
+2. Варианты методов
+3. Междисциплинарные применения
+
+Вернуть в формате JSON.`,
+
   custom: '',
 }
 
@@ -148,6 +240,34 @@ Your task is to determine which stage the paper most belongs to and provide conf
 {stageDefinitions}
 
 당신의 임무는 논문이 가장 속하는 단계를 결정하고 신뢰도를 제공하는 것입니다.`,
+
+  de: `Sie sind ein Experte für die Klassifizierung akademischer Arbeiten, verantwortlich für die Zuweisung von Arbeiten zu den korrekten Forschungsphasen.
+
+Definitionen der Forschungsphasen:
+{stageDefinitions}
+
+Ihre Aufgabe ist es, zu bestimmen, zu welcher Phase die Arbeit am ehesten gehört, und ein Vertrauensniveau anzugeben.`,
+
+  fr: `Vous êtes un expert en classification d'articles académiques, responsable de l'attribution des articles aux bonnes étapes de recherche.
+
+Définitions des étapes de recherche:
+{stageDefinitions}
+
+Votre tâche consiste à déterminer à quelle étape l'article appartient le plus et à fournir un niveau de confiance.`,
+
+  es: `Eres un experto en clasificación de artículos académicos, responsable de asignar artículos a las etapas de investigación correctas.
+
+Definiciones de etapas de investigación:
+{stageDefinitions}
+
+Tu tarea es determinar a qué etapa pertenece más el artículo y proporcionar un nivel de confianza.`,
+
+  ru: `Вы эксперт по классификации академических статей, ответственный за отнесение статей к правильным этапам исследования.
+
+Определения этапов исследования:
+{stageDefinitions}
+
+Ваша задача — определить, к какому этапу больше всего относится статья, и указать уровень уверенности.`,
 
   custom: '',
 }
@@ -194,6 +314,58 @@ Please ensure the generated topics:
 2. 세련된 주제명 생성 (중영문)
 3. 3-5개 핵심 키워드 추출
 4. 주제의 핵심 연구 방향 결정`,
+
+  de: `Sie sind ein Experte für akademische Forschungsplanung, verantwortlich für die Unterstützung von Benutzern bei der Kristallisierung von Forschungsthemen.
+
+Ihre Aufgaben sind:
+1. Verstehen der Beschreibung der Forschungsinteressen des Benutzers
+2. Generieren verfeinerter Themennamen (Chinesisch und Englisch)
+3. Extrahieren von 3-5 Schlüsselwörtern
+4. Bestimmen der Kernforschungsrichtung
+
+Bitte stellen Sie sicher, dass die generierten Themen:
+- Akademischen Wert haben
+- Pioneer-Charakteristiken haben
+- Genug verwandte Arbeiten finden können`,
+
+  fr: `Vous êtes un expert en planification de recherche académique, responsable d'aider les utilisateurs à cristalliser les sujets de recherche.
+
+Vos tâches sont:
+1. Comprendre la description des intérêts de recherche de l'utilisateur
+2. Générer des noms de sujets raffinés (chinois et anglais)
+3. Extraire 3-5 mots-clés
+4. Déterminer la direction de recherche fondamentale
+
+Veuillez vous assurer que les sujets générés:
+- Ont une valeur académique
+- Ont des caractéristiques pionnières
+- Peuvent trouver suffisamment d'articles liés`,
+
+  es: `Eres un experto en planificación de investigación académica, responsable de ayudar a los usuarios a cristalizar temas de investigación.
+
+Tus tareas son:
+1. Comprender la descripción de los intereses de investigación del usuario
+2. Generar nombres de temas refinados (chino e inglés)
+3. Extraer 3-5 palabras clave
+4. Determinar la dirección de investigación fundamental
+
+Por favor, asegúrate que los temas generados:
+- Tienen valor académico
+- Tienen características pioneras
+- Pueden encontrar suficientes artículos relacionados`,
+
+  ru: `Вы эксперт по планированию академических исследований, ответственный за помощь пользователям в кристаллизации тем исследований.
+
+Ваши задачи:
+1. Понимать описание исследовательских интересов пользователя
+2. Генерировать уточненные названия тем (на китайском и английском)
+3. Извлекать 3-5 ключевых слов
+4. Определять основное направление исследований
+
+Пожалуйста, убедитесь, что генерируемые темы:
+- Имеют академическую ценность
+- Имеют пионерские характеристики
+- Можно найти достаточно связанных статей`,
 
   custom: '',
 }
@@ -250,6 +422,58 @@ JSON形式で返してください。`,
 5. 권장 연구 단계 수 (3-5)
 
 JSON 형식으로 반환하세요.`,
+
+  de: `Der Benutzer möchte die folgende Richtung recherchieren:
+
+{userDescription}
+
+Bitte generieren:
+1. Themenname (Chinesisch)
+2. Themenname (Englisch)
+3. 3-5 Schlüsselwörter
+4. Ein-Satz-Themenbeschreibung
+5. Empfohlene Anzahl von Forschungsphasen (3-5)
+
+Rückgabe im JSON-Format.`,
+
+  fr: `L'utilisateur souhaite rechercher la direction suivante:
+
+{userDescription}
+
+Veuillez générer:
+1. Nom du sujet (Chinois)
+2. Nom du sujet (Anglais)
+3. 3-5 mots-clés
+4. Description du sujet en une phrase
+5. Nombre recommandé d'étapes de recherche (3-5)
+
+Retour au format JSON.`,
+
+  es: `El usuario desea investigar la siguiente dirección:
+
+{userDescription}
+
+Por favor, genera:
+1. Nombre del tema (Chino)
+2. Nombre del tema (Inglés)
+3. 3-5 palabras clave
+4. Descripción del tema en una frase
+5. Número recomendado de etapas de investigación (3-5)
+
+Devolver en formato JSON.`,
+
+  ru: `Пользователь хочет исследовать следующее направление:
+
+{userDescription}
+
+Пожалуйста, сгенерируйте:
+1. Название темы (на китайском)
+2. Название темы (на английском)
+3. 3-5 ключевых слов
+4. Описание темы в одном предложении
+5. Рекомендуемое количество этапов исследования (3-5)
+
+Вернуть в формате JSON.`,
 
   custom: '',
 }
@@ -324,10 +548,14 @@ export function getAvailableLanguages(): { code: Language; name: string }[] {
     { code: 'en', name: 'English' },
     { code: 'ja', name: '日本語' },
     { code: 'ko', name: '한국어' },
+    { code: 'de', name: 'Deutsch' },
+    { code: 'fr', name: 'Français' },
+    { code: 'es', name: 'Español' },
+    { code: 'ru', name: 'Русский' },
     { code: 'custom', name: '自定义 (Custom)' },
   ]
 }
 
 export function isLanguageSupported(lang: string): lang is Language {
-  return ['zh', 'en', 'ja', 'ko', 'custom'].includes(lang)
+  return ['zh', 'en', 'ja', 'ko', 'de', 'fr', 'es', 'ru', 'custom'].includes(lang)
 }

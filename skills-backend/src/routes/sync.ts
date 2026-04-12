@@ -7,7 +7,7 @@ const router = Router()
 
 // 同步所有数据
 router.post('/', asyncHandler(async (req, res) => {
-  const { topics, papers, nodes, lastSyncTime } = req.body
+  const { topics, papers, nodes } = req.body
 
   logger.info('开始数据同步', { 
     topicCount: topics?.length,
@@ -24,12 +24,12 @@ router.post('/', asyncHandler(async (req, res) => {
   // 同步主题
   if (topics && topics.length > 0) {
     for (const topic of topics) {
-      const existing = await prisma.topic.findUnique({
+      const existing = await prisma.topics.findUnique({
         where: { id: topic.id }
       })
 
       if (existing) {
-        await prisma.topic.update({
+        await prisma.topics.update({
           where: { id: topic.id },
           data: {
             nameZh: topic.nameZh,
@@ -42,7 +42,7 @@ router.post('/', asyncHandler(async (req, res) => {
         })
         results.topics.updated++
       } else {
-        await prisma.topic.create({
+await prisma.topics.create({
           data: {
             id: topic.id,
             nameZh: topic.nameZh,
@@ -50,7 +50,8 @@ router.post('/', asyncHandler(async (req, res) => {
             focusLabel: topic.focusLabel,
             summary: topic.summary,
             description: topic.description,
-            status: topic.status || 'active'
+            status: topic.status || 'active',
+            updatedAt: new Date(),
           }
         })
         results.topics.created++
@@ -61,7 +62,7 @@ router.post('/', asyncHandler(async (req, res) => {
   // 同步论文
   if (papers && papers.length > 0) {
     for (const paper of papers) {
-      const existing = await prisma.paper.findUnique({
+      const existing = await prisma.papers.findUnique({
         where: { id: paper.id }
       })
 
@@ -87,14 +88,14 @@ router.post('/', asyncHandler(async (req, res) => {
       }
 
       if (existing) {
-        await prisma.paper.update({
+        await prisma.papers.update({
           where: { id: paper.id },
           data: paperData
         })
         results.papers.updated++
       } else {
-        await prisma.paper.create({
-          data: { id: paper.id, ...paperData }
+        await prisma.papers.create({
+          data: { id: paper.id, updatedAt: new Date(), ...paperData }
         })
         results.papers.created++
       }
@@ -104,7 +105,7 @@ router.post('/', asyncHandler(async (req, res) => {
   // 同步节点
   if (nodes && nodes.length > 0) {
     for (const node of nodes) {
-      const existing = await prisma.researchNode.findUnique({
+      const existing = await prisma.research_nodes.findUnique({
         where: { id: node.nodeId }
       })
 
@@ -124,14 +125,14 @@ router.post('/', asyncHandler(async (req, res) => {
       }
 
       if (existing) {
-        await prisma.researchNode.update({
+        await prisma.research_nodes.update({
           where: { id: node.nodeId },
           data: nodeData
         })
         results.nodes.updated++
       } else {
-        await prisma.researchNode.create({
-          data: { id: node.nodeId, ...nodeData }
+        await prisma.research_nodes.create({
+          data: { id: node.nodeId, updatedAt: new Date(), ...nodeData }
         })
         results.nodes.created++
       }
@@ -150,9 +151,9 @@ router.post('/', asyncHandler(async (req, res) => {
 // 获取同步状态
 router.get('/status', asyncHandler(async (req, res) => {
   const [topicCount, paperCount, nodeCount] = await Promise.all([
-    prisma.topic.count(),
-    prisma.paper.count(),
-    prisma.researchNode.count()
+    prisma.topics.count(),
+    prisma.papers.count(),
+    prisma.research_nodes.count()
   ])
 
   res.json({

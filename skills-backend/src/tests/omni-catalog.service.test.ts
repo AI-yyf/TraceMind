@@ -9,8 +9,10 @@ test('provider catalog exposes manifest-style auth metadata and config schemas',
   for (const provider of PROVIDER_CATALOG) {
     assert.equal(provider.providerAuthEnvVars.length > 0, true, `${provider.provider} is missing auth env vars`)
     assert.equal(provider.providerAuthChoices.length > 0, true, `${provider.provider} is missing auth choices`)
-    assert.equal(provider.configSchema.type, 'object')
-    assert.equal(typeof provider.configSchema.additionalProperties, 'boolean')
+    assert.ok(provider.configSchema, `${provider.provider} is missing config schema`)
+    const configSchema = provider.configSchema
+    assert.equal(configSchema.type, 'object')
+    assert.equal(typeof configSchema.additionalProperties, 'boolean')
 
     for (const choice of provider.providerAuthChoices) {
       assert.equal(choice.provider, provider.provider)
@@ -21,7 +23,7 @@ test('provider catalog exposes manifest-style auth metadata and config schemas',
     }
 
     for (const field of provider.configFields ?? []) {
-      const schemaProperty = provider.configSchema.properties[field.key]
+      const schemaProperty = configSchema.properties[field.key as keyof typeof configSchema.properties]
       assert.ok(schemaProperty, `${provider.provider} missing schema property for ${field.key}`)
       assert.equal(schemaProperty.type, field.type)
       assert.equal(schemaProperty.title, field.label)

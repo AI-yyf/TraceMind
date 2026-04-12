@@ -171,12 +171,13 @@ export class StageContextBuilder {
     ) || []
 
     for (const branch of activeBranches) {
-      if (branch.priorityScore > 0.8) {
+      const priorityScore = branch.priorityScore ?? 0
+      if (priorityScore > 0.8) {
         signals.push({
           type: 'capability_gap',
           source: branch.branchId,
           description: `高优先级分支 ${branch.label || branch.branchId} 需要填补能力缺口`,
-          confidence: branch.priorityScore,
+          confidence: priorityScore,
           timestamp: new Date().toISOString(),
         })
       }

@@ -20,7 +20,7 @@ router.get('/', asyncHandler(async (req, res) => {
   if (topicId) where.topicId = topicId as string
   if (status) where.status = status as string
 
-  const papers = await prisma.paper.findMany({
+  const papers = await prisma.papers.findMany({
     where,
     orderBy: { published: 'desc' }
   })
@@ -35,13 +35,13 @@ router.get('/:paperId/view-model', asyncHandler(async (req, res) => {
 }))
 
 router.get('/:id', asyncHandler(async (req, res) => {
-  const paper = await prisma.paper.findUnique({
+  const paper = await prisma.papers.findUnique({
     where: { id: req.params.id },
     include: {
       figures: true,
       tables: true,
       formulas: true,
-      sections: { orderBy: { order: 'asc' } }
+      paper_sections: { orderBy: { order: 'asc' } }
     }
   })
 
@@ -61,17 +61,17 @@ router.get('/:paperId/primary-node', asyncHandler(async (req, res) => {
   const stageWindowMonths = readStageWindowMonths(req.query.stageMonths)
 
   // 查找包含该论文的所有节点
-  const nodePapers = await prisma.nodePaper.findMany({
+  const nodePapers = await prisma.node_papers.findMany({
     where: { paperId },
     include: {
-      node: {
+      research_nodes: {
         include: {
-          topic: true
+          topics: true
         }
       }
     },
     orderBy: [
-      { node: { stageIndex: 'asc' } },
+      { research_nodes: { stageIndex: 'asc' } },
       { order: 'asc' }
     ]
   })
@@ -82,7 +82,7 @@ router.get('/:paperId/primary-node', asyncHandler(async (req, res) => {
 
   // 选择最早的节点作为主节点
   const primaryNodePaper = nodePapers[0]
-  const primaryNode = primaryNodePaper.node
+  const primaryNode = primaryNodePaper.research_nodes
 
   // 构建重定向URL
   const anchorParam = `paper:${paperId}`
@@ -94,22 +94,22 @@ router.get('/:paperId/primary-node', asyncHandler(async (req, res) => {
     data: {
       nodeId: primaryNode.id,
       nodeRoute: `/node/${primaryNode.id}`,
-      topicId: primaryNode.topic?.id,
-      topicRoute: primaryNode.topic ? `/topic/${primaryNode.topic.route || primaryNode.topic.id}` : null,
+      topicId: primaryNode.topics?.id,
+      topicRoute: primaryNode.topics ? `/topic/${primaryNode.topics.id}` : null,
       stageIndex: primaryNode.stageIndex,
       redirectUrl,
       anchorId: anchorParam,
       allNodes: nodePapers.map(np => ({
-        nodeId: np.node.id,
-        stageIndex: np.node.stageIndex,
-        nodeTitle: np.node.title
+        nodeId: np.research_nodes.id,
+        stageIndex: np.research_nodes.stageIndex,
+        nodeTitle: np.research_nodes.nodeLabel
       }))
     }
   })
 }))
 
 router.post('/', asyncHandler(async (req, res) => {
-  const paper = await prisma.paper.create({
+  const paper = await prisma.papers.create({
     data: {
       ...req.body,
       authors: JSON.stringify(req.body.authors || []),

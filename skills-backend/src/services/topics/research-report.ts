@@ -215,7 +215,7 @@ function asReport(value: string | null | undefined): ResearchRunReport | null {
 }
 
 export async function loadTopicResearchReport(topicId: string): Promise<ResearchRunReport | null> {
-  const record = await prisma.systemConfig.findUnique({
+  const record = await prisma.system_configs.findUnique({
     where: { key: reportKey(topicId) },
   })
 
@@ -228,10 +228,10 @@ export async function saveTopicResearchReport(report: ResearchRunReport): Promis
     throw new Error(`Invalid research report payload for topic ${report.topicId}`)
   }
 
-  await prisma.systemConfig.upsert({
+  await prisma.system_configs.upsert({
     where: { key: reportKey(report.topicId) },
-    update: { value: JSON.stringify(normalized) },
-    create: { key: reportKey(report.topicId), value: JSON.stringify(normalized) },
+    update: { value: JSON.stringify(normalized), updatedAt: new Date() },
+    create: { id: crypto.randomUUID(), key: reportKey(report.topicId), value: JSON.stringify(normalized), updatedAt: new Date() },
   })
 
   return normalized

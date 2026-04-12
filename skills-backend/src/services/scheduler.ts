@@ -192,6 +192,28 @@ class TaskScheduler {
       this.listeners.splice(index, 1)
     }
   }
+
+  /**
+   * 启动所有任务
+   */
+  startAll(): void {
+    for (const [, entry] of this.tasks.entries()) {
+      entry.config.enabled = true
+      entry.task.start()
+    }
+    console.log(`[Scheduler] Started ${this.tasks.size} tasks`)
+  }
+
+  /**
+   * 停止所有任务
+   */
+  stopAll(): void {
+    for (const [, entry] of this.tasks.entries()) {
+      entry.config.enabled = false
+      entry.task.stop()
+    }
+    console.log(`[Scheduler] Stopped ${this.tasks.size} tasks`)
+  }
 }
 
 // 导出单例实例

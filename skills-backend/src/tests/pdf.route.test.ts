@@ -5,18 +5,25 @@ import { prisma } from '../lib/prisma'
 import { __testing as pdfRouteTesting } from '../routes/pdf'
 import type { PDFExtractionResult } from '../services/pdf-extractor'
 
+function createTestId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
 test('persistExtractionResult stores extracted paper sections alongside evidence assets', async () => {
-  const topic = await prisma.topic.create({
+  const topic = await prisma.topics.create({
     data: {
+      id: createTestId('pdf-topic'),
       nameZh: 'PDF Extraction Topic',
       nameEn: 'PDF Extraction Topic',
       language: 'zh',
       status: 'active',
+      updatedAt: new Date(),
     },
   })
 
-  const paper = await prisma.paper.create({
+  const paper = await prisma.papers.create({
     data: {
+      id: createTestId('pdf-paper'),
       topicId: topic.id,
       title: 'PDF Grounding Paper',
       titleZh: 'PDF Grounding Paper',
@@ -29,6 +36,7 @@ test('persistExtractionResult stores extracted paper sections alongside evidence
       tablePaths: '[]',
       tags: JSON.stringify(['pdf', 'grounding']),
       status: 'candidate',
+      updatedAt: new Date(),
     },
   })
 
@@ -97,11 +105,11 @@ test('persistExtractionResult stores extracted paper sections alongside evidence
       pdfPath: '/uploads/test-paper.pdf',
     })
 
-    const sections = await prisma.paperSection.findMany({
+    const sections = await prisma.paper_sections.findMany({
       where: { paperId: paper.id },
       orderBy: { order: 'asc' },
     })
-    const figures = await prisma.figure.findMany({
+    const figures = await prisma.figures.findMany({
       where: { paperId: paper.id },
     })
 
@@ -110,7 +118,7 @@ test('persistExtractionResult stores extracted paper sections alongside evidence
     assert.deepEqual(JSON.parse(sections[0]?.paragraphs ?? '[]').length > 0, true)
     assert.equal(figures.length, 1)
   } finally {
-    await prisma.topic.delete({
+    await prisma.topics.delete({
       where: { id: topic.id },
     })
   }

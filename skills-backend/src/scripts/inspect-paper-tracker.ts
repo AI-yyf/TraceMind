@@ -43,10 +43,13 @@ async function main() {
           ? { windowMonths }
           : {}),
       },
-      context: {},
+      request: {
+        skillId: 'paper-tracker',
+        input: {},
+      },
     },
-    { logger } as any,
-    {} as any,
+    { logger, activeTopicIds: [topicId], generatedDataSummary: null } as any,
+    null as any,  // artifactManager
   )
 
   if (!result.success) {
@@ -59,7 +62,6 @@ async function main() {
     JSON.stringify(
       {
         success: result.success,
-        summary: result.summary,
         discoverySummary: data.discoverySummary ?? null,
         stageWindow: data.stageWindow ?? null,
         stageWindowDecision: data.stageWindowDecision ?? null,

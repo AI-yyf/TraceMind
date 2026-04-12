@@ -3,14 +3,15 @@
  * Supports iterative stage-based research automation with per-stage round controls.
  */
 
-import { PrismaClient } from '@prisma/client'
 import cron, { ScheduledTask } from 'node-cron'
 
+import { prisma } from '../lib/prisma'
 import type { ResearchMode, TaskConfig, TaskResult } from './scheduler'
 import { runStructuredGenerationPass } from './generation/orchestrator'
 import { getGenerationRuntimeConfig, PROMPT_TEMPLATE_IDS } from './generation/prompt-registry'
 import { refreshTopicViewModelSnapshot } from './topics/alpha-topic'
 import { orchestrateTopicReaderArtifacts, warmTopicReaderArtifacts } from './topics/alpha-reader'
+import { syncConfiguredTopicWorkflowSnapshot } from './topics/topic-config-sync'
 import {
   loadResearchPipelineState,
   type ResearchPipelineDurationDecision,
@@ -37,6 +38,7 @@ import {
   type TopicGuidanceLatestApplication,
 } from './topics/topic-guidance-ledger'
 import { collectTopicCognitiveMemory } from './topics/topic-cognitive-memory'
+import { loadTopicStageConfig } from './topics/topic-stage-config'
 
 type RuntimeSkillContext = {
   sessionId: string
@@ -219,6 +221,59 @@ function createManagedScheduledTask(config: TaskConfig, run: () => Promise<void>
         return
       },
     }
+
+    /*
+    const resolvedTitle = existingNode
+      ? pickText(existingNode.nodeLabel, fallbackTitleZh, fallbackTitleEn)
+      : useEnglish
+        ? fallbackTitleEn
+        : fallbackTitleZh
+    const resolvedTitleEn = existingNode
+      ? pickText(existingNode.nodeSubtitle, existingNode.nodeLabel, fallbackTitleEn, fallbackTitleZh)
+      : fallbackTitleEn
+    const resolvedSubtitle = existingNode
+      ? pickText(existingNode.nodeSubtitle, resolvedTitleEn, resolvedTitle)
+      : useEnglish
+        ? `${cluster.papers.length} stage-bounded paper${cluster.papers.length === 1 ? '' : 's'} on ${problemLabelEn}`
+        : `${cluster.papers.length} 篇处于同一阶段窗口的论文，围绕${problemLabelZh}展开`
+    const resolvedSummary = isSinglePaper
+      ? useEnglish
+        ? `Within ${stageTitleEn}, this node keeps ${pickText(primaryPaper.titleEn, primaryPaper.title)} as a disciplined entry point for ${problemLabelEn} instead of pretending that one paper already forms a stable consensus.`
+        : `在 ${stageTitle} 这一时间窗口里，这个节点先把《${pickText(primaryPaper.titleZh, primaryPaper.title)}》作为“${problemLabelZh}”的问题入口保留下来，而不是把单篇论文包装成已经稳定的共识。`
+      : useEnglish
+        ? `This node groups ${cluster.papers.length} stage-bounded papers around ${problemLabelEn}, so the topic map shows one problem line and its evidence handoff instead of isolated paper cards.`
+        : `这个节点把 ${cluster.papers.length} 篇处于同一阶段窗口的论文组织成“${problemLabelZh}”这一条问题线，让主题页看到的是问题演进与证据接力，而不是零散的论文卡片。`
+    const resolvedExplanation = isSinglePaper
+      ? useEnglish
+        ? `The anchor paper is ${pickText(primaryPaper.titleEn, primaryPaper.title)}. Keeping it as a narrow node is intentional: later cycles should either find corroborating papers inside the same problem family or leave it as a bounded deep-reading stop with explicit limits.`
+        : `当前锚点论文是《${pickText(primaryPaper.titleZh, primaryPaper.title)}》。之所以先把它保留为一个窄节点，是为了让后续轮次继续在同一问题族里补充互证论文；如果补不出来，就明确承认它只是一个边界清晰的深读入口。`
+      : useEnglish
+        ? `The anchor paper is ${pickText(primaryPaper.titleEn, primaryPaper.title)}. These papers were grouped together because they appear to push the same problem family inside the same stage window, and later cycles should keep checking whether their task framing, evaluation protocol, and closed-loop evidence truly support one another.`
+        : `当前锚点论文是《${pickText(primaryPaper.titleZh, primaryPaper.title)}》。把这些论文放进同一个节点，不是因为它们共享几个关键词，而是因为它们在同一阶段窗口里推进的是同一类问题；后续轮次还要继续核对它们的任务定义、评测协议和闭环证据是否真的彼此支撑。`
+    const resolvedRationale = existingNode
+      ? useEnglish
+        ? `The newly admitted papers strengthen the existing ${problemLabelEn} node and make its stage-bounded evidence base thicker.`
+        : `新纳入论文更适合继续补强已有的“${problemLabelZh}”节点，让这一阶段窗口内的证据底座更厚。`
+      : isSinglePaper
+        ? useEnglish
+          ? `Create a narrow problem node first, then decide in later cycles whether it deserves corroborating papers or should remain a bounded deep-reading stop.`
+          : '先建立一个窄而克制的问题节点，再在后续轮次判断它是否值得补强成跨论文节点，还是保留为边界清晰的深读入口。'
+        : useEnglish
+          ? `Create one problem-focused multi-paper node so the topic page already shows a real research line instead of one paper per card.`
+          : '先建立一个面向问题的多论文节点，让主题页直接呈现真实研究线，而不是一张卡只对应一篇论文。'
+
+    return {
+      start() {
+        return
+      },
+      stop() {
+        return
+      },
+      destroy() {
+        return
+      },
+    }
+    */
   }
 
   let scheduledTask: ScheduledTask | null = null
@@ -443,7 +498,62 @@ type HeuristicPaperCluster = {
   themeToken: string | null
   papers: ResearchCandidatePaper[]
   signals: HeuristicPaperSignal[]
+  labelZh?: string
+  labelEn?: string
+  priority?: number
 }
+
+type TopicSpecificClusterFamily = {
+  key: string
+  titleZh: string
+  titleEn: string
+  priority: number
+}
+
+const AUTONOMOUS_DRIVING_CLUSTER_FAMILIES: TopicSpecificClusterFamily[] = [
+  {
+    key: 'scaled-end-to-end-driving',
+    titleZh: '规模化端到端驾驶建模',
+    titleEn: 'Scaled End-to-End Driving Models',
+    priority: 1,
+  },
+  {
+    key: 'recovery-and-sim-transfer',
+    titleZh: '恢复策略与仿真迁移',
+    titleEn: 'Recovery Policies and Simulation Transfer',
+    priority: 2,
+  },
+  {
+    key: 'attention-and-interpretability',
+    titleZh: '注意力、认知图与可解释驾驶',
+    titleEn: 'Attention, Cognitive Maps, and Interpretable Driving',
+    priority: 3,
+  },
+  {
+    key: 'event-based-driving',
+    titleZh: '事件相机与神经形态驾驶',
+    titleEn: 'Event-based and Neuromorphic Driving',
+    priority: 4,
+  },
+  {
+    key: 'world-model-and-planning',
+    titleZh: '世界模型与闭环规划',
+    titleEn: 'World Models and Closed-Loop Planning',
+    priority: 5,
+  },
+  {
+    key: 'language-conditioned-driving',
+    titleZh: '语言条件驾驶与 VLA',
+    titleEn: 'Language-Conditioned Driving and VLA',
+    priority: 6,
+  },
+  {
+    key: 'general-driving-control',
+    titleZh: '端到端驾驶控制探索',
+    titleEn: 'Exploratory End-to-End Driving Control',
+    priority: 7,
+  },
+]
 
 function splitAsciiResearchToken(token: string) {
   return token
@@ -526,8 +636,109 @@ function buildHeuristicPaperSignal(paper: ResearchCandidatePaper): HeuristicPape
   }
 }
 
-function buildHeuristicPaperClusters(papers: ResearchCandidatePaper[]) {
-  const signals = papers.map((paper) => buildHeuristicPaperSignal(paper))
+function paperHeuristicText(paper: ResearchCandidatePaper) {
+  return [
+    paper.titleZh,
+    paper.titleEn,
+    paper.title,
+    paper.summary,
+    paper.explanation,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+}
+
+function classifyAutonomousDrivingClusterFamily(
+  paper: ResearchCandidatePaper,
+): TopicSpecificClusterFamily | null {
+  const text = paperHeuristicText(paper)
+
+  if (/\blanguage-conditioned\b|\bvision[- ]language[- ]action\b|\bvla\b|\binstruction(?:-conditioned)?\b/u.test(text)) {
+    return AUTONOMOUS_DRIVING_CLUSTER_FAMILIES.find((family) => family.key === 'language-conditioned-driving') ?? null
+  }
+
+  if (/\bworld model\b|\bworld models\b|\boccupancy\b|\blatent dynamics\b|\bscene token\b|\bclosed-loop planning\b|\bclosed loop planning\b|\bclosed-loop simulation\b/u.test(text)) {
+    return AUTONOMOUS_DRIVING_CLUSTER_FAMILIES.find((family) => family.key === 'world-model-and-planning') ?? null
+  }
+
+  if (/\bevent camera\b|\bdavis\b|\bdvs\b|\bspiking neural\b|\bneuromorphic\b/u.test(text)) {
+    return AUTONOMOUS_DRIVING_CLUSTER_FAMILIES.find((family) => family.key === 'event-based-driving') ?? null
+  }
+
+  if (/\bvirtual to real\b|\bsim[- ]to[- ]real\b|\breinforcement learning\b|\bquery-efficient\b|\bdagger\b|\bsafedagger\b|\bimitation learning\b|\bbehavior cloning\b|\bbehaviour cloning\b|\brecovery policy\b|\brecovery\b|\bintervention\b/u.test(text)) {
+    return AUTONOMOUS_DRIVING_CLUSTER_FAMILIES.find((family) => family.key === 'recovery-and-sim-transfer') ?? null
+  }
+
+  if (/\battention\b|\bcausal attention\b|\bvisual explanation\b|\binterpretable\b|\bcognitive map\b|\bbrain inspired\b/u.test(text)) {
+    return AUTONOMOUS_DRIVING_CLUSTER_FAMILIES.find((family) => family.key === 'attention-and-interpretability') ?? null
+  }
+
+  if (/\blarge-scale video\b|\bcrowd-sourced\b|\begomotion\b|\bvehicle motion model\b|\bfcn-lstm\b|\bsegmentation side task\b/u.test(text)) {
+    return AUTONOMOUS_DRIVING_CLUSTER_FAMILIES.find((family) => family.key === 'scaled-end-to-end-driving') ?? null
+  }
+
+  if (/\bend[- ]to[- ]end\b|\bdirect perception\b|\bcamera to steering\b/u.test(text)) {
+    return AUTONOMOUS_DRIVING_CLUSTER_FAMILIES.find((family) => family.key === 'general-driving-control') ?? null
+  }
+
+  return null
+}
+
+function buildTopicSpecificPaperClusters(args: {
+  topic: any
+  papers: ResearchCandidatePaper[]
+  signals: HeuristicPaperSignal[]
+}) {
+  if (args.topic?.id !== 'autonomous-driving') return null
+
+  const signalByPaperId = new Map(args.signals.map((signal) => [signal.paper.id, signal] as const))
+  const grouped = new Map<string, HeuristicPaperCluster>()
+
+  for (const paper of args.papers) {
+    const family = classifyAutonomousDrivingClusterFamily(paper)
+    const key = family?.key ?? `paper:${paper.id}`
+    const cluster = grouped.get(key) ?? {
+      key,
+      themeToken: family?.key ?? null,
+      papers: [],
+      signals: [],
+      labelZh: family?.titleZh,
+      labelEn: family?.titleEn,
+      priority: family?.priority ?? 999,
+    }
+
+    cluster.papers.push(paper)
+    cluster.signals.push(signalByPaperId.get(paper.id) ?? buildHeuristicPaperSignal(paper))
+    grouped.set(key, cluster)
+  }
+
+  return [...grouped.values()].sort((left, right) => {
+    const leftPriority = left.priority ?? 999
+    const rightPriority = right.priority ?? 999
+    if (leftPriority !== rightPriority) return leftPriority - rightPriority
+    if (right.papers.length !== left.papers.length) return right.papers.length - left.papers.length
+    return pickText(left.papers[0]?.titleZh, left.papers[0]?.title).localeCompare(
+      pickText(right.papers[0]?.titleZh, right.papers[0]?.title),
+    )
+  })
+}
+
+function buildHeuristicPaperClusters(args: {
+  topic: any
+  papers: ResearchCandidatePaper[]
+}) {
+  const signals = args.papers.map((paper) => buildHeuristicPaperSignal(paper))
+  const topicSpecific = buildTopicSpecificPaperClusters({
+    topic: args.topic,
+    papers: args.papers,
+    signals,
+  })
+
+  if (topicSpecific && topicSpecific.length > 0) {
+    return topicSpecific
+  }
+
   const globalTokenFrequency = new Map<string, number>()
 
   signals.forEach((signal) => {
@@ -600,6 +811,61 @@ function pickPrimaryPaperForCluster(cluster: HeuristicPaperCluster) {
   })[0]
 }
 
+function collectExistingNodePaperIds(node: any): string[] {
+  return Array.from(
+    new Set(
+      (Array.isArray(node?.papers) ? node.papers : [])
+        .map((entry: any) => entry.paperId ?? entry.paper?.id)
+        .filter((paperId: unknown): paperId is string => typeof paperId === 'string' && paperId.trim().length > 0),
+    ),
+  )
+}
+
+function assignExistingNodesToClusters(existingNodes: any[], clusters: HeuristicPaperCluster[]) {
+  const remaining = new Map(
+    existingNodes.map((node) => [String(node.id ?? node.nodeId ?? ''), node] as const).filter(([key]) => Boolean(key)),
+  )
+
+  return clusters.map((cluster) => {
+    const clusterPaperIds = new Set(cluster.papers.map((paper) => paper.id))
+    let bestNode: any | null = null
+    let bestScore = 0
+    let bestCoverageScore = 0
+    let bestRetentionScore = 0
+
+    for (const node of remaining.values()) {
+      const nodePaperIds = collectExistingNodePaperIds(node)
+      if (nodePaperIds.length === 0) continue
+
+      const overlapCount = nodePaperIds.filter((paperId) => clusterPaperIds.has(paperId)).length
+      if (overlapCount === 0) continue
+
+      const coverageScore = overlapCount / Math.max(clusterPaperIds.size, 1)
+      const retentionScore = overlapCount / Math.max(nodePaperIds.length, 1)
+      const score = coverageScore * 0.7 + retentionScore * 0.3
+
+      if (score > bestScore) {
+        bestScore = score
+        bestCoverageScore = coverageScore
+        bestRetentionScore = retentionScore
+        bestNode = node
+      }
+    }
+
+    if (
+      !bestNode ||
+      bestScore < 0.34 ||
+      bestCoverageScore < 0.5 ||
+      bestRetentionScore < 0.5
+    ) {
+      return null
+    }
+
+    remaining.delete(String(bestNode.id ?? bestNode.nodeId ?? ''))
+    return bestNode
+  })
+}
+
 function buildHeuristicFallbackOrchestration(args: {
   topic: any
   stage: any
@@ -626,28 +892,45 @@ function buildHeuristicFallbackOrchestration(args: {
     }
   }
 
-  const clusters = buildHeuristicPaperClusters(args.candidatePapers)
-  const nodeActions: ResearchNodeAction[] = clusters.map((cluster) => {
+  const clusters = buildHeuristicPaperClusters({
+    topic: args.topic,
+    papers: args.candidatePapers,
+  })
+  const existingNodeAssignments = assignExistingNodesToClusters(args.existingNodes, clusters)
+  const nodeActions: ResearchNodeAction[] = clusters.map((cluster, clusterIndex) => {
     const primaryPaper = pickPrimaryPaperForCluster(cluster)
-    const existingNode = args.existingNodes.find((node) =>
-      node.papers?.some((entry: any) =>
-        cluster.papers.some((paper) => (entry.paperId ?? entry.paper?.id) === paper.id),
-      ),
-    )
+    const existingNode = existingNodeAssignments[clusterIndex] ?? null
     const themeTokens = buildClusterThemeTokens(cluster)
-    const themeLabel = formatHeuristicThemeLabel(
+    const derivedThemeLabel = formatHeuristicThemeLabel(
       themeTokens,
       pickText(primaryPaper.titleZh, primaryPaper.titleEn, primaryPaper.title),
     )
+    const themeLabel = derivedThemeLabel
+    const problemLabelZh = pickText(cluster.labelZh, derivedThemeLabel)
+    const problemLabelEn = pickText(
+      cluster.labelEn,
+      formatHeuristicThemeLabel(
+        themeTokens,
+        pickText(primaryPaper.titleEn, primaryPaper.title, primaryPaper.titleZh),
+      ),
+    )
     const paperIds = cluster.papers.map((paper) => paper.id)
     const isSinglePaper = cluster.papers.length === 1
+    const prefersProblemLabel =
+      Boolean(cluster.labelZh || cluster.labelEn) ||
+      themeTokens.length > 0 ||
+      !cluster.key.startsWith('paper:')
+    const fallbackTitleZh = prefersProblemLabel
+      ? problemLabelZh
+      : pickText(primaryPaper.titleZh, primaryPaper.titleEn, primaryPaper.title)
+    const fallbackTitleEn = prefersProblemLabel
+      ? problemLabelEn
+      : pickText(primaryPaper.titleEn, primaryPaper.title, primaryPaper.titleZh)
 
     const title = existingNode
-      ? pickText(existingNode.nodeLabel, primaryPaper.titleZh, primaryPaper.title)
-      : isSinglePaper
-        ? pickText(primaryPaper.titleZh, primaryPaper.title)
-        : useEnglish
-          ? `${themeLabel} Research Line`
+      ? pickText(existingNode.nodeLabel, fallbackTitleZh, fallbackTitleEn)
+      : useEnglish
+        ? fallbackTitleEn
           : `围绕${themeLabel}的研究线`
 
     const titleEn = existingNode
@@ -656,7 +939,7 @@ function buildHeuristicFallbackOrchestration(args: {
         ? pickText(primaryPaper.titleEn, primaryPaper.title)
         : `${themeLabel} Research Line`
 
-    const subtitle = existingNode
+    const _subtitle = existingNode
       ? pickText(existingNode.nodeSubtitle, titleEn, title)
       : isSinglePaper
         ? pickText(primaryPaper.titleEn, primaryPaper.title)
@@ -664,7 +947,7 @@ function buildHeuristicFallbackOrchestration(args: {
           ? `${cluster.papers.length} papers sharing one mechanism or evidence line`
           : `${cluster.papers.length} 篇论文围绕同一条机制或证据线展开`
 
-    const summary = isSinglePaper
+    const _summary = isSinglePaper
       ? useEnglish
         ? `This node currently starts as a single-paper reading entry around ${themeLabel}, and still needs corroborating papers or a sharper scope decision.`
         : `这个节点目前先以单篇切入口的方式成立，围绕 ${themeLabel} 展开，但后续仍需要补入佐证论文或继续收窄边界。`
@@ -672,7 +955,7 @@ function buildHeuristicFallbackOrchestration(args: {
         ? `This node groups ${cluster.papers.length} papers around ${themeLabel}, so the topic page can surface one shared mechanism or evidence line instead of isolated paper cards.`
         : `这个节点把 ${cluster.papers.length} 篇论文并到同一条主线上，先围绕 ${themeLabel} 汇总共同推进的机制或证据关系，而不是把它们拆成孤立卡片。`
 
-    const explanation = isSinglePaper
+    const _explanation = isSinglePaper
       ? useEnglish
         ? `The current primary paper is ${pickText(primaryPaper.titleEn, primaryPaper.title)}. The node is intentionally written as a disciplined single-paper entry: it should either attract follow-up evidence in later cycles or be kept as a narrow deep-reading stop rather than pretending to be a mature cross-paper judgment.`
         : `当前主论文是《${pickText(primaryPaper.titleZh, primaryPaper.title)}》。这里先把它写成一个克制的单篇入口，不把它伪装成成熟的跨论文结论；后续要么继续补入互证论文，要么明确承认它只是一个窄边界的深读节点。`
@@ -680,7 +963,7 @@ function buildHeuristicFallbackOrchestration(args: {
         ? `The current primary paper is ${pickText(primaryPaper.titleEn, primaryPaper.title)}. These papers were grouped together because they appear to push the same line around ${themeLabel}; later cycles should verify whether their task setup, evaluation protocol, and closed-loop evidence truly support one another.`
         : `当前主论文是《${pickText(primaryPaper.titleZh, primaryPaper.title)}》。之所以先把这些论文放在一起，是因为它们看起来都在推进 ${themeLabel} 这条判断链；后续轮次仍要继续核对任务设定、评价协议与闭环证据是否真的彼此支撑。`
 
-    const rationale = existingNode
+    const _rationale = existingNode
       ? useEnglish
         ? `The newly admitted papers strengthen the existing node around ${themeLabel} and expand its evidence base.`
         : `新纳入论文更适合继续补强已有节点，并把 ${themeLabel} 这条研究线的证据底座补得更厚。`
@@ -692,17 +975,56 @@ function buildHeuristicFallbackOrchestration(args: {
           ? `Create one multi-paper node so the first-cycle topic page already shows a shared mechanism line instead of one paper per card.`
           : '先创建一个多论文节点，让第一轮主题页就能展示共享的机制主线，而不是一张卡只对应一篇论文。'
 
+    const resolvedTitle = existingNode
+      ? pickText(existingNode.nodeLabel, fallbackTitleZh, fallbackTitleEn)
+      : useEnglish
+        ? fallbackTitleEn
+        : fallbackTitleZh
+    const resolvedTitleEn = existingNode
+      ? pickText(existingNode.nodeSubtitle, existingNode.nodeLabel, fallbackTitleEn, fallbackTitleZh)
+      : fallbackTitleEn
+    const resolvedSubtitle = existingNode
+      ? pickText(existingNode.nodeSubtitle, resolvedTitleEn, resolvedTitle)
+      : useEnglish
+        ? `${cluster.papers.length} stage-bounded paper${cluster.papers.length === 1 ? '' : 's'} on ${problemLabelEn}`
+        : `${cluster.papers.length} 篇处于同一阶段窗口的论文，围绕${problemLabelZh}展开`
+    const resolvedSummary = isSinglePaper
+      ? useEnglish
+        ? `Within ${stageTitleEn}, this node keeps ${pickText(primaryPaper.titleEn, primaryPaper.title)} as a disciplined entry point for ${problemLabelEn} instead of pretending that one paper already forms a stable consensus.`
+        : `在 ${stageTitle} 这一时间窗口里，这个节点先把《${pickText(primaryPaper.titleZh, primaryPaper.title)}》作为“${problemLabelZh}”的问题入口保留下来，而不是把单篇论文包装成已经稳定的共识。`
+      : useEnglish
+        ? `This node groups ${cluster.papers.length} stage-bounded papers around ${problemLabelEn}, so the topic map shows one problem line and its evidence handoff instead of isolated paper cards.`
+        : `这个节点把 ${cluster.papers.length} 篇处于同一阶段窗口的论文组织成“${problemLabelZh}”这一条问题线，让主题页看到的是问题演进与证据接力，而不是零散的论文卡片。`
+    const resolvedExplanation = isSinglePaper
+      ? useEnglish
+        ? `The anchor paper is ${pickText(primaryPaper.titleEn, primaryPaper.title)}. Keeping it as a narrow node is intentional: later cycles should either find corroborating papers inside the same problem family or leave it as a bounded deep-reading stop with explicit limits.`
+        : `当前锚点论文是《${pickText(primaryPaper.titleZh, primaryPaper.title)}》。之所以先把它保留为一个窄节点，是为了让后续轮次继续在同一问题族里补充互证论文；如果补不出来，就明确承认它只是一个边界清晰的深读入口。`
+      : useEnglish
+        ? `The anchor paper is ${pickText(primaryPaper.titleEn, primaryPaper.title)}. These papers were grouped together because they appear to push the same problem family inside the same stage window, and later cycles should keep checking whether their task framing, evaluation protocol, and closed-loop evidence truly support one another.`
+        : `当前锚点论文是《${pickText(primaryPaper.titleZh, primaryPaper.title)}》。把这些论文放进同一个节点，不是因为它们共享几个关键词，而是因为它们在同一阶段窗口里推进的是同一类问题；后续轮次还要继续核对它们的任务定义、评测协议和闭环证据是否真的彼此支撑。`
+    const resolvedRationale = existingNode
+      ? useEnglish
+        ? `The newly admitted papers strengthen the existing ${problemLabelEn} node and make its stage-bounded evidence base thicker.`
+        : `新纳入论文更适合继续补强已有的“${problemLabelZh}”节点，让这一阶段窗口内的证据底座更厚。`
+      : isSinglePaper
+        ? useEnglish
+          ? `Create a narrow problem node first, then decide in later cycles whether it deserves corroborating papers or should remain a bounded deep-reading stop.`
+          : '先建立一个窄而克制的问题节点，再在后续轮次判断它是否值得补强成跨论文节点，还是保留为边界清晰的深读入口。'
+        : useEnglish
+          ? `Create one problem-focused multi-paper node so the topic page already shows a real research line instead of one paper per card.`
+          : '先建立一个面向问题的多论文节点，让主题页直接呈现真实研究线，而不是一张卡只对应一篇论文。'
+
     return {
       action: existingNode ? 'strengthen' : 'create',
       nodeId: existingNode?.id,
-      title,
-      titleEn,
-      subtitle,
-      summary: clipText(summary, 180),
-      explanation: clipText(explanation, 420),
+      title: resolvedTitle,
+      titleEn: resolvedTitleEn,
+      subtitle: resolvedSubtitle,
+      summary: clipText(resolvedSummary, 180),
+      explanation: clipText(resolvedExplanation, 420),
       paperIds,
       primaryPaperId: primaryPaper.id,
-      rationale: clipText(rationale, 220),
+      rationale: clipText(resolvedRationale, 220),
     }
   })
 
@@ -711,10 +1033,10 @@ function buildHeuristicFallbackOrchestration(args: {
     3,
     64,
   )
-  const stageSummary = useEnglish
+  const _stageSummary = useEnglish
     ? `This round admitted ${args.candidatePapers.length} papers and organized them into ${nodeActions.length} node lines${mainlineLabels.length ? `, with the current emphasis on ${mainlineLabels.join(', ')}` : ''}.`
     : `本轮纳入了 ${args.candidatePapers.length} 篇论文，并先把它们整理为 ${nodeActions.length} 条节点主线${mainlineLabels.length ? `，当前重点落在 ${mainlineLabels.join('、')}` : ''}。`
-  const openQuestions = uniqueStrings(
+  const _openQuestions = uniqueStrings(
     [
       ...clusters
         .filter((cluster) => cluster.papers.length === 1)
@@ -736,16 +1058,57 @@ function buildHeuristicFallbackOrchestration(args: {
     180,
   )
 
+  const resolvedStageSummary = useEnglish
+    ? `This round admitted ${args.candidatePapers.length} papers and organized them into ${nodeActions.length} problem-focused node lines inside the current stage window${mainlineLabels.length ? `, with the strongest emphasis on ${mainlineLabels.join(', ')}` : ''}.`
+    : `本轮纳入了 ${args.candidatePapers.length} 篇论文，并在当前阶段窗口内把它们整理成 ${nodeActions.length} 条面向问题的节点主线${mainlineLabels.length ? `，当前最突出的方向是 ${mainlineLabels.join('、')}` : ''}。`
+  const resolvedOpenQuestions = uniqueStrings(
+    [
+      ...clusters
+        .filter((cluster) => cluster.papers.length === 1)
+        .map((cluster) => {
+          const paper = cluster.papers[0]
+          const primaryPaper = pickPrimaryPaperForCluster(cluster)
+          const themeTokens = buildClusterThemeTokens(cluster)
+          const singleProblemLabelEn = pickText(
+            cluster.labelEn,
+            formatHeuristicThemeLabel(
+              themeTokens,
+              pickText(primaryPaper.titleEn, primaryPaper.title, primaryPaper.titleZh),
+            ),
+          )
+          const singleProblemLabelZh = pickText(
+            cluster.labelZh,
+            formatHeuristicThemeLabel(
+              themeTokens,
+              pickText(primaryPaper.titleZh, primaryPaper.titleEn, primaryPaper.title),
+            ),
+          )
+          return useEnglish
+            ? `Should ${singleProblemLabelEn} remain a narrow single-paper node around "${pickText(paper.titleEn, paper.title)}", or should the next cycle search for corroborating papers before treating it as stable?`
+            : `“${singleProblemLabelZh}”是否应继续作为围绕《${pickText(paper.titleZh, paper.title)}》的单篇窄节点存在，还是下一轮就该优先去补充互证论文后再把它视为稳定节点？`
+        }),
+      clusters.some((cluster) => cluster.papers.length > 1)
+        ? useEnglish
+          ? 'Do the multi-paper nodes really share one task definition and evidence standard, or are we still over-grouping by vocabulary instead of problem continuity?'
+          : '这些多论文节点是否真的共享同一套任务定义与证据标准，还是我们仍在按词汇相近而不是按问题连续性做过度归并？'
+        : useEnglish
+          ? 'The current stage is still paper-fragmented. Which problem family should the next cycle stabilize first?'
+          : '当前阶段仍然偏论文碎片化，下一轮最应该优先稳住的是哪一条问题线？',
+    ],
+    4,
+    180,
+  )
+
   return {
     stageTitle,
     stageTitleEn,
-    stageSummary,
+    stageSummary: resolvedStageSummary,
     shouldAdvanceStage:
       nodeActions.some((action) => action.paperIds.length > 1) ||
       args.candidatePapers.length >= 3,
-    rationale: stageSummary,
+    rationale: resolvedStageSummary,
     nodeActions,
-    openQuestions,
+    openQuestions: resolvedOpenQuestions,
   }
 }
 
@@ -960,6 +1323,45 @@ function normalizeProgress(raw: Partial<StageTaskProgress>): StageTaskProgress {
   }
 }
 
+function startOfUtcMonth(value: Date | string | null | undefined) {
+  const date = value instanceof Date ? value : value ? new Date(value) : null
+  if (!date || Number.isNaN(date.getTime())) return null
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1))
+}
+
+function estimateTopicProgressTotalStages(args: {
+  topic:
+    | {
+        createdAt?: Date | string | null
+        papers?: Array<{
+          published?: Date | string | null
+        }>
+      }
+    | null
+    | undefined
+  existingStageCount: number
+  windowMonths: number
+}) {
+  const effectiveWindowMonths = Math.max(1, Math.trunc(args.windowMonths))
+  const paperMonths = (args.topic?.papers ?? [])
+    .map((paper) => startOfUtcMonth(paper.published))
+    .filter((value): value is Date => Boolean(value))
+    .sort((left, right) => left.getTime() - right.getTime())
+  const originMonth =
+    paperMonths[0] ??
+    startOfUtcMonth(args.topic?.createdAt) ??
+    new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1))
+  const currentMonth = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1))
+  const monthSpan = Math.max(
+    0,
+    (currentMonth.getUTCFullYear() - originMonth.getUTCFullYear()) * 12 +
+      (currentMonth.getUTCMonth() - originMonth.getUTCMonth()),
+  )
+  const chronologicalStageCount = Math.floor(monthSpan / effectiveWindowMonths) + 1
+
+  return Math.max(args.existingStageCount, chronologicalStageCount, 1)
+}
+
 function buildInitialProgressSnapshot(
   config: TaskConfig,
   topicName = 'Unknown Topic',
@@ -996,22 +1398,32 @@ function buildInitialProgressSnapshot(
   })
 }
 
-const prisma = new PrismaClient()
-
 class EnhancedTaskScheduler {
   private tasks: Map<string, { config: TaskConfig; task: ManagedScheduledTask }> = new Map()
   private progress: Map<string, StageTaskProgress> = new Map()
   private executionHistory: Map<string, TaskExecutionRecord[]> = new Map()
   private activeSessions: Map<string, DurationSessionHandle> = new Map()
   private listeners: ((result: EnhancedTaskResult) => void | Promise<void>)[] = []
+  private initializationPromise: Promise<void> | null = null
+  private initialized = false
 
-  constructor() {
-    this.loadProgressFromDB()
+  private ensureInitialized(): Promise<void> {
+    if (this.initialized) {
+      return Promise.resolve()
+    }
+
+    if (!this.initializationPromise) {
+      this.initializationPromise = this.loadProgressFromDB().finally(() => {
+        this.initialized = true
+      })
+    }
+
+    return this.initializationPromise
   }
 
   private async loadProgressFromDB(): Promise<void> {
     try {
-      const configs = await prisma.systemConfig.findMany({
+      const configs = await prisma.system_configs.findMany({
         where: { key: { startsWith: 'task-progress:' } },
       })
 
@@ -1029,7 +1441,7 @@ class EnhancedTaskScheduler {
         this.progress.set(progress.taskId, progress)
       }
 
-      const history = await prisma.systemConfig.findMany({
+      const history = await prisma.system_configs.findMany({
         where: { key: { startsWith: 'task-history:' } },
       })
 
@@ -1086,17 +1498,32 @@ class EnhancedTaskScheduler {
 
     if (config.topicId) {
       try {
-        const [topic, stageCount] = await Promise.all([
-          prisma.topic.findUnique({
+        const [topic, stageCount, stageConfig] = await Promise.all([
+          prisma.topics.findUnique({
             where: { id: config.topicId },
+            select: {
+              nameZh: true,
+              nameEn: true,
+              createdAt: true,
+              papers: {
+                select: {
+                  published: true,
+                },
+              },
+            },
           }),
-          prisma.topicStage.count({
+          prisma.topic_stages.count({
             where: { topicId: config.topicId },
           }),
+          loadTopicStageConfig(config.topicId),
         ])
 
         topicName = topic?.nameZh || topic?.nameEn || topicName
-        totalStages = stageCount || totalStages
+        totalStages = estimateTopicProgressTotalStages({
+          topic,
+          existingStageCount: stageCount || totalStages,
+          windowMonths: stageConfig.windowMonths,
+        })
       } catch (error) {
         console.error('[Scheduler] Failed to get topic info:', error)
       }
@@ -1107,6 +1534,45 @@ class EnhancedTaskScheduler {
     this.syncStageRoundCounters(config, progress)
     this.progress.set(config.id, progress)
     await this.saveProgress(config.id, progress)
+  }
+
+  private async refreshTopicStageCapacity(config: TaskConfig, progress: StageTaskProgress) {
+    if (!config.topicId) return
+
+    try {
+      const [topic, stageCount, stageConfig] = await Promise.all([
+        prisma.topics.findUnique({
+          where: { id: config.topicId },
+          select: {
+            nameZh: true,
+            nameEn: true,
+            createdAt: true,
+            papers: {
+              select: {
+                published: true,
+              },
+            },
+          },
+        }),
+        prisma.topic_stages.count({
+          where: { topicId: config.topicId },
+        }),
+        loadTopicStageConfig(config.topicId),
+      ])
+
+      const nextTotalStages = estimateTopicProgressTotalStages({
+        topic,
+        existingStageCount: stageCount || progress.totalStages,
+        windowMonths: stageConfig.windowMonths,
+      })
+
+      progress.topicName = topic?.nameZh || topic?.nameEn || progress.topicName
+      if (nextTotalStages !== progress.totalStages) {
+        progress.totalStages = nextTotalStages
+      }
+    } catch (error) {
+      console.error('[Scheduler] Failed to refresh topic stage capacity:', error)
+    }
   }
 
   private resolveStageTargetRuns(config: TaskConfig, stageIndex: number): number {
@@ -1222,7 +1688,7 @@ class EnhancedTaskScheduler {
   }
 
   private async loadCandidatePapers(topicId: string, candidates: Array<Record<string, any>>) {
-    const papers = await prisma.paper.findMany({
+    const papers = await prisma.papers.findMany({
       where: { topicId },
       include: {
         figures: true,
@@ -1516,7 +1982,7 @@ class EnhancedTaskScheduler {
     candidatePapers: ResearchCandidatePaper[]
   }) {
     const affectedNodeIds = new Set<string>()
-    const existingStage = await prisma.topicStage.findFirst({
+    const existingStage = await prisma.topic_stages.findFirst({
       where: {
         topicId: args.topicId,
         order: args.stageIndex,
@@ -1524,13 +1990,36 @@ class EnhancedTaskScheduler {
     })
 
     if (existingStage) {
-      await prisma.topicStage.update({
+      await prisma.topic_stages.update({
         where: { id: existingStage.id },
         data: {
           name: pickText(args.orchestration.stageTitle, existingStage.name),
           nameEn: pickText(args.orchestration.stageTitleEn, existingStage.nameEn, existingStage.name),
           description: pickText(args.orchestration.stageSummary, existingStage.description),
           descriptionEn: pickText(args.orchestration.stageSummary, existingStage.descriptionEn),
+        },
+      })
+    } else {
+await prisma.topic_stages.create({
+        data: {
+          id: crypto.randomUUID(),
+          topicId: args.topicId,
+          order: args.stageIndex,
+          name: pickText(args.orchestration.stageTitle, args.stageTitle, `Stage ${args.stageIndex}`),
+          nameEn: pickText(
+            args.orchestration.stageTitleEn,
+            args.orchestration.stageTitle,
+            args.stageTitle,
+            `Stage ${args.stageIndex}`,
+          ),
+          description: pickText(
+            args.orchestration.stageSummary,
+            `Collects the papers currently assigned to stage ${args.stageIndex}.`,
+          ),
+          descriptionEn: pickText(
+            args.orchestration.stageSummary,
+            `Collects the papers currently assigned to stage ${args.stageIndex}.`,
+          ),
         },
       })
     }
@@ -1544,12 +2033,12 @@ class EnhancedTaskScheduler {
         (paperIds.includes(action.primaryPaperId) ? action.primaryPaperId : paperIds[0]) ?? paperIds[0]
       const mergeTargetId = action.action === 'merge' ? action.mergeIntoNodeId : action.nodeId
       const targetNode =
-        (mergeTargetId && (await prisma.researchNode.findUnique({ where: { id: mergeTargetId } }))) ??
-        (action.nodeId ? await prisma.researchNode.findUnique({ where: { id: action.nodeId } }) : null)
+        (mergeTargetId && (await prisma.research_nodes.findUnique({ where: { id: mergeTargetId } }))) ??
+        (action.nodeId ? await prisma.research_nodes.findUnique({ where: { id: action.nodeId } }) : null)
 
       const node =
         targetNode
-          ? await prisma.researchNode.update({
+          ? await prisma.research_nodes.update({
               where: { id: targetNode.id },
               data: {
                 stageIndex: args.stageIndex,
@@ -1562,8 +2051,10 @@ class EnhancedTaskScheduler {
                 provisional: false,
               },
             })
-          : await prisma.researchNode.create({
+          : await prisma.research_nodes.create({
               data: {
+                id: crypto.randomUUID(),
+                updatedAt: new Date(),
                 topicId: args.topicId,
                 stageIndex: args.stageIndex,
                 nodeLabel: pickText(action.title, 'New Node'),
@@ -1583,7 +2074,7 @@ class EnhancedTaskScheduler {
       }
       affectedNodeIds.add(node.id)
 
-      await prisma.nodePaper.deleteMany({
+      await prisma.node_papers.deleteMany({
         where: {
           nodeId: node.id,
           paperId: { notIn: paperIds },
@@ -1591,7 +2082,7 @@ class EnhancedTaskScheduler {
       })
 
       for (const [index, paperId] of paperIds.entries()) {
-        await prisma.nodePaper.upsert({
+        await prisma.node_papers.upsert({
           where: {
             nodeId_paperId: {
               nodeId: node.id,
@@ -1602,6 +2093,7 @@ class EnhancedTaskScheduler {
             order: index + 1,
           },
           create: {
+            id: crypto.randomUUID(),
             nodeId: node.id,
             paperId,
             order: index + 1,
@@ -1613,7 +2105,7 @@ class EnhancedTaskScheduler {
       if (nodePapers.length < paperIds.length) {
         const missingPaperIds = paperIds.filter((paperId) => !nodePapers.some((paper) => paper.id === paperId))
         if (missingPaperIds.length > 0) {
-          const missingPapers = await prisma.paper.findMany({
+          const missingPapers = await prisma.papers.findMany({
             where: { id: { in: missingPaperIds } },
             include: { figures: true },
           })
@@ -1647,7 +2139,7 @@ class EnhancedTaskScheduler {
       })
 
       if (nodeCoverImage) {
-        await prisma.researchNode.update({
+        await prisma.research_nodes.update({
           where: { id: node.id },
           data: {
             nodeCoverImage,
@@ -1685,7 +2177,7 @@ class EnhancedTaskScheduler {
     }
 
     if (anchorType === 'figure') {
-      const figure = await prisma.figure.findUnique({
+      const figure = await prisma.figures.findUnique({
         where: { id: entityId },
         select: { paperId: true },
       })
@@ -1693,7 +2185,7 @@ class EnhancedTaskScheduler {
     }
 
     if (anchorType === 'table') {
-      const table = await prisma.table.findUnique({
+      const table = await prisma.tables.findUnique({
         where: { id: entityId },
         select: { paperId: true },
       })
@@ -1701,7 +2193,7 @@ class EnhancedTaskScheduler {
     }
 
     if (anchorType === 'formula') {
-      const formula = await prisma.formula.findUnique({
+      const formula = await prisma.formulas.findUnique({
         where: { id: entityId },
         select: { paperId: true },
       })
@@ -1709,7 +2201,7 @@ class EnhancedTaskScheduler {
     }
 
     if (anchorType === 'section') {
-      const section = await prisma.paperSection.findUnique({
+      const section = await prisma.paper_sections.findUnique({
         where: { id: entityId },
         select: { paperId: true },
       })
@@ -2658,22 +3150,22 @@ class EnhancedTaskScheduler {
     )
 
     const [preTopic, preStage, preExistingNodes, preCandidatePapers] = await Promise.all([
-      prisma.topic.findUnique({
+      prisma.topics.findUnique({
         where: { id: config.topicId },
       }),
-      prisma.topicStage.findFirst({
+      prisma.topic_stages.findFirst({
         where: { topicId: config.topicId, order: stageIndex },
       }),
-      prisma.researchNode.findMany({
+      prisma.research_nodes.findMany({
         where: { topicId: config.topicId, stageIndex },
         include: {
-          papers: {
+          node_papers: {
             include: {
-              paper: true,
+              papers: true,
             },
             orderBy: { order: 'asc' },
           },
-          primaryPaper: true,
+          papers: true,
         },
         orderBy: [{ updatedAt: 'desc' }],
       }),
@@ -2715,6 +3207,7 @@ class EnhancedTaskScheduler {
           orchestration: earlyOrchestration,
           candidatePapers: preCandidatePapers,
         })
+        await syncConfiguredTopicWorkflowSnapshot(config.topicId)
 
         if (!this.shouldAbortInFlightDurationWork(config, progress)) {
           const earlyTargetedNodeIds = earlyNodeActionResult.affectedNodeIds.slice(
@@ -2824,22 +3317,22 @@ class EnhancedTaskScheduler {
     )
 
     const [topic, stage, existingNodes, candidatePapers] = await Promise.all([
-      prisma.topic.findUnique({
+      prisma.topics.findUnique({
         where: { id: config.topicId },
       }),
-      prisma.topicStage.findFirst({
+      prisma.topic_stages.findFirst({
         where: { topicId: config.topicId, order: stageIndex },
       }),
-      prisma.researchNode.findMany({
+      prisma.research_nodes.findMany({
         where: { topicId: config.topicId, stageIndex },
         include: {
-          papers: {
+          node_papers: {
             include: {
-              paper: true,
+              papers: true,
             },
             orderBy: { order: 'asc' },
           },
-          primaryPaper: true,
+          papers: true,
         },
         orderBy: [{ updatedAt: 'desc' }],
       }),
@@ -2898,6 +3391,7 @@ class EnhancedTaskScheduler {
       orchestration,
       candidatePapers,
     })
+    await syncConfiguredTopicWorkflowSnapshot(config.topicId)
 
     if (this.shouldAbortInFlightDurationWork(config, progress)) {
       return this.buildAbortedDiscoverCycle({
@@ -2979,6 +3473,7 @@ class EnhancedTaskScheduler {
       },
     })
     await refreshTopicViewModelSnapshot(config.topicId, { mode: 'deferred' })
+    await syncConfiguredTopicWorkflowSnapshot(config.topicId)
 
     await this.publishLiveResearchSummary(
       config.id,
@@ -3029,6 +3524,7 @@ class EnhancedTaskScheduler {
       mode: 'deferred',
     })
     await refreshTopicViewModelSnapshot(config.topicId, { mode: 'deferred' })
+    await syncConfiguredTopicWorkflowSnapshot(config.topicId)
 
     return {
       refreshed: true,
@@ -3063,6 +3559,7 @@ class EnhancedTaskScheduler {
       mode: 'deferred',
     })
     await refreshTopicViewModelSnapshot(config.topicId, { mode: 'deferred' })
+    await syncConfiguredTopicWorkflowSnapshot(config.topicId)
 
     return {
       synced: true,
@@ -3076,10 +3573,21 @@ class EnhancedTaskScheduler {
     source: SchedulerRunSource,
     options?: { forceStage?: number; mode?: 'full' | 'discover-only' },
   ): Promise<EnhancedTaskResult> {
-    const progress = this.progress.get(config.id)
+    let progress = this.progress.get(config.id)
+
+if (!progress) {
+      await this.initProgress(config)
+      progress = this.progress.get(config.id)
+    }
 
     if (progress && options?.forceStage !== undefined) {
       this.moveToStage(config, progress, options.forceStage)
+      await this.saveProgress(config.id, progress)
+    }
+
+    if (progress) {
+      await this.refreshTopicStageCapacity(config, progress)
+      this.syncStageRoundCounters(config, progress)
       await this.saveProgress(config.id, progress)
     }
 
@@ -3329,7 +3837,7 @@ class EnhancedTaskScheduler {
   }
 
   private async loadStoredTaskConfig(taskId: string): Promise<TaskConfig | null> {
-    const record = await prisma.systemConfig.findUnique({
+    const record = await prisma.system_configs.findUnique({
       where: { key: `task:${taskId}` },
     })
 
@@ -3344,10 +3852,10 @@ class EnhancedTaskScheduler {
 
   private async saveProgress(taskId: string, progress: StageTaskProgress): Promise<void> {
     try {
-      await prisma.systemConfig.upsert({
+      await prisma.system_configs.upsert({
         where: { key: `task-progress:${taskId}` },
-        update: { value: JSON.stringify(progress) },
-        create: { key: `task-progress:${taskId}`, value: JSON.stringify(progress) },
+        update: { value: JSON.stringify(progress), updatedAt: new Date() },
+        create: { id: crypto.randomUUID(), key: `task-progress:${taskId}`, value: JSON.stringify(progress), updatedAt: new Date() },
       })
     } catch (error) {
       console.error('[Scheduler] Failed to save progress:', error)
@@ -3366,10 +3874,10 @@ class EnhancedTaskScheduler {
     this.executionHistory.set(taskId, records)
 
     try {
-      await prisma.systemConfig.upsert({
+      await prisma.system_configs.upsert({
         where: { key },
-        update: { value: JSON.stringify(records) },
-        create: { key, value: JSON.stringify(records) },
+        update: { value: JSON.stringify(records), updatedAt: new Date() },
+        create: { id: crypto.randomUUID(), key, value: JSON.stringify(records), updatedAt: new Date() },
       })
     } catch (error) {
       console.error('[Scheduler] Failed to save execution record:', error)
@@ -3380,6 +3888,8 @@ class EnhancedTaskScheduler {
     taskId: string,
     options?: { forceStage?: number; mode?: 'full' | 'discover-only' },
   ): Promise<EnhancedTaskResult | null> {
+    await this.ensureInitialized()
+
     const entry = this.tasks.get(taskId)
     if (entry) {
       return this.dispatchTask(entry.config, 'manual', options)
@@ -3406,6 +3916,8 @@ class EnhancedTaskScheduler {
   }
 
   async jumpToStage(taskId: string, stageIndex: number): Promise<boolean> {
+    await this.ensureInitialized()
+
     const entry = this.tasks.get(taskId)
     const progress = this.progress.get(taskId)
     if (!entry || !progress) return false
@@ -3418,6 +3930,8 @@ class EnhancedTaskScheduler {
   }
 
   async resetProgress(taskId: string): Promise<boolean> {
+    await this.ensureInitialized()
+
     const entry = this.tasks.get(taskId)
     const progress = this.progress.get(taskId)
     if (!entry || !progress) return false
@@ -3495,7 +4009,9 @@ class EnhancedTaskScheduler {
     topicId: string,
     options?: { durationHours?: number },
   ): Promise<TaskConfig> {
-    const topic = await prisma.topic.findUnique({
+    await this.ensureInitialized()
+
+    const topic = await prisma.topics.findUnique({
       where: { id: topicId },
       select: { id: true, nameZh: true, nameEn: true },
     })
@@ -3541,11 +4057,11 @@ class EnhancedTaskScheduler {
     }
     this.addTask(nextConfig)
 
-    await prisma.systemConfig.upsert({
-      where: { key: `task:${taskId}` },
-      update: { value: JSON.stringify(nextConfig) },
-      create: { key: `task:${taskId}`, value: JSON.stringify(nextConfig) },
-    })
+await prisma.system_configs.upsert({
+        where: { key: `task:${taskId}` },
+        update: { value: JSON.stringify(nextConfig), updatedAt: new Date() },
+        create: { id: crypto.randomUUID(), key: `task:${taskId}`, value: JSON.stringify(nextConfig), updatedAt: new Date() },
+      })
 
     return nextConfig
   }
@@ -3554,6 +4070,8 @@ class EnhancedTaskScheduler {
     topicId: string,
     options?: { durationHours?: number },
   ) {
+    await this.ensureInitialized()
+
     const existingState = await this.getTopicResearchState(topicId)
     const task = await this.ensureTopicResearchTask(topicId, options)
     const result = await this.dispatchTask(task, 'manual')
@@ -3589,6 +4107,8 @@ class EnhancedTaskScheduler {
   }
 
   async stopTopicResearchSession(topicId: string) {
+    await this.ensureInitialized()
+
     const taskId = this.topicResearchTaskId(topicId)
     const task = this.getTaskConfig(taskId) ?? (await this.loadStoredTaskConfig(taskId))
     const progress = this.getProgress(taskId)
@@ -3632,6 +4152,8 @@ class EnhancedTaskScheduler {
   }
 
   async getTopicResearchState(topicId: string) {
+    await this.ensureInitialized()
+
     const taskId = this.topicResearchTaskId(topicId)
     const task = this.getTaskConfig(taskId) ?? (await this.loadStoredTaskConfig(taskId))
     let progress = sanitizeResearchProgress(this.getProgress(taskId))
@@ -3722,4 +4244,5 @@ export const __testing = {
   hasRenderableResearchReport,
   shouldPreferFallbackResearchReportState,
   sanitizeResearchFacingSummary,
+  estimateTopicProgressTotalStages,
 }

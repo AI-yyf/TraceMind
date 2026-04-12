@@ -16,6 +16,7 @@ function createPaper(
 ) {
   return {
     id,
+    topicId: 'topic-test',
     title: overrides?.title ?? id,
     titleZh: overrides?.titleZh ?? overrides?.title ?? id,
     titleEn: overrides?.titleEn ?? overrides?.title ?? id,
@@ -23,12 +24,22 @@ function createPaper(
     explanation: overrides?.explanation ?? `${id} explanation`,
     published: new Date(publishedAt),
     authors: '[]',
+    arxivUrl: null,
+    pdfUrl: null,
+    pdfPath: null,
     citationCount: null,
     coverPath: null,
+    figurePaths: '[]',
+    tablePaths: '[]',
+    tags: '[]',
+    status: 'candidate',
+    contentMode: 'editorial',
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
     figures: [],
     tables: [],
     formulas: [],
-    sections: [],
+    paper_sections: [],
   }
 }
 
@@ -39,16 +50,16 @@ test('selectTopicDisplayPapers keeps topic-level papers aligned with node-linked
       createPaper('paper-2', '2024-02-01T00:00:00.000Z'),
       createPaper('paper-1', '2023-01-01T00:00:00.000Z'),
     ],
-    nodes: [
+    research_nodes: [
       {
         primaryPaperId: 'paper-1',
-        papers: [{ paperId: 'paper-1' }],
-      },
-      {
-        primaryPaperId: 'paper-2',
-        papers: [{ paperId: 'paper-2' }, { paperId: 'paper-1' }],
-      },
-    ],
+         node_papers: [{ paperId: 'paper-1' }],
+       },
+       {
+         primaryPaperId: 'paper-2',
+         node_papers: [{ paperId: 'paper-2' }, { paperId: 'paper-1' }],
+       },
+     ],
   }
 
   assert.deepEqual(
@@ -60,10 +71,10 @@ test('selectTopicDisplayPapers keeps topic-level papers aligned with node-linked
 test('selectTopicDisplayPapers falls back to the topic paper list when no node-linked papers exist yet', () => {
   const topic = {
     papers: [createPaper('paper-a', '2026-04-03T00:00:00.000Z'), createPaper('paper-b', '2026-04-02T00:00:00.000Z')],
-    nodes: [
+    research_nodes: [
       {
         primaryPaperId: null,
-        papers: [],
+        node_papers: [],
       },
     ],
   }

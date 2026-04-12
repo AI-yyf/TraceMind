@@ -10,6 +10,7 @@ type TopicDisplayBuilderArgs = {
   nameEn: string
   focusLabel?: string
   originPaperId: string
+  configuredPaperIds?: string[]
   frontendSummary?: {
     cardSummary?: string
     timelineGuide?: string
@@ -25,6 +26,97 @@ type TopicDisplayBuilderArgs = {
 type TopicDisplayCollection = {
   schemaVersion: number
   topics: Array<Record<string, unknown>>
+}
+
+function collectTopicMemoryPaperIds(
+  value: unknown,
+  target: Set<string>,
+  visited = new WeakSet<object>(),
+) {
+  if (!value || typeof value !== 'object') return
+  if (visited.has(value as object)) return
+  visited.add(value as object)
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectTopicMemoryPaperIds(item, target, visited)
+    }
+    return
+  }
+
+  for (const [key, child] of Object.entries(value)) {
+    if (/rejected/iu.test(key)) continue
+
+    if (typeof child === 'string') {
+      if (/paperid$/iu.test(key) || /originpaperid$/iu.test(key)) {
+        const normalized = child.trim()
+        if (normalized) target.add(normalized)
+      }
+      continue
+    }
+
+    if (Array.isArray(child)) {
+      if (/paperids$/iu.test(key)) {
+        for (const item of child) {
+          if (typeof item !== 'string') continue
+          const normalized = item.trim()
+          if (normalized) target.add(normalized)
+        }
+        continue
+      }
+
+      for (const item of child) {
+        collectTopicMemoryPaperIds(item, target, visited)
+      }
+      continue
+    }
+
+    collectTopicMemoryPaperIds(child, target, visited)
+  }
+}
+
+function collectTopicDisplayPaperIds(args: {
+  topicMemory: Record<string, unknown>
+  originPaperId: string
+  configuredPaperIds?: string[]
+}) {
+  const orderedIds: string[] = []
+  const seen = new Set<string>()
+  const push = (paperId: unknown) => {
+    if (typeof paperId !== 'string') return
+    const normalized = paperId.trim()
+    if (!normalized || seen.has(normalized)) return
+    seen.add(normalized)
+    orderedIds.push(normalized)
+  }
+
+  const researchNodes = Array.isArray(args.topicMemory.researchNodes)
+    ? (args.topicMemory.researchNodes as Array<Record<string, unknown>>)
+    : []
+
+  for (const node of researchNodes) {
+    if (Array.isArray(node.paperIds)) {
+      for (const paperId of node.paperIds) {
+        push(paperId)
+      }
+    }
+
+    push(node.primaryPaperId)
+    push(node.paperId)
+  }
+
+  for (const paperId of args.configuredPaperIds ?? []) {
+    push(paperId)
+  }
+
+  const memoryPaperIds = new Set<string>()
+  collectTopicMemoryPaperIds(args.topicMemory, memoryPaperIds)
+  for (const paperId of memoryPaperIds) {
+    push(paperId)
+  }
+
+  push(args.originPaperId)
+  return orderedIds
 }
 
 // 分支颜色配置 - 与前端统一
@@ -49,6 +141,7 @@ export function buildTopicDisplay(args: TopicDisplayBuilderArgs): Record<string,
     nameEn,
     focusLabel,
     originPaperId,
+    configuredPaperIds = [],
     frontendSummary,
     topicMemory,
     paperCatalog,
@@ -65,10 +158,20 @@ export function buildTopicDisplay(args: TopicDisplayBuilderArgs): Record<string,
   )
 
   // 2. 解析论文目录
-  const papers = Object.entries(paperCatalog).map(([paperId, paperData]) => ({
-    id: paperId,
-    ...paperData,
-  }))
+  const papers = collectTopicDisplayPaperIds({
+    topicMemory,
+    originPaperId,
+    configuredPaperIds,
+  })
+    .map((paperId) => {
+      const paperData = paperCatalog[paperId]
+      if (!paperData) return null
+      return {
+        id: paperId,
+        ...paperData,
+      }
+    })
+    .filter(Boolean) as Array<Record<string, unknown> & { id: string }>
 
   // 3. 确定主线分支
   const mainlineBranchId = resolveMainlineBranchId(normalizedNodes)

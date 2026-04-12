@@ -78,7 +78,7 @@ function parseTopicLocalization(value: string | null | undefined) {
 }
 
 export async function getTopicLocalization(topicId: string) {
-  const record = await prisma.systemConfig.findUnique({
+  const record = await prisma.system_configs.findUnique({
     where: { key: localizationConfigKey(topicId) },
   })
 
@@ -90,7 +90,7 @@ export async function getTopicLocalizationMap(topicIds: string[]) {
     return new Map<string, TopicLocalizationPayload>()
   }
 
-  const records = await prisma.systemConfig.findMany({
+  const records = await prisma.system_configs.findMany({
     where: {
       key: {
         in: topicIds.map((topicId) => localizationConfigKey(topicId)),
