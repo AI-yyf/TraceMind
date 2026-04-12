@@ -1,6 +1,6 @@
 {
   "agent": {
-    "schemaVersion": 3,
+    "schemaVersion": 4,
     "topicId": "agent",
     "timelineContext": {
       "schemaVersion": 1,
@@ -156,20 +156,19 @@
     ],
     "branchTree": [
       {
-        "id": "branch:agent:origin",
+        "branchId": "branch:agent:origin",
+        "parentBranchId": null,
         "rootProblemNodeId": "agent:origin-problem",
-        "label": "起源主线",
-        "branchType": "direct",
-        "paperPath": [
+        "anchorPaperId": "2210.03629",
+        "linkedProblemNodeIds": [
+          "agent:origin-problem"
+        ],
+        "paperIds": [
           "2210.03629"
         ],
-        "status": "branch_active",
-        "summary": "系统只保留起源论文，等待下一阶段动态发现。",
-        "promotionPolicy": "当分支论文已经成为最清晰的主线下一跳时，再提升进入主线。",
-        "mergeBackPolicy": "当分支论文同时解决多个开放问题时，再考虑汇回主线。",
-        "supersededBy": null,
-        "rewriteImpact": "会同步更新 canonical 分支关系以及下游主题展示视图。",
-        "parentBranchId": null
+        "status": "active",
+        "stageIndex": 1,
+        "label": "起源主线"
       }
     ],
     "branchRegistry": [
@@ -195,9 +194,44 @@
       }
     ],
     "stageLedger": [],
+    "stageRunLedger": [],
+    "researchNodes": [
+      {
+        "nodeId": "agent:stage-0:2210.03629",
+        "id": "agent:stage-0:2210.03629",
+        "topicId": "",
+        "stageIndex": 0,
+        "paperIds": [
+          "2210.03629"
+        ],
+        "primaryPaperId": "2210.03629",
+        "sourceBranchIds": [
+          "branch:agent:origin"
+        ],
+        "sourceProblemNodeIds": [
+          "agent:origin-problem"
+        ],
+        "status": "canonical",
+        "provisional": false,
+        "nodeLabel": "起源节点",
+        "nodeSummary": "ReAct 给现代 Agent 设定了“推理-行动-观察”闭环骨架，之后 Toolformer、Reflexion、CAMEL、AutoGen 分别在工具学习、记忆和多智能体协作上继续补齐。",
+        "isMergeNode": false,
+        "tags": [],
+        "discoveredAt": "2026-04-08T18:04:12.737Z",
+        "createdAt": "2026-04-08T18:04:12.737Z",
+        "updatedAt": "2026-04-08T22:09:00.733Z",
+        "version": 1,
+        "branchId": "branch:agent:origin",
+        "paperId": "2210.03629",
+        "paperPublishedAt": "2026-04-08T22:09:00.733Z",
+        "isKeyPaper": false
+      }
+    ],
+    "provisionalNodes": [],
     "paperRelations": [
       {
         "paperId": "2210.03629",
+        "nodeId": "node:2210.03629",
         "problemNodeIds": [],
         "branchIds": [
           "branch:agent:origin"
@@ -225,10 +259,10 @@
       }
     ],
     "lastBuiltAt": "2026-03-29T02:05:43.719Z",
-    "lastRewrittenAt": "2026-03-29T02:05:43.719Z"
+    "lastRewrittenAt": "2026-04-08T22:09:00.733Z"
   },
   "autonomous-driving": {
-    "schemaVersion": 3,
+    "schemaVersion": 4,
     "topicId": "autonomous-driving",
     "timelineContext": {
       "schemaVersion": 1,
@@ -301,49 +335,141 @@
     "originAudit": {
       "passed": true,
       "originPaperId": "1604.07316",
-      "originConfirmedAt": "2026-03-24",
+      "originConfirmedAt": "2026-04-09",
       "originConfirmationMode": "earliest-representative",
-      "originQuestionDefinition": "如何从原始传感器输入直接学习驾驶策略，而不是依赖手工拆分的感知、规划与控制模块？",
-      "originWhyThisCounts": "End to End Learning for Self-Driving Cars 为现代端到端自动驾驶研究提供了代表性起点，后续工作不断围绕监督稀疏、恢复能力、世界建模和驾驶 VLM 展开。",
+      "originQuestionDefinition": "如何从高维传感器输入逐步走向可闭环部署的自动驾驶主线，并在这个过程中引入恢复策略、结构化规划、世界模型和语言条件控制？",
+      "originWhyThisCounts": "这里仍以 End to End Learning for Self-Driving Cars 作为现代端到端自动驾驶主线的起点，因为后续关于恢复驾驶、闭环规划、世界模型和驾驶 VLA 的工作，都是在这条主线上逐步分化和回流。",
       "earlierRejectedCandidates": [
         {
           "title": "ALVINN: An Autonomous Land Vehicle in a Neural Network",
           "paperId": null,
           "published": "1989-12",
-          "reason": "属于更早期的神经网络驾驶原型，不构成当前现代深度学习主线的共同起点。"
+          "reason": "历史上非常重要，但距离当前以深度学习为核心的自动驾驶主线过远，不适合作为本主题的现代起点。"
         },
         {
           "title": "DeepDriving: Learning Affordance for Direct Perception in Autonomous Driving",
           "paperId": "1511.03791",
           "published": "2015-11-11",
-          "reason": "仍依赖人工定义的 affordance 中间变量，不是严格意义上的端到端驾驶主线。"
+          "reason": "它是关键前驱，但仍以人工定义的 affordance 中间变量为中心，而不是本主题要追踪的直接策略、闭环恢复与世界模型主线。"
         }
       ]
     },
     "publishedMainlinePaperIds": [
-      "1604.07316"
+      "1604.07316",
+      "06b87490-9d46-496d-b26d-2b2db88c4f81",
+      "e38dca12-f939-4c50-91d4-70513a0cbf41",
+      "0946bdb9-826b-4742-b62e-e0db013e7025",
+      "02bcd04f-f86a-4e58-a23e-f86ef97f4f95",
+      "7a1e48e4-c497-499f-b223-aa97806b3c38",
+      "6272b245-4176-47ef-a5dd-66564e1fd70a",
+      "5635af16-6171-4ce8-9884-35787fb149e6",
+      "46036b2c-4e3d-4338-8df6-8411253f3e5b",
+      "58e7e0d3-83b5-4e04-b729-c19784bf8f11",
+      "36c6f2b2-d0f2-49ae-99ba-a13de6517410",
+      "74ff9450-0d50-4d5f-808e-3541660d6500"
     ],
-    "publishedBranchPaperIds": [],
+    "publishedBranchPaperIds": [
+      "06b87490-9d46-496d-b26d-2b2db88c4f81",
+      "3b0113dc-46c5-4be9-b8d6-a03b2102c392",
+      "e38dca12-f939-4c50-91d4-70513a0cbf41",
+      "02bcd04f-f86a-4e58-a23e-f86ef97f4f95",
+      "0946bdb9-826b-4742-b62e-e0db013e7025",
+      "39e68cb8-6574-4bca-83d9-02ee52a2b860",
+      "ff933027-3c9b-41a9-93c3-ef0d4138be77",
+      "7a1e48e4-c497-499f-b223-aa97806b3c38",
+      "908c7e00-e489-4c20-b218-657cc589733b",
+      "54338a51-bb92-4688-8083-497b2df88887",
+      "316472df-d1a7-48a2-bd68-ce594d27250a",
+      "0743b70f-4687-4845-8c5a-467612974850"
+    ],
     "candidatePaperIds": [],
     "seedPaperIds": [],
     "queryTags": [
       "autonomous driving",
-      "end-to-end driving",
-      "world model",
-      "vision language action",
-      "motion planning"
+      "self-driving",
+      "driving world model",
+      "world model for autonomous driving",
+      "autonomous driving video world model",
+      "vision language action driving",
+      "vision-language-action autonomous driving",
+      "driving vision language model",
+      "driving VLM",
+      "driving VLA",
+      "instruction-conditioned driving",
+      "instruction-conditioned autonomous driving",
+      "language-conditioned driving policy",
+      "language-conditioned driving world model",
+      "closed-loop driving planning",
+      "closed-loop autonomous driving planning",
+      "closed-loop driving simulation",
+      "latent dynamics driving",
+      "driving foundation model",
+      "foundation driving model",
+      "scene token driving",
+      "scene tokenized driving",
+      "occupancy flow driving",
+      "occupancy world model autonomous driving",
+      "generative driving simulator",
+      "neural driving simulator",
+      "driving video diffusion",
+      "action-conditioned video generation driving",
+      "counterfactual driving simulation",
+      "controllable driving scene generation",
+      "ego-video prediction driving",
+      "ego-centric driving video prediction",
+      "trajectory-conditioned driving generation",
+      "multimodal driving planning",
+      "planning-oriented driving world model",
+      "driving action tokenizer",
+      "conditional imitation learning driving",
+      "query-efficient imitation learning driving",
+      "direct perception autonomous driving",
+      "affordance learning autonomous driving",
+      "TrafficBots",
+      "OccWorld",
+      "Drive-WM",
+      "DriveDreamer",
+      "DriveDreamer2",
+      "DriveWorld",
+      "DrivingWorld",
+      "GAIA-1",
+      "GAIA-2",
+      "GenAD",
+      "UniSim",
+      "Vista",
+      "HERMES self-driving world model",
+      "DriveLM",
+      "LMDrive",
+      "DriveGPT",
+      "DriveAgent",
+      "language-guided autonomous driving",
+      "driving with large language models",
+      "driving decision transformer",
+      "behavior planning transformer autonomous driving",
+      "visual language grounding for driving",
+      "chauffeurnet autonomous driving",
+      "learning by cheating autonomous driving",
+      "transfuser autonomous driving",
+      "wayformer autonomous driving",
+      "VAD autonomous driving",
+      "driving foundation agent",
+      "scenario generation for autonomous driving",
+      "driving chain of thought",
+      "planning-oriented video generation driving"
     ],
     "capabilityRefs": [
       "privileged-supervision",
       "policy-recovery",
       "world-modeling",
-      "structured-planning"
+      "structured-planning",
+      "grounded-affordance",
+      "action-tokenization"
     ],
-    "bootstrapWindowDays": 30,
+    "bootstrapWindowDays": 45,
     "windowPolicy": "auto",
-    "minStageWindowMonths": 2,
-    "maxStageWindowMonths": 8,
-    "maxActiveBranches": 10,
+    "minStageWindowMonths": 1,
+    "maxStageWindowMonths": 6,
+    "maxActiveBranches": 12,
     "branchModel": "problem-node-driven",
     "allowBranchMerge": true,
     "expansionHistory": [
@@ -384,20 +510,88 @@
     ],
     "branchTree": [
       {
-        "id": "branch:autonomous-driving:origin",
+        "branchId": "branch:autonomous-driving:origin",
+        "parentBranchId": null,
         "rootProblemNodeId": "autonomous-driving:origin-problem",
-        "label": "起源主线",
-        "branchType": "direct",
-        "paperPath": [
+        "anchorPaperId": "1604.07316",
+        "linkedProblemNodeIds": [
+          "autonomous-driving:origin-problem"
+        ],
+        "paperIds": [
+          "0e21245f-24da-4693-b951-94f1c22903e8",
           "1604.07316"
         ],
-        "status": "branch_active",
-        "summary": "系统只保留起源论文，等待下一阶段动态发现。",
-        "promotionPolicy": "当分支论文已经成为最清晰的主线下一跳时，再提升进入主线。",
-        "mergeBackPolicy": "当分支论文同时解决多个开放问题时，再考虑汇回主线。",
-        "supersededBy": null,
-        "rewriteImpact": "会同步更新 canonical 分支关系以及下游主题展示视图。",
-        "parentBranchId": null
+        "status": "active",
+        "stageIndex": 2,
+        "label": "起源节点：端到端范式确立与样本复杂度争议"
+      },
+      {
+        "branchId": "branch:autonomous-driving:stage-1",
+        "parentBranchId": "branch:autonomous-driving:origin",
+        "rootProblemNodeId": "autonomous-driving:problem:1",
+        "anchorPaperId": "06b87490-9d46-496d-b26d-2b2db88c4f81",
+        "linkedProblemNodeIds": [
+          "autonomous-driving:problem:1"
+        ],
+        "paperIds": [
+          "06b87490-9d46-496d-b26d-2b2db88c4f81"
+        ],
+        "status": "active",
+        "stageIndex": 2,
+        "label": "恢复策略与仿真迁移"
+      },
+      {
+        "branchId": "branch:autonomous-driving:stage-2",
+        "parentBranchId": "branch:autonomous-driving:origin",
+        "rootProblemNodeId": "autonomous-driving:problem:2",
+        "anchorPaperId": "7a1e48e4-c497-499f-b223-aa97806b3c38",
+        "linkedProblemNodeIds": [
+          "autonomous-driving:problem:2"
+        ],
+        "paperIds": [
+          "3b0113dc-46c5-4be9-b8d6-a03b2102c392",
+          "e38dca12-f939-4c50-91d4-70513a0cbf41",
+          "02bcd04f-f86a-4e58-a23e-f86ef97f4f95",
+          "0946bdb9-826b-4742-b62e-e0db013e7025",
+          "39e68cb8-6574-4bca-83d9-02ee52a2b860",
+          "ff933027-3c9b-41a9-93c3-ef0d4138be77",
+          "7a1e48e4-c497-499f-b223-aa97806b3c38"
+        ],
+        "status": "active",
+        "stageIndex": 3,
+        "label": "注意力、认知图与可解释驾驶"
+      },
+      {
+        "branchId": "branch:autonomous-driving:stage-9",
+        "parentBranchId": "branch:autonomous-driving:origin",
+        "rootProblemNodeId": "autonomous-driving:problem:9",
+        "anchorPaperId": "71f27b74-8a8c-428d-8942-ab15f3fc6dc7",
+        "linkedProblemNodeIds": [
+          "autonomous-driving:problem:9"
+        ],
+        "paperIds": [
+          "908c7e00-e489-4c20-b218-657cc589733b",
+          "54338a51-bb92-4688-8083-497b2df88887",
+          "316472df-d1a7-48a2-bd68-ce594d27250a",
+          "0743b70f-4687-4845-8c5a-467612974850",
+          "4d7757a0-e2ad-4f43-a2aa-04ac0d01227e",
+          "5635af16-6171-4ce8-9884-35787fb149e6",
+          "6272b245-4176-47ef-a5dd-66564e1fd70a",
+          "e4a4916c-832d-4088-86cf-c6b3555e49d5",
+          "ba21435b-4a74-4319-9b29-4cb2d86bbbe8",
+          "e11a0b5d-878d-4149-8a5c-66df300b2525",
+          "71f27b74-8a8c-428d-8942-ab15f3fc6dc7",
+          "58e7e0d3-83b5-4e04-b729-c19784bf8f11",
+          "36c6f2b2-d0f2-49ae-99ba-a13de6517410",
+          "8f93e834-ac91-4a39-b08d-e91d7c40bf1c",
+          "74ff9450-0d50-4d5f-808e-3541660d6500",
+          "46036b2c-4e3d-4338-8df6-8411253f3e5b",
+          "888c7451-e52b-4f08-8464-a5fce590498e",
+          "b75a72fd-8458-473b-a689-dd0921087c18"
+        ],
+        "status": "active",
+        "stageIndex": 10,
+        "label": "DeepBillboard"
       }
     ],
     "branchRegistry": [
@@ -409,28 +603,965 @@
         "anchorPaperPublishedAt": "2016-04-25T16:03:56.000Z",
         "lastTrackedPaperId": "1604.07316",
         "lastTrackedPublishedAt": "2016-04-25T16:03:56.000Z",
-        "stageIndex": 1,
-        "activeWindowMonths": 5,
+        "stageIndex": 2,
+        "activeWindowMonths": 3,
         "status": "active",
-        "priorityScore": 0.9,
+        "priorityScore": 0.95,
         "linkedProblemNodeIds": [
           "autonomous-driving:origin-problem"
         ],
         "mergedIntoBranchId": null,
         "branchType": "direct",
-        "label": "起源主线",
-        "summary": "系统只保留起源论文，等待下一阶段动态发现。"
+        "label": "起源节点：端到端范式确立与样本复杂度争议",
+        "summary": "2016年4月至5月，自动驾驶的端到端范式正处于从概念验证走向工程落地的临界点。社区在同一时间窗口内密集抛出三篇论文，看似形成「实证奠基-理论批判-工程优化」的完整闭环，实则暴露了该领域最根本的方法论裂痕。核心矛盾在于：驾驶是闭环动态过程，但监督学习默认训练与测试状态独立同分布（i.i.d.）。模型在分布外状态的微小误差会累积为灾难性偏移，导致车辆失控..."
+      },
+      {
+        "branchId": "branch:autonomous-driving:stage-1",
+        "rootProblemNodeId": "autonomous-driving:problem:1",
+        "parentBranchId": "branch:autonomous-driving:origin",
+        "anchorPaperId": "06b87490-9d46-496d-b26d-2b2db88c4f81",
+        "anchorPaperPublishedAt": "2016-05-20T00:00:00.000Z",
+        "lastTrackedPaperId": "06b87490-9d46-496d-b26d-2b2db88c4f81",
+        "lastTrackedPublishedAt": "2016-05-20T00:00:00.000Z",
+        "stageIndex": 2,
+        "activeWindowMonths": 3,
+        "status": "active",
+        "priorityScore": 0.72,
+        "linkedProblemNodeIds": [
+          "autonomous-driving:problem:1"
+        ],
+        "mergedIntoBranchId": null,
+        "branchType": "direct",
+        "label": "恢复策略与仿真迁移",
+        "summary": "2016年4-5月，自动驾驶的端到端范式正处于从概念验证走向工程落地的临界点。三篇论文共同追问：在自动驾驶错误率需低于10⁻⁹的严苛要求下，端到端方法是否具备可扩展性？核心矛盾在于：驾驶是闭环动态过程，而监督学习默认训练与测试状态独立同分布（i.i.d.）。模型在分布外状态的微小误差会累积为灾难性偏移，导致车辆失控。Mobileye的理论分析（0e21..."
+      },
+      {
+        "branchId": "branch:autonomous-driving:stage-2",
+        "rootProblemNodeId": "autonomous-driving:problem:2",
+        "parentBranchId": "branch:autonomous-driving:origin",
+        "anchorPaperId": "7a1e48e4-c497-499f-b223-aa97806b3c38",
+        "anchorPaperPublishedAt": "2017-03-30T00:00:00.000Z",
+        "lastTrackedPaperId": "7a1e48e4-c497-499f-b223-aa97806b3c38",
+        "lastTrackedPublishedAt": "2017-03-30T00:00:00.000Z",
+        "stageIndex": 3,
+        "activeWindowMonths": 3,
+        "status": "active",
+        "priorityScore": 0.72,
+        "linkedProblemNodeIds": [
+          "autonomous-driving:problem:2"
+        ],
+        "mergedIntoBranchId": null,
+        "branchType": "direct",
+        "label": "注意力、认知图与可解释驾驶",
+        "summary": "2016年底，端到端驾驶社区陷入双重困境。一是数据饥渴：NVIDIA的CNN虽证明了像素到转向的可行性，但其72小时单一车辆数据无法支撑通用模型，鲁棒的感知-行动模型需要多样化视觉外观与真实行为数据，但既有方法要么局限于现场采集，要么依赖仿真环境，数据规模与真实性不可兼得。二是物理极限：传统相机33毫秒时间分辨率无法捕捉毫秒级动态（行人闪出、前车急刹）..."
+      },
+      {
+        "branchId": "branch:autonomous-driving:stage-9",
+        "rootProblemNodeId": "autonomous-driving:problem:9",
+        "parentBranchId": "branch:autonomous-driving:origin",
+        "anchorPaperId": "71f27b74-8a8c-428d-8942-ab15f3fc6dc7",
+        "anchorPaperPublishedAt": "2020-06-27T00:00:00.000Z",
+        "lastTrackedPaperId": "71f27b74-8a8c-428d-8942-ab15f3fc6dc7",
+        "lastTrackedPublishedAt": "2020-06-27T00:00:00.000Z",
+        "stageIndex": 10,
+        "activeWindowMonths": 3,
+        "status": "active",
+        "priorityScore": 0.72,
+        "linkedProblemNodeIds": [
+          "autonomous-driving:problem:9"
+        ],
+        "mergedIntoBranchId": null,
+        "branchType": "direct",
+        "label": "DeepBillboard",
+        "summary": "2020年4月至9月，端到端自动驾驶社区围绕「世界模型与闭环规划」这一核心追问，从动作表示学习、对抗鲁棒性、统计安全保证、多模态融合、视频预测、形式化规划与数据基建七个方向展开探索。然而12篇论文构成三条互不相交的研究路径——数据驱动的预测生成路径（AMTnet→ABRL）、安全验证与对抗路径（Uncertainty→LiDAR/Vision Atta..."
       }
     ],
     "stageLedger": [],
+    "stageRunLedger": [],
+    "researchNodes": [
+      {
+        "nodeId": "autonomous-driving:stage-0:1604.07316",
+        "id": "autonomous-driving:stage-0:1604.07316",
+        "topicId": "autonomous-driving",
+        "stageIndex": 1,
+        "paperIds": [
+          "0e21245f-24da-4693-b951-94f1c22903e8",
+          "1604.07316"
+        ],
+        "primaryPaperId": "1604.07316",
+        "sourceBranchIds": [
+          "branch:autonomous-driving:origin"
+        ],
+        "sourceProblemNodeIds": [
+          "autonomous-driving:origin-problem"
+        ],
+        "status": "canonical",
+        "provisional": false,
+        "nodeLabel": "起源节点：端到端范式确立与样本复杂度争议",
+        "nodeSummary": "2016年4月至5月，自动驾驶的端到端范式正处于从概念验证走向工程落地的临界点。社区在同一时间窗口内密集抛出三篇论文，看似形成「实证奠基-理论批判-工程优化」的完整闭环，实则暴露了该领域最根本的方法论裂痕。核心矛盾在于：驾驶是闭环动态过程，但监督学习默认训练与测试状态独立同分布（i.i.d.）。模型在分布外状态的微小误差会累积为灾难性偏移，导致车辆失控...",
+        "isMergeNode": false,
+        "tags": [],
+        "discoveredAt": "2016-04-25T16:03:56.000Z",
+        "createdAt": "2026-04-08T21:32:33.947Z",
+        "updatedAt": "2026-04-12T13:44:34.046Z",
+        "version": 1,
+        "branchId": "branch:autonomous-driving:origin",
+        "paperId": "1604.07316",
+        "paperPublishedAt": "2016-04-25T16:03:56.000Z",
+        "title": "起源节点：端到端范式确立与样本复杂度争议",
+        "summary": "2016年4月至5月，自动驾驶的端到端范式正处于从概念验证走向工程落地的临界点。社区在同一时间窗口内密集抛出三篇论文，看似形成「实证奠基-理论批判-工程优化」的完整闭环，实则暴露了该领域最根本的方法论裂痕。核心矛盾在于：驾驶是闭环动态过程，但监督学习默认训练与测试状态独立同分布（i.i.d.）。模型在分布外状态的微小误差会累积为灾难性偏移，导致车辆失控...",
+        "isKeyPaper": true
+      },
+      {
+        "nodeId": "5e65f235-7dbb-4581-b6db-1180d685fb54",
+        "id": "5e65f235-7dbb-4581-b6db-1180d685fb54",
+        "topicId": "autonomous-driving",
+        "stageIndex": 1,
+        "paperIds": [
+          "06b87490-9d46-496d-b26d-2b2db88c4f81"
+        ],
+        "primaryPaperId": "06b87490-9d46-496d-b26d-2b2db88c4f81",
+        "sourceBranchIds": [
+          "branch:autonomous-driving:stage-1"
+        ],
+        "sourceProblemNodeIds": [
+          "autonomous-driving:problem:1"
+        ],
+        "status": "canonical",
+        "provisional": false,
+        "nodeLabel": "恢复策略与仿真迁移",
+        "nodeSummary": "2016年4-5月，自动驾驶的端到端范式正处于从概念验证走向工程落地的临界点。三篇论文共同追问：在自动驾驶错误率需低于10⁻⁹的严苛要求下，端到端方法是否具备可扩展性？核心矛盾在于：驾驶是闭环动态过程，而监督学习默认训练与测试状态独立同分布（i.i.d.）。模型在分布外状态的微小误差会累积为灾难性偏移，导致车辆失控。Mobileye的理论分析（0e21...",
+        "isMergeNode": false,
+        "tags": [],
+        "discoveredAt": "2016-05-20T00:00:00.000Z",
+        "createdAt": "2026-04-11T02:13:12.713Z",
+        "updatedAt": "2026-04-12T13:44:34.051Z",
+        "version": 1,
+        "branchId": "branch:autonomous-driving:stage-1",
+        "paperId": "06b87490-9d46-496d-b26d-2b2db88c4f81",
+        "paperPublishedAt": "2016-05-20T00:00:00.000Z",
+        "title": "恢复策略与仿真迁移",
+        "summary": "2016年4-5月，自动驾驶的端到端范式正处于从概念验证走向工程落地的临界点。三篇论文共同追问：在自动驾驶错误率需低于10⁻⁹的严苛要求下，端到端方法是否具备可扩展性？核心矛盾在于：驾驶是闭环动态过程，而监督学习默认训练与测试状态独立同分布（i.i.d.）。模型在分布外状态的微小误差会累积为灾难性偏移，导致车辆失控。Mobileye的理论分析（0e21...",
+        "isKeyPaper": true
+      },
+      {
+        "nodeId": "075d7893-f10b-410e-8bd6-8a01369f53cb",
+        "id": "075d7893-f10b-410e-8bd6-8a01369f53cb",
+        "topicId": "autonomous-driving",
+        "stageIndex": 2,
+        "paperIds": [
+          "e38dca12-f939-4c50-91d4-70513a0cbf41"
+        ],
+        "primaryPaperId": "e38dca12-f939-4c50-91d4-70513a0cbf41",
+        "sourceBranchIds": [
+          "branch:autonomous-driving:stage-2"
+        ],
+        "sourceProblemNodeIds": [
+          "autonomous-driving:problem:2"
+        ],
+        "status": "canonical",
+        "provisional": false,
+        "nodeLabel": "规模化端到端驾驶建模",
+        "nodeSummary": "2016年底，端到端驾驶社区陷入双重瓶颈。一是数据困境：NVIDIA的CNN虽证明了像素到转向的可行性，但其72小时单一车辆数据无法支撑通用模型，鲁棒的感知-行动模型需要多样化视觉外观与真实行为数据，但既有方法要么局限于现场采集，要么依赖仿真环境，数据规模与真实性不可兼得。二是物理极限：传统相机33毫秒时间分辨率无法捕捉毫秒级动态（行人闪出、前车急刹）...",
+        "isMergeNode": false,
+        "tags": [],
+        "discoveredAt": "2016-12-04T00:00:00.000Z",
+        "createdAt": "2026-04-09T02:59:47.984Z",
+        "updatedAt": "2026-04-12T13:44:34.058Z",
+        "version": 1,
+        "branchId": "branch:autonomous-driving:stage-2",
+        "paperId": "e38dca12-f939-4c50-91d4-70513a0cbf41",
+        "paperPublishedAt": "2016-12-04T00:00:00.000Z",
+        "title": "规模化端到端驾驶建模",
+        "summary": "2016年底，端到端驾驶社区陷入双重瓶颈。一是数据困境：NVIDIA的CNN虽证明了像素到转向的可行性，但其72小时单一车辆数据无法支撑通用模型，鲁棒的感知-行动模型需要多样化视觉外观与真实行为数据，但既有方法要么局限于现场采集，要么依赖仿真环境，数据规模与真实性不可兼得。二是物理极限：传统相机33毫秒时间分辨率无法捕捉毫秒级动态（行人闪出、前车急刹）...",
+        "isKeyPaper": true
+      },
+      {
+        "nodeId": "124ceb44-c8c1-4334-9b8a-afb7459de5c6",
+        "id": "124ceb44-c8c1-4334-9b8a-afb7459de5c6",
+        "topicId": "autonomous-driving",
+        "stageIndex": 2,
+        "paperIds": [
+          "0946bdb9-826b-4742-b62e-e0db013e7025",
+          "39e68cb8-6574-4bca-83d9-02ee52a2b860"
+        ],
+        "primaryPaperId": "0946bdb9-826b-4742-b62e-e0db013e7025",
+        "sourceBranchIds": [
+          "branch:autonomous-driving:stage-2"
+        ],
+        "sourceProblemNodeIds": [
+          "autonomous-driving:problem:2"
+        ],
+        "status": "canonical",
+        "provisional": false,
+        "nodeLabel": "恢复策略与仿真迁移",
+        "nodeSummary": "2016年底，端到端驾驶社区陷入双重困境。一是数据饥渴：NVIDIA的CNN虽证明了像素到转向的可行性，但其72小时单一车辆数据无法支撑通用模型，鲁棒的感知-行动模型需要多样化视觉外观与真实行为数据，但既有方法要么局限于现场采集，要么依赖仿真环境，数据规模与真实性不可兼得。二是物理极限：传统相机33毫秒时间分辨率无法捕捉毫秒级动态（行人闪出、前车急刹）...",
+        "isMergeNode": false,
+        "tags": [],
+        "discoveredAt": "2017-01-01T00:00:00.000Z",
+        "createdAt": "2026-04-09T03:02:59.512Z",
+        "updatedAt": "2026-04-12T13:44:34.064Z",
+        "version": 1,
+        "branchId": "branch:autonomous-driving:stage-2",
+        "paperId": "0946bdb9-826b-4742-b62e-e0db013e7025",
+        "paperPublishedAt": "2017-01-01T00:00:00.000Z",
+        "title": "恢复策略与仿真迁移",
+        "summary": "2016年底，端到端驾驶社区陷入双重困境。一是数据饥渴：NVIDIA的CNN虽证明了像素到转向的可行性，但其72小时单一车辆数据无法支撑通用模型，鲁棒的感知-行动模型需要多样化视觉外观与真实行为数据，但既有方法要么局限于现场采集，要么依赖仿真环境，数据规模与真实性不可兼得。二是物理极限：传统相机33毫秒时间分辨率无法捕捉毫秒级动态（行人闪出、前车急刹）...",
+        "isKeyPaper": true
+      },
+      {
+        "nodeId": "13b21e13-d1ca-423c-abf7-bc028d62dbb0",
+        "id": "13b21e13-d1ca-423c-abf7-bc028d62dbb0",
+        "topicId": "autonomous-driving",
+        "stageIndex": 2,
+        "paperIds": [
+          "3b0113dc-46c5-4be9-b8d6-a03b2102c392",
+          "02bcd04f-f86a-4e58-a23e-f86ef97f4f95"
+        ],
+        "primaryPaperId": "02bcd04f-f86a-4e58-a23e-f86ef97f4f95",
+        "sourceBranchIds": [
+          "branch:autonomous-driving:stage-2"
+        ],
+        "sourceProblemNodeIds": [
+          "autonomous-driving:problem:2"
+        ],
+        "status": "canonical",
+        "provisional": false,
+        "nodeLabel": "事件相机与神经形态驾驶",
+        "nodeSummary": "2016年底，端到端驾驶社区陷入双重困境。一是数据困境：NVIDIA的CNN虽证明了像素到转向的可行性，但其72小时单一车辆数据无法支撑通用模型，鲁棒的感知-行动模型需要多样化视觉外观与真实行为数据，但既有方法要么局限于现场采集，要么依赖仿真环境，数据规模与真实性不可兼得。二是物理极限：传统相机33毫秒时间分辨率无法捕捉毫秒级动态（行人闪出、前车急刹）...",
+        "isMergeNode": false,
+        "tags": [],
+        "discoveredAt": "2017-01-01T00:00:00.000Z",
+        "createdAt": "2026-04-09T03:07:29.078Z",
+        "updatedAt": "2026-04-12T13:44:34.101Z",
+        "version": 1,
+        "branchId": "branch:autonomous-driving:stage-2",
+        "paperId": "02bcd04f-f86a-4e58-a23e-f86ef97f4f95",
+        "paperPublishedAt": "2017-01-01T00:00:00.000Z",
+        "title": "事件相机与神经形态驾驶",
+        "summary": "2016年底，端到端驾驶社区陷入双重困境。一是数据困境：NVIDIA的CNN虽证明了像素到转向的可行性，但其72小时单一车辆数据无法支撑通用模型，鲁棒的感知-行动模型需要多样化视觉外观与真实行为数据，但既有方法要么局限于现场采集，要么依赖仿真环境，数据规模与真实性不可兼得。二是物理极限：传统相机33毫秒时间分辨率无法捕捉毫秒级动态（行人闪出、前车急刹）...",
+        "isKeyPaper": true
+      },
+      {
+        "nodeId": "26af6400-4bd4-4aa1-b478-de6b7c7c68c2",
+        "id": "26af6400-4bd4-4aa1-b478-de6b7c7c68c2",
+        "topicId": "autonomous-driving",
+        "stageIndex": 2,
+        "paperIds": [
+          "ff933027-3c9b-41a9-93c3-ef0d4138be77",
+          "7a1e48e4-c497-499f-b223-aa97806b3c38"
+        ],
+        "primaryPaperId": "7a1e48e4-c497-499f-b223-aa97806b3c38",
+        "sourceBranchIds": [
+          "branch:autonomous-driving:stage-2"
+        ],
+        "sourceProblemNodeIds": [
+          "autonomous-driving:problem:2"
+        ],
+        "status": "canonical",
+        "provisional": false,
+        "nodeLabel": "注意力、认知图与可解释驾驶",
+        "nodeSummary": "2016年底，端到端驾驶社区陷入双重困境。一是数据饥渴：NVIDIA的CNN虽证明了像素到转向的可行性，但其72小时单一车辆数据无法支撑通用模型，鲁棒的感知-行动模型需要多样化视觉外观与真实行为数据，但既有方法要么局限于现场采集，要么依赖仿真环境，数据规模与真实性不可兼得。二是物理极限：传统相机33毫秒时间分辨率无法捕捉毫秒级动态（行人闪出、前车急刹）...",
+        "isMergeNode": false,
+        "tags": [],
+        "discoveredAt": "2017-03-30T00:00:00.000Z",
+        "createdAt": "2026-04-09T03:05:07.027Z",
+        "updatedAt": "2026-04-12T13:44:34.107Z",
+        "version": 1,
+        "branchId": "branch:autonomous-driving:stage-2",
+        "paperId": "7a1e48e4-c497-499f-b223-aa97806b3c38",
+        "paperPublishedAt": "2017-03-30T00:00:00.000Z",
+        "title": "注意力、认知图与可解释驾驶",
+        "summary": "2016年底，端到端驾驶社区陷入双重困境。一是数据饥渴：NVIDIA的CNN虽证明了像素到转向的可行性，但其72小时单一车辆数据无法支撑通用模型，鲁棒的感知-行动模型需要多样化视觉外观与真实行为数据，但既有方法要么局限于现场采集，要么依赖仿真环境，数据规模与真实性不可兼得。二是物理极限：传统相机33毫秒时间分辨率无法捕捉毫秒级动态（行人闪出、前车急刹）...",
+        "isKeyPaper": true
+      },
+      {
+        "nodeId": "21fe794f-a65b-4413-9c55-2e2404c77e19",
+        "id": "21fe794f-a65b-4413-9c55-2e2404c77e19",
+        "topicId": "autonomous-driving",
+        "stageIndex": 9,
+        "paperIds": [
+          "6272b245-4176-47ef-a5dd-66564e1fd70a"
+        ],
+        "primaryPaperId": "6272b245-4176-47ef-a5dd-66564e1fd70a",
+        "sourceBranchIds": [
+          "branch:autonomous-driving:stage-9"
+        ],
+        "sourceProblemNodeIds": [
+          "autonomous-driving:problem:9"
+        ],
+        "status": "canonical",
+        "provisional": false,
+        "nodeLabel": "世界模型与闭环规划",
+        "nodeSummary": "2020年4-9月，端到端控制器已从实验室走向真实部署（Waymo 400万英里、特斯拉Autopilot），但产业界面临致命缺口：深度网络的「黑盒」特性使安全验证无法量化，对抗攻击揭示感知模块灾难性失效，而多模态融合与不确定性量化虽提供技术路径，却未解决闭环验证不可复现的核心矛盾。",
+        "isMergeNode": false,
+        "tags": [],
+        "discoveredAt": "2020-06-01T00:00:00.000Z",
+        "createdAt": "2026-04-11T03:22:45.151Z",
+        "updatedAt": "2026-04-12T13:44:34.114Z",
+        "version": 1,
+        "branchId": "branch:autonomous-driving:stage-9",
+        "paperId": "6272b245-4176-47ef-a5dd-66564e1fd70a",
+        "paperPublishedAt": "2020-06-01T00:00:00.000Z",
+        "title": "世界模型与闭环规划",
+        "summary": "2020年4-9月，端到端控制器已从实验室走向真实部署（Waymo 400万英里、特斯拉Autopilot），但产业界面临致命缺口：深度网络的「黑盒」特性使安全验证无法量化，对抗攻击揭示感知模块灾难性失效，而多模态融合与不确定性量化虽提供技术路径，却未解决闭环验证不可复现的核心矛盾。",
+        "isKeyPaper": true
+      },
+      {
+        "nodeId": "4ae488f7-ecac-444b-9359-9a8cf668869e",
+        "id": "4ae488f7-ecac-444b-9359-9a8cf668869e",
+        "topicId": "autonomous-driving",
+        "stageIndex": 9,
+        "paperIds": [
+          "0743b70f-4687-4845-8c5a-467612974850",
+          "5635af16-6171-4ce8-9884-35787fb149e6",
+          "8f93e834-ac91-4a39-b08d-e91d7c40bf1c",
+          "888c7451-e52b-4f08-8464-a5fce590498e"
+        ],
+        "primaryPaperId": "5635af16-6171-4ce8-9884-35787fb149e6",
+        "sourceBranchIds": [
+          "branch:autonomous-driving:stage-9"
+        ],
+        "sourceProblemNodeIds": [
+          "autonomous-driving:problem:9"
+        ],
+        "status": "canonical",
+        "provisional": false,
+        "nodeLabel": "语言条件驾驶与 VLA",
+        "nodeSummary": "核心追问是：在自动驾驶错误率需低于10⁻⁹的严苛要求下，开环性能（转向精度、预测误差、识别准确率、攻击成功率）如何单调映射到闭环安全指标（碰撞率/接管率）？学习型预测与形式化安全保证如何融合？对抗攻击揭示的脆弱性如何在世界模型设计中内置？然而10篇论文均未建立此映射，所有「成功率」「边界」「鲁棒性」声称均为开环指标或仿真器内置计数，产业界无法计算ROI...",
+        "isMergeNode": false,
+        "tags": [],
+        "discoveredAt": "2020-05-27T00:00:00.000Z",
+        "createdAt": "2026-04-11T03:22:45.157Z",
+        "updatedAt": "2026-04-12T13:44:34.122Z",
+        "version": 1,
+        "branchId": "branch:autonomous-driving:stage-9",
+        "paperId": "5635af16-6171-4ce8-9884-35787fb149e6",
+        "paperPublishedAt": "2020-05-27T00:00:00.000Z",
+        "title": "语言条件驾驶与 VLA",
+        "summary": "核心追问是：在自动驾驶错误率需低于10⁻⁹的严苛要求下，开环性能（转向精度、预测误差、识别准确率、攻击成功率）如何单调映射到闭环安全指标（碰撞率/接管率）？学习型预测与形式化安全保证如何融合？对抗攻击揭示的脆弱性如何在世界模型设计中内置？然而10篇论文均未建立此映射，所有「成功率」「边界」「鲁棒性」声称均为开环指标或仿真器内置计数，产业界无法计算ROI...",
+        "isKeyPaper": true
+      },
+      {
+        "nodeId": "4aec1205-1438-44f2-b9c1-b44289d97bd4",
+        "id": "4aec1205-1438-44f2-b9c1-b44289d97bd4",
+        "topicId": "autonomous-driving",
+        "stageIndex": 9,
+        "paperIds": [
+          "46036b2c-4e3d-4338-8df6-8411253f3e5b"
+        ],
+        "primaryPaperId": "46036b2c-4e3d-4338-8df6-8411253f3e5b",
+        "sourceBranchIds": [
+          "branch:autonomous-driving:stage-9"
+        ],
+        "sourceProblemNodeIds": [
+          "autonomous-driving:problem:9"
+        ],
+        "status": "canonical",
+        "provisional": false,
+        "nodeLabel": "Future Frame Prediction of a Video Sequence",
+        "nodeSummary": "2020年4-9月，自动驾驶VLA世界模型研究线面临根本追问：如何让系统具备「预测未来」以支撑「安全规划」的能力，将反应时间从人类驾驶员的1.5秒压缩至毫秒级。核心矛盾在于，预测输出的准确性如何量化为决策收益？预测-规划的闭环性能如何验证？这是VLA世界模型从概念走向工程的关键门槛。",
+        "isMergeNode": false,
+        "tags": [],
+        "discoveredAt": "2020-08-31T00:00:00.000Z",
+        "createdAt": "2026-04-11T03:25:10.320Z",
+        "updatedAt": "2026-04-12T13:44:34.130Z",
+        "version": 1,
+        "branchId": "branch:autonomous-driving:stage-9",
+        "paperId": "46036b2c-4e3d-4338-8df6-8411253f3e5b",
+        "paperPublishedAt": "2020-08-31T00:00:00.000Z",
+        "title": "Future Frame Prediction of a Video Sequence",
+        "summary": "2020年4-9月，自动驾驶VLA世界模型研究线面临根本追问：如何让系统具备「预测未来」以支撑「安全规划」的能力，将反应时间从人类驾驶员的1.5秒压缩至毫秒级。核心矛盾在于，预测输出的准确性如何量化为决策收益？预测-规划的闭环性能如何验证？这是VLA世界模型从概念走向工程的关键门槛。",
+        "isKeyPaper": true
+      },
+      {
+        "nodeId": "7214c94f-0dfc-45b4-8cce-50fb97dcc09c",
+        "id": "7214c94f-0dfc-45b4-8cce-50fb97dcc09c",
+        "topicId": "autonomous-driving",
+        "stageIndex": 9,
+        "paperIds": [
+          "908c7e00-e489-4c20-b218-657cc589733b",
+          "54338a51-bb92-4688-8083-497b2df88887",
+          "316472df-d1a7-48a2-bd68-ce594d27250a",
+          "e11a0b5d-878d-4149-8a5c-66df300b2525",
+          "58e7e0d3-83b5-4e04-b729-c19784bf8f11"
+        ],
+        "primaryPaperId": "58e7e0d3-83b5-4e04-b729-c19784bf8f11",
+        "sourceBranchIds": [
+          "branch:autonomous-driving:stage-9"
+        ],
+        "sourceProblemNodeIds": [
+          "autonomous-driving:problem:9"
+        ],
+        "status": "canonical",
+        "provisional": false,
+        "nodeLabel": "端到端驾驶控制探索",
+        "nodeSummary": "这一节点收拢了同一阶段里的 15 篇论文，围绕「端到端驾驶控制探索」这一问题展开，而不是把论文标题机械并列。",
+        "isMergeNode": false,
+        "tags": [],
+        "discoveredAt": "2020-06-30T00:00:00.000Z",
+        "createdAt": "2026-04-11T03:23:31.269Z",
+        "updatedAt": "2026-04-12T13:44:34.184Z",
+        "version": 1,
+        "branchId": "branch:autonomous-driving:stage-9",
+        "paperId": "58e7e0d3-83b5-4e04-b729-c19784bf8f11",
+        "paperPublishedAt": "2020-06-30T00:00:00.000Z",
+        "title": "端到端驾驶控制探索",
+        "summary": "这一节点收拢了同一阶段里的 15 篇论文，围绕「端到端驾驶控制探索」这一问题展开，而不是把论文标题机械并列。",
+        "isKeyPaper": true
+      },
+      {
+        "nodeId": "738e5003-ea17-4699-bfee-37b1bd07eaff",
+        "id": "738e5003-ea17-4699-bfee-37b1bd07eaff",
+        "topicId": "autonomous-driving",
+        "stageIndex": 9,
+        "paperIds": [
+          "36c6f2b2-d0f2-49ae-99ba-a13de6517410"
+        ],
+        "primaryPaperId": "36c6f2b2-d0f2-49ae-99ba-a13de6517410",
+        "sourceBranchIds": [
+          "branch:autonomous-driving:stage-9"
+        ],
+        "sourceProblemNodeIds": [
+          "autonomous-driving:problem:9"
+        ],
+        "status": "canonical",
+        "provisional": false,
+        "nodeLabel": "Design and implementation of human driving data–based active lane change control for autonomous vehicles",
+        "nodeSummary": "2020年4月至9月，端到端自动驾驶社区围绕「世界模型与闭环规划」这一核心追问，从动作表示学习、对抗鲁棒性、统计安全保证、多模态融合、视频预测、形式化规划、数据基建与交互意图八个方向展开探索。然而17篇论文构成三条互不相交的研究路径——数据驱动的预测生成路径（AMTnet→ABRL→Future Frame）、安全验证与对抗路径（Uncertainty...",
+        "isMergeNode": false,
+        "tags": [],
+        "discoveredAt": "2020-08-14T00:00:00.000Z",
+        "createdAt": "2026-04-11T03:25:10.313Z",
+        "updatedAt": "2026-04-12T13:44:34.191Z",
+        "version": 1,
+        "branchId": "branch:autonomous-driving:stage-9",
+        "paperId": "36c6f2b2-d0f2-49ae-99ba-a13de6517410",
+        "paperPublishedAt": "2020-08-14T00:00:00.000Z",
+        "title": "Design and implementation of human driving data–based active lane change control for autonomous vehicles",
+        "summary": "2020年4月至9月，端到端自动驾驶社区围绕「世界模型与闭环规划」这一核心追问，从动作表示学习、对抗鲁棒性、统计安全保证、多模态融合、视频预测、形式化规划、数据基建与交互意图八个方向展开探索。然而17篇论文构成三条互不相交的研究路径——数据驱动的预测生成路径（AMTnet→ABRL→Future Frame）、安全验证与对抗路径（Uncertainty...",
+        "isKeyPaper": true
+      },
+      {
+        "nodeId": "994f28cc-3c94-457b-9268-6bf769444cee",
+        "id": "994f28cc-3c94-457b-9268-6bf769444cee",
+        "topicId": "autonomous-driving",
+        "stageIndex": 9,
+        "paperIds": [
+          "e4a4916c-832d-4088-86cf-c6b3555e49d5",
+          "ba21435b-4a74-4319-9b29-4cb2d86bbbe8",
+          "74ff9450-0d50-4d5f-808e-3541660d6500"
+        ],
+        "primaryPaperId": "74ff9450-0d50-4d5f-808e-3541660d6500",
+        "sourceBranchIds": [
+          "branch:autonomous-driving:stage-9"
+        ],
+        "sourceProblemNodeIds": [
+          "autonomous-driving:problem:9"
+        ],
+        "status": "canonical",
+        "provisional": false,
+        "nodeLabel": "恢复策略与仿真迁移",
+        "nodeSummary": "核心追问是：在自动驾驶错误率需低于10⁻⁹的严苛要求下，如何利用人类驾驶产生的海量动作数据，在仿真环境中学习可迁移的鲁棒策略表示，并确保在真实世界的闭环部署中具备分布外恢复能力。具体分解为四个子任务：1）如何从专家动作中学习可负担性（affordance）表征而非伪相关；2）如何构建覆盖长尾场景的数据基础设施；3）如何量化模型不确定性以支撑安全验证；4...",
+        "isMergeNode": false,
+        "tags": [],
+        "discoveredAt": "2020-08-21T00:00:00.000Z",
+        "createdAt": "2026-04-11T03:20:19.655Z",
+        "updatedAt": "2026-04-12T13:44:34.196Z",
+        "version": 1,
+        "branchId": "branch:autonomous-driving:stage-9",
+        "paperId": "74ff9450-0d50-4d5f-808e-3541660d6500",
+        "paperPublishedAt": "2020-08-21T00:00:00.000Z",
+        "title": "恢复策略与仿真迁移",
+        "summary": "核心追问是：在自动驾驶错误率需低于10⁻⁹的严苛要求下，如何利用人类驾驶产生的海量动作数据，在仿真环境中学习可迁移的鲁棒策略表示，并确保在真实世界的闭环部署中具备分布外恢复能力。具体分解为四个子任务：1）如何从专家动作中学习可负担性（affordance）表征而非伪相关；2）如何构建覆盖长尾场景的数据基础设施；3）如何量化模型不确定性以支撑安全验证；4...",
+        "isKeyPaper": true
+      },
+      {
+        "nodeId": "a0505f4a-89a8-4292-8a05-9818b3478c93",
+        "id": "a0505f4a-89a8-4292-8a05-9818b3478c93",
+        "topicId": "autonomous-driving",
+        "stageIndex": 9,
+        "paperIds": [
+          "4d7757a0-e2ad-4f43-a2aa-04ac0d01227e",
+          "b75a72fd-8458-473b-a689-dd0921087c18"
+        ],
+        "primaryPaperId": "4d7757a0-e2ad-4f43-a2aa-04ac0d01227e",
+        "sourceBranchIds": [
+          "branch:autonomous-driving:stage-9"
+        ],
+        "sourceProblemNodeIds": [
+          "autonomous-driving:problem:9"
+        ],
+        "status": "canonical",
+        "provisional": false,
+        "nodeLabel": "注意力、认知图与可解释驾驶",
+        "nodeSummary": "2020年4月至9月，端到端控制器已从实验室走向真实部署（Waymo 400万英里、特斯拉Autopilot），但产业界面临致命缺口：深度网络的「黑盒」特性使安全验证无法量化，对抗攻击揭示感知模块灾难性失效，而多模态融合与不确定性量化虽提供技术路径，却未解决闭环验证不可复现的核心矛盾。",
+        "isMergeNode": false,
+        "tags": [],
+        "discoveredAt": "2020-05-14T00:00:00.000Z",
+        "createdAt": "2026-04-11T03:22:45.141Z",
+        "updatedAt": "2026-04-12T13:44:34.202Z",
+        "version": 1,
+        "branchId": "branch:autonomous-driving:stage-9",
+        "paperId": "4d7757a0-e2ad-4f43-a2aa-04ac0d01227e",
+        "paperPublishedAt": "2020-05-14T00:00:00.000Z",
+        "title": "注意力、认知图与可解释驾驶",
+        "summary": "2020年4月至9月，端到端控制器已从实验室走向真实部署（Waymo 400万英里、特斯拉Autopilot），但产业界面临致命缺口：深度网络的「黑盒」特性使安全验证无法量化，对抗攻击揭示感知模块灾难性失效，而多模态融合与不确定性量化虽提供技术路径，却未解决闭环验证不可复现的核心矛盾。",
+        "isKeyPaper": true
+      },
+      {
+        "nodeId": "aef5cc60-4a60-4830-8f11-0c86033fcdae",
+        "id": "aef5cc60-4a60-4830-8f11-0c86033fcdae",
+        "topicId": "autonomous-driving",
+        "stageIndex": 9,
+        "paperIds": [
+          "71f27b74-8a8c-428d-8942-ab15f3fc6dc7"
+        ],
+        "primaryPaperId": "71f27b74-8a8c-428d-8942-ab15f3fc6dc7",
+        "sourceBranchIds": [
+          "branch:autonomous-driving:stage-9"
+        ],
+        "sourceProblemNodeIds": [
+          "autonomous-driving:problem:9"
+        ],
+        "status": "canonical",
+        "provisional": false,
+        "nodeLabel": "DeepBillboard",
+        "nodeSummary": "2020年4月至9月，端到端自动驾驶社区围绕「世界模型与闭环规划」这一核心追问，从动作表示学习、对抗鲁棒性、统计安全保证、多模态融合、视频预测、形式化规划与数据基建七个方向展开探索。然而12篇论文构成三条互不相交的研究路径——数据驱动的预测生成路径（AMTnet→ABRL）、安全验证与对抗路径（Uncertainty→LiDAR/Vision Atta...",
+        "isMergeNode": false,
+        "tags": [],
+        "discoveredAt": "2020-06-27T00:00:00.000Z",
+        "createdAt": "2026-04-11T03:25:10.307Z",
+        "updatedAt": "2026-04-12T13:44:34.207Z",
+        "version": 1,
+        "branchId": "branch:autonomous-driving:stage-9",
+        "paperId": "71f27b74-8a8c-428d-8942-ab15f3fc6dc7",
+        "paperPublishedAt": "2020-06-27T00:00:00.000Z",
+        "title": "DeepBillboard",
+        "summary": "2020年4月至9月，端到端自动驾驶社区围绕「世界模型与闭环规划」这一核心追问，从动作表示学习、对抗鲁棒性、统计安全保证、多模态融合、视频预测、形式化规划与数据基建七个方向展开探索。然而12篇论文构成三条互不相交的研究路径——数据驱动的预测生成路径（AMTnet→ABRL）、安全验证与对抗路径（Uncertainty→LiDAR/Vision Atta...",
+        "isKeyPaper": true
+      }
+    ],
+    "provisionalNodes": [],
     "paperRelations": [
       {
-        "paperId": "1604.07316",
-        "problemNodeIds": [],
+        "paperId": "0e21245f-24da-4693-b951-94f1c22903e8",
+        "nodeId": "autonomous-driving:stage-0:1604.07316",
+        "problemNodeIds": [
+          "autonomous-driving:origin-problem"
+        ],
         "branchIds": [
           "branch:autonomous-driving:origin"
         ],
         "primaryBranchId": "branch:autonomous-driving:origin",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      },
+      {
+        "paperId": "1604.07316",
+        "nodeId": "autonomous-driving:stage-0:1604.07316",
+        "problemNodeIds": [
+          "autonomous-driving:origin-problem"
+        ],
+        "branchIds": [
+          "branch:autonomous-driving:origin"
+        ],
+        "primaryBranchId": "branch:autonomous-driving:origin",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      },
+      {
+        "paperId": "06b87490-9d46-496d-b26d-2b2db88c4f81",
+        "nodeId": "5e65f235-7dbb-4581-b6db-1180d685fb54",
+        "problemNodeIds": [
+          "autonomous-driving:problem:1"
+        ],
+        "branchIds": [
+          "branch:autonomous-driving:stage-1"
+        ],
+        "primaryBranchId": "branch:autonomous-driving:stage-1",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      },
+      {
+        "paperId": "3b0113dc-46c5-4be9-b8d6-a03b2102c392",
+        "nodeId": "13b21e13-d1ca-423c-abf7-bc028d62dbb0",
+        "problemNodeIds": [
+          "autonomous-driving:problem:2"
+        ],
+        "branchIds": [
+          "branch:autonomous-driving:stage-2"
+        ],
+        "primaryBranchId": "branch:autonomous-driving:stage-2",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      },
+      {
+        "paperId": "e38dca12-f939-4c50-91d4-70513a0cbf41",
+        "nodeId": "075d7893-f10b-410e-8bd6-8a01369f53cb",
+        "problemNodeIds": [
+          "autonomous-driving:problem:2"
+        ],
+        "branchIds": [
+          "branch:autonomous-driving:stage-2"
+        ],
+        "primaryBranchId": "branch:autonomous-driving:stage-2",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      },
+      {
+        "paperId": "02bcd04f-f86a-4e58-a23e-f86ef97f4f95",
+        "nodeId": "13b21e13-d1ca-423c-abf7-bc028d62dbb0",
+        "problemNodeIds": [
+          "autonomous-driving:problem:2"
+        ],
+        "branchIds": [
+          "branch:autonomous-driving:stage-2"
+        ],
+        "primaryBranchId": "branch:autonomous-driving:stage-2",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      },
+      {
+        "paperId": "0946bdb9-826b-4742-b62e-e0db013e7025",
+        "nodeId": "124ceb44-c8c1-4334-9b8a-afb7459de5c6",
+        "problemNodeIds": [
+          "autonomous-driving:problem:2"
+        ],
+        "branchIds": [
+          "branch:autonomous-driving:stage-2"
+        ],
+        "primaryBranchId": "branch:autonomous-driving:stage-2",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      },
+      {
+        "paperId": "39e68cb8-6574-4bca-83d9-02ee52a2b860",
+        "nodeId": "124ceb44-c8c1-4334-9b8a-afb7459de5c6",
+        "problemNodeIds": [
+          "autonomous-driving:problem:2"
+        ],
+        "branchIds": [
+          "branch:autonomous-driving:stage-2"
+        ],
+        "primaryBranchId": "branch:autonomous-driving:stage-2",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      },
+      {
+        "paperId": "ff933027-3c9b-41a9-93c3-ef0d4138be77",
+        "nodeId": "26af6400-4bd4-4aa1-b478-de6b7c7c68c2",
+        "problemNodeIds": [
+          "autonomous-driving:problem:2"
+        ],
+        "branchIds": [
+          "branch:autonomous-driving:stage-2"
+        ],
+        "primaryBranchId": "branch:autonomous-driving:stage-2",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      },
+      {
+        "paperId": "7a1e48e4-c497-499f-b223-aa97806b3c38",
+        "nodeId": "26af6400-4bd4-4aa1-b478-de6b7c7c68c2",
+        "problemNodeIds": [
+          "autonomous-driving:problem:2"
+        ],
+        "branchIds": [
+          "branch:autonomous-driving:stage-2"
+        ],
+        "primaryBranchId": "branch:autonomous-driving:stage-2",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      },
+      {
+        "paperId": "1710.02410",
+        "nodeId": "node:1710.02410",
+        "problemNodeIds": [],
+        "branchIds": [],
+        "primaryBranchId": "branch:autonomous-driving:origin",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      },
+      {
+        "paperId": "1912.12294",
+        "nodeId": "node:1912.12294",
+        "problemNodeIds": [],
+        "branchIds": [],
+        "primaryBranchId": "branch:autonomous-driving:origin",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      },
+      {
+        "paperId": "1511.03791",
+        "nodeId": "node:1511.03791",
+        "problemNodeIds": [],
+        "branchIds": [],
+        "primaryBranchId": "branch:autonomous-driving:origin",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      },
+      {
+        "paperId": "908c7e00-e489-4c20-b218-657cc589733b",
+        "nodeId": "7214c94f-0dfc-45b4-8cce-50fb97dcc09c",
+        "problemNodeIds": [
+          "autonomous-driving:problem:9"
+        ],
+        "branchIds": [
+          "branch:autonomous-driving:stage-9"
+        ],
+        "primaryBranchId": "branch:autonomous-driving:stage-9",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      },
+      {
+        "paperId": "54338a51-bb92-4688-8083-497b2df88887",
+        "nodeId": "7214c94f-0dfc-45b4-8cce-50fb97dcc09c",
+        "problemNodeIds": [
+          "autonomous-driving:problem:9"
+        ],
+        "branchIds": [
+          "branch:autonomous-driving:stage-9"
+        ],
+        "primaryBranchId": "branch:autonomous-driving:stage-9",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      },
+      {
+        "paperId": "316472df-d1a7-48a2-bd68-ce594d27250a",
+        "nodeId": "7214c94f-0dfc-45b4-8cce-50fb97dcc09c",
+        "problemNodeIds": [
+          "autonomous-driving:problem:9"
+        ],
+        "branchIds": [
+          "branch:autonomous-driving:stage-9"
+        ],
+        "primaryBranchId": "branch:autonomous-driving:stage-9",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      },
+      {
+        "paperId": "0743b70f-4687-4845-8c5a-467612974850",
+        "nodeId": "4ae488f7-ecac-444b-9359-9a8cf668869e",
+        "problemNodeIds": [
+          "autonomous-driving:problem:9"
+        ],
+        "branchIds": [
+          "branch:autonomous-driving:stage-9"
+        ],
+        "primaryBranchId": "branch:autonomous-driving:stage-9",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      },
+      {
+        "paperId": "4d7757a0-e2ad-4f43-a2aa-04ac0d01227e",
+        "nodeId": "a0505f4a-89a8-4292-8a05-9818b3478c93",
+        "problemNodeIds": [
+          "autonomous-driving:problem:9"
+        ],
+        "branchIds": [
+          "branch:autonomous-driving:stage-9"
+        ],
+        "primaryBranchId": "branch:autonomous-driving:stage-9",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      },
+      {
+        "paperId": "5635af16-6171-4ce8-9884-35787fb149e6",
+        "nodeId": "4ae488f7-ecac-444b-9359-9a8cf668869e",
+        "problemNodeIds": [
+          "autonomous-driving:problem:9"
+        ],
+        "branchIds": [
+          "branch:autonomous-driving:stage-9"
+        ],
+        "primaryBranchId": "branch:autonomous-driving:stage-9",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      },
+      {
+        "paperId": "6272b245-4176-47ef-a5dd-66564e1fd70a",
+        "nodeId": "21fe794f-a65b-4413-9c55-2e2404c77e19",
+        "problemNodeIds": [
+          "autonomous-driving:problem:9"
+        ],
+        "branchIds": [
+          "branch:autonomous-driving:stage-9"
+        ],
+        "primaryBranchId": "branch:autonomous-driving:stage-9",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      },
+      {
+        "paperId": "e4a4916c-832d-4088-86cf-c6b3555e49d5",
+        "nodeId": "994f28cc-3c94-457b-9268-6bf769444cee",
+        "problemNodeIds": [
+          "autonomous-driving:problem:9"
+        ],
+        "branchIds": [
+          "branch:autonomous-driving:stage-9"
+        ],
+        "primaryBranchId": "branch:autonomous-driving:stage-9",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      },
+      {
+        "paperId": "ba21435b-4a74-4319-9b29-4cb2d86bbbe8",
+        "nodeId": "994f28cc-3c94-457b-9268-6bf769444cee",
+        "problemNodeIds": [
+          "autonomous-driving:problem:9"
+        ],
+        "branchIds": [
+          "branch:autonomous-driving:stage-9"
+        ],
+        "primaryBranchId": "branch:autonomous-driving:stage-9",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      },
+      {
+        "paperId": "e11a0b5d-878d-4149-8a5c-66df300b2525",
+        "nodeId": "7214c94f-0dfc-45b4-8cce-50fb97dcc09c",
+        "problemNodeIds": [
+          "autonomous-driving:problem:9"
+        ],
+        "branchIds": [
+          "branch:autonomous-driving:stage-9"
+        ],
+        "primaryBranchId": "branch:autonomous-driving:stage-9",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      },
+      {
+        "paperId": "71f27b74-8a8c-428d-8942-ab15f3fc6dc7",
+        "nodeId": "aef5cc60-4a60-4830-8f11-0c86033fcdae",
+        "problemNodeIds": [
+          "autonomous-driving:problem:9"
+        ],
+        "branchIds": [
+          "branch:autonomous-driving:stage-9"
+        ],
+        "primaryBranchId": "branch:autonomous-driving:stage-9",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      },
+      {
+        "paperId": "58e7e0d3-83b5-4e04-b729-c19784bf8f11",
+        "nodeId": "7214c94f-0dfc-45b4-8cce-50fb97dcc09c",
+        "problemNodeIds": [
+          "autonomous-driving:problem:9"
+        ],
+        "branchIds": [
+          "branch:autonomous-driving:stage-9"
+        ],
+        "primaryBranchId": "branch:autonomous-driving:stage-9",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      },
+      {
+        "paperId": "36c6f2b2-d0f2-49ae-99ba-a13de6517410",
+        "nodeId": "738e5003-ea17-4699-bfee-37b1bd07eaff",
+        "problemNodeIds": [
+          "autonomous-driving:problem:9"
+        ],
+        "branchIds": [
+          "branch:autonomous-driving:stage-9"
+        ],
+        "primaryBranchId": "branch:autonomous-driving:stage-9",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      },
+      {
+        "paperId": "8f93e834-ac91-4a39-b08d-e91d7c40bf1c",
+        "nodeId": "4ae488f7-ecac-444b-9359-9a8cf668869e",
+        "problemNodeIds": [
+          "autonomous-driving:problem:9"
+        ],
+        "branchIds": [
+          "branch:autonomous-driving:stage-9"
+        ],
+        "primaryBranchId": "branch:autonomous-driving:stage-9",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      },
+      {
+        "paperId": "74ff9450-0d50-4d5f-808e-3541660d6500",
+        "nodeId": "994f28cc-3c94-457b-9268-6bf769444cee",
+        "problemNodeIds": [
+          "autonomous-driving:problem:9"
+        ],
+        "branchIds": [
+          "branch:autonomous-driving:stage-9"
+        ],
+        "primaryBranchId": "branch:autonomous-driving:stage-9",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      },
+      {
+        "paperId": "46036b2c-4e3d-4338-8df6-8411253f3e5b",
+        "nodeId": "4aec1205-1438-44f2-b9c1-b44289d97bd4",
+        "problemNodeIds": [
+          "autonomous-driving:problem:9"
+        ],
+        "branchIds": [
+          "branch:autonomous-driving:stage-9"
+        ],
+        "primaryBranchId": "branch:autonomous-driving:stage-9",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      },
+      {
+        "paperId": "888c7451-e52b-4f08-8464-a5fce590498e",
+        "nodeId": "4ae488f7-ecac-444b-9359-9a8cf668869e",
+        "problemNodeIds": [
+          "autonomous-driving:problem:9"
+        ],
+        "branchIds": [
+          "branch:autonomous-driving:stage-9"
+        ],
+        "primaryBranchId": "branch:autonomous-driving:stage-9",
+        "isMergePaper": false,
+        "mergedBranchIds": [],
+        "resolvedProblemIds": []
+      },
+      {
+        "paperId": "b75a72fd-8458-473b-a689-dd0921087c18",
+        "nodeId": "a0505f4a-89a8-4292-8a05-9818b3478c93",
+        "problemNodeIds": [
+          "autonomous-driving:problem:9"
+        ],
+        "branchIds": [
+          "branch:autonomous-driving:stage-9"
+        ],
+        "primaryBranchId": "branch:autonomous-driving:stage-9",
         "isMergePaper": false,
         "mergedBranchIds": [],
         "resolvedProblemIds": []
@@ -453,10 +1584,11 @@
       }
     ],
     "lastBuiltAt": "2026-03-29T02:05:43.719Z",
-    "lastRewrittenAt": "2026-03-29T02:05:43.719Z"
+    "lastRewrittenAt": "2026-04-08T22:09:00.734Z",
+    "lastUpdatedAt": "2026-04-12T13:44:34.411Z"
   },
   "bio-inspired-ml": {
-    "schemaVersion": 3,
+    "schemaVersion": 4,
     "topicId": "bio-inspired-ml",
     "timelineContext": {
       "schemaVersion": 1,
@@ -612,20 +1744,19 @@
     ],
     "branchTree": [
       {
-        "id": "branch:bio-inspired-ml:origin",
+        "branchId": "branch:bio-inspired-ml:origin",
+        "parentBranchId": null,
         "rootProblemNodeId": "bio-inspired-ml:origin-problem",
-        "label": "起源主线",
-        "branchType": "direct",
-        "paperPath": [
+        "anchorPaperId": "1803.08554",
+        "linkedProblemNodeIds": [
+          "bio-inspired-ml:origin-problem"
+        ],
+        "paperIds": [
           "1803.08554"
         ],
-        "status": "branch_active",
-        "summary": "系统只保留起源论文，等待下一阶段动态发现。",
-        "promotionPolicy": "当分支论文已经成为最清晰的主线下一跳时，再提升进入主线。",
-        "mergeBackPolicy": "当分支论文同时解决多个开放问题时，再考虑汇回主线。",
-        "supersededBy": null,
-        "rewriteImpact": "会同步更新 canonical 分支关系以及下游主题展示视图。",
-        "parentBranchId": null
+        "status": "active",
+        "stageIndex": 1,
+        "label": "起源主线"
       }
     ],
     "branchRegistry": [
@@ -651,9 +1782,44 @@
       }
     ],
     "stageLedger": [],
+    "stageRunLedger": [],
+    "researchNodes": [
+      {
+        "nodeId": "bio-inspired-ml:stage-0:1803.08554",
+        "id": "bio-inspired-ml:stage-0:1803.08554",
+        "topicId": "",
+        "stageIndex": 0,
+        "paperIds": [
+          "1803.08554"
+        ],
+        "primaryPaperId": "1803.08554",
+        "sourceBranchIds": [
+          "branch:bio-inspired-ml:origin"
+        ],
+        "sourceProblemNodeIds": [
+          "bio-inspired-ml:origin-problem"
+        ],
+        "status": "canonical",
+        "provisional": false,
+        "nodeLabel": "起源节点",
+        "nodeSummary": "Neuronal Circuit Policies 是这条主线中把生物结构重新转化为可训练控制模型的早期代表，后续液态网络与连续时间模型持续在推进这一路线。",
+        "isMergeNode": false,
+        "tags": [],
+        "discoveredAt": "2026-04-08T18:04:12.737Z",
+        "createdAt": "2026-04-08T18:04:12.737Z",
+        "updatedAt": "2026-04-08T22:09:00.735Z",
+        "version": 1,
+        "branchId": "branch:bio-inspired-ml:origin",
+        "paperId": "1803.08554",
+        "paperPublishedAt": "2026-04-08T22:09:00.735Z",
+        "isKeyPaper": false
+      }
+    ],
+    "provisionalNodes": [],
     "paperRelations": [
       {
         "paperId": "1803.08554",
+        "nodeId": "node:1803.08554",
         "problemNodeIds": [],
         "branchIds": [
           "branch:bio-inspired-ml:origin"
@@ -681,10 +1847,10 @@
       }
     ],
     "lastBuiltAt": "2026-03-29T02:05:43.719Z",
-    "lastRewrittenAt": "2026-03-29T02:05:43.719Z"
+    "lastRewrittenAt": "2026-04-08T22:09:00.735Z"
   },
   "embodied-vla": {
-    "schemaVersion": 3,
+    "schemaVersion": 4,
     "topicId": "embodied-vla",
     "timelineContext": {
       "schemaVersion": 1,
@@ -840,20 +2006,19 @@
     ],
     "branchTree": [
       {
-        "id": "branch:embodied-vla:origin",
+        "branchId": "branch:embodied-vla:origin",
+        "parentBranchId": null,
         "rootProblemNodeId": "embodied-vla:origin-problem",
-        "label": "起源主线",
-        "branchType": "direct",
-        "paperPath": [
+        "anchorPaperId": "2204.01691",
+        "linkedProblemNodeIds": [
+          "embodied-vla:origin-problem"
+        ],
+        "paperIds": [
           "2204.01691"
         ],
-        "status": "branch_active",
-        "summary": "系统只保留起源论文，等待下一阶段动态发现。",
-        "promotionPolicy": "当分支论文已经成为最清晰的主线下一跳时，再提升进入主线。",
-        "mergeBackPolicy": "当分支论文同时解决多个开放问题时，再考虑汇回主线。",
-        "supersededBy": null,
-        "rewriteImpact": "会同步更新 canonical 分支关系以及下游主题展示视图。",
-        "parentBranchId": null
+        "status": "active",
+        "stageIndex": 1,
+        "label": "起源主线"
       }
     ],
     "branchRegistry": [
@@ -879,9 +2044,44 @@
       }
     ],
     "stageLedger": [],
+    "stageRunLedger": [],
+    "researchNodes": [
+      {
+        "nodeId": "embodied-vla:stage-0:2204.01691",
+        "id": "embodied-vla:stage-0:2204.01691",
+        "topicId": "",
+        "stageIndex": 0,
+        "paperIds": [
+          "2204.01691"
+        ],
+        "primaryPaperId": "2204.01691",
+        "sourceBranchIds": [
+          "branch:embodied-vla:origin"
+        ],
+        "sourceProblemNodeIds": [
+          "embodied-vla:origin-problem"
+        ],
+        "status": "canonical",
+        "provisional": false,
+        "nodeLabel": "起源节点",
+        "nodeSummary": "SayCan 明确提出语言语义与机器人可供性的统一接口问题，是当前 VLA 主线的代表性起点之一，后续 RT-1、PaLM-E、RT-2 与 OpenVLA 都在继续扩展它。",
+        "isMergeNode": false,
+        "tags": [],
+        "discoveredAt": "2026-04-08T18:04:12.738Z",
+        "createdAt": "2026-04-08T18:04:12.738Z",
+        "updatedAt": "2026-04-08T22:09:00.735Z",
+        "version": 1,
+        "branchId": "branch:embodied-vla:origin",
+        "paperId": "2204.01691",
+        "paperPublishedAt": "2026-04-08T22:09:00.735Z",
+        "isKeyPaper": false
+      }
+    ],
+    "provisionalNodes": [],
     "paperRelations": [
       {
         "paperId": "2204.01691",
+        "nodeId": "node:2204.01691",
         "problemNodeIds": [],
         "branchIds": [
           "branch:embodied-vla:origin"
@@ -909,10 +2109,10 @@
       }
     ],
     "lastBuiltAt": "2026-03-29T02:05:43.719Z",
-    "lastRewrittenAt": "2026-03-29T02:05:43.719Z"
+    "lastRewrittenAt": "2026-04-08T22:09:00.735Z"
   },
   "transformer-innovation": {
-    "schemaVersion": 3,
+    "schemaVersion": 4,
     "topicId": "transformer-innovation",
     "timelineContext": {
       "schemaVersion": 1,
@@ -1069,20 +2269,19 @@
     ],
     "branchTree": [
       {
-        "id": "branch:transformer-innovation:origin",
+        "branchId": "branch:transformer-innovation:origin",
+        "parentBranchId": null,
         "rootProblemNodeId": "transformer-innovation:origin-problem",
-        "label": "起源主线",
-        "branchType": "direct",
-        "paperPath": [
+        "anchorPaperId": "1706.03762",
+        "linkedProblemNodeIds": [
+          "transformer-innovation:origin-problem"
+        ],
+        "paperIds": [
           "1706.03762"
         ],
-        "status": "branch_active",
-        "summary": "系统只保留起源论文，等待下一阶段动态发现。",
-        "promotionPolicy": "当分支论文已经成为最清晰的主线下一跳时，再提升进入主线。",
-        "mergeBackPolicy": "当分支论文同时解决多个开放问题时，再考虑汇回主线。",
-        "supersededBy": null,
-        "rewriteImpact": "会同步更新 canonical 分支关系以及下游主题展示视图。",
-        "parentBranchId": null
+        "status": "active",
+        "stageIndex": 1,
+        "label": "起源主线"
       }
     ],
     "branchRegistry": [
@@ -1108,9 +2307,44 @@
       }
     ],
     "stageLedger": [],
+    "stageRunLedger": [],
+    "researchNodes": [
+      {
+        "nodeId": "transformer-innovation:stage-0:1706.03762",
+        "id": "transformer-innovation:stage-0:1706.03762",
+        "topicId": "",
+        "stageIndex": 0,
+        "paperIds": [
+          "1706.03762"
+        ],
+        "primaryPaperId": "1706.03762",
+        "sourceBranchIds": [
+          "branch:transformer-innovation:origin"
+        ],
+        "sourceProblemNodeIds": [
+          "transformer-innovation:origin-problem"
+        ],
+        "status": "canonical",
+        "provisional": false,
+        "nodeLabel": "起源节点",
+        "nodeSummary": "Attention Is All You Need 重新定义了序列建模的公共起点，后续所有关于长上下文、线性复杂度和状态空间模型的讨论都在回应它留下的问题。",
+        "isMergeNode": false,
+        "tags": [],
+        "discoveredAt": "2026-04-08T18:04:12.738Z",
+        "createdAt": "2026-04-08T18:04:12.738Z",
+        "updatedAt": "2026-04-08T22:09:00.735Z",
+        "version": 1,
+        "branchId": "branch:transformer-innovation:origin",
+        "paperId": "1706.03762",
+        "paperPublishedAt": "2026-04-08T22:09:00.735Z",
+        "isKeyPaper": false
+      }
+    ],
+    "provisionalNodes": [],
     "paperRelations": [
       {
         "paperId": "1706.03762",
+        "nodeId": "node:1706.03762",
         "problemNodeIds": [],
         "branchIds": [
           "branch:transformer-innovation:origin"
@@ -1138,6 +2372,6 @@
       }
     ],
     "lastBuiltAt": "2026-03-29T02:05:43.719Z",
-    "lastRewrittenAt": "2026-03-29T02:05:43.719Z"
+    "lastRewrittenAt": "2026-04-08T22:09:00.735Z"
   }
 }

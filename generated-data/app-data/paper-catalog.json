@@ -22,7 +22,7 @@
     "version": "v1",
     "title": "End to End Learning for Self-Driving Cars",
     "summary": "We trained a convolutional neural network (CNN) to map raw pixels from a single front-facing camera directly to steering commands. This end-to-end approach proved surprisingly powerful. With minimum training data from humans the system learns to drive in traffic on local roads with or without lane markings and on highways. It also operates in areas with unclear visual guidance such as in parking lots and on unpaved roads. The system automatically learns internal representations of the necessary processing steps such as detecting useful road features with only the human steering angle as the training signal. We never explicitly trained it to detect, for example, the outline of roads. Compared to explicit decomposition of the problem, such as lane marking detection, path planning, and control, our end-to-end system optimizes all processing steps simultaneously. We argue that this will eventually lead to better performance and smaller systems. Better performance will result because the internal components self-optimize to maximize overall system performance, instead of optimizing human-selected intermediate criteria, e.g., lane detection. Such criteria understandably are selected for ease of human interpretation which doesn't automatically guarantee maximum system performance. Smaller networks are possible because the system learns to solve the problem with the minimal number of processing steps. We used an NVIDIA DevBox and Torch 7 for training and an NVIDIA DRIVE(TM) PX self-driving car computer also running Torch 7 for determining where to drive. The system operates at 30 frames per second (FPS).",
-    "published": "2016-04-25T16:03:56Z",
+    "published": "2016-04-25T16:03:56.000Z",
     "authors": [
       "Mariusz Bojarski",
       "Davide Del Testa",
@@ -39,7 +39,9 @@
       "Karol Zieba"
     ],
     "arxivUrl": "https://arxiv.org/abs/1604.07316",
-    "pdfUrl": "https://arxiv.org/pdf/1604.07316.pdf"
+    "pdfUrl": "https://arxiv.org/pdf/1604.07316.pdf",
+    "titleZh": "End to End Learning for Self-Driving Cars",
+    "titleEn": "End to End Learning for Self-Driving Cars"
   },
   "1803.08554": {
     "id": "1803.08554",
@@ -129,5 +131,2000 @@
     ],
     "arxivUrl": "https://arxiv.org/abs/1706.03762",
     "pdfUrl": "https://arxiv.org/pdf/1706.03762.pdf"
+  },
+  "autonomous-driving-workflow-sync-1775688562856": {
+    "id": "autonomous-driving-workflow-sync-1775688562856",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "02bcd04f-f86a-4e58-a23e-f86ef97f4f95": {
+    "id": "02bcd04f-f86a-4e58-a23e-f86ef97f4f95",
+    "title": "DDD17: End-To-End DAVIS Driving Dataset",
+    "titleZh": "DDD17: End-To-End DAVIS Driving Dataset",
+    "titleEn": "DDD17: End-To-End DAVIS Driving Dataset",
+    "summary": "Event cameras, such as dynamic vision sensors (DVS), and dynamic and active-pixel vision sensors (DAVIS) can supplement other autonomous driving sensors by providing a concurrent stream of standard active pixel sensor (APS) images and DVS temporal contrast events. The APS stream is a sequence of standard grayscale global-shutter image sensor frames. The DVS events represent brightness changes occurring at a particular moment, with a jitter of about a millisecond under most lighting conditions. They have a dynamic range of &gt;120 dB and effective frame rates &gt;1 kHz at data rates comparable to 30 fps (frames/second) image sensors. To overcome some of the limitations of current image acquisition technology, we investigate in this work the use of the combined DVS and APS streams in end-to-end driving applications. The dataset DDD17 accompanying this paper is the first open dataset of annotated DAVIS driving recordings. DDD17 has over 12 h of a 346x260 pixel DAVIS sensor recording highway and city driving in daytime, evening, night, dry and wet weather conditions, along with vehicle speed, GPS position, driver steering, throttle, and brake captured from the car's on-board diagnostics interface. As an example application, we performed a preliminary end-to-end learning study of using a convolutional neural network that is trained to predict the instantaneous steering angle from DVS and APS visual data.",
+    "published": "2017-01-01T00:00:00.000Z",
+    "authors": [
+      "Jonathan Binas",
+      "Daniel Neil",
+      "Shih‐Chii Liu",
+      "Tobi Delbrück"
+    ],
+    "arxivUrl": "https://arxiv.org/abs/1711.01458",
+    "pdfUrl": "https://arxiv.org/pdf/1711.01458.pdf"
+  },
+  "39e68cb8-6574-4bca-83d9-02ee52a2b860": {
+    "id": "39e68cb8-6574-4bca-83d9-02ee52a2b860",
+    "title": "Query-Efficient Imitation Learning for End-to-End Simulated Driving",
+    "titleZh": "Query-Efficient Imitation Learning for End-to-End Simulated Driving",
+    "titleEn": "Query-Efficient Imitation Learning for End-to-End Simulated Driving",
+    "summary": "One way to approach end-to-end autonomous driving is to learn a policy that maps from a sensory input, such as an image frame from a front-facing camera, to a driving action, by imitating an expert driver, or a reference policy. This can be done by supervised learning, where a policy is tuned to minimize the difference between the predicted and ground-truth actions. A policy trained in this way however is known to suffer from unexpected behaviours due to the mismatch between the states reachable by the reference policy and trained policy. More advanced algorithms for imitation learning, such as DAgger, addresses this issue by iteratively collecting training examples from both reference and trained policies. These algorithms often require a large number of queries to a reference policy, which is undesirable as the reference policy is often expensive. In this paper, we propose an extension of the DAgger, called SafeDAgger, that is query-efficient and more suitable for end-to-end autonomous driving. We evaluate the proposed SafeDAgger in a car racing simulator and show that it indeed requires less queries to a reference policy. We observe a significant speed up in convergence, which we conjecture to be due to the effect of automated curriculum learning.",
+    "published": "2017-02-13T00:00:00.000Z",
+    "authors": [
+      "Jiakai Zhang",
+      "Kyunghyun Cho"
+    ],
+    "arxivUrl": "https://doi.org/10.1609/aaai.v31i1.10857",
+    "pdfUrl": "https://ojs.aaai.org/index.php/AAAI/article/download/10857/10716"
+  },
+  "ff933027-3c9b-41a9-93c3-ef0d4138be77": {
+    "id": "ff933027-3c9b-41a9-93c3-ef0d4138be77",
+    "title": "Brain Inspired Cognitive Model with Attention for Self-Driving Cars",
+    "titleZh": "Brain Inspired Cognitive Model with Attention for Self-Driving Cars",
+    "titleEn": "Brain Inspired Cognitive Model with Attention for Self-Driving Cars",
+    "summary": "Perception-driven approach and end-to-end system are two major vision-based frameworks for self-driving cars. However, it is difficult to introduce attention and historical information of autonomous driving process, which are the essential factors for achieving human-like driving into these two methods. In this paper, we propose a novel model for self-driving cars named brain-inspired cognitive model with attention (CMA). This model consists of three parts: a convolutional neural network for simulating human visual cortex, a cognitive map built to describe relationships between objects in complex traffic scene and a recurrent neural network that combines with the real-time updated cognitive map to implement attention mechanism and long-short term memory. The benefit of our model is that can accurately solve three tasks simultaneously:1) detection of the free space and boundaries of the current and adjacent lanes. 2)estimation of obstacle distance and vehicle attitude, and 3) learning of driving behavior and decision making from human driver. More significantly, the proposed model could accept external navigating instructions during an end-to-end driving process. For evaluation, we build a large-scale road-vehicle dataset which contains more than forty thousand labeled road images captured by three cameras on our self-driving car. Moreover, human driving activities and vehicle states are recorded in the meanwhile.",
+    "published": "2017-02-18T00:00:00.000Z",
+    "authors": [
+      "Shitao Chen",
+      "Songyi Zhang",
+      "Jinghao Shang",
+      "Badong Chen",
+      "Nanning Zheng"
+    ],
+    "arxivUrl": "http://arxiv.org/abs/1702.05596",
+    "pdfUrl": "https://arxiv.org/pdf/1702.05596.pdf"
+  },
+  "7a1e48e4-c497-499f-b223-aa97806b3c38": {
+    "id": "7a1e48e4-c497-499f-b223-aa97806b3c38",
+    "title": "Interpretable Learning for Self-Driving Cars by Visualizing Causal Attention",
+    "titleZh": "Interpretable Learning for Self-Driving Cars by Visualizing Causal Attention",
+    "titleEn": "Interpretable Learning for Self-Driving Cars by Visualizing Causal Attention",
+    "summary": "Deep neural perception and control networks are likely to be a key component of self-driving vehicles. These models need to be explainable - they should provide easy-to-interpret rationales for their behavior - so that passengers, insurance companies, law enforcement, developers etc., can understand what triggered a particular behavior. Here we explore the use of visual explanations. These explanations take the form of real-time highlighted regions of an image that causally influence the network's output (steering control). Our approach is two-stage. In the first stage, we use a visual attention model to train a convolution network end-to-end from images to steering angle. The attention model highlights image regions that potentially influence the network's output. Some of these are true influences, but some are spurious. We then apply a causal filtering step to determine which input regions actually influence the output. This produces more succinct visual explanations and more accurately exposes the network's behavior. We demonstrate the effectiveness of our model on three datasets totaling 16 hours of driving. We first show that training with attention does not degrade the performance of the end-to-end network. Then we show that the network causally cues on a variety of features that are used by humans while driving.",
+    "published": "2017-03-30T00:00:00.000Z",
+    "authors": [
+      "Jinkyu Kim",
+      "John Canny"
+    ],
+    "arxivUrl": "http://arxiv.org/abs/1703.10631",
+    "pdfUrl": "https://arxiv.org/pdf/1703.10631.pdf"
+  },
+  "autonomous-driving-stage-paper-1775692103986-6xpner-a": {
+    "id": "autonomous-driving-stage-paper-1775692103986-6xpner-a",
+    "title": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleZh": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleEn": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "summary": "Studies query-efficient recovery policies for end-to-end autonomous driving with closed-loop evidence.",
+    "published": "2028-01-15T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775692103986-6xpner-b": {
+    "id": "autonomous-driving-stage-paper-1775692103986-6xpner-b",
+    "title": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleZh": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleEn": "Interpretable Attention Recovery for Self-Driving Control",
+    "summary": "Connects interpretable attention maps to recovery-oriented end-to-end autonomous driving control.",
+    "published": "2028-02-10T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775692140290-b6qbad-a": {
+    "id": "autonomous-driving-stage-paper-1775692140290-b6qbad-a",
+    "title": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleZh": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleEn": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "summary": "Studies query-efficient recovery policies for end-to-end autonomous driving with closed-loop evidence.",
+    "published": "2028-01-15T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775692140290-b6qbad-b": {
+    "id": "autonomous-driving-stage-paper-1775692140290-b6qbad-b",
+    "title": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleZh": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleEn": "Interpretable Attention Recovery for Self-Driving Control",
+    "summary": "Connects interpretable attention maps to recovery-oriented end-to-end autonomous driving control.",
+    "published": "2028-02-10T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775693220667": {
+    "id": "autonomous-driving-workflow-sync-1775693220667",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775693220861-yagyp4-a": {
+    "id": "autonomous-driving-stage-paper-1775693220861-yagyp4-a",
+    "title": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleZh": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleEn": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "summary": "Studies query-efficient recovery policies for end-to-end autonomous driving with closed-loop evidence.",
+    "published": "2028-01-15T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775693220861-yagyp4-b": {
+    "id": "autonomous-driving-stage-paper-1775693220861-yagyp4-b",
+    "title": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleZh": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleEn": "Interpretable Attention Recovery for Self-Driving Control",
+    "summary": "Connects interpretable attention maps to recovery-oriented end-to-end autonomous driving control.",
+    "published": "2028-02-10T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775696592759-fjodvs-a": {
+    "id": "autonomous-driving-stage-paper-1775696592759-fjodvs-a",
+    "title": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleZh": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleEn": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "summary": "Studies query-efficient recovery policies for end-to-end autonomous driving with closed-loop evidence.",
+    "published": "2028-01-15T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775696592759-fjodvs-b": {
+    "id": "autonomous-driving-stage-paper-1775696592759-fjodvs-b",
+    "title": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleZh": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleEn": "Interpretable Attention Recovery for Self-Driving Control",
+    "summary": "Connects interpretable attention maps to recovery-oriented end-to-end autonomous driving control.",
+    "published": "2028-02-10T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775696594138": {
+    "id": "autonomous-driving-workflow-sync-1775696594138",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775697472238-yxqqqb-a": {
+    "id": "autonomous-driving-stage-paper-1775697472238-yxqqqb-a",
+    "title": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleZh": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleEn": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "summary": "Studies query-efficient recovery policies for end-to-end autonomous driving with closed-loop evidence.",
+    "published": "2028-01-15T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775697472238-yxqqqb-b": {
+    "id": "autonomous-driving-stage-paper-1775697472238-yxqqqb-b",
+    "title": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleZh": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleEn": "Interpretable Attention Recovery for Self-Driving Control",
+    "summary": "Connects interpretable attention maps to recovery-oriented end-to-end autonomous driving control.",
+    "published": "2028-02-10T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775697536691-mpuyn4-a": {
+    "id": "autonomous-driving-stage-paper-1775697536691-mpuyn4-a",
+    "title": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleZh": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleEn": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "summary": "Studies query-efficient recovery policies for end-to-end autonomous driving with closed-loop evidence.",
+    "published": "2028-01-15T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775697536691-mpuyn4-b": {
+    "id": "autonomous-driving-stage-paper-1775697536691-mpuyn4-b",
+    "title": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleZh": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleEn": "Interpretable Attention Recovery for Self-Driving Control",
+    "summary": "Connects interpretable attention maps to recovery-oriented end-to-end autonomous driving control.",
+    "published": "2028-02-10T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "3b0113dc-46c5-4be9-b8d6-a03b2102c392": {
+    "id": "3b0113dc-46c5-4be9-b8d6-a03b2102c392",
+    "title": "Towards a framework for end-to-end control of a simulated vehicle with spiking neural networks",
+    "titleZh": "Towards a framework for end-to-end control of a simulated vehicle with spiking neural networks",
+    "titleEn": "Towards a framework for end-to-end control of a simulated vehicle with spiking neural networks",
+    "summary": "Spiking neural networks are in theory more computationally powerful than rate-based neural networks often used in deep learning architectures. However, unlike rate-based neural networks, it is yet unclear how to train spiking networks to solve complex problems. There are still no standard algorithms and it is preventing roboticists to use spiking networks, yielding a lack of Neurorobotics applications. The contribution of this paper is twofold. First, we present a modular framework to evaluate neural self-driving vehicle applications. It provides a visual encoder from camera images to spikes inspired by the silicon retina (DVS), and a steering wheel decoder based on an agonist antagonist muscle model. Secondly, using this framework, we demonstrate a spiking neural network which controls a vehicle end-to-end for lane following behavior. The network is feed-forward and relies on hand-crafted feature detectors. In future work, this framework could be used to design more complex networks and use the evaluation metrics for learning.",
+    "published": "2016-12-01T00:00:00.000Z",
+    "authors": [
+      "Jacques Kaiser",
+      "J. Camilo Vasquez Tieck",
+      "Christian Hubschneider",
+      "Peter Wolf",
+      "Michael Weber",
+      "Michael Hoff",
+      "Alexander W. Friedrich",
+      "Konrad Wojtasik",
+      "Arne Roennau",
+      "Ralf Kohlhaas",
+      "Rüdiger Dillmann",
+      "J. Marius Zöllner"
+    ],
+    "arxivUrl": "https://doi.org/10.1109/simpar.2016.7862386",
+    "pdfUrl": "https://doi.org/10.1109/simpar.2016.7862386"
+  },
+  "a06f0f00-34d8-4a1d-aa24-d737f96d28c3": {
+    "id": "a06f0f00-34d8-4a1d-aa24-d737f96d28c3",
+    "title": "A Comparison of Symbol-Wise and Self-Contained Frame Structure for 5G Services",
+    "titleZh": "A Comparison of Symbol-Wise and Self-Contained Frame Structure for 5G Services",
+    "titleEn": "A Comparison of Symbol-Wise and Self-Contained Frame Structure for 5G Services",
+    "summary": "Future wireless networks are required to support highly demanding services to end users. Some services have stringent requirements in terms of latency and reliability. For example, V2V communications require extreme low latency in exchanging driving trajectories in order to support autonomous driving. It is expected that the end-to-end (E2E) latency needs to be as low as 1 ms. The present LTE radio frame structure is not designed for such low latencies. In this work, we investigate a flexible symbol-wise frame design allowing to vary the number of symbols per subframe rather than modifying any of the frame numerologies. The symbol-wise frame structure proves to be more resilient to high Doppler channels than the self-contained frame structure. This is specifically important for 5G usecases such as mmWave and V2V.",
+    "published": "2016-12-01T00:00:00.000Z",
+    "authors": [
+      "Mohamed Salah Ibrahim",
+      "Wen Xu"
+    ],
+    "arxivUrl": "https://doi.org/10.1109/glocomw.2016.7848805",
+    "pdfUrl": "https://doi.org/10.1109/glocomw.2016.7848805"
+  },
+  "e38dca12-f939-4c50-91d4-70513a0cbf41": {
+    "id": "e38dca12-f939-4c50-91d4-70513a0cbf41",
+    "title": "End-to-end Learning of Driving Models from Large-scale Video Datasets",
+    "titleZh": "End-to-end Learning of Driving Models from Large-scale Video Datasets",
+    "titleEn": "End-to-end Learning of Driving Models from Large-scale Video Datasets",
+    "summary": "Robust perception-action models should be learned from training data with diverse visual appearances and realistic behaviors, yet current approaches to deep visuomotor policy learning have been generally limited to in-situ models learned from a single vehicle or a simulation environment. We advocate learning a generic vehicle motion model from large scale crowd-sourced video data, and develop an end-to-end trainable architecture for learning to predict a distribution over future vehicle egomotion from instantaneous monocular camera observations and previous vehicle state. Our model incorporates a novel FCN-LSTM architecture, which can be learned from large-scale crowd-sourced vehicle action data, and leverages available scene segmentation side tasks to improve performance under a privileged learning paradigm.",
+    "published": "2016-12-04T00:00:00.000Z",
+    "authors": [
+      "Huazhe Xu",
+      "Yang Gao",
+      "Fisher Yu",
+      "Trevor Darrell"
+    ],
+    "arxivUrl": "http://arxiv.org/abs/1612.01079",
+    "pdfUrl": "https://arxiv.org/pdf/1612.01079.pdf"
+  },
+  "0946bdb9-826b-4742-b62e-e0db013e7025": {
+    "id": "0946bdb9-826b-4742-b62e-e0db013e7025",
+    "title": "Virtual to Real Reinforcement Learning for Autonomous Driving",
+    "titleZh": "Virtual to Real Reinforcement Learning for Autonomous Driving",
+    "titleEn": "Virtual to Real Reinforcement Learning for Autonomous Driving",
+    "summary": "Reinforcement learning is considered as a promising direction for driving policy learning. However, training autonomous driving vehicle with reinforcement learning in real environment involves non-affordable trial-and-error. It is more desirable to first train in a virtual environment and then transfer to the real environment. In this paper, we propose a novel realistic translation network to make model trained in virtual environment be workable in real world. The proposed network can convert non-realistic virtual image input into a realistic one with similar scene structure. Given realistic frames as input, driving policy trained by reinforcement learning can nicely adapt to real world driving. Experiments show that our proposed virtual to real (VR) reinforcement learning (RL) works pretty well. To our knowledge, this is the first successful case of driving policy trained by reinforcement learning that can adapt to real world driving data.",
+    "published": "2017-01-01T00:00:00.000Z",
+    "authors": [
+      "Xinlei Pan",
+      "Yurong You",
+      "Ziyan Wang",
+      "Cewu Lu"
+    ],
+    "arxivUrl": "https://arxiv.org/abs/1704.03952",
+    "pdfUrl": "https://arxiv.org/pdf/1704.03952.pdf"
+  },
+  "autonomous-driving-stage-paper-1775719413747-sm3dws-a": {
+    "id": "autonomous-driving-stage-paper-1775719413747-sm3dws-a",
+    "title": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleZh": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleEn": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "summary": "Studies query-efficient recovery policies for end-to-end autonomous driving with closed-loop evidence.",
+    "published": "2028-01-15T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775719413747-sm3dws-b": {
+    "id": "autonomous-driving-stage-paper-1775719413747-sm3dws-b",
+    "title": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleZh": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleEn": "Interpretable Attention Recovery for Self-Driving Control",
+    "summary": "Connects interpretable attention maps to recovery-oriented end-to-end autonomous driving control.",
+    "published": "2028-02-10T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775719567825-coloww-a": {
+    "id": "autonomous-driving-stage-paper-1775719567825-coloww-a",
+    "title": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleZh": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleEn": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "summary": "Studies query-efficient recovery policies for end-to-end autonomous driving with closed-loop evidence.",
+    "published": "2028-01-15T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775719567825-coloww-b": {
+    "id": "autonomous-driving-stage-paper-1775719567825-coloww-b",
+    "title": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleZh": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleEn": "Interpretable Attention Recovery for Self-Driving Control",
+    "summary": "Connects interpretable attention maps to recovery-oriented end-to-end autonomous driving control.",
+    "published": "2028-02-10T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775720556094-vyepbn-a": {
+    "id": "autonomous-driving-stage-paper-1775720556094-vyepbn-a",
+    "title": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleZh": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleEn": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "summary": "Studies query-efficient recovery policies for end-to-end autonomous driving with closed-loop evidence.",
+    "published": "2028-01-15T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775720556094-vyepbn-b": {
+    "id": "autonomous-driving-stage-paper-1775720556094-vyepbn-b",
+    "title": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleZh": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleEn": "Interpretable Attention Recovery for Self-Driving Control",
+    "summary": "Connects interpretable attention maps to recovery-oriented end-to-end autonomous driving control.",
+    "published": "2028-02-10T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775723581365": {
+    "id": "autonomous-driving-workflow-sync-1775723581365",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775723581201-6eopci-a": {
+    "id": "autonomous-driving-stage-paper-1775723581201-6eopci-a",
+    "title": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleZh": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleEn": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "summary": "Studies query-efficient recovery policies for end-to-end autonomous driving with closed-loop evidence.",
+    "published": "2028-01-15T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775723581201-6eopci-b": {
+    "id": "autonomous-driving-stage-paper-1775723581201-6eopci-b",
+    "title": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleZh": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleEn": "Interpretable Attention Recovery for Self-Driving Control",
+    "summary": "Connects interpretable attention maps to recovery-oriented end-to-end autonomous driving control.",
+    "published": "2028-02-10T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775724150480": {
+    "id": "autonomous-driving-workflow-sync-1775724150480",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775724150542-0ec3bd-a": {
+    "id": "autonomous-driving-stage-paper-1775724150542-0ec3bd-a",
+    "title": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleZh": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleEn": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "summary": "Studies query-efficient recovery policies for end-to-end autonomous driving with closed-loop evidence.",
+    "published": "2028-01-15T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775724150542-0ec3bd-b": {
+    "id": "autonomous-driving-stage-paper-1775724150542-0ec3bd-b",
+    "title": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleZh": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleEn": "Interpretable Attention Recovery for Self-Driving Control",
+    "summary": "Connects interpretable attention maps to recovery-oriented end-to-end autonomous driving control.",
+    "published": "2028-02-10T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775724532790-31pxth-a": {
+    "id": "autonomous-driving-stage-paper-1775724532790-31pxth-a",
+    "title": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleZh": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleEn": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "summary": "Studies query-efficient recovery policies for end-to-end autonomous driving with closed-loop evidence.",
+    "published": "2028-01-15T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775724532790-31pxth-b": {
+    "id": "autonomous-driving-stage-paper-1775724532790-31pxth-b",
+    "title": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleZh": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleEn": "Interpretable Attention Recovery for Self-Driving Control",
+    "summary": "Connects interpretable attention maps to recovery-oriented end-to-end autonomous driving control.",
+    "published": "2028-02-10T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775724534792": {
+    "id": "autonomous-driving-workflow-sync-1775724534792",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775724542942": {
+    "id": "autonomous-driving-workflow-sync-1775724542942",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775724542997-sk6asl-a": {
+    "id": "autonomous-driving-stage-paper-1775724542997-sk6asl-a",
+    "title": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleZh": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleEn": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "summary": "Studies query-efficient recovery policies for end-to-end autonomous driving with closed-loop evidence.",
+    "published": "2028-01-15T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775724542997-sk6asl-b": {
+    "id": "autonomous-driving-stage-paper-1775724542997-sk6asl-b",
+    "title": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleZh": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleEn": "Interpretable Attention Recovery for Self-Driving Control",
+    "summary": "Connects interpretable attention maps to recovery-oriented end-to-end autonomous driving control.",
+    "published": "2028-02-10T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775724662079-e6x7wy-a": {
+    "id": "autonomous-driving-stage-paper-1775724662079-e6x7wy-a",
+    "title": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleZh": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleEn": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "summary": "Studies query-efficient recovery policies for end-to-end autonomous driving with closed-loop evidence.",
+    "published": "2028-01-15T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775724662079-e6x7wy-b": {
+    "id": "autonomous-driving-stage-paper-1775724662079-e6x7wy-b",
+    "title": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleZh": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleEn": "Interpretable Attention Recovery for Self-Driving Control",
+    "summary": "Connects interpretable attention maps to recovery-oriented end-to-end autonomous driving control.",
+    "published": "2028-02-10T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775724672718": {
+    "id": "autonomous-driving-workflow-sync-1775724672718",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775725405084": {
+    "id": "autonomous-driving-workflow-sync-1775725405084",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775725405120-b3szj2-a": {
+    "id": "autonomous-driving-stage-paper-1775725405120-b3szj2-a",
+    "title": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleZh": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleEn": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "summary": "Studies query-efficient recovery policies for end-to-end autonomous driving with closed-loop evidence.",
+    "published": "2028-01-15T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775725405120-b3szj2-b": {
+    "id": "autonomous-driving-stage-paper-1775725405120-b3szj2-b",
+    "title": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleZh": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleEn": "Interpretable Attention Recovery for Self-Driving Control",
+    "summary": "Connects interpretable attention maps to recovery-oriented end-to-end autonomous driving control.",
+    "published": "2028-02-10T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775725479896-kbvc71-a": {
+    "id": "autonomous-driving-stage-paper-1775725479896-kbvc71-a",
+    "title": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleZh": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleEn": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "summary": "Studies query-efficient recovery policies for end-to-end autonomous driving with closed-loop evidence.",
+    "published": "2028-01-15T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775725479896-kbvc71-b": {
+    "id": "autonomous-driving-stage-paper-1775725479896-kbvc71-b",
+    "title": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleZh": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleEn": "Interpretable Attention Recovery for Self-Driving Control",
+    "summary": "Connects interpretable attention maps to recovery-oriented end-to-end autonomous driving control.",
+    "published": "2028-02-10T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775725479967": {
+    "id": "autonomous-driving-workflow-sync-1775725479967",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775726003996-d6te07-a": {
+    "id": "autonomous-driving-stage-paper-1775726003996-d6te07-a",
+    "title": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleZh": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleEn": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "summary": "Studies query-efficient recovery policies for end-to-end autonomous driving with closed-loop evidence.",
+    "published": "2028-01-15T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775726003996-d6te07-b": {
+    "id": "autonomous-driving-stage-paper-1775726003996-d6te07-b",
+    "title": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleZh": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleEn": "Interpretable Attention Recovery for Self-Driving Control",
+    "summary": "Connects interpretable attention maps to recovery-oriented end-to-end autonomous driving control.",
+    "published": "2028-02-10T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775726003961": {
+    "id": "autonomous-driving-workflow-sync-1775726003961",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775726245003-q7tfrl-a": {
+    "id": "autonomous-driving-stage-paper-1775726245003-q7tfrl-a",
+    "title": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleZh": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleEn": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "summary": "Studies query-efficient recovery policies for end-to-end autonomous driving with closed-loop evidence.",
+    "published": "2028-01-15T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775726245003-q7tfrl-b": {
+    "id": "autonomous-driving-stage-paper-1775726245003-q7tfrl-b",
+    "title": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleZh": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleEn": "Interpretable Attention Recovery for Self-Driving Control",
+    "summary": "Connects interpretable attention maps to recovery-oriented end-to-end autonomous driving control.",
+    "published": "2028-02-10T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775726544248-u8iydw-a": {
+    "id": "autonomous-driving-stage-paper-1775726544248-u8iydw-a",
+    "title": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleZh": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleEn": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "summary": "Studies query-efficient recovery policies for end-to-end autonomous driving with closed-loop evidence.",
+    "published": "2028-01-15T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775726544248-u8iydw-b": {
+    "id": "autonomous-driving-stage-paper-1775726544248-u8iydw-b",
+    "title": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleZh": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleEn": "Interpretable Attention Recovery for Self-Driving Control",
+    "summary": "Connects interpretable attention maps to recovery-oriented end-to-end autonomous driving control.",
+    "published": "2028-02-10T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775726580242": {
+    "id": "autonomous-driving-workflow-sync-1775726580242",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775726580151-4cc77l-a": {
+    "id": "autonomous-driving-stage-paper-1775726580151-4cc77l-a",
+    "title": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleZh": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleEn": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "summary": "Studies query-efficient recovery policies for end-to-end autonomous driving with closed-loop evidence.",
+    "published": "2028-01-15T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775726580151-4cc77l-b": {
+    "id": "autonomous-driving-stage-paper-1775726580151-4cc77l-b",
+    "title": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleZh": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleEn": "Interpretable Attention Recovery for Self-Driving Control",
+    "summary": "Connects interpretable attention maps to recovery-oriented end-to-end autonomous driving control.",
+    "published": "2028-02-10T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775726620668": {
+    "id": "autonomous-driving-workflow-sync-1775726620668",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775726620720-9mlfus-a": {
+    "id": "autonomous-driving-stage-paper-1775726620720-9mlfus-a",
+    "title": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleZh": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleEn": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "summary": "Studies query-efficient recovery policies for end-to-end autonomous driving with closed-loop evidence.",
+    "published": "2028-01-15T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775726620720-9mlfus-b": {
+    "id": "autonomous-driving-stage-paper-1775726620720-9mlfus-b",
+    "title": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleZh": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleEn": "Interpretable Attention Recovery for Self-Driving Control",
+    "summary": "Connects interpretable attention maps to recovery-oriented end-to-end autonomous driving control.",
+    "published": "2028-02-10T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775726688982-n8h1sd-a": {
+    "id": "autonomous-driving-stage-paper-1775726688982-n8h1sd-a",
+    "title": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleZh": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleEn": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "summary": "Studies query-efficient recovery policies for end-to-end autonomous driving with closed-loop evidence.",
+    "published": "2028-01-15T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775726688982-n8h1sd-b": {
+    "id": "autonomous-driving-stage-paper-1775726688982-n8h1sd-b",
+    "title": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleZh": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleEn": "Interpretable Attention Recovery for Self-Driving Control",
+    "summary": "Connects interpretable attention maps to recovery-oriented end-to-end autonomous driving control.",
+    "published": "2028-02-10T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775726715351": {
+    "id": "autonomous-driving-workflow-sync-1775726715351",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775727235216": {
+    "id": "autonomous-driving-workflow-sync-1775727235216",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775727235281-gwdc99-a": {
+    "id": "autonomous-driving-stage-paper-1775727235281-gwdc99-a",
+    "title": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleZh": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleEn": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "summary": "Studies query-efficient recovery policies for end-to-end autonomous driving with closed-loop evidence.",
+    "published": "2028-01-15T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775727235281-gwdc99-b": {
+    "id": "autonomous-driving-stage-paper-1775727235281-gwdc99-b",
+    "title": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleZh": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleEn": "Interpretable Attention Recovery for Self-Driving Control",
+    "summary": "Connects interpretable attention maps to recovery-oriented end-to-end autonomous driving control.",
+    "published": "2028-02-10T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775727267163": {
+    "id": "autonomous-driving-workflow-sync-1775727267163",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775727267239-l6tdgr-a": {
+    "id": "autonomous-driving-stage-paper-1775727267239-l6tdgr-a",
+    "title": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleZh": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleEn": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "summary": "Studies query-efficient recovery policies for end-to-end autonomous driving with closed-loop evidence.",
+    "published": "2028-01-15T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775727267239-l6tdgr-b": {
+    "id": "autonomous-driving-stage-paper-1775727267239-l6tdgr-b",
+    "title": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleZh": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleEn": "Interpretable Attention Recovery for Self-Driving Control",
+    "summary": "Connects interpretable attention maps to recovery-oriented end-to-end autonomous driving control.",
+    "published": "2028-02-10T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775727268059": {
+    "id": "autonomous-driving-workflow-sync-1775727268059",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775727268103-ddi1h4-a": {
+    "id": "autonomous-driving-stage-paper-1775727268103-ddi1h4-a",
+    "title": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleZh": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleEn": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "summary": "Studies query-efficient recovery policies for end-to-end autonomous driving with closed-loop evidence.",
+    "published": "2028-01-15T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775727268103-ddi1h4-b": {
+    "id": "autonomous-driving-stage-paper-1775727268103-ddi1h4-b",
+    "title": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleZh": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleEn": "Interpretable Attention Recovery for Self-Driving Control",
+    "summary": "Connects interpretable attention maps to recovery-oriented end-to-end autonomous driving control.",
+    "published": "2028-02-10T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775727268958": {
+    "id": "autonomous-driving-workflow-sync-1775727268958",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775727269039-09qj6t-a": {
+    "id": "autonomous-driving-stage-paper-1775727269039-09qj6t-a",
+    "title": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleZh": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleEn": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "summary": "Studies query-efficient recovery policies for end-to-end autonomous driving with closed-loop evidence.",
+    "published": "2028-01-15T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775727269039-09qj6t-b": {
+    "id": "autonomous-driving-stage-paper-1775727269039-09qj6t-b",
+    "title": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleZh": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleEn": "Interpretable Attention Recovery for Self-Driving Control",
+    "summary": "Connects interpretable attention maps to recovery-oriented end-to-end autonomous driving control.",
+    "published": "2028-02-10T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775727269850": {
+    "id": "autonomous-driving-workflow-sync-1775727269850",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775727269921-7kc9ck-a": {
+    "id": "autonomous-driving-stage-paper-1775727269921-7kc9ck-a",
+    "title": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleZh": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleEn": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "summary": "Studies query-efficient recovery policies for end-to-end autonomous driving with closed-loop evidence.",
+    "published": "2028-01-15T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775727269921-7kc9ck-b": {
+    "id": "autonomous-driving-stage-paper-1775727269921-7kc9ck-b",
+    "title": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleZh": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleEn": "Interpretable Attention Recovery for Self-Driving Control",
+    "summary": "Connects interpretable attention maps to recovery-oriented end-to-end autonomous driving control.",
+    "published": "2028-02-10T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775727270734": {
+    "id": "autonomous-driving-workflow-sync-1775727270734",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775727270805-jvhzds-a": {
+    "id": "autonomous-driving-stage-paper-1775727270805-jvhzds-a",
+    "title": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleZh": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleEn": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "summary": "Studies query-efficient recovery policies for end-to-end autonomous driving with closed-loop evidence.",
+    "published": "2028-01-15T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775727270805-jvhzds-b": {
+    "id": "autonomous-driving-stage-paper-1775727270805-jvhzds-b",
+    "title": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleZh": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleEn": "Interpretable Attention Recovery for Self-Driving Control",
+    "summary": "Connects interpretable attention maps to recovery-oriented end-to-end autonomous driving control.",
+    "published": "2028-02-10T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775727271633": {
+    "id": "autonomous-driving-workflow-sync-1775727271633",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775727271709-9o2zo4-a": {
+    "id": "autonomous-driving-stage-paper-1775727271709-9o2zo4-a",
+    "title": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleZh": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleEn": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "summary": "Studies query-efficient recovery policies for end-to-end autonomous driving with closed-loop evidence.",
+    "published": "2028-01-15T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775727271709-9o2zo4-b": {
+    "id": "autonomous-driving-stage-paper-1775727271709-9o2zo4-b",
+    "title": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleZh": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleEn": "Interpretable Attention Recovery for Self-Driving Control",
+    "summary": "Connects interpretable attention maps to recovery-oriented end-to-end autonomous driving control.",
+    "published": "2028-02-10T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775727272585": {
+    "id": "autonomous-driving-workflow-sync-1775727272585",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775727272650-0xhq3p-a": {
+    "id": "autonomous-driving-stage-paper-1775727272650-0xhq3p-a",
+    "title": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleZh": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleEn": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "summary": "Studies query-efficient recovery policies for end-to-end autonomous driving with closed-loop evidence.",
+    "published": "2028-01-15T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775727272650-0xhq3p-b": {
+    "id": "autonomous-driving-stage-paper-1775727272650-0xhq3p-b",
+    "title": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleZh": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleEn": "Interpretable Attention Recovery for Self-Driving Control",
+    "summary": "Connects interpretable attention maps to recovery-oriented end-to-end autonomous driving control.",
+    "published": "2028-02-10T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775727273501": {
+    "id": "autonomous-driving-workflow-sync-1775727273501",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775727273576-ur5llt-a": {
+    "id": "autonomous-driving-stage-paper-1775727273576-ur5llt-a",
+    "title": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleZh": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "titleEn": "Query-Efficient Recovery Policies for End-to-End Autonomous Driving",
+    "summary": "Studies query-efficient recovery policies for end-to-end autonomous driving with closed-loop evidence.",
+    "published": "2028-01-15T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-stage-paper-1775727273576-ur5llt-b": {
+    "id": "autonomous-driving-stage-paper-1775727273576-ur5llt-b",
+    "title": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleZh": "Interpretable Attention Recovery for Self-Driving Control",
+    "titleEn": "Interpretable Attention Recovery for Self-Driving Control",
+    "summary": "Connects interpretable attention maps to recovery-oriented end-to-end autonomous driving control.",
+    "published": "2028-02-10T00:00:00.000Z",
+    "authors": [
+      "Codex Test"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775732254222": {
+    "id": "autonomous-driving-workflow-sync-1775732254222",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775732254282": {
+    "id": "autonomous-driving-workflow-sync-1775732254282",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775736437910": {
+    "id": "autonomous-driving-workflow-sync-1775736437910",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "1710.02410": {
+    "id": "1710.02410",
+    "title": "1710.02410",
+    "titleZh": "1710.02410",
+    "titleEn": "1710.02410",
+    "summary": "这里仍以 End to End Learning for Self-Driving Cars 作为现代端到端自动驾驶主线的起点，因为后续关于恢复驾驶、闭环规划、世界模型与驾驶 VLA 的工作，都是在这条主线上逐步分化、扩展并重新汇流的。",
+    "published": "2020-01-01T00:00:00.000Z",
+    "authors": [],
+    "arxivUrl": "https://arxiv.org/abs/1710.02410",
+    "pdfUrl": "https://arxiv.org/pdf/1710.02410.pdf"
+  },
+  "1912.12294": {
+    "id": "1912.12294",
+    "title": "1912.12294",
+    "titleZh": "1912.12294",
+    "titleEn": "1912.12294",
+    "summary": "这里仍以 End to End Learning for Self-Driving Cars 作为现代端到端自动驾驶主线的起点，因为后续关于恢复驾驶、闭环规划、世界模型与驾驶 VLA 的工作，都是在这条主线上逐步分化、扩展并重新汇流的。",
+    "published": "2020-01-01T00:00:00.000Z",
+    "authors": [],
+    "arxivUrl": "https://arxiv.org/abs/1912.12294",
+    "pdfUrl": "https://arxiv.org/pdf/1912.12294.pdf"
+  },
+  "1511.03791": {
+    "id": "1511.03791",
+    "title": "1511.03791",
+    "titleZh": "1511.03791",
+    "titleEn": "1511.03791",
+    "summary": "这里仍以 End to End Learning for Self-Driving Cars 作为现代端到端自动驾驶主线的起点，因为后续关于恢复驾驶、闭环规划、世界模型与驾驶 VLA 的工作，都是在这条主线上逐步分化、扩展并重新汇流的。",
+    "published": "2020-01-01T00:00:00.000Z",
+    "authors": [],
+    "arxivUrl": "https://arxiv.org/abs/1511.03791",
+    "pdfUrl": "https://arxiv.org/pdf/1511.03791.pdf"
+  },
+  "autonomous-driving-workflow-sync-1775738727714": {
+    "id": "autonomous-driving-workflow-sync-1775738727714",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "0e21245f-24da-4693-b951-94f1c22903e8": {
+    "id": "0e21245f-24da-4693-b951-94f1c22903e8",
+    "title": "On the Sample Complexity of End-to-end Training vs. Semantic Abstraction Training",
+    "titleZh": "On the Sample Complexity of End-to-end Training vs. Semantic Abstraction Training",
+    "titleEn": "On the Sample Complexity of End-to-end Training vs. Semantic Abstraction Training",
+    "summary": "We compare the end-to-end training approach to a modular approach in which a system is decomposed into semantically meaningful components. We focus on the sample complexity aspect, in the regime where an extremely high accuracy is necessary, as is the case in autonomous driving applications. We demonstrate cases in which the number of training examples required by the end-to-end approach is exponentially larger than the number of examples required by the semantic abstraction approach.",
+    "published": "2016-04-23T00:00:00.000Z",
+    "authors": [
+      "Shai Shalev‐Shwartz",
+      "Amnon Shashua"
+    ],
+    "arxivUrl": "http://arxiv.org/abs/1604.06915",
+    "pdfUrl": "https://arxiv.org/pdf/1604.06915.pdf"
+  },
+  "06b87490-9d46-496d-b26d-2b2db88c4f81": {
+    "id": "06b87490-9d46-496d-b26d-2b2db88c4f81",
+    "title": "Query-Efficient Imitation Learning for End-to-End Autonomous Driving",
+    "titleZh": "Query-Efficient Imitation Learning for End-to-End Autonomous Driving",
+    "titleEn": "Query-Efficient Imitation Learning for End-to-End Autonomous Driving",
+    "summary": "One way to approach end-to-end autonomous driving is to learn a policy function that maps from a sensory input, such as an image frame from a front-facing camera, to a driving action, by imitating an expert driver, or a reference policy. This can be done by supervised learning, where a policy function is tuned to minimize the difference between the predicted and ground-truth actions. A policy function trained in this way however is known to suffer from unexpected behaviours due to the mismatch between the states reachable by the reference policy and trained policy functions. More advanced algorithms for imitation learning, such as DAgger, addresses this issue by iteratively collecting training examples from both reference and trained policies. These algorithms often requires a large number of queries to a reference policy, which is undesirable as the reference policy is often expensive. In this paper, we propose an extension of the DAgger, called SafeDAgger, that is query-efficient and more suitable for end-to-end autonomous driving. We evaluate the proposed SafeDAgger in a car racing simulator and show that it indeed requires less queries to a reference policy. We observe a significant speed up in convergence, which we conjecture to be due to the effect of automated curriculum learning.",
+    "published": "2016-05-20T00:00:00.000Z",
+    "authors": [
+      "Jiakai Zhang",
+      "Kyunghyun Cho"
+    ],
+    "arxivUrl": "http://arxiv.org/abs/1605.06450",
+    "pdfUrl": "https://arxiv.org/pdf/1605.06450.pdf"
+  },
+  "908c7e00-e489-4c20-b218-657cc589733b": {
+    "id": "908c7e00-e489-4c20-b218-657cc589733b",
+    "title": "Two-Stream AMTnet for Action Detection",
+    "titleZh": "Two-Stream AMTnet for Action Detection",
+    "titleEn": "Two-Stream AMTnet for Action Detection",
+    "summary": "In this paper, we propose Two-Stream AMTnet, which leverages recent advances in video-based action representation[1] and incremental action tube generation[2]. Majority of the present action detectors follow a frame-based representation, a late-fusion followed by an offline action tube building steps. These are sub-optimal as: frame-based features barely encode the temporal relations; late-fusion restricts the network to learn robust spatiotemporal features; and finally, an offline action tube generation is not suitable for many real-world problems such as autonomous driving, human-robot interaction to name a few. The key contributions of this work are: (1) combining AMTnet's 3D proposal architecture with an online action tube generation technique which allows the model to learn stronger temporal features needed for accurate action detection and facilitates running inference online; (2) an efficient fusion technique allowing the deep network to learn strong spatiotemporal action representations. This is achieved by augmenting the previous Action Micro-Tube (AMTnet) action detection framework in three distinct ways: by adding a parallel motion stIn this paper, we propose a new deep neural network architecture for online action detection, termed ream to the original appearance one in AMTnet; (2) in opposition to state-of-the-art action detectors which train appearance and motion streams separately, and use a test time late fusion scheme to fuse RGB and flow cues, by jointly training both streams in an end-to-end fashion and merging RGB and optical flow features at training time; (3) by introducing an online action tube generation algorithm which works at video-level, and in real-time (when exploiting only appearance features). Two-Stream AMTnet exhibits superior action detection performance over state-of-the-art approaches on the standard action detection benchmarks.",
+    "published": "2020-04-03T00:00:00.000Z",
+    "authors": [
+      "Suman Saha",
+      "Gurkirt Singh",
+      "Fabio Cuzzolin"
+    ],
+    "arxivUrl": "http://arxiv.org/abs/2004.01494",
+    "pdfUrl": "https://arxiv.org/pdf/2004.01494.pdf"
+  },
+  "54338a51-bb92-4688-8083-497b2df88887": {
+    "id": "54338a51-bb92-4688-8083-497b2df88887",
+    "title": "Attacking vision-based perception in end-to-end autonomous driving models",
+    "titleZh": "Attacking vision-based perception in end-to-end autonomous driving models",
+    "titleEn": "Attacking vision-based perception in end-to-end autonomous driving models",
+    "summary": "Adversarial Robustness in Machine Learning",
+    "published": "2020-04-04T00:00:00.000Z",
+    "authors": [
+      "Adith Boloor",
+      "Karthik Garimella",
+      "Xin He",
+      "Christopher Gill",
+      "Yevgeniy Vorobeychik",
+      "Xuan Zhang"
+    ],
+    "arxivUrl": "https://doi.org/10.1016/j.sysarc.2020.101766",
+    "pdfUrl": "https://doi.org/10.1016/j.sysarc.2020.101766"
+  },
+  "316472df-d1a7-48a2-bd68-ce594d27250a": {
+    "id": "316472df-d1a7-48a2-bd68-ce594d27250a",
+    "title": "Uncertainty Quantification with Statistical Guarantees in End-to-End Autonomous Driving Control",
+    "titleZh": "Uncertainty Quantification with Statistical Guarantees in End-to-End Autonomous Driving Control",
+    "titleEn": "Uncertainty Quantification with Statistical Guarantees in End-to-End Autonomous Driving Control",
+    "summary": "Deep neural network controllers for autonomous driving have recently benefited from significant performance improvements, and have begun deployment in the real world. Prior to their widespread adoption, safety guarantees are needed on the controller behaviour that properly take account of the uncertainty within the model as well as sensor noise. Bayesian neural networks, which assume a prior over the weights, have been shown capable of producing such uncertainty measures, but properties surrounding their safety have not yet been quantified for use in autonomous driving scenarios. In this paper, we develop a framework based on a state-of-the-art simulator for evaluating end-to-end Bayesian controllers. In addition to computing pointwise uncertainty measures that can be computed in real time and with statistical guarantees, we also provide a method for estimating the probability that, given a scenario, the controller keeps the car safe within a finite horizon. We experimentally evaluate the quality of uncertainty computation by three Bayesian inference methods in different scenarios and show how the uncertainty measures can be combined and calibrated for use in collision avoidance. Our results suggest that uncertainty estimates can greatly aid decision making in autonomous driving.",
+    "published": "2020-05-01T00:00:00.000Z",
+    "authors": [
+      "Rhiannon Michelmore",
+      "Matthew Wicker",
+      "Luca Laurenti",
+      "Luca Cardelli",
+      "Yarin Gal",
+      "Marta Kwiatkowska"
+    ],
+    "arxivUrl": "https://doi.org/10.1109/icra40945.2020.9196844",
+    "pdfUrl": "https://arxiv.org/pdf/1909.09884.pdf"
+  },
+  "0743b70f-4687-4845-8c5a-467612974850": {
+    "id": "0743b70f-4687-4845-8c5a-467612974850",
+    "title": "Learning hierarchical behavior and motion planning for autonomous driving",
+    "titleZh": "Learning hierarchical behavior and motion planning for autonomous driving",
+    "titleEn": "Learning hierarchical behavior and motion planning for autonomous driving",
+    "summary": "Learning-based driving solution, a new branch for autonomous driving, is expected to simplify the modeling of driving by learning the underlying mechanisms from data. To improve the tactical decision-making for learning-based driving solution, we introduce hierarchical behavior and motion planning (HBMP) to explicitly model the behavior in learning-based solution. Due to the coupled action space of behavior and motion, it is challenging to solve HBMP problem using reinforcement learning (RL) for long-horizon driving tasks. We transform HBMP problem by integrating a classical sampling-based motion planner, of which the optimal cost is regarded as the rewards for high-level behavior learning. As a result, this formulation reduces action space and diversifies the rewards without losing the optimality of HBMP. In addition, we propose a sharable representation for input sensory data across simulation platforms and real-world environment, so that models trained in a fast event-based simulator, SUMO, can be used to initialize and accelerate the RL training in a dynamics based simulator, CARLA. Experimental results demonstrate the effectiveness of the method. Besides, the model is successfully transferred to the real-world, validating the generalization capability.",
+    "published": "2020-05-08T00:00:00.000Z",
+    "authors": [
+      "Jingke Wang",
+      "Yue Wang",
+      "Dongkun Zhang",
+      "Yezhou Yang",
+      "Rong Xiong"
+    ],
+    "arxivUrl": "http://arxiv.org/abs/2005.03863",
+    "pdfUrl": "https://arxiv.org/pdf/2005.03863.pdf"
+  },
+  "4d7757a0-e2ad-4f43-a2aa-04ac0d01227e": {
+    "id": "4d7757a0-e2ad-4f43-a2aa-04ac0d01227e",
+    "title": "Development of the End- to-End Learning based Autonomous Driving Framework and Experiments on a Full-Scale Autonomous Vehicle",
+    "titleZh": "Development of the End- to-End Learning based Autonomous Driving Framework and Experiments on a Full-Scale Autonomous Vehicle",
+    "titleEn": "Development of the End- to-End Learning based Autonomous Driving Framework and Experiments on a Full-Scale Autonomous Vehicle",
+    "summary": "In recent years, autonomous vehicles have been developed by various approaches for traffic safety and driver convenience. End-to-end learning-based autonomous driving has gained enormous attention in conjunction with deep learning technologies in which perception, planning, and control of the conventional autonomous driving algorithm are trained by a single deep neural network. In this paper, we present the end-to-end learning-based autonomous driving framework. The framework consisted of three parts: data acquisition in real-world and simulated environments, network design and optimization, and performance evaluation. Our framework was integrated on a full-scale autonomous vehicle platform and evaluated with various performance metrics.",
+    "published": "2020-05-14T00:00:00.000Z",
+    "authors": [
+      "Chanyoung Jung",
+      "Hyunki Seong",
+      "David Hyunchul Shim"
+    ],
+    "arxivUrl": "https://doi.org/10.5302/j.icros.2020.20.0012",
+    "pdfUrl": "https://doi.org/10.5302/j.icros.2020.20.0012"
+  },
+  "5635af16-6171-4ce8-9884-35787fb149e6": {
+    "id": "5635af16-6171-4ce8-9884-35787fb149e6",
+    "title": "Evaluation of Robust Spatial Pyramid Pooling Based on Convolutional Neural Network for Traffic Sign Recognition System",
+    "titleZh": "Evaluation of Robust Spatial Pyramid Pooling Based on Convolutional Neural Network for Traffic Sign Recognition System",
+    "titleEn": "Evaluation of Robust Spatial Pyramid Pooling Based on Convolutional Neural Network for Traffic Sign Recognition System",
+    "summary": "Traffic sign recognition (TSR) is a noteworthy issue for real-world applications such as systems for autonomous driving as it has the main role in guiding the driver. This paper focuses on Taiwan’s prohibitory sign due to the lack of a database or research system for Taiwan’s traffic sign recognition. This paper investigates the state-of-the-art of various object detection systems (Yolo V3, Resnet 50, Densenet, and Tiny Yolo V3) combined with spatial pyramid pooling (SPP). We adopt the concept of SPP to improve the backbone network of Yolo V3, Resnet 50, Densenet, and Tiny Yolo V3 for building feature extraction. Furthermore, we use a spatial pyramid pooling to study multi-scale object features thoroughly. The observation and evaluation of certain models include vital metrics measurements, such as the mean average precision (mAP), workspace size, detection time, intersection over union (IoU), and the number of billion floating-point operations (BFLOPS). Our findings show that Yolo V3 SPP strikes the best total BFLOPS (65.69), and mAP (98.88%). Besides, the highest average accuracy is Yolo V3 SPP at 99%, followed by Densenet SPP at 87%, Resnet 50 SPP at 70%, and Tiny Yolo V3 SPP at 50%. Hence, SPP can improve the performance of all models in the experiment.",
+    "published": "2020-05-27T00:00:00.000Z",
+    "authors": [
+      "Christine Dewi",
+      "Rung-Ching Chen",
+      "Shao-Kuo Tai"
+    ],
+    "arxivUrl": "https://doi.org/10.3390/electronics9060889",
+    "pdfUrl": "https://www.mdpi.com/2079-9292/9/6/889/pdf?version=1591682039"
+  },
+  "6272b245-4176-47ef-a5dd-66564e1fd70a": {
+    "id": "6272b245-4176-47ef-a5dd-66564e1fd70a",
+    "title": "3D Part Guided Image Editing for Fine-Grained Object Understanding",
+    "titleZh": "3D Part Guided Image Editing for Fine-Grained Object Understanding",
+    "titleEn": "3D Part Guided Image Editing for Fine-Grained Object Understanding",
+    "summary": "Holistically understanding an object with its 3D movable parts is essential for visual models of a robot to interact with the world. For example, only by understanding many possible part dynamics of other vehicles (e.g., door or trunk opening, taillight blinking for changing lane), a self-driving vehicle can be success in dealing with emergency cases. However, existing visual models tackle rarely on these situations, but focus on bounding box detection. In this paper, we fill this important missing piece in autonomous driving by solving two critical issues. First, for dealing with data scarcity, we propose an effective training data generation process by fitting a 3D car model with dynamic parts to cars in real images. This allows us to directly edit the real images using the aligned 3D parts, yielding effective training data for learning robust deep neural networks (DNNs). Secondly, to benchmark the quality of 3D part understanding, we collected a large dataset in real driving scenario with cars in uncommon states (CUS), i.e. with door or trunk opened etc., which demonstrates that our trained network with edited images largely outperforms other baselines in terms of 2D detection and instance segmentation accuracy.",
+    "published": "2020-06-01T00:00:00.000Z",
+    "authors": [
+      "Zongdai Liu",
+      "Feixiang Lu",
+      "Peng Wang",
+      "Hui Miao",
+      "Liangjun Zhang",
+      "Ruigang Yang",
+      "Bin Zhou"
+    ],
+    "arxivUrl": "https://doi.org/10.1109/cvpr42600.2020.01135",
+    "pdfUrl": "https://doi.org/10.1109/cvpr42600.2020.01135"
+  },
+  "e4a4916c-832d-4088-86cf-c6b3555e49d5": {
+    "id": "e4a4916c-832d-4088-86cf-c6b3555e49d5",
+    "title": "BDD100K: A Diverse Driving Dataset for Heterogeneous Multitask Learning",
+    "titleZh": "BDD100K: A Diverse Driving Dataset for Heterogeneous Multitask Learning",
+    "titleEn": "BDD100K: A Diverse Driving Dataset for Heterogeneous Multitask Learning",
+    "summary": "Datasets drive vision progress, yet existing driving datasets are impoverished in terms of visual content and supported tasks to study multitask learning for autonomous driving. Researchers are usually constrained to study a small set of problems on one dataset, while real-world computer vision applications require performing tasks of various complexities. We construct BDD100K, the largest driving video dataset with 100K videos and 10 tasks to evaluate the exciting progress of image recognition algorithms on autonomous driving. The dataset possesses geographic, environmental, and weather diversity, which is useful for training models that are less likely to be surprised by new conditions. Based on this diverse dataset, we build a benchmark for heterogeneous multitask learning and study how to solve the tasks together. Our experiments show that special training strategies are needed for existing models to perform such heterogeneous tasks. BDD100K opens the door for future studies in this important venue.",
+    "published": "2020-06-01T00:00:00.000Z",
+    "authors": [
+      "Fisher Yu",
+      "Haofeng Chen",
+      "Xin Wang",
+      "Wenqi Xian",
+      "Yingying Chen",
+      "Fangchen Liu",
+      "Vashisht Madhavan",
+      "Trevor Darrell"
+    ],
+    "arxivUrl": "https://doi.org/10.1109/cvpr42600.2020.00271",
+    "pdfUrl": "https://doi.org/10.1109/cvpr42600.2020.00271"
+  },
+  "ba21435b-4a74-4319-9b29-4cb2d86bbbe8": {
+    "id": "ba21435b-4a74-4319-9b29-4cb2d86bbbe8",
+    "title": "Learning to Drive by Imitation: An Overview of Deep Behavior Cloning Methods",
+    "titleZh": "Learning to Drive by Imitation: An Overview of Deep Behavior Cloning Methods",
+    "titleEn": "Learning to Drive by Imitation: An Overview of Deep Behavior Cloning Methods",
+    "summary": "There is currently a huge interest around autonomous vehicles from both industry and academia. This is mainly due to recent advances in machine learning and deep learning, allowing the development of promising methods for autonomous driving. The gap toward full autonomy is incrementally being reduced with essentially three main existing approaches. First, Modular systems that combine a pipeline of methods with each solving one specific sub-task of driving. Second, Direct Perception techniques that directly estimate affordances (car orientation, distances between lane borders, etc) used to compute control commands through a simple logic. Finally, end-to-end frameworks that automatically map raw sensor data to actuation values. The objective of this paper is to review some recent works focusing on end-to-end deep learning models for lane stable driving, as well as some publicly available real world datasets and open-source simulators that enable the development and evaluation of such methods.",
+    "published": "2020-06-15T00:00:00.000Z",
+    "authors": [
+      "Abdoulaye O. Ly",
+      "Moulay A. Akhloufi"
+    ],
+    "arxivUrl": "https://doi.org/10.1109/tiv.2020.3002505",
+    "pdfUrl": "https://doi.org/10.1109/tiv.2020.3002505"
+  },
+  "e11a0b5d-878d-4149-8a5c-66df300b2525": {
+    "id": "e11a0b5d-878d-4149-8a5c-66df300b2525",
+    "title": "Multi-Modal Sensor Fusion-Based Deep Neural Network for End-to-End Autonomous Driving With Scene Understanding",
+    "titleZh": "Multi-Modal Sensor Fusion-Based Deep Neural Network for End-to-End Autonomous Driving With Scene Understanding",
+    "titleEn": "Multi-Modal Sensor Fusion-Based Deep Neural Network for End-to-End Autonomous Driving With Scene Understanding",
+    "summary": "This study aims to improve the performance and generalization capability of end-to-end autonomous driving with scene understanding leveraging deep learning and multimodal sensor fusion techniques. The designed end-to-end deep neural network takes as input the visual image and associated depth information in an early fusion level and outputs the pixel-wise semantic segmentation as scene understanding and vehicle control commands concurrently. The end-to-end deep learning-based autonomous driving model is tested in high-fidelity simulated urban driving conditions and compared with the benchmark of CoRL2017 and NoCrash. The testing results show that the proposed approach is of better performance and generalization ability, achieving a 100% success rate in static navigation tasks in both training and unobserved situations, as well as better success rates in other tasks than the prior models. A further ablation study shows that the model with the removal of multimodal sensor fusion or scene understanding pales in the new environment because of the false perception. The results verify that the performance of our model is improved by the synergy of multimodal sensor fusion with scene understanding subtask, demonstrating the feasibility and effectiveness of the developed deep neural network with multimodal sensor fusion.",
+    "published": "2020-06-17T00:00:00.000Z",
+    "authors": [
+      "Zhiyu Huang",
+      "Chen Lv",
+      "Yang Xing",
+      "Jingda Wu"
+    ],
+    "arxivUrl": "https://doi.org/10.1109/jsen.2020.3003121",
+    "pdfUrl": "https://arxiv.org/pdf/2005.09202.pdf"
+  },
+  "71f27b74-8a8c-428d-8942-ab15f3fc6dc7": {
+    "id": "71f27b74-8a8c-428d-8942-ab15f3fc6dc7",
+    "title": "DeepBillboard",
+    "titleZh": "DeepBillboard",
+    "titleEn": "DeepBillboard",
+    "summary": "Deep Neural Networks (DNNs) have been widely applied in autonomous systems such as self-driving vehicles. Recently, DNN testing has been intensively studied to automatically generate adversarial examples, which inject small-magnitude perturbations into inputs to test DNNs under extreme situations. While existing testing techniques prove to be effective, particularly for autonomous driving, they mostly focus on generating digital adversarial perturbations, e.g., changing image pixels, which may never happen in the physical world. Thus, there is a critical missing piece in the literature on autonomous driving testing: understanding and exploiting both digital and physical adversarial perturbation generation for impacting steering decisions. In this paper, we propose a systematic physical-world testing approach, namely DeepBillboard, targeting at a quite common and practical driving scenario: drive-by billboards. DeepBillboard is capable of generating a robust and resilient printable adversarial billboard test, which works under dynamic changing driving conditions including viewing angle, distance, and lighting. The objective is to maximize the possibility, degree, and duration of the steering-angle errors of an autonomous vehicle driving by our generated adversarial billboard. We have extensively evaluated the efficacy and robustness of DeepBillboard by conducting both experiments with digital perturbations and physical-world case studies. The digital experimental results show that DeepBillboard is effective for various steering models and scenes. Furthermore, the physical case studies demonstrate that DeepBillboard is sufficiently robust and resilient for generating physical-world adversarial billboard tests for real-world driving under various weather conditions, being able to mislead the average steering angle error up to 26.44 degrees. To the best of our knowledge, this is the first study demonstrating the possibility of generating realistic and continuous physical-world tests for practical autonomous driving systems; moreover, DeepBillboard can be directly generalized to a variety of other physical entities/surfaces along the curbside, e.g., a graffiti painted on a wall.",
+    "published": "2020-06-27T00:00:00.000Z",
+    "authors": [
+      "Husheng Zhou",
+      "Wei Li",
+      "Zelun Kong",
+      "Junfeng Guo",
+      "Yuqun Zhang",
+      "Bei Yu",
+      "Lingming Zhang",
+      "Cong Liu"
+    ],
+    "arxivUrl": "https://doi.org/10.1145/3377811.3380422",
+    "pdfUrl": "https://dl.acm.org/doi/pdf/10.1145/3377811.3380422"
+  },
+  "58e7e0d3-83b5-4e04-b729-c19784bf8f11": {
+    "id": "58e7e0d3-83b5-4e04-b729-c19784bf8f11",
+    "title": "Towards Robust LiDAR-based Perception in Autonomous Driving: General Black-box Adversarial Sensor Attack and Countermeasures",
+    "titleZh": "Towards Robust LiDAR-based Perception in Autonomous Driving: General Black-box Adversarial Sensor Attack and Countermeasures",
+    "titleEn": "Towards Robust LiDAR-based Perception in Autonomous Driving: General Black-box Adversarial Sensor Attack and Countermeasures",
+    "summary": "Perception plays a pivotal role in autonomous driving systems, which utilizes onboard sensors like cameras and LiDARs (Light Detection and Ranging) to assess surroundings. Recent studies have demonstrated that LiDAR-based perception is vulnerable to spoofing attacks, in which adversaries spoof a fake vehicle in front of a victim self-driving car by strategically transmitting laser signals to the victim's LiDAR sensor. However, existing attacks suffer from effectiveness and generality limitations. In this work, we perform the first study to explore the general vulnerability of current LiDAR-based perception architectures and discover that the ignored occlusion patterns in LiDAR point clouds make self-driving cars vulnerable to spoofing attacks. We construct the first black-box spoofing attack based on our identified vulnerability, which universally achieves around 80% mean success rates on all target models. We perform the first defense study, proposing CARLO to mitigate LiDAR spoofing attacks. CARLO detects spoofed data by treating ignored occlusion patterns as invariant physical features, which reduces the mean attack success rate to 5.5%. Meanwhile, we take the first step towards exploring a general architecture for robust LiDAR-based perception, and propose SVF that embeds the neglected physical features into end-to-end learning. SVF further reduces the mean attack success rate to around 2.3%.",
+    "published": "2020-06-30T00:00:00.000Z",
+    "authors": [
+      "Jiachen Sun",
+      "Yulong Cao",
+      "Qi Alfred Chen",
+      "Z. Morley Mao"
+    ],
+    "arxivUrl": "http://arxiv.org/abs/2006.16974",
+    "pdfUrl": "https://arxiv.org/pdf/2006.16974.pdf"
+  },
+  "36c6f2b2-d0f2-49ae-99ba-a13de6517410": {
+    "id": "36c6f2b2-d0f2-49ae-99ba-a13de6517410",
+    "title": "Design and implementation of human driving data–based active lane change control for autonomous vehicles",
+    "titleZh": "Design and implementation of human driving data–based active lane change control for autonomous vehicles",
+    "titleEn": "Design and implementation of human driving data–based active lane change control for autonomous vehicles",
+    "summary": "This article describes the design, implementation, and evaluation of an active lane change control algorithm for autonomous vehicles with human factor considerations. Lane changes need to be performed considering both driver acceptance and safety with surrounding vehicles. Therefore, autonomous driving systems need to be designed based on an analysis of human driving behavior. In this article, manual driving characteristics are investigated using real-world driving test data. In lane change situations, interactions with surrounding vehicles were mainly investigated. And safety indices were developed with kinematic analysis. A safety indices–based lane change decision and control algorithm has been developed. In order to improve safety, stochastic predictions of both the ego vehicle and surrounding vehicles have been conducted with consideration of sensor noise and model uncertainties. The desired driving mode is decided to cope with all lane changes on highway. To obtain desired reference and constraints, motion planning for lane changes has been designed taking stochastic prediction-based safety indices into account. A stochastic model predictive control with constraints has been adopted to determine vehicle control inputs: the steering angle and the longitudinal acceleration. The proposed active lane change algorithm has been successfully implemented on an autonomous vehicle and evaluated via real-world driving tests. Safe and comfortable lane changes in high-speed driving on highways have been demonstrated using our autonomous test vehicle.",
+    "published": "2020-08-14T00:00:00.000Z",
+    "authors": [
+      "Heungseok Chae",
+      "Yonghwan Jeong",
+      "Hojun Lee",
+      "Jongcherl Park",
+      "Kyongsu Yi"
+    ],
+    "arxivUrl": "https://doi.org/10.1177/0954407020947678",
+    "pdfUrl": "https://doi.org/10.1177/0954407020947678"
+  },
+  "8f93e834-ac91-4a39-b08d-e91d7c40bf1c": {
+    "id": "8f93e834-ac91-4a39-b08d-e91d7c40bf1c",
+    "title": "Set-Based Prediction of Traffic Participants Considering Occlusions and Traffic Rules",
+    "titleZh": "Set-Based Prediction of Traffic Participants Considering Occlusions and Traffic Rules",
+    "titleEn": "Set-Based Prediction of Traffic Participants Considering Occlusions and Traffic Rules",
+    "summary": "Provably safe motion planning for automated road vehicles must ensure that planned motions do not result in a collision with other traffic participants. This is a major challenge in autonomous driving, since the future behavior of other traffic participants is not known and since traffic participants are often hidden due to occlusions. In this work, we propose a formal set-based prediction that contains all acceptable future behaviors of both detected and potentially hidden traffic participants. Based on formalized traffic rules and nondeterministic motion models, we perform reachability analysis to predict the set of possible occupancies and velocities of vehicles, pedestrians, and cyclists. Real-world experiments with a test vehicle in various traffic situations demonstrate the applicability and real-time capability of our over-approximative prediction for both online verification and fail-safe trajectory planning. Even in congested, complex traffic scenarios, our forecasting approach enables self-driving vehicles to never cause accidents.",
+    "published": "2020-08-18T00:00:00.000Z",
+    "authors": [
+      "Markus Koschi",
+      "Matthias Althoff"
+    ],
+    "arxivUrl": "https://doi.org/10.1109/tiv.2020.3017385",
+    "pdfUrl": "https://mediatum.ub.tum.de/1575358"
+  },
+  "74ff9450-0d50-4d5f-808e-3541660d6500": {
+    "id": "74ff9450-0d50-4d5f-808e-3541660d6500",
+    "title": "Action-Based Representation Learning for Autonomous Driving",
+    "titleZh": "Action-Based Representation Learning for Autonomous Driving",
+    "titleEn": "Action-Based Representation Learning for Autonomous Driving",
+    "summary": "Human drivers produce a vast amount of data which could, in principle, be used to improve autonomous driving systems. Unfortunately, seemingly straightforward approaches for creating end-to-end driving models that map sensor data directly into driving actions are problematic in terms of interpretability, and typically have significant difficulty dealing with spurious correlations. Alternatively, we propose to use this kind of action-based driving data for learning representations. Our experiments show that an affordance-based driving model pre-trained with this approach can leverage a relatively small amount of weakly annotated imagery and outperform pure end-to-end driving models, while being more interpretable. Further, we demonstrate how this strategy outperforms previous methods based on learning inverse dynamics models as well as other methods based on heavy human supervision (ImageNet).",
+    "published": "2020-08-21T00:00:00.000Z",
+    "authors": [
+      "Yi Xiao",
+      "Felipe Codevilla",
+      "Christopher Pal",
+      "Antonio M. López"
+    ],
+    "arxivUrl": "http://arxiv.org/abs/2008.09417",
+    "pdfUrl": "https://arxiv.org/pdf/2008.09417.pdf"
+  },
+  "46036b2c-4e3d-4338-8df6-8411253f3e5b": {
+    "id": "46036b2c-4e3d-4338-8df6-8411253f3e5b",
+    "title": "Future Frame Prediction of a Video Sequence",
+    "titleZh": "Future Frame Prediction of a Video Sequence",
+    "titleEn": "Future Frame Prediction of a Video Sequence",
+    "summary": "Predicting future frames of a video sequence has been a problem of high interest in the field of Computer Vision as it caters to a multitude of applications. The ability to predict, anticipate and reason about future events is the essence of intelligence and one of the main goals of decision-making systems such as human-machine interaction, robot navigation and autonomous driving. However, the challenge lies in the ambiguous nature of the problem as there may be multiple future sequences possible for the same input video shot. A naively designed model averages multiple possible futures into a single blurry prediction. Recently, two distinct approaches have attempted to address this problem as: (a) use of latent variable models that represent underlying stochasticity and (b) adversarially trained models that aim to produce sharper images. A latent variable model often struggles to produce realistic results, while an adversarially trained model underutilizes latent variables and thus fails to produce diverse predictions. These methods have revealed complementary strengths and weaknesses. Combining the two approaches produces predictions that appear more realistic and better cover the range of plausible futures. This forms the basis and objective of study in this project work. In this paper, we proposed a novel multi-scale architecture combining both approaches. We validate our proposed model through a series of experiments and empirical evaluations on Moving MNIST, UCF101, and Penn Action datasets. Our method outperforms the results obtained using the baseline methods.",
+    "published": "2020-08-31T00:00:00.000Z",
+    "authors": [
+      "Jasmeen Kaur",
+      "Sukhendu Das"
+    ],
+    "arxivUrl": "http://arxiv.org/abs/2009.01689",
+    "pdfUrl": "https://arxiv.org/pdf/2009.01689.pdf"
+  },
+  "888c7451-e52b-4f08-8464-a5fce590498e": {
+    "id": "888c7451-e52b-4f08-8464-a5fce590498e",
+    "title": "Behavior and Interaction-aware Motion Planning for Autonomous Driving Vehicles based on Hierarchical Intention and Motion Prediction",
+    "titleZh": "Behavior and Interaction-aware Motion Planning for Autonomous Driving Vehicles based on Hierarchical Intention and Motion Prediction",
+    "titleEn": "Behavior and Interaction-aware Motion Planning for Autonomous Driving Vehicles based on Hierarchical Intention and Motion Prediction",
+    "summary": "Safe motion planning in complex and interactive environments is one of the major challenges for developing autonomous vehicles. In this paper, we propose an interaction and behavior-aware motion planning framework based on joint predictions of intentions and motions of surrounding vehicles. A multimodal hierarchical Inverse Reinforcement Learning (IRL) framework is designed to learn joint driving pattern-intention-motion models from real-world interactive driving trajectory data. Using the learned models, the proposed approach can probabilistically predict the continuous motions partitioned by discrete driving styles and intentions, while taking into account of the interactions between participants' actions. A chance-constrained POMDP strategy is utilized to generate risk-bounded motion plans based on those predictions. Simulation case studies based on challenging scenarios demonstrate that the proposed framework is effective in predicting surrounding vehicles' behaviors and generating safe motion plans in complex traffic environments.",
+    "published": "2020-09-20T00:00:00.000Z",
+    "authors": [
+      "Dachuan Li",
+      "Yunjiang Wu",
+      "Bing Bai",
+      "Qi Hao"
+    ],
+    "arxivUrl": "https://doi.org/10.1109/itsc45102.2020.9294182",
+    "pdfUrl": "https://doi.org/10.1109/itsc45102.2020.9294182"
+  },
+  "b75a72fd-8458-473b-a689-dd0921087c18": {
+    "id": "b75a72fd-8458-473b-a689-dd0921087c18",
+    "title": "Time-to-Line Crossing Enhanced End-to-End Autonomous Driving Framework",
+    "titleZh": "Time-to-Line Crossing Enhanced End-to-End Autonomous Driving Framework",
+    "titleEn": "Time-to-Line Crossing Enhanced End-to-End Autonomous Driving Framework",
+    "summary": "End-to-end autonomous driving approach, which directly maps raw input images to vehicle control commands using a deep neural network, is gaining considerable attention from both academia and industry. Researchers have conducted studies on this subject over the past few years. However, they have focused on designing network architecture, and evaluated performance only with root mean square error (RMSE), which did not account for the temporal dynamics of autonomous driving. In this paper, we propose a time-to-line crossing (TLC) enhanced end-to-end driving framework. The proposed framework is original to the industry in three ways. First, for the fine-labeled training dataset for end-to-end autonomous driving, the TLC based label correction algorithm is applied to reduce the inaccuracies of driver action, which is used as a ground truth. Second, we designed a novel deep neural network model based on bi-directional convolutional long short-term memory (bi-CLSTM) which can sufficiently encode the spatial and temporal features in the input image sequence. Third, in addition to the RMSE evaluation metric, we validated the performance of the end-to-end driving model using TLC, the advanced driving support system (ADAS), and a driver performance indicator. We integrated the proposed framework with existing end-to-end driving models on a full-scale autonomous vehicle in the experimental portion of our study. The results show that the proposed framework is valid and that our network model outperforms the existing models in terms of both RMSE and TLC.",
+    "published": "2020-09-20T00:00:00.000Z",
+    "authors": [
+      "Chanyoung Jung",
+      "Hyunki Seong",
+      "David Hyunchul Shim"
+    ],
+    "arxivUrl": "https://doi.org/10.1109/itsc45102.2020.9294232",
+    "pdfUrl": "https://doi.org/10.1109/itsc45102.2020.9294232"
+  },
+  "autonomous-driving-workflow-sync-1775969605656": {
+    "id": "autonomous-driving-workflow-sync-1775969605656",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775973060145": {
+    "id": "autonomous-driving-workflow-sync-1775973060145",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775973161138": {
+    "id": "autonomous-driving-workflow-sync-1775973161138",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775973585789": {
+    "id": "autonomous-driving-workflow-sync-1775973585789",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775975632113": {
+    "id": "autonomous-driving-workflow-sync-1775975632113",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775976266522": {
+    "id": "autonomous-driving-workflow-sync-1775976266522",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775978939914": {
+    "id": "autonomous-driving-workflow-sync-1775978939914",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775981363182": {
+    "id": "autonomous-driving-workflow-sync-1775981363182",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775989557358": {
+    "id": "autonomous-driving-workflow-sync-1775989557358",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775991081595": {
+    "id": "autonomous-driving-workflow-sync-1775991081595",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775991278007": {
+    "id": "autonomous-driving-workflow-sync-1775991278007",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775992269291": {
+    "id": "autonomous-driving-workflow-sync-1775992269291",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775992408909": {
+    "id": "autonomous-driving-workflow-sync-1775992408909",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775992707364": {
+    "id": "autonomous-driving-workflow-sync-1775992707364",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775993031120": {
+    "id": "autonomous-driving-workflow-sync-1775993031120",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775993032041": {
+    "id": "autonomous-driving-workflow-sync-1775993032041",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775993035644": {
+    "id": "autonomous-driving-workflow-sync-1775993035644",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775993253763": {
+    "id": "autonomous-driving-workflow-sync-1775993253763",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775993359523": {
+    "id": "autonomous-driving-workflow-sync-1775993359523",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775993856234": {
+    "id": "autonomous-driving-workflow-sync-1775993856234",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775994040555": {
+    "id": "autonomous-driving-workflow-sync-1775994040555",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775994721433": {
+    "id": "autonomous-driving-workflow-sync-1775994721433",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775994919433": {
+    "id": "autonomous-driving-workflow-sync-1775994919433",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775996356378": {
+    "id": "autonomous-driving-workflow-sync-1775996356378",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775996550346": {
+    "id": "autonomous-driving-workflow-sync-1775996550346",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1775999624042": {
+    "id": "autonomous-driving-workflow-sync-1775999624042",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1776001473847": {
+    "id": "autonomous-driving-workflow-sync-1776001473847",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
   }
 }

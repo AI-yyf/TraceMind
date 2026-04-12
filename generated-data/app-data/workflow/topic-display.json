@@ -3,162 +3,1333 @@
   "topics": [
     {
       "topicId": "agent",
-      "hero": {
-        "topicId": "agent",
-        "title": "Agent 系统",
-        "subtitle": "推理-行动 / 工具使用 / 多智能体 / 记忆",
-        "summary": "重点观察 Agent 何时从 prompt 技巧走向真正稳定、可组合、可执行的系统能力。",
-        "originPaperId": "2210.03629",
-        "originPaperTitleZh": "ReAct: Synergizing Reasoning and Acting in Language Models",
-        "originPaperTitleEn": "ReAct: Synergizing Reasoning and Acting in Language Models",
-        "stageCount": 0,
-        "activeBranchCount": 1,
-        "mergeCount": 0,
-        "lastBuiltAt": "2026-03-29T02:05:43.719Z"
+      "nameZh": "Agent 系统",
+      "nameEn": "Agent Systems",
+      "focusLabel": "推理-行动 / 工具使用 / 多智能体 / 记忆",
+      "originPaperId": "2210.03629",
+      "frontendSummary": {
+        "cardSummary": "从 ReAct 的最小闭环出发，追踪 Agent 如何补足工具学习、记忆与协作。",
+        "timelineGuide": "主线沿着工具使用、反思记忆和多智能体组织不断扩展。",
+        "researchBlurb": "重点观察 Agent 何时从 prompt 技巧走向真正稳定、可组合、可执行的系统能力。"
       },
-      "stageColumns": [],
-      "branchPalette": [
+      "papers": [
         {
-          "branchId": "branch:agent:origin",
-          "branchLabel": "主线",
-          "color": "#D94F3D",
-          "status": "活跃"
+          "id": "2210.03629",
+          "version": "v3",
+          "title": "ReAct: Synergizing Reasoning and Acting in Language Models",
+          "summary": "While large language models (LLMs) have demonstrated impressive capabilities across tasks in language understanding and interactive decision making, their abilities for reasoning (e.g. chain-of-thought prompting) and acting (e.g. action plan generation) have primarily been studied as separate topics. In this paper, we explore the use of LLMs to generate both reasoning traces and task-specific actions in an interleaved manner, allowing for greater synergy between the two: reasoning traces help the model induce, track, and update action plans as well as handle exceptions, while actions allow it to interface with external sources, such as knowledge bases or environments, to gather additional information. We apply our approach, named ReAct, to a diverse set of language and decision making tasks and demonstrate its effectiveness over state-of-the-art baselines, as well as improved human interpretability and trustworthiness over methods without reasoning or acting components. Concretely, on question answering (HotpotQA) and fact verification (Fever), ReAct overcomes issues of hallucination and error propagation prevalent in chain-of-thought reasoning by interacting with a simple Wikipedia API, and generates human-like task-solving trajectories that are more interpretable than baselines without reasoning traces. On two interactive decision making benchmarks (ALFWorld and WebShop), ReAct outperforms imitation and reinforcement learning methods by an absolute success rate of 34% and 10% respectively, while being prompted with only one or two in-context examples. Project site with code: https://react-lm.github.io",
+          "published": "2022-10-06T01:00:32Z",
+          "authors": [
+            "Shunyu Yao",
+            "Jeffrey Zhao",
+            "Dian Yu",
+            "Nan Du",
+            "Izhak Shafran",
+            "Karthik Narasimhan",
+            "Yuan Cao"
+          ],
+          "arxivUrl": "https://arxiv.org/abs/2210.03629",
+          "pdfUrl": "https://arxiv.org/pdf/2210.03629.pdf"
         }
       ],
-      "mergeMarkers": [],
-      "timelineLegend": {
-        "stageLabel": "纵向代表研究阶段，表示同一轮研究推进的舞台层级。",
-        "branchLabel": "横向不同颜色代表不同分支，同一分支在各页面颜色保持一致。",
-        "mergeLabel": "当一篇论文同时承接多条分支时，会以汇流节点的方式出现。",
-        "dormantLabel": "若某条分支本阶段没有新候选，会显示为“本阶段未推进”，而不是拉长整条寿命线。"
+      "researchNodes": [
+        {
+          "nodeId": "agent:stage-0:2210.03629",
+          "id": "agent:stage-0:2210.03629",
+          "topicId": "",
+          "stageIndex": 0,
+          "paperIds": [
+            "2210.03629"
+          ],
+          "primaryPaperId": "2210.03629",
+          "sourceBranchIds": [
+            "branch:agent:origin"
+          ],
+          "sourceProblemNodeIds": [
+            "agent:origin-problem"
+          ],
+          "status": "canonical",
+          "provisional": false,
+          "nodeLabel": "起源节点",
+          "nodeSummary": "ReAct 给现代 Agent 设定了“推理-行动-观察”闭环骨架，之后 Toolformer、Reflexion、CAMEL、AutoGen 分别在工具学习、记忆和多智能体协作上继续补齐。",
+          "isMergeNode": false,
+          "tags": [],
+          "discoveredAt": "2026-04-08T18:04:12.737Z",
+          "createdAt": "2026-04-08T18:04:12.737Z",
+          "updatedAt": "2026-04-08T22:09:00.733Z",
+          "version": 1,
+          "branchId": "branch:agent:origin",
+          "paperId": "2210.03629",
+          "paperPublishedAt": "2026-04-08T22:09:00.733Z",
+          "isKeyPaper": false
+        }
+      ],
+      "mainlineBranchId": "branch:agent:origin",
+      "branchColors": {
+        "branch:agent:origin": "#dc2626"
+      },
+      "paperEditorialStore": {},
+      "nodeEditorialStore": {},
+      "topicEditorialEntry": null,
+      "metadata": {
+        "totalPapers": 1,
+        "totalNodes": 1,
+        "lastUpdated": "2026-04-08T22:09:00.736Z"
       }
     },
     {
       "topicId": "autonomous-driving",
-      "hero": {
-        "topicId": "autonomous-driving",
-        "title": "自动驾驶端到端主线",
-        "subtitle": "世界模型 / 端到端驾驶 / 驾驶 VLM",
-        "summary": "重点观察这条主线如何在安全、长尾场景和多模态理解上不断补齐自身短板。",
-        "originPaperId": "1604.07316",
-        "originPaperTitleZh": "End to End Learning for Self-Driving Cars",
-        "originPaperTitleEn": "End to End Learning for Self-Driving Cars",
-        "stageCount": 0,
-        "activeBranchCount": 1,
-        "mergeCount": 0,
-        "lastBuiltAt": "2026-03-29T02:05:43.719Z"
+      "nameZh": "自动驾驶 VLA 世界模型",
+      "nameEn": "Autonomous Driving VLA World Models",
+      "focusLabel": "自动驾驶 / VLA / 世界模型 / 闭环规划",
+      "originPaperId": "1604.07316",
+      "frontendSummary": {
+        "cardSummary": "从端到端驾驶出发，沿着恢复策略、闭环规划、世界模型与驾驶 VLA 一路展开。",
+        "timelineGuide": "主线按时间向下推进，横向分出恢复、规划、世界模型和语言条件控制等支线，再观察哪些支线重新汇回主线。",
+        "researchBlurb": "重点不是只看显式写了 VLA 的论文，而是系统追踪那些真正推进驾驶世界建模、语言条件规划和闭环鲁棒性的工作。"
       },
-      "stageColumns": [],
-      "branchPalette": [
+      "papers": [
         {
-          "branchId": "branch:autonomous-driving:origin",
-          "branchLabel": "主线",
-          "color": "#D94F3D",
-          "status": "活跃"
+          "id": "0e21245f-24da-4693-b951-94f1c22903e8",
+          "title": "On the Sample Complexity of End-to-end Training vs. Semantic Abstraction Training",
+          "titleZh": "On the Sample Complexity of End-to-end Training vs. Semantic Abstraction Training",
+          "titleEn": "On the Sample Complexity of End-to-end Training vs. Semantic Abstraction Training",
+          "summary": "We compare the end-to-end training approach to a modular approach in which a system is decomposed into semantically meaningful components. We focus on the sample complexity aspect, in the regime where an extremely high accuracy is necessary, as is the case in autonomous driving applications. We demonstrate cases in which the number of training examples required by the end-to-end approach is exponentially larger than the number of examples required by the semantic abstraction approach.",
+          "published": "2016-04-23T00:00:00.000Z",
+          "authors": [
+            "Shai Shalev‐Shwartz",
+            "Amnon Shashua"
+          ],
+          "arxivUrl": "http://arxiv.org/abs/1604.06915",
+          "pdfUrl": "https://arxiv.org/pdf/1604.06915.pdf"
+        },
+        {
+          "id": "1604.07316",
+          "version": "v1",
+          "title": "End to End Learning for Self-Driving Cars",
+          "summary": "We trained a convolutional neural network (CNN) to map raw pixels from a single front-facing camera directly to steering commands. This end-to-end approach proved surprisingly powerful. With minimum training data from humans the system learns to drive in traffic on local roads with or without lane markings and on highways. It also operates in areas with unclear visual guidance such as in parking lots and on unpaved roads. The system automatically learns internal representations of the necessary processing steps such as detecting useful road features with only the human steering angle as the training signal. We never explicitly trained it to detect, for example, the outline of roads. Compared to explicit decomposition of the problem, such as lane marking detection, path planning, and control, our end-to-end system optimizes all processing steps simultaneously. We argue that this will eventually lead to better performance and smaller systems. Better performance will result because the internal components self-optimize to maximize overall system performance, instead of optimizing human-selected intermediate criteria, e.g., lane detection. Such criteria understandably are selected for ease of human interpretation which doesn't automatically guarantee maximum system performance. Smaller networks are possible because the system learns to solve the problem with the minimal number of processing steps. We used an NVIDIA DevBox and Torch 7 for training and an NVIDIA DRIVE(TM) PX self-driving car computer also running Torch 7 for determining where to drive. The system operates at 30 frames per second (FPS).",
+          "published": "2016-04-25T16:03:56.000Z",
+          "authors": [
+            "Mariusz Bojarski",
+            "Davide Del Testa",
+            "Daniel Dworakowski",
+            "Bernhard Firner",
+            "Beat Flepp",
+            "Prasoon Goyal",
+            "Lawrence D. Jackel",
+            "Mathew Monfort",
+            "Urs Muller",
+            "Jiakai Zhang",
+            "Xin Zhang",
+            "Jake Zhao",
+            "Karol Zieba"
+          ],
+          "arxivUrl": "https://arxiv.org/abs/1604.07316",
+          "pdfUrl": "https://arxiv.org/pdf/1604.07316.pdf",
+          "titleZh": "End to End Learning for Self-Driving Cars",
+          "titleEn": "End to End Learning for Self-Driving Cars"
+        },
+        {
+          "id": "06b87490-9d46-496d-b26d-2b2db88c4f81",
+          "title": "Query-Efficient Imitation Learning for End-to-End Autonomous Driving",
+          "titleZh": "Query-Efficient Imitation Learning for End-to-End Autonomous Driving",
+          "titleEn": "Query-Efficient Imitation Learning for End-to-End Autonomous Driving",
+          "summary": "One way to approach end-to-end autonomous driving is to learn a policy function that maps from a sensory input, such as an image frame from a front-facing camera, to a driving action, by imitating an expert driver, or a reference policy. This can be done by supervised learning, where a policy function is tuned to minimize the difference between the predicted and ground-truth actions. A policy function trained in this way however is known to suffer from unexpected behaviours due to the mismatch between the states reachable by the reference policy and trained policy functions. More advanced algorithms for imitation learning, such as DAgger, addresses this issue by iteratively collecting training examples from both reference and trained policies. These algorithms often requires a large number of queries to a reference policy, which is undesirable as the reference policy is often expensive. In this paper, we propose an extension of the DAgger, called SafeDAgger, that is query-efficient and more suitable for end-to-end autonomous driving. We evaluate the proposed SafeDAgger in a car racing simulator and show that it indeed requires less queries to a reference policy. We observe a significant speed up in convergence, which we conjecture to be due to the effect of automated curriculum learning.",
+          "published": "2016-05-20T00:00:00.000Z",
+          "authors": [
+            "Jiakai Zhang",
+            "Kyunghyun Cho"
+          ],
+          "arxivUrl": "http://arxiv.org/abs/1605.06450",
+          "pdfUrl": "https://arxiv.org/pdf/1605.06450.pdf"
+        },
+        {
+          "id": "e38dca12-f939-4c50-91d4-70513a0cbf41",
+          "title": "End-to-end Learning of Driving Models from Large-scale Video Datasets",
+          "titleZh": "End-to-end Learning of Driving Models from Large-scale Video Datasets",
+          "titleEn": "End-to-end Learning of Driving Models from Large-scale Video Datasets",
+          "summary": "Robust perception-action models should be learned from training data with diverse visual appearances and realistic behaviors, yet current approaches to deep visuomotor policy learning have been generally limited to in-situ models learned from a single vehicle or a simulation environment. We advocate learning a generic vehicle motion model from large scale crowd-sourced video data, and develop an end-to-end trainable architecture for learning to predict a distribution over future vehicle egomotion from instantaneous monocular camera observations and previous vehicle state. Our model incorporates a novel FCN-LSTM architecture, which can be learned from large-scale crowd-sourced vehicle action data, and leverages available scene segmentation side tasks to improve performance under a privileged learning paradigm.",
+          "published": "2016-12-04T00:00:00.000Z",
+          "authors": [
+            "Huazhe Xu",
+            "Yang Gao",
+            "Fisher Yu",
+            "Trevor Darrell"
+          ],
+          "arxivUrl": "http://arxiv.org/abs/1612.01079",
+          "pdfUrl": "https://arxiv.org/pdf/1612.01079.pdf"
+        },
+        {
+          "id": "0946bdb9-826b-4742-b62e-e0db013e7025",
+          "title": "Virtual to Real Reinforcement Learning for Autonomous Driving",
+          "titleZh": "Virtual to Real Reinforcement Learning for Autonomous Driving",
+          "titleEn": "Virtual to Real Reinforcement Learning for Autonomous Driving",
+          "summary": "Reinforcement learning is considered as a promising direction for driving policy learning. However, training autonomous driving vehicle with reinforcement learning in real environment involves non-affordable trial-and-error. It is more desirable to first train in a virtual environment and then transfer to the real environment. In this paper, we propose a novel realistic translation network to make model trained in virtual environment be workable in real world. The proposed network can convert non-realistic virtual image input into a realistic one with similar scene structure. Given realistic frames as input, driving policy trained by reinforcement learning can nicely adapt to real world driving. Experiments show that our proposed virtual to real (VR) reinforcement learning (RL) works pretty well. To our knowledge, this is the first successful case of driving policy trained by reinforcement learning that can adapt to real world driving data.",
+          "published": "2017-01-01T00:00:00.000Z",
+          "authors": [
+            "Xinlei Pan",
+            "Yurong You",
+            "Ziyan Wang",
+            "Cewu Lu"
+          ],
+          "arxivUrl": "https://arxiv.org/abs/1704.03952",
+          "pdfUrl": "https://arxiv.org/pdf/1704.03952.pdf"
+        },
+        {
+          "id": "39e68cb8-6574-4bca-83d9-02ee52a2b860",
+          "title": "Query-Efficient Imitation Learning for End-to-End Simulated Driving",
+          "titleZh": "Query-Efficient Imitation Learning for End-to-End Simulated Driving",
+          "titleEn": "Query-Efficient Imitation Learning for End-to-End Simulated Driving",
+          "summary": "One way to approach end-to-end autonomous driving is to learn a policy that maps from a sensory input, such as an image frame from a front-facing camera, to a driving action, by imitating an expert driver, or a reference policy. This can be done by supervised learning, where a policy is tuned to minimize the difference between the predicted and ground-truth actions. A policy trained in this way however is known to suffer from unexpected behaviours due to the mismatch between the states reachable by the reference policy and trained policy. More advanced algorithms for imitation learning, such as DAgger, addresses this issue by iteratively collecting training examples from both reference and trained policies. These algorithms often require a large number of queries to a reference policy, which is undesirable as the reference policy is often expensive. In this paper, we propose an extension of the DAgger, called SafeDAgger, that is query-efficient and more suitable for end-to-end autonomous driving. We evaluate the proposed SafeDAgger in a car racing simulator and show that it indeed requires less queries to a reference policy. We observe a significant speed up in convergence, which we conjecture to be due to the effect of automated curriculum learning.",
+          "published": "2017-02-13T00:00:00.000Z",
+          "authors": [
+            "Jiakai Zhang",
+            "Kyunghyun Cho"
+          ],
+          "arxivUrl": "https://doi.org/10.1609/aaai.v31i1.10857",
+          "pdfUrl": "https://ojs.aaai.org/index.php/AAAI/article/download/10857/10716"
+        },
+        {
+          "id": "3b0113dc-46c5-4be9-b8d6-a03b2102c392",
+          "title": "Towards a framework for end-to-end control of a simulated vehicle with spiking neural networks",
+          "titleZh": "Towards a framework for end-to-end control of a simulated vehicle with spiking neural networks",
+          "titleEn": "Towards a framework for end-to-end control of a simulated vehicle with spiking neural networks",
+          "summary": "Spiking neural networks are in theory more computationally powerful than rate-based neural networks often used in deep learning architectures. However, unlike rate-based neural networks, it is yet unclear how to train spiking networks to solve complex problems. There are still no standard algorithms and it is preventing roboticists to use spiking networks, yielding a lack of Neurorobotics applications. The contribution of this paper is twofold. First, we present a modular framework to evaluate neural self-driving vehicle applications. It provides a visual encoder from camera images to spikes inspired by the silicon retina (DVS), and a steering wheel decoder based on an agonist antagonist muscle model. Secondly, using this framework, we demonstrate a spiking neural network which controls a vehicle end-to-end for lane following behavior. The network is feed-forward and relies on hand-crafted feature detectors. In future work, this framework could be used to design more complex networks and use the evaluation metrics for learning.",
+          "published": "2016-12-01T00:00:00.000Z",
+          "authors": [
+            "Jacques Kaiser",
+            "J. Camilo Vasquez Tieck",
+            "Christian Hubschneider",
+            "Peter Wolf",
+            "Michael Weber",
+            "Michael Hoff",
+            "Alexander W. Friedrich",
+            "Konrad Wojtasik",
+            "Arne Roennau",
+            "Ralf Kohlhaas",
+            "Rüdiger Dillmann",
+            "J. Marius Zöllner"
+          ],
+          "arxivUrl": "https://doi.org/10.1109/simpar.2016.7862386",
+          "pdfUrl": "https://doi.org/10.1109/simpar.2016.7862386"
+        },
+        {
+          "id": "02bcd04f-f86a-4e58-a23e-f86ef97f4f95",
+          "title": "DDD17: End-To-End DAVIS Driving Dataset",
+          "titleZh": "DDD17: End-To-End DAVIS Driving Dataset",
+          "titleEn": "DDD17: End-To-End DAVIS Driving Dataset",
+          "summary": "Event cameras, such as dynamic vision sensors (DVS), and dynamic and active-pixel vision sensors (DAVIS) can supplement other autonomous driving sensors by providing a concurrent stream of standard active pixel sensor (APS) images and DVS temporal contrast events. The APS stream is a sequence of standard grayscale global-shutter image sensor frames. The DVS events represent brightness changes occurring at a particular moment, with a jitter of about a millisecond under most lighting conditions. They have a dynamic range of &gt;120 dB and effective frame rates &gt;1 kHz at data rates comparable to 30 fps (frames/second) image sensors. To overcome some of the limitations of current image acquisition technology, we investigate in this work the use of the combined DVS and APS streams in end-to-end driving applications. The dataset DDD17 accompanying this paper is the first open dataset of annotated DAVIS driving recordings. DDD17 has over 12 h of a 346x260 pixel DAVIS sensor recording highway and city driving in daytime, evening, night, dry and wet weather conditions, along with vehicle speed, GPS position, driver steering, throttle, and brake captured from the car's on-board diagnostics interface. As an example application, we performed a preliminary end-to-end learning study of using a convolutional neural network that is trained to predict the instantaneous steering angle from DVS and APS visual data.",
+          "published": "2017-01-01T00:00:00.000Z",
+          "authors": [
+            "Jonathan Binas",
+            "Daniel Neil",
+            "Shih‐Chii Liu",
+            "Tobi Delbrück"
+          ],
+          "arxivUrl": "https://arxiv.org/abs/1711.01458",
+          "pdfUrl": "https://arxiv.org/pdf/1711.01458.pdf"
+        },
+        {
+          "id": "ff933027-3c9b-41a9-93c3-ef0d4138be77",
+          "title": "Brain Inspired Cognitive Model with Attention for Self-Driving Cars",
+          "titleZh": "Brain Inspired Cognitive Model with Attention for Self-Driving Cars",
+          "titleEn": "Brain Inspired Cognitive Model with Attention for Self-Driving Cars",
+          "summary": "Perception-driven approach and end-to-end system are two major vision-based frameworks for self-driving cars. However, it is difficult to introduce attention and historical information of autonomous driving process, which are the essential factors for achieving human-like driving into these two methods. In this paper, we propose a novel model for self-driving cars named brain-inspired cognitive model with attention (CMA). This model consists of three parts: a convolutional neural network for simulating human visual cortex, a cognitive map built to describe relationships between objects in complex traffic scene and a recurrent neural network that combines with the real-time updated cognitive map to implement attention mechanism and long-short term memory. The benefit of our model is that can accurately solve three tasks simultaneously:1) detection of the free space and boundaries of the current and adjacent lanes. 2)estimation of obstacle distance and vehicle attitude, and 3) learning of driving behavior and decision making from human driver. More significantly, the proposed model could accept external navigating instructions during an end-to-end driving process. For evaluation, we build a large-scale road-vehicle dataset which contains more than forty thousand labeled road images captured by three cameras on our self-driving car. Moreover, human driving activities and vehicle states are recorded in the meanwhile.",
+          "published": "2017-02-18T00:00:00.000Z",
+          "authors": [
+            "Shitao Chen",
+            "Songyi Zhang",
+            "Jinghao Shang",
+            "Badong Chen",
+            "Nanning Zheng"
+          ],
+          "arxivUrl": "http://arxiv.org/abs/1702.05596",
+          "pdfUrl": "https://arxiv.org/pdf/1702.05596.pdf"
+        },
+        {
+          "id": "7a1e48e4-c497-499f-b223-aa97806b3c38",
+          "title": "Interpretable Learning for Self-Driving Cars by Visualizing Causal Attention",
+          "titleZh": "Interpretable Learning for Self-Driving Cars by Visualizing Causal Attention",
+          "titleEn": "Interpretable Learning for Self-Driving Cars by Visualizing Causal Attention",
+          "summary": "Deep neural perception and control networks are likely to be a key component of self-driving vehicles. These models need to be explainable - they should provide easy-to-interpret rationales for their behavior - so that passengers, insurance companies, law enforcement, developers etc., can understand what triggered a particular behavior. Here we explore the use of visual explanations. These explanations take the form of real-time highlighted regions of an image that causally influence the network's output (steering control). Our approach is two-stage. In the first stage, we use a visual attention model to train a convolution network end-to-end from images to steering angle. The attention model highlights image regions that potentially influence the network's output. Some of these are true influences, but some are spurious. We then apply a causal filtering step to determine which input regions actually influence the output. This produces more succinct visual explanations and more accurately exposes the network's behavior. We demonstrate the effectiveness of our model on three datasets totaling 16 hours of driving. We first show that training with attention does not degrade the performance of the end-to-end network. Then we show that the network causally cues on a variety of features that are used by humans while driving.",
+          "published": "2017-03-30T00:00:00.000Z",
+          "authors": [
+            "Jinkyu Kim",
+            "John Canny"
+          ],
+          "arxivUrl": "http://arxiv.org/abs/1703.10631",
+          "pdfUrl": "https://arxiv.org/pdf/1703.10631.pdf"
+        },
+        {
+          "id": "6272b245-4176-47ef-a5dd-66564e1fd70a",
+          "title": "3D Part Guided Image Editing for Fine-Grained Object Understanding",
+          "titleZh": "3D Part Guided Image Editing for Fine-Grained Object Understanding",
+          "titleEn": "3D Part Guided Image Editing for Fine-Grained Object Understanding",
+          "summary": "Holistically understanding an object with its 3D movable parts is essential for visual models of a robot to interact with the world. For example, only by understanding many possible part dynamics of other vehicles (e.g., door or trunk opening, taillight blinking for changing lane), a self-driving vehicle can be success in dealing with emergency cases. However, existing visual models tackle rarely on these situations, but focus on bounding box detection. In this paper, we fill this important missing piece in autonomous driving by solving two critical issues. First, for dealing with data scarcity, we propose an effective training data generation process by fitting a 3D car model with dynamic parts to cars in real images. This allows us to directly edit the real images using the aligned 3D parts, yielding effective training data for learning robust deep neural networks (DNNs). Secondly, to benchmark the quality of 3D part understanding, we collected a large dataset in real driving scenario with cars in uncommon states (CUS), i.e. with door or trunk opened etc., which demonstrates that our trained network with edited images largely outperforms other baselines in terms of 2D detection and instance segmentation accuracy.",
+          "published": "2020-06-01T00:00:00.000Z",
+          "authors": [
+            "Zongdai Liu",
+            "Feixiang Lu",
+            "Peng Wang",
+            "Hui Miao",
+            "Liangjun Zhang",
+            "Ruigang Yang",
+            "Bin Zhou"
+          ],
+          "arxivUrl": "https://doi.org/10.1109/cvpr42600.2020.01135",
+          "pdfUrl": "https://doi.org/10.1109/cvpr42600.2020.01135"
+        },
+        {
+          "id": "0743b70f-4687-4845-8c5a-467612974850",
+          "title": "Learning hierarchical behavior and motion planning for autonomous driving",
+          "titleZh": "Learning hierarchical behavior and motion planning for autonomous driving",
+          "titleEn": "Learning hierarchical behavior and motion planning for autonomous driving",
+          "summary": "Learning-based driving solution, a new branch for autonomous driving, is expected to simplify the modeling of driving by learning the underlying mechanisms from data. To improve the tactical decision-making for learning-based driving solution, we introduce hierarchical behavior and motion planning (HBMP) to explicitly model the behavior in learning-based solution. Due to the coupled action space of behavior and motion, it is challenging to solve HBMP problem using reinforcement learning (RL) for long-horizon driving tasks. We transform HBMP problem by integrating a classical sampling-based motion planner, of which the optimal cost is regarded as the rewards for high-level behavior learning. As a result, this formulation reduces action space and diversifies the rewards without losing the optimality of HBMP. In addition, we propose a sharable representation for input sensory data across simulation platforms and real-world environment, so that models trained in a fast event-based simulator, SUMO, can be used to initialize and accelerate the RL training in a dynamics based simulator, CARLA. Experimental results demonstrate the effectiveness of the method. Besides, the model is successfully transferred to the real-world, validating the generalization capability.",
+          "published": "2020-05-08T00:00:00.000Z",
+          "authors": [
+            "Jingke Wang",
+            "Yue Wang",
+            "Dongkun Zhang",
+            "Yezhou Yang",
+            "Rong Xiong"
+          ],
+          "arxivUrl": "http://arxiv.org/abs/2005.03863",
+          "pdfUrl": "https://arxiv.org/pdf/2005.03863.pdf"
+        },
+        {
+          "id": "5635af16-6171-4ce8-9884-35787fb149e6",
+          "title": "Evaluation of Robust Spatial Pyramid Pooling Based on Convolutional Neural Network for Traffic Sign Recognition System",
+          "titleZh": "Evaluation of Robust Spatial Pyramid Pooling Based on Convolutional Neural Network for Traffic Sign Recognition System",
+          "titleEn": "Evaluation of Robust Spatial Pyramid Pooling Based on Convolutional Neural Network for Traffic Sign Recognition System",
+          "summary": "Traffic sign recognition (TSR) is a noteworthy issue for real-world applications such as systems for autonomous driving as it has the main role in guiding the driver. This paper focuses on Taiwan’s prohibitory sign due to the lack of a database or research system for Taiwan’s traffic sign recognition. This paper investigates the state-of-the-art of various object detection systems (Yolo V3, Resnet 50, Densenet, and Tiny Yolo V3) combined with spatial pyramid pooling (SPP). We adopt the concept of SPP to improve the backbone network of Yolo V3, Resnet 50, Densenet, and Tiny Yolo V3 for building feature extraction. Furthermore, we use a spatial pyramid pooling to study multi-scale object features thoroughly. The observation and evaluation of certain models include vital metrics measurements, such as the mean average precision (mAP), workspace size, detection time, intersection over union (IoU), and the number of billion floating-point operations (BFLOPS). Our findings show that Yolo V3 SPP strikes the best total BFLOPS (65.69), and mAP (98.88%). Besides, the highest average accuracy is Yolo V3 SPP at 99%, followed by Densenet SPP at 87%, Resnet 50 SPP at 70%, and Tiny Yolo V3 SPP at 50%. Hence, SPP can improve the performance of all models in the experiment.",
+          "published": "2020-05-27T00:00:00.000Z",
+          "authors": [
+            "Christine Dewi",
+            "Rung-Ching Chen",
+            "Shao-Kuo Tai"
+          ],
+          "arxivUrl": "https://doi.org/10.3390/electronics9060889",
+          "pdfUrl": "https://www.mdpi.com/2079-9292/9/6/889/pdf?version=1591682039"
+        },
+        {
+          "id": "8f93e834-ac91-4a39-b08d-e91d7c40bf1c",
+          "title": "Set-Based Prediction of Traffic Participants Considering Occlusions and Traffic Rules",
+          "titleZh": "Set-Based Prediction of Traffic Participants Considering Occlusions and Traffic Rules",
+          "titleEn": "Set-Based Prediction of Traffic Participants Considering Occlusions and Traffic Rules",
+          "summary": "Provably safe motion planning for automated road vehicles must ensure that planned motions do not result in a collision with other traffic participants. This is a major challenge in autonomous driving, since the future behavior of other traffic participants is not known and since traffic participants are often hidden due to occlusions. In this work, we propose a formal set-based prediction that contains all acceptable future behaviors of both detected and potentially hidden traffic participants. Based on formalized traffic rules and nondeterministic motion models, we perform reachability analysis to predict the set of possible occupancies and velocities of vehicles, pedestrians, and cyclists. Real-world experiments with a test vehicle in various traffic situations demonstrate the applicability and real-time capability of our over-approximative prediction for both online verification and fail-safe trajectory planning. Even in congested, complex traffic scenarios, our forecasting approach enables self-driving vehicles to never cause accidents.",
+          "published": "2020-08-18T00:00:00.000Z",
+          "authors": [
+            "Markus Koschi",
+            "Matthias Althoff"
+          ],
+          "arxivUrl": "https://doi.org/10.1109/tiv.2020.3017385",
+          "pdfUrl": "https://mediatum.ub.tum.de/1575358"
+        },
+        {
+          "id": "888c7451-e52b-4f08-8464-a5fce590498e",
+          "title": "Behavior and Interaction-aware Motion Planning for Autonomous Driving Vehicles based on Hierarchical Intention and Motion Prediction",
+          "titleZh": "Behavior and Interaction-aware Motion Planning for Autonomous Driving Vehicles based on Hierarchical Intention and Motion Prediction",
+          "titleEn": "Behavior and Interaction-aware Motion Planning for Autonomous Driving Vehicles based on Hierarchical Intention and Motion Prediction",
+          "summary": "Safe motion planning in complex and interactive environments is one of the major challenges for developing autonomous vehicles. In this paper, we propose an interaction and behavior-aware motion planning framework based on joint predictions of intentions and motions of surrounding vehicles. A multimodal hierarchical Inverse Reinforcement Learning (IRL) framework is designed to learn joint driving pattern-intention-motion models from real-world interactive driving trajectory data. Using the learned models, the proposed approach can probabilistically predict the continuous motions partitioned by discrete driving styles and intentions, while taking into account of the interactions between participants' actions. A chance-constrained POMDP strategy is utilized to generate risk-bounded motion plans based on those predictions. Simulation case studies based on challenging scenarios demonstrate that the proposed framework is effective in predicting surrounding vehicles' behaviors and generating safe motion plans in complex traffic environments.",
+          "published": "2020-09-20T00:00:00.000Z",
+          "authors": [
+            "Dachuan Li",
+            "Yunjiang Wu",
+            "Bing Bai",
+            "Qi Hao"
+          ],
+          "arxivUrl": "https://doi.org/10.1109/itsc45102.2020.9294182",
+          "pdfUrl": "https://doi.org/10.1109/itsc45102.2020.9294182"
+        },
+        {
+          "id": "46036b2c-4e3d-4338-8df6-8411253f3e5b",
+          "title": "Future Frame Prediction of a Video Sequence",
+          "titleZh": "Future Frame Prediction of a Video Sequence",
+          "titleEn": "Future Frame Prediction of a Video Sequence",
+          "summary": "Predicting future frames of a video sequence has been a problem of high interest in the field of Computer Vision as it caters to a multitude of applications. The ability to predict, anticipate and reason about future events is the essence of intelligence and one of the main goals of decision-making systems such as human-machine interaction, robot navigation and autonomous driving. However, the challenge lies in the ambiguous nature of the problem as there may be multiple future sequences possible for the same input video shot. A naively designed model averages multiple possible futures into a single blurry prediction. Recently, two distinct approaches have attempted to address this problem as: (a) use of latent variable models that represent underlying stochasticity and (b) adversarially trained models that aim to produce sharper images. A latent variable model often struggles to produce realistic results, while an adversarially trained model underutilizes latent variables and thus fails to produce diverse predictions. These methods have revealed complementary strengths and weaknesses. Combining the two approaches produces predictions that appear more realistic and better cover the range of plausible futures. This forms the basis and objective of study in this project work. In this paper, we proposed a novel multi-scale architecture combining both approaches. We validate our proposed model through a series of experiments and empirical evaluations on Moving MNIST, UCF101, and Penn Action datasets. Our method outperforms the results obtained using the baseline methods.",
+          "published": "2020-08-31T00:00:00.000Z",
+          "authors": [
+            "Jasmeen Kaur",
+            "Sukhendu Das"
+          ],
+          "arxivUrl": "http://arxiv.org/abs/2009.01689",
+          "pdfUrl": "https://arxiv.org/pdf/2009.01689.pdf"
+        },
+        {
+          "id": "908c7e00-e489-4c20-b218-657cc589733b",
+          "title": "Two-Stream AMTnet for Action Detection",
+          "titleZh": "Two-Stream AMTnet for Action Detection",
+          "titleEn": "Two-Stream AMTnet for Action Detection",
+          "summary": "In this paper, we propose Two-Stream AMTnet, which leverages recent advances in video-based action representation[1] and incremental action tube generation[2]. Majority of the present action detectors follow a frame-based representation, a late-fusion followed by an offline action tube building steps. These are sub-optimal as: frame-based features barely encode the temporal relations; late-fusion restricts the network to learn robust spatiotemporal features; and finally, an offline action tube generation is not suitable for many real-world problems such as autonomous driving, human-robot interaction to name a few. The key contributions of this work are: (1) combining AMTnet's 3D proposal architecture with an online action tube generation technique which allows the model to learn stronger temporal features needed for accurate action detection and facilitates running inference online; (2) an efficient fusion technique allowing the deep network to learn strong spatiotemporal action representations. This is achieved by augmenting the previous Action Micro-Tube (AMTnet) action detection framework in three distinct ways: by adding a parallel motion stIn this paper, we propose a new deep neural network architecture for online action detection, termed ream to the original appearance one in AMTnet; (2) in opposition to state-of-the-art action detectors which train appearance and motion streams separately, and use a test time late fusion scheme to fuse RGB and flow cues, by jointly training both streams in an end-to-end fashion and merging RGB and optical flow features at training time; (3) by introducing an online action tube generation algorithm which works at video-level, and in real-time (when exploiting only appearance features). Two-Stream AMTnet exhibits superior action detection performance over state-of-the-art approaches on the standard action detection benchmarks.",
+          "published": "2020-04-03T00:00:00.000Z",
+          "authors": [
+            "Suman Saha",
+            "Gurkirt Singh",
+            "Fabio Cuzzolin"
+          ],
+          "arxivUrl": "http://arxiv.org/abs/2004.01494",
+          "pdfUrl": "https://arxiv.org/pdf/2004.01494.pdf"
+        },
+        {
+          "id": "54338a51-bb92-4688-8083-497b2df88887",
+          "title": "Attacking vision-based perception in end-to-end autonomous driving models",
+          "titleZh": "Attacking vision-based perception in end-to-end autonomous driving models",
+          "titleEn": "Attacking vision-based perception in end-to-end autonomous driving models",
+          "summary": "Adversarial Robustness in Machine Learning",
+          "published": "2020-04-04T00:00:00.000Z",
+          "authors": [
+            "Adith Boloor",
+            "Karthik Garimella",
+            "Xin He",
+            "Christopher Gill",
+            "Yevgeniy Vorobeychik",
+            "Xuan Zhang"
+          ],
+          "arxivUrl": "https://doi.org/10.1016/j.sysarc.2020.101766",
+          "pdfUrl": "https://doi.org/10.1016/j.sysarc.2020.101766"
+        },
+        {
+          "id": "316472df-d1a7-48a2-bd68-ce594d27250a",
+          "title": "Uncertainty Quantification with Statistical Guarantees in End-to-End Autonomous Driving Control",
+          "titleZh": "Uncertainty Quantification with Statistical Guarantees in End-to-End Autonomous Driving Control",
+          "titleEn": "Uncertainty Quantification with Statistical Guarantees in End-to-End Autonomous Driving Control",
+          "summary": "Deep neural network controllers for autonomous driving have recently benefited from significant performance improvements, and have begun deployment in the real world. Prior to their widespread adoption, safety guarantees are needed on the controller behaviour that properly take account of the uncertainty within the model as well as sensor noise. Bayesian neural networks, which assume a prior over the weights, have been shown capable of producing such uncertainty measures, but properties surrounding their safety have not yet been quantified for use in autonomous driving scenarios. In this paper, we develop a framework based on a state-of-the-art simulator for evaluating end-to-end Bayesian controllers. In addition to computing pointwise uncertainty measures that can be computed in real time and with statistical guarantees, we also provide a method for estimating the probability that, given a scenario, the controller keeps the car safe within a finite horizon. We experimentally evaluate the quality of uncertainty computation by three Bayesian inference methods in different scenarios and show how the uncertainty measures can be combined and calibrated for use in collision avoidance. Our results suggest that uncertainty estimates can greatly aid decision making in autonomous driving.",
+          "published": "2020-05-01T00:00:00.000Z",
+          "authors": [
+            "Rhiannon Michelmore",
+            "Matthew Wicker",
+            "Luca Laurenti",
+            "Luca Cardelli",
+            "Yarin Gal",
+            "Marta Kwiatkowska"
+          ],
+          "arxivUrl": "https://doi.org/10.1109/icra40945.2020.9196844",
+          "pdfUrl": "https://arxiv.org/pdf/1909.09884.pdf"
+        },
+        {
+          "id": "e11a0b5d-878d-4149-8a5c-66df300b2525",
+          "title": "Multi-Modal Sensor Fusion-Based Deep Neural Network for End-to-End Autonomous Driving With Scene Understanding",
+          "titleZh": "Multi-Modal Sensor Fusion-Based Deep Neural Network for End-to-End Autonomous Driving With Scene Understanding",
+          "titleEn": "Multi-Modal Sensor Fusion-Based Deep Neural Network for End-to-End Autonomous Driving With Scene Understanding",
+          "summary": "This study aims to improve the performance and generalization capability of end-to-end autonomous driving with scene understanding leveraging deep learning and multimodal sensor fusion techniques. The designed end-to-end deep neural network takes as input the visual image and associated depth information in an early fusion level and outputs the pixel-wise semantic segmentation as scene understanding and vehicle control commands concurrently. The end-to-end deep learning-based autonomous driving model is tested in high-fidelity simulated urban driving conditions and compared with the benchmark of CoRL2017 and NoCrash. The testing results show that the proposed approach is of better performance and generalization ability, achieving a 100% success rate in static navigation tasks in both training and unobserved situations, as well as better success rates in other tasks than the prior models. A further ablation study shows that the model with the removal of multimodal sensor fusion or scene understanding pales in the new environment because of the false perception. The results verify that the performance of our model is improved by the synergy of multimodal sensor fusion with scene understanding subtask, demonstrating the feasibility and effectiveness of the developed deep neural network with multimodal sensor fusion.",
+          "published": "2020-06-17T00:00:00.000Z",
+          "authors": [
+            "Zhiyu Huang",
+            "Chen Lv",
+            "Yang Xing",
+            "Jingda Wu"
+          ],
+          "arxivUrl": "https://doi.org/10.1109/jsen.2020.3003121",
+          "pdfUrl": "https://arxiv.org/pdf/2005.09202.pdf"
+        },
+        {
+          "id": "58e7e0d3-83b5-4e04-b729-c19784bf8f11",
+          "title": "Towards Robust LiDAR-based Perception in Autonomous Driving: General Black-box Adversarial Sensor Attack and Countermeasures",
+          "titleZh": "Towards Robust LiDAR-based Perception in Autonomous Driving: General Black-box Adversarial Sensor Attack and Countermeasures",
+          "titleEn": "Towards Robust LiDAR-based Perception in Autonomous Driving: General Black-box Adversarial Sensor Attack and Countermeasures",
+          "summary": "Perception plays a pivotal role in autonomous driving systems, which utilizes onboard sensors like cameras and LiDARs (Light Detection and Ranging) to assess surroundings. Recent studies have demonstrated that LiDAR-based perception is vulnerable to spoofing attacks, in which adversaries spoof a fake vehicle in front of a victim self-driving car by strategically transmitting laser signals to the victim's LiDAR sensor. However, existing attacks suffer from effectiveness and generality limitations. In this work, we perform the first study to explore the general vulnerability of current LiDAR-based perception architectures and discover that the ignored occlusion patterns in LiDAR point clouds make self-driving cars vulnerable to spoofing attacks. We construct the first black-box spoofing attack based on our identified vulnerability, which universally achieves around 80% mean success rates on all target models. We perform the first defense study, proposing CARLO to mitigate LiDAR spoofing attacks. CARLO detects spoofed data by treating ignored occlusion patterns as invariant physical features, which reduces the mean attack success rate to 5.5%. Meanwhile, we take the first step towards exploring a general architecture for robust LiDAR-based perception, and propose SVF that embeds the neglected physical features into end-to-end learning. SVF further reduces the mean attack success rate to around 2.3%.",
+          "published": "2020-06-30T00:00:00.000Z",
+          "authors": [
+            "Jiachen Sun",
+            "Yulong Cao",
+            "Qi Alfred Chen",
+            "Z. Morley Mao"
+          ],
+          "arxivUrl": "http://arxiv.org/abs/2006.16974",
+          "pdfUrl": "https://arxiv.org/pdf/2006.16974.pdf"
+        },
+        {
+          "id": "36c6f2b2-d0f2-49ae-99ba-a13de6517410",
+          "title": "Design and implementation of human driving data–based active lane change control for autonomous vehicles",
+          "titleZh": "Design and implementation of human driving data–based active lane change control for autonomous vehicles",
+          "titleEn": "Design and implementation of human driving data–based active lane change control for autonomous vehicles",
+          "summary": "This article describes the design, implementation, and evaluation of an active lane change control algorithm for autonomous vehicles with human factor considerations. Lane changes need to be performed considering both driver acceptance and safety with surrounding vehicles. Therefore, autonomous driving systems need to be designed based on an analysis of human driving behavior. In this article, manual driving characteristics are investigated using real-world driving test data. In lane change situations, interactions with surrounding vehicles were mainly investigated. And safety indices were developed with kinematic analysis. A safety indices–based lane change decision and control algorithm has been developed. In order to improve safety, stochastic predictions of both the ego vehicle and surrounding vehicles have been conducted with consideration of sensor noise and model uncertainties. The desired driving mode is decided to cope with all lane changes on highway. To obtain desired reference and constraints, motion planning for lane changes has been designed taking stochastic prediction-based safety indices into account. A stochastic model predictive control with constraints has been adopted to determine vehicle control inputs: the steering angle and the longitudinal acceleration. The proposed active lane change algorithm has been successfully implemented on an autonomous vehicle and evaluated via real-world driving tests. Safe and comfortable lane changes in high-speed driving on highways have been demonstrated using our autonomous test vehicle.",
+          "published": "2020-08-14T00:00:00.000Z",
+          "authors": [
+            "Heungseok Chae",
+            "Yonghwan Jeong",
+            "Hojun Lee",
+            "Jongcherl Park",
+            "Kyongsu Yi"
+          ],
+          "arxivUrl": "https://doi.org/10.1177/0954407020947678",
+          "pdfUrl": "https://doi.org/10.1177/0954407020947678"
+        },
+        {
+          "id": "e4a4916c-832d-4088-86cf-c6b3555e49d5",
+          "title": "BDD100K: A Diverse Driving Dataset for Heterogeneous Multitask Learning",
+          "titleZh": "BDD100K: A Diverse Driving Dataset for Heterogeneous Multitask Learning",
+          "titleEn": "BDD100K: A Diverse Driving Dataset for Heterogeneous Multitask Learning",
+          "summary": "Datasets drive vision progress, yet existing driving datasets are impoverished in terms of visual content and supported tasks to study multitask learning for autonomous driving. Researchers are usually constrained to study a small set of problems on one dataset, while real-world computer vision applications require performing tasks of various complexities. We construct BDD100K, the largest driving video dataset with 100K videos and 10 tasks to evaluate the exciting progress of image recognition algorithms on autonomous driving. The dataset possesses geographic, environmental, and weather diversity, which is useful for training models that are less likely to be surprised by new conditions. Based on this diverse dataset, we build a benchmark for heterogeneous multitask learning and study how to solve the tasks together. Our experiments show that special training strategies are needed for existing models to perform such heterogeneous tasks. BDD100K opens the door for future studies in this important venue.",
+          "published": "2020-06-01T00:00:00.000Z",
+          "authors": [
+            "Fisher Yu",
+            "Haofeng Chen",
+            "Xin Wang",
+            "Wenqi Xian",
+            "Yingying Chen",
+            "Fangchen Liu",
+            "Vashisht Madhavan",
+            "Trevor Darrell"
+          ],
+          "arxivUrl": "https://doi.org/10.1109/cvpr42600.2020.00271",
+          "pdfUrl": "https://doi.org/10.1109/cvpr42600.2020.00271"
+        },
+        {
+          "id": "ba21435b-4a74-4319-9b29-4cb2d86bbbe8",
+          "title": "Learning to Drive by Imitation: An Overview of Deep Behavior Cloning Methods",
+          "titleZh": "Learning to Drive by Imitation: An Overview of Deep Behavior Cloning Methods",
+          "titleEn": "Learning to Drive by Imitation: An Overview of Deep Behavior Cloning Methods",
+          "summary": "There is currently a huge interest around autonomous vehicles from both industry and academia. This is mainly due to recent advances in machine learning and deep learning, allowing the development of promising methods for autonomous driving. The gap toward full autonomy is incrementally being reduced with essentially three main existing approaches. First, Modular systems that combine a pipeline of methods with each solving one specific sub-task of driving. Second, Direct Perception techniques that directly estimate affordances (car orientation, distances between lane borders, etc) used to compute control commands through a simple logic. Finally, end-to-end frameworks that automatically map raw sensor data to actuation values. The objective of this paper is to review some recent works focusing on end-to-end deep learning models for lane stable driving, as well as some publicly available real world datasets and open-source simulators that enable the development and evaluation of such methods.",
+          "published": "2020-06-15T00:00:00.000Z",
+          "authors": [
+            "Abdoulaye O. Ly",
+            "Moulay A. Akhloufi"
+          ],
+          "arxivUrl": "https://doi.org/10.1109/tiv.2020.3002505",
+          "pdfUrl": "https://doi.org/10.1109/tiv.2020.3002505"
+        },
+        {
+          "id": "74ff9450-0d50-4d5f-808e-3541660d6500",
+          "title": "Action-Based Representation Learning for Autonomous Driving",
+          "titleZh": "Action-Based Representation Learning for Autonomous Driving",
+          "titleEn": "Action-Based Representation Learning for Autonomous Driving",
+          "summary": "Human drivers produce a vast amount of data which could, in principle, be used to improve autonomous driving systems. Unfortunately, seemingly straightforward approaches for creating end-to-end driving models that map sensor data directly into driving actions are problematic in terms of interpretability, and typically have significant difficulty dealing with spurious correlations. Alternatively, we propose to use this kind of action-based driving data for learning representations. Our experiments show that an affordance-based driving model pre-trained with this approach can leverage a relatively small amount of weakly annotated imagery and outperform pure end-to-end driving models, while being more interpretable. Further, we demonstrate how this strategy outperforms previous methods based on learning inverse dynamics models as well as other methods based on heavy human supervision (ImageNet).",
+          "published": "2020-08-21T00:00:00.000Z",
+          "authors": [
+            "Yi Xiao",
+            "Felipe Codevilla",
+            "Christopher Pal",
+            "Antonio M. López"
+          ],
+          "arxivUrl": "http://arxiv.org/abs/2008.09417",
+          "pdfUrl": "https://arxiv.org/pdf/2008.09417.pdf"
+        },
+        {
+          "id": "4d7757a0-e2ad-4f43-a2aa-04ac0d01227e",
+          "title": "Development of the End- to-End Learning based Autonomous Driving Framework and Experiments on a Full-Scale Autonomous Vehicle",
+          "titleZh": "Development of the End- to-End Learning based Autonomous Driving Framework and Experiments on a Full-Scale Autonomous Vehicle",
+          "titleEn": "Development of the End- to-End Learning based Autonomous Driving Framework and Experiments on a Full-Scale Autonomous Vehicle",
+          "summary": "In recent years, autonomous vehicles have been developed by various approaches for traffic safety and driver convenience. End-to-end learning-based autonomous driving has gained enormous attention in conjunction with deep learning technologies in which perception, planning, and control of the conventional autonomous driving algorithm are trained by a single deep neural network. In this paper, we present the end-to-end learning-based autonomous driving framework. The framework consisted of three parts: data acquisition in real-world and simulated environments, network design and optimization, and performance evaluation. Our framework was integrated on a full-scale autonomous vehicle platform and evaluated with various performance metrics.",
+          "published": "2020-05-14T00:00:00.000Z",
+          "authors": [
+            "Chanyoung Jung",
+            "Hyunki Seong",
+            "David Hyunchul Shim"
+          ],
+          "arxivUrl": "https://doi.org/10.5302/j.icros.2020.20.0012",
+          "pdfUrl": "https://doi.org/10.5302/j.icros.2020.20.0012"
+        },
+        {
+          "id": "b75a72fd-8458-473b-a689-dd0921087c18",
+          "title": "Time-to-Line Crossing Enhanced End-to-End Autonomous Driving Framework",
+          "titleZh": "Time-to-Line Crossing Enhanced End-to-End Autonomous Driving Framework",
+          "titleEn": "Time-to-Line Crossing Enhanced End-to-End Autonomous Driving Framework",
+          "summary": "End-to-end autonomous driving approach, which directly maps raw input images to vehicle control commands using a deep neural network, is gaining considerable attention from both academia and industry. Researchers have conducted studies on this subject over the past few years. However, they have focused on designing network architecture, and evaluated performance only with root mean square error (RMSE), which did not account for the temporal dynamics of autonomous driving. In this paper, we propose a time-to-line crossing (TLC) enhanced end-to-end driving framework. The proposed framework is original to the industry in three ways. First, for the fine-labeled training dataset for end-to-end autonomous driving, the TLC based label correction algorithm is applied to reduce the inaccuracies of driver action, which is used as a ground truth. Second, we designed a novel deep neural network model based on bi-directional convolutional long short-term memory (bi-CLSTM) which can sufficiently encode the spatial and temporal features in the input image sequence. Third, in addition to the RMSE evaluation metric, we validated the performance of the end-to-end driving model using TLC, the advanced driving support system (ADAS), and a driver performance indicator. We integrated the proposed framework with existing end-to-end driving models on a full-scale autonomous vehicle in the experimental portion of our study. The results show that the proposed framework is valid and that our network model outperforms the existing models in terms of both RMSE and TLC.",
+          "published": "2020-09-20T00:00:00.000Z",
+          "authors": [
+            "Chanyoung Jung",
+            "Hyunki Seong",
+            "David Hyunchul Shim"
+          ],
+          "arxivUrl": "https://doi.org/10.1109/itsc45102.2020.9294232",
+          "pdfUrl": "https://doi.org/10.1109/itsc45102.2020.9294232"
+        },
+        {
+          "id": "71f27b74-8a8c-428d-8942-ab15f3fc6dc7",
+          "title": "DeepBillboard",
+          "titleZh": "DeepBillboard",
+          "titleEn": "DeepBillboard",
+          "summary": "Deep Neural Networks (DNNs) have been widely applied in autonomous systems such as self-driving vehicles. Recently, DNN testing has been intensively studied to automatically generate adversarial examples, which inject small-magnitude perturbations into inputs to test DNNs under extreme situations. While existing testing techniques prove to be effective, particularly for autonomous driving, they mostly focus on generating digital adversarial perturbations, e.g., changing image pixels, which may never happen in the physical world. Thus, there is a critical missing piece in the literature on autonomous driving testing: understanding and exploiting both digital and physical adversarial perturbation generation for impacting steering decisions. In this paper, we propose a systematic physical-world testing approach, namely DeepBillboard, targeting at a quite common and practical driving scenario: drive-by billboards. DeepBillboard is capable of generating a robust and resilient printable adversarial billboard test, which works under dynamic changing driving conditions including viewing angle, distance, and lighting. The objective is to maximize the possibility, degree, and duration of the steering-angle errors of an autonomous vehicle driving by our generated adversarial billboard. We have extensively evaluated the efficacy and robustness of DeepBillboard by conducting both experiments with digital perturbations and physical-world case studies. The digital experimental results show that DeepBillboard is effective for various steering models and scenes. Furthermore, the physical case studies demonstrate that DeepBillboard is sufficiently robust and resilient for generating physical-world adversarial billboard tests for real-world driving under various weather conditions, being able to mislead the average steering angle error up to 26.44 degrees. To the best of our knowledge, this is the first study demonstrating the possibility of generating realistic and continuous physical-world tests for practical autonomous driving systems; moreover, DeepBillboard can be directly generalized to a variety of other physical entities/surfaces along the curbside, e.g., a graffiti painted on a wall.",
+          "published": "2020-06-27T00:00:00.000Z",
+          "authors": [
+            "Husheng Zhou",
+            "Wei Li",
+            "Zelun Kong",
+            "Junfeng Guo",
+            "Yuqun Zhang",
+            "Bei Yu",
+            "Lingming Zhang",
+            "Cong Liu"
+          ],
+          "arxivUrl": "https://doi.org/10.1145/3377811.3380422",
+          "pdfUrl": "https://dl.acm.org/doi/pdf/10.1145/3377811.3380422"
+        },
+        {
+          "id": "1710.02410",
+          "title": "1710.02410",
+          "titleZh": "1710.02410",
+          "titleEn": "1710.02410",
+          "summary": "这里仍以 End to End Learning for Self-Driving Cars 作为现代端到端自动驾驶主线的起点，因为后续关于恢复驾驶、闭环规划、世界模型与驾驶 VLA 的工作，都是在这条主线上逐步分化、扩展并重新汇流的。",
+          "published": "2020-01-01T00:00:00.000Z",
+          "authors": [],
+          "arxivUrl": "https://arxiv.org/abs/1710.02410",
+          "pdfUrl": "https://arxiv.org/pdf/1710.02410.pdf"
+        },
+        {
+          "id": "1912.12294",
+          "title": "1912.12294",
+          "titleZh": "1912.12294",
+          "titleEn": "1912.12294",
+          "summary": "这里仍以 End to End Learning for Self-Driving Cars 作为现代端到端自动驾驶主线的起点，因为后续关于恢复驾驶、闭环规划、世界模型与驾驶 VLA 的工作，都是在这条主线上逐步分化、扩展并重新汇流的。",
+          "published": "2020-01-01T00:00:00.000Z",
+          "authors": [],
+          "arxivUrl": "https://arxiv.org/abs/1912.12294",
+          "pdfUrl": "https://arxiv.org/pdf/1912.12294.pdf"
+        },
+        {
+          "id": "1511.03791",
+          "title": "1511.03791",
+          "titleZh": "1511.03791",
+          "titleEn": "1511.03791",
+          "summary": "这里仍以 End to End Learning for Self-Driving Cars 作为现代端到端自动驾驶主线的起点，因为后续关于恢复驾驶、闭环规划、世界模型与驾驶 VLA 的工作，都是在这条主线上逐步分化、扩展并重新汇流的。",
+          "published": "2020-01-01T00:00:00.000Z",
+          "authors": [],
+          "arxivUrl": "https://arxiv.org/abs/1511.03791",
+          "pdfUrl": "https://arxiv.org/pdf/1511.03791.pdf"
         }
       ],
-      "mergeMarkers": [],
-      "timelineLegend": {
-        "stageLabel": "纵向代表研究阶段，表示同一轮研究推进的舞台层级。",
-        "branchLabel": "横向不同颜色代表不同分支，同一分支在各页面颜色保持一致。",
-        "mergeLabel": "当一篇论文同时承接多条分支时，会以汇流节点的方式出现。",
-        "dormantLabel": "若某条分支本阶段没有新候选，会显示为“本阶段未推进”，而不是拉长整条寿命线。"
+      "researchNodes": [
+        {
+          "nodeId": "autonomous-driving:stage-0:1604.07316",
+          "id": "autonomous-driving:stage-0:1604.07316",
+          "topicId": "autonomous-driving",
+          "stageIndex": 1,
+          "paperIds": [
+            "0e21245f-24da-4693-b951-94f1c22903e8",
+            "1604.07316"
+          ],
+          "primaryPaperId": "1604.07316",
+          "sourceBranchIds": [
+            "branch:autonomous-driving:origin"
+          ],
+          "sourceProblemNodeIds": [
+            "autonomous-driving:origin-problem"
+          ],
+          "status": "canonical",
+          "provisional": false,
+          "nodeLabel": "起源节点：端到端范式确立与样本复杂度争议",
+          "nodeSummary": "2016年4月至5月，自动驾驶的端到端范式正处于从概念验证走向工程落地的临界点。社区在同一时间窗口内密集抛出三篇论文，看似形成「实证奠基-理论批判-工程优化」的完整闭环，实则暴露了该领域最根本的方法论裂痕。核心矛盾在于：驾驶是闭环动态过程，但监督学习默认训练与测试状态独立同分布（i.i.d.）。模型在分布外状态的微小误差会累积为灾难性偏移，导致车辆失控...",
+          "isMergeNode": false,
+          "tags": [],
+          "discoveredAt": "2016-04-25T16:03:56.000Z",
+          "createdAt": "2026-04-08T21:32:33.947Z",
+          "updatedAt": "2026-04-12T13:44:34.046Z",
+          "version": 1,
+          "branchId": "branch:autonomous-driving:origin",
+          "paperId": "1604.07316",
+          "paperPublishedAt": "2016-04-25T16:03:56.000Z",
+          "title": "起源节点：端到端范式确立与样本复杂度争议",
+          "summary": "2016年4月至5月，自动驾驶的端到端范式正处于从概念验证走向工程落地的临界点。社区在同一时间窗口内密集抛出三篇论文，看似形成「实证奠基-理论批判-工程优化」的完整闭环，实则暴露了该领域最根本的方法论裂痕。核心矛盾在于：驾驶是闭环动态过程，但监督学习默认训练与测试状态独立同分布（i.i.d.）。模型在分布外状态的微小误差会累积为灾难性偏移，导致车辆失控...",
+          "isKeyPaper": true
+        },
+        {
+          "nodeId": "5e65f235-7dbb-4581-b6db-1180d685fb54",
+          "id": "5e65f235-7dbb-4581-b6db-1180d685fb54",
+          "topicId": "autonomous-driving",
+          "stageIndex": 1,
+          "paperIds": [
+            "06b87490-9d46-496d-b26d-2b2db88c4f81"
+          ],
+          "primaryPaperId": "06b87490-9d46-496d-b26d-2b2db88c4f81",
+          "sourceBranchIds": [
+            "branch:autonomous-driving:stage-1"
+          ],
+          "sourceProblemNodeIds": [
+            "autonomous-driving:problem:1"
+          ],
+          "status": "canonical",
+          "provisional": false,
+          "nodeLabel": "恢复策略与仿真迁移",
+          "nodeSummary": "2016年4-5月，自动驾驶的端到端范式正处于从概念验证走向工程落地的临界点。三篇论文共同追问：在自动驾驶错误率需低于10⁻⁹的严苛要求下，端到端方法是否具备可扩展性？核心矛盾在于：驾驶是闭环动态过程，而监督学习默认训练与测试状态独立同分布（i.i.d.）。模型在分布外状态的微小误差会累积为灾难性偏移，导致车辆失控。Mobileye的理论分析（0e21...",
+          "isMergeNode": false,
+          "tags": [],
+          "discoveredAt": "2016-05-20T00:00:00.000Z",
+          "createdAt": "2026-04-11T02:13:12.713Z",
+          "updatedAt": "2026-04-12T13:44:34.051Z",
+          "version": 1,
+          "branchId": "branch:autonomous-driving:stage-1",
+          "paperId": "06b87490-9d46-496d-b26d-2b2db88c4f81",
+          "paperPublishedAt": "2016-05-20T00:00:00.000Z",
+          "title": "恢复策略与仿真迁移",
+          "summary": "2016年4-5月，自动驾驶的端到端范式正处于从概念验证走向工程落地的临界点。三篇论文共同追问：在自动驾驶错误率需低于10⁻⁹的严苛要求下，端到端方法是否具备可扩展性？核心矛盾在于：驾驶是闭环动态过程，而监督学习默认训练与测试状态独立同分布（i.i.d.）。模型在分布外状态的微小误差会累积为灾难性偏移，导致车辆失控。Mobileye的理论分析（0e21...",
+          "isKeyPaper": true
+        },
+        {
+          "nodeId": "075d7893-f10b-410e-8bd6-8a01369f53cb",
+          "id": "075d7893-f10b-410e-8bd6-8a01369f53cb",
+          "topicId": "autonomous-driving",
+          "stageIndex": 2,
+          "paperIds": [
+            "e38dca12-f939-4c50-91d4-70513a0cbf41"
+          ],
+          "primaryPaperId": "e38dca12-f939-4c50-91d4-70513a0cbf41",
+          "sourceBranchIds": [
+            "branch:autonomous-driving:stage-2"
+          ],
+          "sourceProblemNodeIds": [
+            "autonomous-driving:problem:2"
+          ],
+          "status": "canonical",
+          "provisional": false,
+          "nodeLabel": "规模化端到端驾驶建模",
+          "nodeSummary": "2016年底，端到端驾驶社区陷入双重瓶颈。一是数据困境：NVIDIA的CNN虽证明了像素到转向的可行性，但其72小时单一车辆数据无法支撑通用模型，鲁棒的感知-行动模型需要多样化视觉外观与真实行为数据，但既有方法要么局限于现场采集，要么依赖仿真环境，数据规模与真实性不可兼得。二是物理极限：传统相机33毫秒时间分辨率无法捕捉毫秒级动态（行人闪出、前车急刹）...",
+          "isMergeNode": false,
+          "tags": [],
+          "discoveredAt": "2016-12-04T00:00:00.000Z",
+          "createdAt": "2026-04-09T02:59:47.984Z",
+          "updatedAt": "2026-04-12T13:44:34.058Z",
+          "version": 1,
+          "branchId": "branch:autonomous-driving:stage-2",
+          "paperId": "e38dca12-f939-4c50-91d4-70513a0cbf41",
+          "paperPublishedAt": "2016-12-04T00:00:00.000Z",
+          "title": "规模化端到端驾驶建模",
+          "summary": "2016年底，端到端驾驶社区陷入双重瓶颈。一是数据困境：NVIDIA的CNN虽证明了像素到转向的可行性，但其72小时单一车辆数据无法支撑通用模型，鲁棒的感知-行动模型需要多样化视觉外观与真实行为数据，但既有方法要么局限于现场采集，要么依赖仿真环境，数据规模与真实性不可兼得。二是物理极限：传统相机33毫秒时间分辨率无法捕捉毫秒级动态（行人闪出、前车急刹）...",
+          "isKeyPaper": true
+        },
+        {
+          "nodeId": "124ceb44-c8c1-4334-9b8a-afb7459de5c6",
+          "id": "124ceb44-c8c1-4334-9b8a-afb7459de5c6",
+          "topicId": "autonomous-driving",
+          "stageIndex": 2,
+          "paperIds": [
+            "0946bdb9-826b-4742-b62e-e0db013e7025",
+            "39e68cb8-6574-4bca-83d9-02ee52a2b860"
+          ],
+          "primaryPaperId": "0946bdb9-826b-4742-b62e-e0db013e7025",
+          "sourceBranchIds": [
+            "branch:autonomous-driving:stage-2"
+          ],
+          "sourceProblemNodeIds": [
+            "autonomous-driving:problem:2"
+          ],
+          "status": "canonical",
+          "provisional": false,
+          "nodeLabel": "恢复策略与仿真迁移",
+          "nodeSummary": "2016年底，端到端驾驶社区陷入双重困境。一是数据饥渴：NVIDIA的CNN虽证明了像素到转向的可行性，但其72小时单一车辆数据无法支撑通用模型，鲁棒的感知-行动模型需要多样化视觉外观与真实行为数据，但既有方法要么局限于现场采集，要么依赖仿真环境，数据规模与真实性不可兼得。二是物理极限：传统相机33毫秒时间分辨率无法捕捉毫秒级动态（行人闪出、前车急刹）...",
+          "isMergeNode": false,
+          "tags": [],
+          "discoveredAt": "2017-01-01T00:00:00.000Z",
+          "createdAt": "2026-04-09T03:02:59.512Z",
+          "updatedAt": "2026-04-12T13:44:34.064Z",
+          "version": 1,
+          "branchId": "branch:autonomous-driving:stage-2",
+          "paperId": "0946bdb9-826b-4742-b62e-e0db013e7025",
+          "paperPublishedAt": "2017-01-01T00:00:00.000Z",
+          "title": "恢复策略与仿真迁移",
+          "summary": "2016年底，端到端驾驶社区陷入双重困境。一是数据饥渴：NVIDIA的CNN虽证明了像素到转向的可行性，但其72小时单一车辆数据无法支撑通用模型，鲁棒的感知-行动模型需要多样化视觉外观与真实行为数据，但既有方法要么局限于现场采集，要么依赖仿真环境，数据规模与真实性不可兼得。二是物理极限：传统相机33毫秒时间分辨率无法捕捉毫秒级动态（行人闪出、前车急刹）...",
+          "isKeyPaper": true
+        },
+        {
+          "nodeId": "13b21e13-d1ca-423c-abf7-bc028d62dbb0",
+          "id": "13b21e13-d1ca-423c-abf7-bc028d62dbb0",
+          "topicId": "autonomous-driving",
+          "stageIndex": 2,
+          "paperIds": [
+            "3b0113dc-46c5-4be9-b8d6-a03b2102c392",
+            "02bcd04f-f86a-4e58-a23e-f86ef97f4f95"
+          ],
+          "primaryPaperId": "02bcd04f-f86a-4e58-a23e-f86ef97f4f95",
+          "sourceBranchIds": [
+            "branch:autonomous-driving:stage-2"
+          ],
+          "sourceProblemNodeIds": [
+            "autonomous-driving:problem:2"
+          ],
+          "status": "canonical",
+          "provisional": false,
+          "nodeLabel": "事件相机与神经形态驾驶",
+          "nodeSummary": "2016年底，端到端驾驶社区陷入双重困境。一是数据困境：NVIDIA的CNN虽证明了像素到转向的可行性，但其72小时单一车辆数据无法支撑通用模型，鲁棒的感知-行动模型需要多样化视觉外观与真实行为数据，但既有方法要么局限于现场采集，要么依赖仿真环境，数据规模与真实性不可兼得。二是物理极限：传统相机33毫秒时间分辨率无法捕捉毫秒级动态（行人闪出、前车急刹）...",
+          "isMergeNode": false,
+          "tags": [],
+          "discoveredAt": "2017-01-01T00:00:00.000Z",
+          "createdAt": "2026-04-09T03:07:29.078Z",
+          "updatedAt": "2026-04-12T13:44:34.101Z",
+          "version": 1,
+          "branchId": "branch:autonomous-driving:stage-2",
+          "paperId": "02bcd04f-f86a-4e58-a23e-f86ef97f4f95",
+          "paperPublishedAt": "2017-01-01T00:00:00.000Z",
+          "title": "事件相机与神经形态驾驶",
+          "summary": "2016年底，端到端驾驶社区陷入双重困境。一是数据困境：NVIDIA的CNN虽证明了像素到转向的可行性，但其72小时单一车辆数据无法支撑通用模型，鲁棒的感知-行动模型需要多样化视觉外观与真实行为数据，但既有方法要么局限于现场采集，要么依赖仿真环境，数据规模与真实性不可兼得。二是物理极限：传统相机33毫秒时间分辨率无法捕捉毫秒级动态（行人闪出、前车急刹）...",
+          "isKeyPaper": true
+        },
+        {
+          "nodeId": "26af6400-4bd4-4aa1-b478-de6b7c7c68c2",
+          "id": "26af6400-4bd4-4aa1-b478-de6b7c7c68c2",
+          "topicId": "autonomous-driving",
+          "stageIndex": 2,
+          "paperIds": [
+            "ff933027-3c9b-41a9-93c3-ef0d4138be77",
+            "7a1e48e4-c497-499f-b223-aa97806b3c38"
+          ],
+          "primaryPaperId": "7a1e48e4-c497-499f-b223-aa97806b3c38",
+          "sourceBranchIds": [
+            "branch:autonomous-driving:stage-2"
+          ],
+          "sourceProblemNodeIds": [
+            "autonomous-driving:problem:2"
+          ],
+          "status": "canonical",
+          "provisional": false,
+          "nodeLabel": "注意力、认知图与可解释驾驶",
+          "nodeSummary": "2016年底，端到端驾驶社区陷入双重困境。一是数据饥渴：NVIDIA的CNN虽证明了像素到转向的可行性，但其72小时单一车辆数据无法支撑通用模型，鲁棒的感知-行动模型需要多样化视觉外观与真实行为数据，但既有方法要么局限于现场采集，要么依赖仿真环境，数据规模与真实性不可兼得。二是物理极限：传统相机33毫秒时间分辨率无法捕捉毫秒级动态（行人闪出、前车急刹）...",
+          "isMergeNode": false,
+          "tags": [],
+          "discoveredAt": "2017-03-30T00:00:00.000Z",
+          "createdAt": "2026-04-09T03:05:07.027Z",
+          "updatedAt": "2026-04-12T13:44:34.107Z",
+          "version": 1,
+          "branchId": "branch:autonomous-driving:stage-2",
+          "paperId": "7a1e48e4-c497-499f-b223-aa97806b3c38",
+          "paperPublishedAt": "2017-03-30T00:00:00.000Z",
+          "title": "注意力、认知图与可解释驾驶",
+          "summary": "2016年底，端到端驾驶社区陷入双重困境。一是数据饥渴：NVIDIA的CNN虽证明了像素到转向的可行性，但其72小时单一车辆数据无法支撑通用模型，鲁棒的感知-行动模型需要多样化视觉外观与真实行为数据，但既有方法要么局限于现场采集，要么依赖仿真环境，数据规模与真实性不可兼得。二是物理极限：传统相机33毫秒时间分辨率无法捕捉毫秒级动态（行人闪出、前车急刹）...",
+          "isKeyPaper": true
+        },
+        {
+          "nodeId": "21fe794f-a65b-4413-9c55-2e2404c77e19",
+          "id": "21fe794f-a65b-4413-9c55-2e2404c77e19",
+          "topicId": "autonomous-driving",
+          "stageIndex": 9,
+          "paperIds": [
+            "6272b245-4176-47ef-a5dd-66564e1fd70a"
+          ],
+          "primaryPaperId": "6272b245-4176-47ef-a5dd-66564e1fd70a",
+          "sourceBranchIds": [
+            "branch:autonomous-driving:stage-9"
+          ],
+          "sourceProblemNodeIds": [
+            "autonomous-driving:problem:9"
+          ],
+          "status": "canonical",
+          "provisional": false,
+          "nodeLabel": "世界模型与闭环规划",
+          "nodeSummary": "2020年4-9月，端到端控制器已从实验室走向真实部署（Waymo 400万英里、特斯拉Autopilot），但产业界面临致命缺口：深度网络的「黑盒」特性使安全验证无法量化，对抗攻击揭示感知模块灾难性失效，而多模态融合与不确定性量化虽提供技术路径，却未解决闭环验证不可复现的核心矛盾。",
+          "isMergeNode": false,
+          "tags": [],
+          "discoveredAt": "2020-06-01T00:00:00.000Z",
+          "createdAt": "2026-04-11T03:22:45.151Z",
+          "updatedAt": "2026-04-12T13:44:34.114Z",
+          "version": 1,
+          "branchId": "branch:autonomous-driving:stage-9",
+          "paperId": "6272b245-4176-47ef-a5dd-66564e1fd70a",
+          "paperPublishedAt": "2020-06-01T00:00:00.000Z",
+          "title": "世界模型与闭环规划",
+          "summary": "2020年4-9月，端到端控制器已从实验室走向真实部署（Waymo 400万英里、特斯拉Autopilot），但产业界面临致命缺口：深度网络的「黑盒」特性使安全验证无法量化，对抗攻击揭示感知模块灾难性失效，而多模态融合与不确定性量化虽提供技术路径，却未解决闭环验证不可复现的核心矛盾。",
+          "isKeyPaper": true
+        },
+        {
+          "nodeId": "4ae488f7-ecac-444b-9359-9a8cf668869e",
+          "id": "4ae488f7-ecac-444b-9359-9a8cf668869e",
+          "topicId": "autonomous-driving",
+          "stageIndex": 9,
+          "paperIds": [
+            "0743b70f-4687-4845-8c5a-467612974850",
+            "5635af16-6171-4ce8-9884-35787fb149e6",
+            "8f93e834-ac91-4a39-b08d-e91d7c40bf1c",
+            "888c7451-e52b-4f08-8464-a5fce590498e"
+          ],
+          "primaryPaperId": "5635af16-6171-4ce8-9884-35787fb149e6",
+          "sourceBranchIds": [
+            "branch:autonomous-driving:stage-9"
+          ],
+          "sourceProblemNodeIds": [
+            "autonomous-driving:problem:9"
+          ],
+          "status": "canonical",
+          "provisional": false,
+          "nodeLabel": "语言条件驾驶与 VLA",
+          "nodeSummary": "核心追问是：在自动驾驶错误率需低于10⁻⁹的严苛要求下，开环性能（转向精度、预测误差、识别准确率、攻击成功率）如何单调映射到闭环安全指标（碰撞率/接管率）？学习型预测与形式化安全保证如何融合？对抗攻击揭示的脆弱性如何在世界模型设计中内置？然而10篇论文均未建立此映射，所有「成功率」「边界」「鲁棒性」声称均为开环指标或仿真器内置计数，产业界无法计算ROI...",
+          "isMergeNode": false,
+          "tags": [],
+          "discoveredAt": "2020-05-27T00:00:00.000Z",
+          "createdAt": "2026-04-11T03:22:45.157Z",
+          "updatedAt": "2026-04-12T13:44:34.122Z",
+          "version": 1,
+          "branchId": "branch:autonomous-driving:stage-9",
+          "paperId": "5635af16-6171-4ce8-9884-35787fb149e6",
+          "paperPublishedAt": "2020-05-27T00:00:00.000Z",
+          "title": "语言条件驾驶与 VLA",
+          "summary": "核心追问是：在自动驾驶错误率需低于10⁻⁹的严苛要求下，开环性能（转向精度、预测误差、识别准确率、攻击成功率）如何单调映射到闭环安全指标（碰撞率/接管率）？学习型预测与形式化安全保证如何融合？对抗攻击揭示的脆弱性如何在世界模型设计中内置？然而10篇论文均未建立此映射，所有「成功率」「边界」「鲁棒性」声称均为开环指标或仿真器内置计数，产业界无法计算ROI...",
+          "isKeyPaper": true
+        },
+        {
+          "nodeId": "4aec1205-1438-44f2-b9c1-b44289d97bd4",
+          "id": "4aec1205-1438-44f2-b9c1-b44289d97bd4",
+          "topicId": "autonomous-driving",
+          "stageIndex": 9,
+          "paperIds": [
+            "46036b2c-4e3d-4338-8df6-8411253f3e5b"
+          ],
+          "primaryPaperId": "46036b2c-4e3d-4338-8df6-8411253f3e5b",
+          "sourceBranchIds": [
+            "branch:autonomous-driving:stage-9"
+          ],
+          "sourceProblemNodeIds": [
+            "autonomous-driving:problem:9"
+          ],
+          "status": "canonical",
+          "provisional": false,
+          "nodeLabel": "Future Frame Prediction of a Video Sequence",
+          "nodeSummary": "2020年4-9月，自动驾驶VLA世界模型研究线面临根本追问：如何让系统具备「预测未来」以支撑「安全规划」的能力，将反应时间从人类驾驶员的1.5秒压缩至毫秒级。核心矛盾在于，预测输出的准确性如何量化为决策收益？预测-规划的闭环性能如何验证？这是VLA世界模型从概念走向工程的关键门槛。",
+          "isMergeNode": false,
+          "tags": [],
+          "discoveredAt": "2020-08-31T00:00:00.000Z",
+          "createdAt": "2026-04-11T03:25:10.320Z",
+          "updatedAt": "2026-04-12T13:44:34.130Z",
+          "version": 1,
+          "branchId": "branch:autonomous-driving:stage-9",
+          "paperId": "46036b2c-4e3d-4338-8df6-8411253f3e5b",
+          "paperPublishedAt": "2020-08-31T00:00:00.000Z",
+          "title": "Future Frame Prediction of a Video Sequence",
+          "summary": "2020年4-9月，自动驾驶VLA世界模型研究线面临根本追问：如何让系统具备「预测未来」以支撑「安全规划」的能力，将反应时间从人类驾驶员的1.5秒压缩至毫秒级。核心矛盾在于，预测输出的准确性如何量化为决策收益？预测-规划的闭环性能如何验证？这是VLA世界模型从概念走向工程的关键门槛。",
+          "isKeyPaper": true
+        },
+        {
+          "nodeId": "7214c94f-0dfc-45b4-8cce-50fb97dcc09c",
+          "id": "7214c94f-0dfc-45b4-8cce-50fb97dcc09c",
+          "topicId": "autonomous-driving",
+          "stageIndex": 9,
+          "paperIds": [
+            "908c7e00-e489-4c20-b218-657cc589733b",
+            "54338a51-bb92-4688-8083-497b2df88887",
+            "316472df-d1a7-48a2-bd68-ce594d27250a",
+            "e11a0b5d-878d-4149-8a5c-66df300b2525",
+            "58e7e0d3-83b5-4e04-b729-c19784bf8f11"
+          ],
+          "primaryPaperId": "58e7e0d3-83b5-4e04-b729-c19784bf8f11",
+          "sourceBranchIds": [
+            "branch:autonomous-driving:stage-9"
+          ],
+          "sourceProblemNodeIds": [
+            "autonomous-driving:problem:9"
+          ],
+          "status": "canonical",
+          "provisional": false,
+          "nodeLabel": "端到端驾驶控制探索",
+          "nodeSummary": "这一节点收拢了同一阶段里的 15 篇论文，围绕「端到端驾驶控制探索」这一问题展开，而不是把论文标题机械并列。",
+          "isMergeNode": false,
+          "tags": [],
+          "discoveredAt": "2020-06-30T00:00:00.000Z",
+          "createdAt": "2026-04-11T03:23:31.269Z",
+          "updatedAt": "2026-04-12T13:44:34.184Z",
+          "version": 1,
+          "branchId": "branch:autonomous-driving:stage-9",
+          "paperId": "58e7e0d3-83b5-4e04-b729-c19784bf8f11",
+          "paperPublishedAt": "2020-06-30T00:00:00.000Z",
+          "title": "端到端驾驶控制探索",
+          "summary": "这一节点收拢了同一阶段里的 15 篇论文，围绕「端到端驾驶控制探索」这一问题展开，而不是把论文标题机械并列。",
+          "isKeyPaper": true
+        },
+        {
+          "nodeId": "738e5003-ea17-4699-bfee-37b1bd07eaff",
+          "id": "738e5003-ea17-4699-bfee-37b1bd07eaff",
+          "topicId": "autonomous-driving",
+          "stageIndex": 9,
+          "paperIds": [
+            "36c6f2b2-d0f2-49ae-99ba-a13de6517410"
+          ],
+          "primaryPaperId": "36c6f2b2-d0f2-49ae-99ba-a13de6517410",
+          "sourceBranchIds": [
+            "branch:autonomous-driving:stage-9"
+          ],
+          "sourceProblemNodeIds": [
+            "autonomous-driving:problem:9"
+          ],
+          "status": "canonical",
+          "provisional": false,
+          "nodeLabel": "Design and implementation of human driving data–based active lane change control for autonomous vehicles",
+          "nodeSummary": "2020年4月至9月，端到端自动驾驶社区围绕「世界模型与闭环规划」这一核心追问，从动作表示学习、对抗鲁棒性、统计安全保证、多模态融合、视频预测、形式化规划、数据基建与交互意图八个方向展开探索。然而17篇论文构成三条互不相交的研究路径——数据驱动的预测生成路径（AMTnet→ABRL→Future Frame）、安全验证与对抗路径（Uncertainty...",
+          "isMergeNode": false,
+          "tags": [],
+          "discoveredAt": "2020-08-14T00:00:00.000Z",
+          "createdAt": "2026-04-11T03:25:10.313Z",
+          "updatedAt": "2026-04-12T13:44:34.191Z",
+          "version": 1,
+          "branchId": "branch:autonomous-driving:stage-9",
+          "paperId": "36c6f2b2-d0f2-49ae-99ba-a13de6517410",
+          "paperPublishedAt": "2020-08-14T00:00:00.000Z",
+          "title": "Design and implementation of human driving data–based active lane change control for autonomous vehicles",
+          "summary": "2020年4月至9月，端到端自动驾驶社区围绕「世界模型与闭环规划」这一核心追问，从动作表示学习、对抗鲁棒性、统计安全保证、多模态融合、视频预测、形式化规划、数据基建与交互意图八个方向展开探索。然而17篇论文构成三条互不相交的研究路径——数据驱动的预测生成路径（AMTnet→ABRL→Future Frame）、安全验证与对抗路径（Uncertainty...",
+          "isKeyPaper": true
+        },
+        {
+          "nodeId": "994f28cc-3c94-457b-9268-6bf769444cee",
+          "id": "994f28cc-3c94-457b-9268-6bf769444cee",
+          "topicId": "autonomous-driving",
+          "stageIndex": 9,
+          "paperIds": [
+            "e4a4916c-832d-4088-86cf-c6b3555e49d5",
+            "ba21435b-4a74-4319-9b29-4cb2d86bbbe8",
+            "74ff9450-0d50-4d5f-808e-3541660d6500"
+          ],
+          "primaryPaperId": "74ff9450-0d50-4d5f-808e-3541660d6500",
+          "sourceBranchIds": [
+            "branch:autonomous-driving:stage-9"
+          ],
+          "sourceProblemNodeIds": [
+            "autonomous-driving:problem:9"
+          ],
+          "status": "canonical",
+          "provisional": false,
+          "nodeLabel": "恢复策略与仿真迁移",
+          "nodeSummary": "核心追问是：在自动驾驶错误率需低于10⁻⁹的严苛要求下，如何利用人类驾驶产生的海量动作数据，在仿真环境中学习可迁移的鲁棒策略表示，并确保在真实世界的闭环部署中具备分布外恢复能力。具体分解为四个子任务：1）如何从专家动作中学习可负担性（affordance）表征而非伪相关；2）如何构建覆盖长尾场景的数据基础设施；3）如何量化模型不确定性以支撑安全验证；4...",
+          "isMergeNode": false,
+          "tags": [],
+          "discoveredAt": "2020-08-21T00:00:00.000Z",
+          "createdAt": "2026-04-11T03:20:19.655Z",
+          "updatedAt": "2026-04-12T13:44:34.196Z",
+          "version": 1,
+          "branchId": "branch:autonomous-driving:stage-9",
+          "paperId": "74ff9450-0d50-4d5f-808e-3541660d6500",
+          "paperPublishedAt": "2020-08-21T00:00:00.000Z",
+          "title": "恢复策略与仿真迁移",
+          "summary": "核心追问是：在自动驾驶错误率需低于10⁻⁹的严苛要求下，如何利用人类驾驶产生的海量动作数据，在仿真环境中学习可迁移的鲁棒策略表示，并确保在真实世界的闭环部署中具备分布外恢复能力。具体分解为四个子任务：1）如何从专家动作中学习可负担性（affordance）表征而非伪相关；2）如何构建覆盖长尾场景的数据基础设施；3）如何量化模型不确定性以支撑安全验证；4...",
+          "isKeyPaper": true
+        },
+        {
+          "nodeId": "a0505f4a-89a8-4292-8a05-9818b3478c93",
+          "id": "a0505f4a-89a8-4292-8a05-9818b3478c93",
+          "topicId": "autonomous-driving",
+          "stageIndex": 9,
+          "paperIds": [
+            "4d7757a0-e2ad-4f43-a2aa-04ac0d01227e",
+            "b75a72fd-8458-473b-a689-dd0921087c18"
+          ],
+          "primaryPaperId": "4d7757a0-e2ad-4f43-a2aa-04ac0d01227e",
+          "sourceBranchIds": [
+            "branch:autonomous-driving:stage-9"
+          ],
+          "sourceProblemNodeIds": [
+            "autonomous-driving:problem:9"
+          ],
+          "status": "canonical",
+          "provisional": false,
+          "nodeLabel": "注意力、认知图与可解释驾驶",
+          "nodeSummary": "2020年4月至9月，端到端控制器已从实验室走向真实部署（Waymo 400万英里、特斯拉Autopilot），但产业界面临致命缺口：深度网络的「黑盒」特性使安全验证无法量化，对抗攻击揭示感知模块灾难性失效，而多模态融合与不确定性量化虽提供技术路径，却未解决闭环验证不可复现的核心矛盾。",
+          "isMergeNode": false,
+          "tags": [],
+          "discoveredAt": "2020-05-14T00:00:00.000Z",
+          "createdAt": "2026-04-11T03:22:45.141Z",
+          "updatedAt": "2026-04-12T13:44:34.202Z",
+          "version": 1,
+          "branchId": "branch:autonomous-driving:stage-9",
+          "paperId": "4d7757a0-e2ad-4f43-a2aa-04ac0d01227e",
+          "paperPublishedAt": "2020-05-14T00:00:00.000Z",
+          "title": "注意力、认知图与可解释驾驶",
+          "summary": "2020年4月至9月，端到端控制器已从实验室走向真实部署（Waymo 400万英里、特斯拉Autopilot），但产业界面临致命缺口：深度网络的「黑盒」特性使安全验证无法量化，对抗攻击揭示感知模块灾难性失效，而多模态融合与不确定性量化虽提供技术路径，却未解决闭环验证不可复现的核心矛盾。",
+          "isKeyPaper": true
+        },
+        {
+          "nodeId": "aef5cc60-4a60-4830-8f11-0c86033fcdae",
+          "id": "aef5cc60-4a60-4830-8f11-0c86033fcdae",
+          "topicId": "autonomous-driving",
+          "stageIndex": 9,
+          "paperIds": [
+            "71f27b74-8a8c-428d-8942-ab15f3fc6dc7"
+          ],
+          "primaryPaperId": "71f27b74-8a8c-428d-8942-ab15f3fc6dc7",
+          "sourceBranchIds": [
+            "branch:autonomous-driving:stage-9"
+          ],
+          "sourceProblemNodeIds": [
+            "autonomous-driving:problem:9"
+          ],
+          "status": "canonical",
+          "provisional": false,
+          "nodeLabel": "DeepBillboard",
+          "nodeSummary": "2020年4月至9月，端到端自动驾驶社区围绕「世界模型与闭环规划」这一核心追问，从动作表示学习、对抗鲁棒性、统计安全保证、多模态融合、视频预测、形式化规划与数据基建七个方向展开探索。然而12篇论文构成三条互不相交的研究路径——数据驱动的预测生成路径（AMTnet→ABRL）、安全验证与对抗路径（Uncertainty→LiDAR/Vision Atta...",
+          "isMergeNode": false,
+          "tags": [],
+          "discoveredAt": "2020-06-27T00:00:00.000Z",
+          "createdAt": "2026-04-11T03:25:10.307Z",
+          "updatedAt": "2026-04-12T13:44:34.207Z",
+          "version": 1,
+          "branchId": "branch:autonomous-driving:stage-9",
+          "paperId": "71f27b74-8a8c-428d-8942-ab15f3fc6dc7",
+          "paperPublishedAt": "2020-06-27T00:00:00.000Z",
+          "title": "DeepBillboard",
+          "summary": "2020年4月至9月，端到端自动驾驶社区围绕「世界模型与闭环规划」这一核心追问，从动作表示学习、对抗鲁棒性、统计安全保证、多模态融合、视频预测、形式化规划与数据基建七个方向展开探索。然而12篇论文构成三条互不相交的研究路径——数据驱动的预测生成路径（AMTnet→ABRL）、安全验证与对抗路径（Uncertainty→LiDAR/Vision Atta...",
+          "isKeyPaper": true
+        }
+      ],
+      "mainlineBranchId": "branch:autonomous-driving:stage-9",
+      "branchColors": {
+        "branch:autonomous-driving:origin": "#2563eb",
+        "branch:autonomous-driving:stage-1": "#059669",
+        "branch:autonomous-driving:stage-2": "#7c3aed",
+        "branch:autonomous-driving:stage-9": "#dc2626"
+      },
+      "paperEditorialStore": {},
+      "nodeEditorialStore": {},
+      "topicEditorialEntry": null,
+      "metadata": {
+        "totalPapers": 31,
+        "totalNodes": 14,
+        "lastUpdated": "2026-04-12T13:44:34.412Z"
       }
     },
     {
       "topicId": "bio-inspired-ml",
-      "hero": {
-        "topicId": "bio-inspired-ml",
-        "title": "生物启发机器学习",
-        "subtitle": "神经回路 / 液态网络 / 连续时间模型",
-        "summary": "重点关注生物启发何时真正转化成算法收益，而不是停留在比喻层面。",
-        "originPaperId": "1803.08554",
-        "originPaperTitleZh": "Neuronal Circuit Policies",
-        "originPaperTitleEn": "Neuronal Circuit Policies",
-        "stageCount": 0,
-        "activeBranchCount": 1,
-        "mergeCount": 0,
-        "lastBuiltAt": "2026-03-29T02:05:43.719Z"
+      "nameZh": "生物启发机器学习",
+      "nameEn": "Bio-inspired Machine Learning",
+      "focusLabel": "神经回路 / 液态网络 / 连续时间模型",
+      "originPaperId": "1803.08554",
+      "frontendSummary": {
+        "cardSummary": "从神经回路启发出发，观察连续时间与液态网络如何进入现代机器学习主线。",
+        "timelineGuide": "这条线强调结构约束、动力学表达和工程可训练性之间的平衡。",
+        "researchBlurb": "重点关注生物启发何时真正转化成算法收益，而不是停留在比喻层面。"
       },
-      "stageColumns": [],
-      "branchPalette": [
+      "papers": [
         {
-          "branchId": "branch:bio-inspired-ml:origin",
-          "branchLabel": "主线",
-          "color": "#D94F3D",
-          "status": "活跃"
+          "id": "1803.08554",
+          "version": "v1",
+          "title": "Neuronal Circuit Policies",
+          "summary": "We propose an effective way to create interpretable control agents, by re-purposing the function of a biological neural circuit model, to govern simulated and real world reinforcement learning (RL) test-beds. We model the tap-withdrawal (TW) neural circuit of the nematode, C. elegans, a circuit responsible for the worm's reflexive response to external mechanical touch stimulations, and learn its synaptic and neuronal parameters as a policy for controlling basic RL tasks. We also autonomously park a real rover robot on a pre-defined trajectory, by deploying such neuronal circuit policies learned in a simulated environment. For reconfiguration of the purpose of the TW neural circuit, we adopt a search-based RL algorithm. We show that our neuronal policies perform as good as deep neural network policies with the advantage of realizing interpretable dynamics at the cell level.",
+          "published": "2018-03-22T19:23:32Z",
+          "authors": [
+            "Mathias Lechner",
+            "Ramin M. Hasani",
+            "Radu Grosu"
+          ],
+          "arxivUrl": "https://arxiv.org/abs/1803.08554",
+          "pdfUrl": "https://arxiv.org/pdf/1803.08554.pdf"
         }
       ],
-      "mergeMarkers": [],
-      "timelineLegend": {
-        "stageLabel": "纵向代表研究阶段，表示同一轮研究推进的舞台层级。",
-        "branchLabel": "横向不同颜色代表不同分支，同一分支在各页面颜色保持一致。",
-        "mergeLabel": "当一篇论文同时承接多条分支时，会以汇流节点的方式出现。",
-        "dormantLabel": "若某条分支本阶段没有新候选，会显示为“本阶段未推进”，而不是拉长整条寿命线。"
+      "researchNodes": [
+        {
+          "nodeId": "bio-inspired-ml:stage-0:1803.08554",
+          "id": "bio-inspired-ml:stage-0:1803.08554",
+          "topicId": "",
+          "stageIndex": 0,
+          "paperIds": [
+            "1803.08554"
+          ],
+          "primaryPaperId": "1803.08554",
+          "sourceBranchIds": [
+            "branch:bio-inspired-ml:origin"
+          ],
+          "sourceProblemNodeIds": [
+            "bio-inspired-ml:origin-problem"
+          ],
+          "status": "canonical",
+          "provisional": false,
+          "nodeLabel": "起源节点",
+          "nodeSummary": "Neuronal Circuit Policies 是这条主线中把生物结构重新转化为可训练控制模型的早期代表，后续液态网络与连续时间模型持续在推进这一路线。",
+          "isMergeNode": false,
+          "tags": [],
+          "discoveredAt": "2026-04-08T18:04:12.737Z",
+          "createdAt": "2026-04-08T18:04:12.737Z",
+          "updatedAt": "2026-04-08T22:09:00.735Z",
+          "version": 1,
+          "branchId": "branch:bio-inspired-ml:origin",
+          "paperId": "1803.08554",
+          "paperPublishedAt": "2026-04-08T22:09:00.735Z",
+          "isKeyPaper": false
+        }
+      ],
+      "mainlineBranchId": "branch:bio-inspired-ml:origin",
+      "branchColors": {
+        "branch:bio-inspired-ml:origin": "#dc2626"
+      },
+      "paperEditorialStore": {},
+      "nodeEditorialStore": {},
+      "topicEditorialEntry": null,
+      "metadata": {
+        "totalPapers": 1,
+        "totalNodes": 1,
+        "lastUpdated": "2026-04-08T22:09:00.737Z"
       }
     },
     {
       "topicId": "embodied-vla",
-      "hero": {
-        "topicId": "embodied-vla",
-        "title": "具身 VLA",
-        "subtitle": "机器人基础模型 / 视觉-语言-动作 / 具身落地",
-        "summary": "观察大模型语义如何真正落到动作空间，而不是只停在文本层面的“会说”。",
-        "originPaperId": "2204.01691",
-        "originPaperTitleZh": "Do As I Can, Not As I Say: Grounding Language in Robotic Affordances",
-        "originPaperTitleEn": "Do As I Can, Not As I Say: Grounding Language in Robotic Affordances",
-        "stageCount": 0,
-        "activeBranchCount": 1,
-        "mergeCount": 0,
-        "lastBuiltAt": "2026-03-29T02:05:43.719Z"
+      "nameZh": "具身 VLA",
+      "nameEn": "Embodied Vision-Language-Action",
+      "focusLabel": "机器人基础模型 / 视觉-语言-动作 / 具身落地",
+      "originPaperId": "2204.01691",
+      "frontendSummary": {
+        "cardSummary": "从语言驱动机器人规划，走到统一的 Vision-Language-Action 模型主线。",
+        "timelineGuide": "主线围绕 grounding、统一策略和动作序列化不断扩展。",
+        "researchBlurb": "观察大模型语义如何真正落到动作空间，而不是只停在文本层面的“会说”。"
       },
-      "stageColumns": [],
-      "branchPalette": [
+      "papers": [
         {
-          "branchId": "branch:embodied-vla:origin",
-          "branchLabel": "主线",
-          "color": "#D94F3D",
-          "status": "活跃"
+          "id": "2204.01691",
+          "version": "v2",
+          "title": "Do As I Can, Not As I Say: Grounding Language in Robotic Affordances",
+          "summary": "Large language models can encode a wealth of semantic knowledge about the world. Such knowledge could be extremely useful to robots aiming to act upon high-level, temporally extended instructions expressed in natural language. However, a significant weakness of language models is that they lack real-world experience, which makes it difficult to leverage them for decision making within a given embodiment. For example, asking a language model to describe how to clean a spill might result in a reasonable narrative, but it may not be applicable to a particular agent, such as a robot, that needs to perform this task in a particular environment. We propose to provide real-world grounding by means of pretrained skills, which are used to constrain the model to propose natural language actions that are both feasible and contextually appropriate. The robot can act as the language model's \"hands and eyes,\" while the language model supplies high-level semantic knowledge about the task. We show how low-level skills can be combined with large language models so that the language model provides high-level knowledge about the procedures for performing complex and temporally-extended instructions, while value functions associated with these skills provide the grounding necessary to connect this knowledge to a particular physical environment. We evaluate our method on a number of real-world robotic tasks, where we show the need for real-world grounding and that this approach is capable of completing long-horizon, abstract, natural language instructions on a mobile manipulator. The project's website and the video can be found at https://say-can.github.io/.",
+          "published": "2022-04-04T17:57:11Z",
+          "authors": [
+            "Michael Ahn",
+            "Anthony Brohan",
+            "Noah Brown",
+            "Yevgen Chebotar",
+            "Omar Cortes",
+            "Byron David",
+            "Chelsea Finn",
+            "Chuyuan Fu",
+            "Keerthana Gopalakrishnan",
+            "Karol Hausman",
+            "Alex Herzog",
+            "Daniel Ho",
+            "Jasmine Hsu",
+            "Julian Ibarz",
+            "Brian Ichter",
+            "Alex Irpan",
+            "Eric Jang",
+            "Rosario Jauregui Ruano",
+            "Kyle Jeffrey",
+            "Sally Jesmonth",
+            "Nikhil J Joshi",
+            "Ryan Julian",
+            "Dmitry Kalashnikov",
+            "Yuheng Kuang",
+            "Kuang-Huei Lee",
+            "Sergey Levine",
+            "Yao Lu",
+            "Linda Luu",
+            "Carolina Parada",
+            "Peter Pastor",
+            "Jornell Quiambao",
+            "Kanishka Rao",
+            "Jarek Rettinghouse",
+            "Diego Reyes",
+            "Pierre Sermanet",
+            "Nicolas Sievers",
+            "Clayton Tan",
+            "Alexander Toshev",
+            "Vincent Vanhoucke",
+            "Fei Xia",
+            "Ted Xiao",
+            "Peng Xu",
+            "Sichun Xu",
+            "Mengyuan Yan",
+            "Andy Zeng"
+          ],
+          "arxivUrl": "https://arxiv.org/abs/2204.01691",
+          "pdfUrl": "https://arxiv.org/pdf/2204.01691.pdf"
         }
       ],
-      "mergeMarkers": [],
-      "timelineLegend": {
-        "stageLabel": "纵向代表研究阶段，表示同一轮研究推进的舞台层级。",
-        "branchLabel": "横向不同颜色代表不同分支，同一分支在各页面颜色保持一致。",
-        "mergeLabel": "当一篇论文同时承接多条分支时，会以汇流节点的方式出现。",
-        "dormantLabel": "若某条分支本阶段没有新候选，会显示为“本阶段未推进”，而不是拉长整条寿命线。"
+      "researchNodes": [
+        {
+          "nodeId": "embodied-vla:stage-0:2204.01691",
+          "id": "embodied-vla:stage-0:2204.01691",
+          "topicId": "",
+          "stageIndex": 0,
+          "paperIds": [
+            "2204.01691"
+          ],
+          "primaryPaperId": "2204.01691",
+          "sourceBranchIds": [
+            "branch:embodied-vla:origin"
+          ],
+          "sourceProblemNodeIds": [
+            "embodied-vla:origin-problem"
+          ],
+          "status": "canonical",
+          "provisional": false,
+          "nodeLabel": "起源节点",
+          "nodeSummary": "SayCan 明确提出语言语义与机器人可供性的统一接口问题，是当前 VLA 主线的代表性起点之一，后续 RT-1、PaLM-E、RT-2 与 OpenVLA 都在继续扩展它。",
+          "isMergeNode": false,
+          "tags": [],
+          "discoveredAt": "2026-04-08T18:04:12.738Z",
+          "createdAt": "2026-04-08T18:04:12.738Z",
+          "updatedAt": "2026-04-08T22:09:00.735Z",
+          "version": 1,
+          "branchId": "branch:embodied-vla:origin",
+          "paperId": "2204.01691",
+          "paperPublishedAt": "2026-04-08T22:09:00.735Z",
+          "isKeyPaper": false
+        }
+      ],
+      "mainlineBranchId": "branch:embodied-vla:origin",
+      "branchColors": {
+        "branch:embodied-vla:origin": "#dc2626"
+      },
+      "paperEditorialStore": {},
+      "nodeEditorialStore": {},
+      "topicEditorialEntry": null,
+      "metadata": {
+        "totalPapers": 1,
+        "totalNodes": 1,
+        "lastUpdated": "2026-04-08T22:09:00.737Z"
       }
     },
     {
       "topicId": "transformer-innovation",
-      "hero": {
-        "topicId": "transformer-innovation",
-        "title": "Transformer 架构演进",
-        "subtitle": "注意力 / 状态空间模型 / Mamba / 长上下文",
-        "summary": "这个主题更像结构问题的演化史，重点看不同架构如何取舍表达力、效率和可扩展性。",
-        "originPaperId": "1706.03762",
-        "originPaperTitleZh": "Attention Is All You Need",
-        "originPaperTitleEn": "Attention Is All You Need",
-        "stageCount": 0,
-        "activeBranchCount": 1,
-        "mergeCount": 0,
-        "lastBuiltAt": "2026-03-29T02:05:43.719Z"
+      "nameZh": "Transformer 架构演进",
+      "nameEn": "Transformer Architecture Evolution",
+      "focusLabel": "注意力 / 状态空间模型 / Mamba / 长上下文",
+      "originPaperId": "1706.03762",
+      "frontendSummary": {
+        "cardSummary": "从纯注意力骨架出发，追踪长序列效率与状态空间模型如何反过来挑战 Transformer。",
+        "timelineGuide": "主线围绕复杂度、记忆与长上下文展开，后期逐步过渡到 S4 与 Mamba。",
+        "researchBlurb": "这个主题更像结构问题的演化史，重点看不同架构如何取舍表达力、效率和可扩展性。"
       },
-      "stageColumns": [],
-      "branchPalette": [
+      "papers": [
         {
-          "branchId": "branch:transformer-innovation:origin",
-          "branchLabel": "主线",
-          "color": "#D94F3D",
-          "status": "活跃"
+          "id": "1706.03762",
+          "version": "v7",
+          "title": "Attention Is All You Need",
+          "summary": "The dominant sequence transduction models are based on complex recurrent or convolutional neural networks in an encoder-decoder configuration. The best performing models also connect the encoder and decoder through an attention mechanism. We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely. Experiments on two machine translation tasks show these models to be superior in quality while being more parallelizable and requiring significantly less time to train. Our model achieves 28.4 BLEU on the WMT 2014 English-to-German translation task, improving over the existing best results, including ensembles by over 2 BLEU. On the WMT 2014 English-to-French translation task, our model establishes a new single-model state-of-the-art BLEU score of 41.8 after training for 3.5 days on eight GPUs, a small fraction of the training costs of the best models from the literature. We show that the Transformer generalizes well to other tasks by applying it successfully to English constituency parsing both with large and limited training data.",
+          "published": "2017-06-12T17:57:34Z",
+          "authors": [
+            "Ashish Vaswani",
+            "Noam Shazeer",
+            "Niki Parmar",
+            "Jakob Uszkoreit",
+            "Llion Jones",
+            "Aidan N. Gomez",
+            "Lukasz Kaiser",
+            "Illia Polosukhin"
+          ],
+          "arxivUrl": "https://arxiv.org/abs/1706.03762",
+          "pdfUrl": "https://arxiv.org/pdf/1706.03762.pdf"
         }
       ],
-      "mergeMarkers": [],
-      "timelineLegend": {
-        "stageLabel": "纵向代表研究阶段，表示同一轮研究推进的舞台层级。",
-        "branchLabel": "横向不同颜色代表不同分支，同一分支在各页面颜色保持一致。",
-        "mergeLabel": "当一篇论文同时承接多条分支时，会以汇流节点的方式出现。",
-        "dormantLabel": "若某条分支本阶段没有新候选，会显示为“本阶段未推进”，而不是拉长整条寿命线。"
+      "researchNodes": [
+        {
+          "nodeId": "transformer-innovation:stage-0:1706.03762",
+          "id": "transformer-innovation:stage-0:1706.03762",
+          "topicId": "",
+          "stageIndex": 0,
+          "paperIds": [
+            "1706.03762"
+          ],
+          "primaryPaperId": "1706.03762",
+          "sourceBranchIds": [
+            "branch:transformer-innovation:origin"
+          ],
+          "sourceProblemNodeIds": [
+            "transformer-innovation:origin-problem"
+          ],
+          "status": "canonical",
+          "provisional": false,
+          "nodeLabel": "起源节点",
+          "nodeSummary": "Attention Is All You Need 重新定义了序列建模的公共起点，后续所有关于长上下文、线性复杂度和状态空间模型的讨论都在回应它留下的问题。",
+          "isMergeNode": false,
+          "tags": [],
+          "discoveredAt": "2026-04-08T18:04:12.738Z",
+          "createdAt": "2026-04-08T18:04:12.738Z",
+          "updatedAt": "2026-04-08T22:09:00.735Z",
+          "version": 1,
+          "branchId": "branch:transformer-innovation:origin",
+          "paperId": "1706.03762",
+          "paperPublishedAt": "2026-04-08T22:09:00.735Z",
+          "isKeyPaper": false
+        }
+      ],
+      "mainlineBranchId": "branch:transformer-innovation:origin",
+      "branchColors": {
+        "branch:transformer-innovation:origin": "#dc2626"
+      },
+      "paperEditorialStore": {},
+      "nodeEditorialStore": {},
+      "topicEditorialEntry": null,
+      "metadata": {
+        "totalPapers": 1,
+        "totalNodes": 1,
+        "lastUpdated": "2026-04-08T22:09:00.737Z"
       }
     }
   ]
