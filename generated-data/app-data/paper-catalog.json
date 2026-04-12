@@ -2126,5 +2126,18 @@
     ],
     "arxivUrl": null,
     "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1776003506830": {
+    "id": "autonomous-driving-workflow-sync-1776003506830",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
   }
 }
