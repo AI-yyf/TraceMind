@@ -2139,5 +2139,57 @@
     ],
     "arxivUrl": null,
     "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1776004508500": {
+    "id": "autonomous-driving-workflow-sync-1776004508500",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1776004706914": {
+    "id": "autonomous-driving-workflow-sync-1776004706914",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1776004870718": {
+    "id": "autonomous-driving-workflow-sync-1776004870718",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
+  },
+  "autonomous-driving-workflow-sync-1776005044121": {
+    "id": "autonomous-driving-workflow-sync-1776005044121",
+    "title": "Workflow sync paper",
+    "titleZh": "Workflow sync paper",
+    "titleEn": "Workflow sync paper",
+    "summary": "Workflow sync paper summary",
+    "published": "2017-02-01T00:00:00.000Z",
+    "authors": [
+      "Test Author"
+    ],
+    "arxivUrl": null,
+    "pdfUrl": null
   }
 }
