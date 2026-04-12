@@ -47,3 +47,31 @@ frontend/node_modules/
 
 # PDF file in root
 *.pdf
+
+# Local AI / browser tooling artifacts
+.claude/
+.playwright-cli/
+.playwright-mcp/
+.sisyphus/
+
+# Local screenshots / visual checks
+*.png
+
+# Local scratch / one-off scripts
+fix-*.js
+fix-*.cjs
+tmp_*.py
+temp_decode.txt
+skills-backend/tmp-*.mjs
+skills-backend/check-*.js
+skills-backend/src/scripts/test-kimi-*.ts
+skills-backend/src/scripts/test-node-*.ts
+skills-backend/src/scripts/test-research-*.ts
+
+# Runtime / debug output
+output/
+skills-backend/server.err
+skills-backend/uploads/
+
+# Local external code dumps / experiments
+new/

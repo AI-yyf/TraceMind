@@ -92,9 +92,11 @@
 
 | 提供商 | 模型 | 适用场景 |
 |--------|------|----------|
+| BigModel 智谱 | GLM-5, GLM-4.6V | 中文推理与多模态 (默认) |
 | OpenAI | GPT-4o, GPT-4 Vision | 通用分析 |
 | Anthropic | Claude 3.5 Sonnet, Claude 3 Opus | 深度推理 |
 | Google | Gemini Pro, Gemini Ultra | 多模态理解 |
+| DeepSeek | DeepSeek Chat, DeepSeek Reasoner | 深度推理 |
 | 本地模型 | Ollama, vLLM | 私有部署 |
 | 自定义 | OpenAI Compatible | 企业私有 API |
 
@@ -125,8 +127,8 @@
 ┌────────────────────────────────▼────────────────────────────────────────┐
 │                           模型层 Model Layer                              │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐     │
-│  │ OpenAI     │  │ Anthropic   │  │  Google     │  │   Local     │     │
-│  │ GPT-4V     │  │ Claude 3    │  │  Gemini     │  │   Ollama    │     │
+│  │ BigModel    │  │ OpenAI     │  │ Anthropic   │  │  Google     │     │
+│  │ GLM-5       │  │ GPT-4V     │  │ Claude 3    │  │  Gemini     │     │
 │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘     │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -205,7 +207,14 @@ npm run dev
 # 数据库
 DATABASE_URL="file:./prisma/dev.db"
 
-# OpenAI (默认)
+# BigModel 智谱 GLM (默认)
+BIGMODEL_API_KEY=your_api_key_here
+OMNI_DEFAULT_PROVIDER=bigmodel
+OMNI_DEFAULT_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+OMNI_LANGUAGE_MODEL=glm-5
+OMNI_MULTIMODAL_MODEL=glm-4.6v
+
+# OpenAI (可选)
 OPENAI_API_KEY=sk-xxxxx
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-4o
@@ -215,8 +224,11 @@ ANTHROPIC_API_KEY=sk-ant-xxxxx
 ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
 
 # Google Gemini (可选)
-GOOGLE_API_KEY=xxxxx
+GEMINI_API_KEY=xxxxx
 GOOGLE_MODEL=gemini-pro
+
+# DeepSeek (可选)
+DEEPSEEK_API_KEY=sk-xxxxx
 
 # 本地模型 (可选)
 LOCAL_BASE_URL=http://localhost:11434/v1
@@ -291,7 +303,7 @@ npm test
 | 数据库 | SQLite (开发) / PostgreSQL (生产) |
 | 缓存 | Redis (可选，用于会话持久化) |
 | 实时通信 | WebSocket |
-| AI 模型 | OpenAI GPT-4V, Anthropic Claude 3, Google Gemini, Ollama |
+| AI 模型 | BigModel GLM-5/GLM-4.6V, OpenAI GPT-4V, Anthropic Claude 3, Google Gemini, DeepSeek, Ollama |
 | PDF 处理 | PyMuPDF, pdf-extract |
 | 搜索 | Semantic Scholar API |
 
@@ -342,9 +354,17 @@ REDIS_URL=redis://redis:6379
 REDIS_ENABLED=true
 
 # AI Provider API Keys
+# BigModel 智谱 GLM (默认)
+BIGMODEL_API_KEY=your_api_key_here
+OMNI_DEFAULT_PROVIDER=bigmodel
+OMNI_DEFAULT_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+OMNI_LANGUAGE_MODEL=glm-5
+OMNI_MULTIMODAL_MODEL=glm-4.6v
+
+# 其他提供商 (可选)
 OPENAI_API_KEY=sk-xxxxx
 ANTHROPIC_API_KEY=sk-ant-xxxxx
-GOOGLE_API_KEY=xxxxx
+GEMINI_API_KEY=xxxxx
 S2_API_KEY=xxxxx
 ```
 
