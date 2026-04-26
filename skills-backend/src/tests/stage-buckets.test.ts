@@ -39,16 +39,17 @@ test('deriveTemporalStageBuckets anchors from the earliest paper month and suppo
   assert.equal(result.nodeAssignments.get('node-2')?.stageIndex, 2)
 })
 
-test('deriveTemporalStageBuckets falls back to monthly descriptions when no papers are available', () => {
+test('deriveTemporalStageBuckets keeps empty topics stage-free until real material exists', () => {
   const result = deriveTemporalStageBuckets({
     windowMonths: 1,
     papers: [],
     fallbackDate: '2024-05-18T00:00:00.000Z',
   })
 
-  assert.equal(result.buckets.length, 1)
-  assert.equal(result.buckets[0]?.label, '2024.05')
-  assert.match(result.buckets[0]?.description ?? '', /2024\.05/)
+  assert.equal(result.buckets.length, 0)
+  assert.equal(result.fallbackAssignment, null)
+  assert.equal(result.paperAssignments.size, 0)
+  assert.equal(result.nodeAssignments.size, 0)
 })
 
 test('normalizeStageWindowMonths clamps sub-month requests back to the supported monthly floor', () => {

@@ -588,7 +588,7 @@ describe('Reading pages resilience', () => {
       throw new Error('node fetch failed')
     })
 
-    renderWithProviders(<NodePage />, '/node/node-1', '/node/:nodeId')
+    renderWithProviders(<NodePage />, '/node/node-1?view=article', '/node/:nodeId')
 
     expect(await screen.findByText('Node unavailable')).toBeInTheDocument()
   })
@@ -612,7 +612,7 @@ describe('Reading pages resilience', () => {
       throw new Error(`Unexpected GET ${path}`)
     })
 
-    renderWithProviders(<NodePage />, '/node/node-1', '/node/:nodeId')
+    renderWithProviders(<NodePage />, '/node/node-1?view=article', '/node/:nodeId')
 
     expect(await screen.findByTestId('node-reading')).toBeVisible()
     expect(screen.queryByText('Loading node...')).not.toBeInTheDocument()
@@ -644,7 +644,7 @@ describe('Reading pages resilience', () => {
       throw new Error(`Unexpected GET ${path}`)
     })
 
-    renderWithProviders(<NodePage />, '/node/node-1', '/node/:nodeId')
+    renderWithProviders(<NodePage />, '/node/node-1?view=article', '/node/:nodeId')
 
     await screen.findByText('Node comparison table')
     const articleFlow = screen.getByTestId('node-article-flow')
@@ -685,7 +685,7 @@ describe('Reading pages resilience', () => {
       throw new Error(`Unexpected GET ${path}`)
     })
 
-    renderWithProviders(<NodePage />, '/node/node-1', '/node/:nodeId')
+    renderWithProviders(<NodePage />, '/node/node-1?view=article', '/node/:nodeId')
 
     expect(await screen.findByTestId('node-reading')).toBeVisible()
     expect(screen.queryByText('Stage-locked article')).not.toBeInTheDocument()
@@ -803,7 +803,7 @@ describe('Reading pages resilience', () => {
       throw new Error(`Unexpected GET ${path}`)
     })
 
-    renderWithProviders(<NodePage />, '/node/node-1', '/node/:nodeId')
+    renderWithProviders(<NodePage />, '/node/node-1?view=article', '/node/:nodeId')
 
     expect(await screen.findByTestId('node-reading')).toBeVisible()
     fireEvent.click(screen.getByTestId('sidebar-open-citation'))
@@ -833,7 +833,7 @@ describe('Reading pages resilience', () => {
       throw new Error(`Unexpected GET ${path}`)
     })
 
-    renderWithProviders(<NodePage />, '/node/node-1', '/node/:nodeId')
+    renderWithProviders(<NodePage />, '/node/node-1?view=article', '/node/:nodeId')
 
     expect(await screen.findByTestId('node-reading')).toBeVisible()
     fireEvent.click(screen.getByTestId('sidebar-open-citation'))
@@ -858,7 +858,7 @@ describe('Reading pages resilience', () => {
       throw new Error(`Unexpected GET ${path}`)
     })
 
-    renderWithProviders(<NodePage />, '/node/node-1', '/node/:nodeId')
+    renderWithProviders(<NodePage />, '/node/node-1?view=article', '/node/:nodeId')
 
     expect(
       await screen.findByText(
@@ -876,7 +876,7 @@ describe('Reading pages resilience', () => {
       throw new Error(`Unexpected GET ${path}`)
     })
 
-    renderWithProviders(<NodePage />, '/node/node-1', '/node/:nodeId')
+    renderWithProviders(<NodePage />, '/node/node-1?view=article', '/node/:nodeId')
 
     expect(await screen.findByTestId('node-reading')).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Research View' }))
@@ -887,7 +887,7 @@ describe('Reading pages resilience', () => {
     expect(screen.queryByText('Enhanced introduction for Paper one.')).not.toBeInTheDocument()
   })
 
-  it('renders the research view immediately when the URL requests it', async () => {
+  it('renders the research view immediately as the default node entry', async () => {
     apiGetMock.mockImplementation(async (path: string) => {
       if (
         isNodeViewModelRequest(path, { stageMonths: true }) ||
@@ -899,7 +899,7 @@ describe('Reading pages resilience', () => {
       throw new Error(`Unexpected GET ${path}`)
     })
 
-    renderWithProviders(<NodePage />, '/node/node-1?stageMonths=1&view=research', '/node/:nodeId')
+    renderWithProviders(<NodePage />, '/node/node-1?stageMonths=1', '/node/:nodeId')
 
     const readingSurface = await screen.findByTestId('node-reading')
 
@@ -951,7 +951,7 @@ describe('Reading pages resilience', () => {
       throw new Error(`Unexpected GET ${path}`)
     })
 
-    renderWithProviders(<NodePage />, '/node/node-1', '/node/:nodeId')
+    renderWithProviders(<NodePage />, '/node/node-1?view=article', '/node/:nodeId')
 
     expect(await screen.findByTestId('node-reading')).toBeVisible()
     expect(screen.getByTestId('node-article-flow')).toBeVisible()
@@ -990,7 +990,7 @@ describe('Reading pages resilience', () => {
       throw new Error(`Unexpected GET ${path}`)
     })
 
-    renderWithProviders(<NodePage />, '/node/node-1', '/node/:nodeId')
+    renderWithProviders(<NodePage />, '/node/node-1?view=article', '/node/:nodeId')
 
     const readingSurface = await screen.findByTestId('node-reading')
     const shell = readingSurface.firstElementChild as HTMLElement | null

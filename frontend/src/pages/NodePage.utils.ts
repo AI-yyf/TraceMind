@@ -224,7 +224,7 @@ export function buildNodeViewModelPath(nodeId: string, stageWindowMonths?: numbe
 }
 
 export function readRequestedNodeViewMode(searchParams: URLSearchParams): 'research' | 'article' {
-  return searchParams.get('view') === 'research' ? 'research' : 'article'
+  return searchParams.get('view') === 'article' ? 'article' : 'research'
 }
 
 export function hasEnhancedContinuousArticleFlow(

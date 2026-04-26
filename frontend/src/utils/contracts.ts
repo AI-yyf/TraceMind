@@ -2234,10 +2234,6 @@ export function assertTopicViewModelContract(
 
   assertRecord(value.timeline, 'Topic view model is missing timeline from the backend contract.')
   assertArray(value.timeline.stages, 'Topic view model is missing timeline stages from the backend contract.')
-  assertContract(
-    value.timeline.stages.length > 0,
-    'Topic view model is missing timeline stages from the backend contract.',
-  )
 
   const timelineStageIndexes = new Set<number>()
   value.timeline.stages.forEach((stage, index) => {
@@ -2262,10 +2258,6 @@ export function assertTopicViewModelContract(
   })
 
   assertArray(value.stages, 'Topic view model is missing stage sections from the backend contract.')
-  assertContract(
-    value.stages.length > 0,
-    'Topic view model is missing stage sections from the backend contract.',
-  )
   const stageSectionIndexes = new Set<number>()
   value.stages.forEach((stage, index) => {
     const message = `Topic stage section ${index + 1}`

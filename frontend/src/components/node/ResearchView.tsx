@@ -1071,6 +1071,436 @@ function KeyInsightsSection({
   )
 }
 
+function SectionEyebrow({
+  label,
+  count,
+}: {
+  label: string
+  count?: number
+}) {
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, mb: 1.75 }}>
+      <Typography
+        sx={{
+          fontSize: 11,
+          letterSpacing: '0.1em',
+          color: 'rgba(0,0,0,0.35)',
+          fontWeight: 700,
+          textTransform: 'uppercase',
+        }}
+      >
+        {label}
+      </Typography>
+      {typeof count === 'number' ? (
+        <Chip
+          label={count}
+          size="small"
+          sx={{
+            height: 20,
+            fontSize: 11,
+            fontWeight: 700,
+            bgcolor: 'rgba(0,0,0,0.06)',
+            color: 'rgba(0,0,0,0.48)',
+          }}
+        />
+      ) : null}
+    </Box>
+  )
+}
+
+function ResearchBriefHeader({
+  viewModel,
+  language,
+  evidenceCount,
+}: {
+  viewModel: NodeViewModel
+  language: 'zh' | 'en'
+  evidenceCount: number
+}) {
+  const { t } = useI18n()
+  const coreQuestion = pickResearchNarrative(
+    language,
+    viewModel.headline,
+    viewModel.summary,
+    viewModel.explanation,
+  )
+  const judgment = viewModel.researchView.coreJudgment
+  const judgmentText = judgment
+    ? pickResearchNarrative(language, judgment.contentEn, judgment.content)
+    : pickResearchNarrative(language, viewModel.standfirst, viewModel.summary)
+  const quickTags = judgment?.quickTags?.slice(0, 4) ?? []
+
+  return (
+    <Box sx={{ mb: 3.5 }}>
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', md: '1.25fr 0.75fr' },
+          gap: 2,
+        }}
+      >
+        <Card
+          sx={{
+            borderRadius: '24px',
+            border: '1px solid rgba(0,0,0,0.06)',
+            boxShadow: '0 12px 34px rgba(15,23,42,0.06)',
+            bgcolor: '#fffdf8',
+          }}
+        >
+          <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+            <SectionEyebrow label={t('node.research.coreQuestion', 'Core question')} />
+            <Typography
+              sx={{
+                fontSize: { xs: 22, md: 28 },
+                lineHeight: 1.18,
+                letterSpacing: '-0.04em',
+                fontWeight: 700,
+                color: 'rgba(0,0,0,0.9)',
+              }}
+            >
+              {clipText(coreQuestion || viewModel.title, language === 'zh' ? 78 : 110)}
+            </Typography>
+            {judgmentText ? (
+              <Typography
+                sx={{
+                  mt: 2,
+                  fontSize: 13,
+                  lineHeight: 1.7,
+                  color: 'rgba(0,0,0,0.58)',
+                }}
+              >
+                {clipText(judgmentText, language === 'zh' ? 120 : 180)}
+              </Typography>
+            ) : null}
+            {quickTags.length > 0 ? (
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 2.25 }}>
+                {quickTags.map((tag) => (
+                  <Chip
+                    key={tag}
+                    label={tag}
+                    size="small"
+                    sx={{
+                      height: 24,
+                      fontSize: 11,
+                      bgcolor: 'rgba(125,25,56,0.08)',
+                      color: '#7d1938',
+                      fontWeight: 700,
+                    }}
+                  />
+                ))}
+              </Box>
+            ) : null}
+          </CardContent>
+        </Card>
+
+        <Card
+          sx={{
+            borderRadius: '24px',
+            border: '1px solid rgba(0,0,0,0.06)',
+            boxShadow: '0 8px 24px rgba(15,23,42,0.05)',
+          }}
+        >
+          <CardContent sx={{ p: 2.5 }}>
+            <SectionEyebrow label={t('node.research.coverage', 'Coverage')} />
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 1.25 }}>
+              {[
+                [viewModel.paperRoles.length, t('node.research.papers', 'papers')],
+                [evidenceCount, t('node.research.evidence', 'evidence')],
+                [viewModel.researchView.methods.entries.length, t('node.research.methods', 'methods')],
+                [viewModel.researchView.problems.openQuestions.length, t('node.research.open', 'open')],
+              ].map(([value, label]) => (
+                <Box
+                  key={String(label)}
+                  sx={{
+                    borderRadius: '16px',
+                    border: '1px solid rgba(0,0,0,0.06)',
+                    bgcolor: 'rgba(0,0,0,0.018)',
+                    p: 1.5,
+                  }}
+                >
+                  <Typography sx={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.04em' }}>
+                    {value}
+                  </Typography>
+                  <Typography sx={{ fontSize: 11, color: 'rgba(0,0,0,0.45)' }}>{label}</Typography>
+                </Box>
+              ))}
+            </Box>
+            {judgment?.confidence ? (
+              <Chip
+                label={`${t('node.research.confidence', 'confidence')}: ${judgment.confidence}`}
+                size="small"
+                sx={{
+                  mt: 1.5,
+                  height: 24,
+                  bgcolor: 'rgba(0,0,0,0.86)',
+                  color: 'white',
+                  fontSize: 11,
+                  fontWeight: 700,
+                }}
+              />
+            ) : null}
+          </CardContent>
+        </Card>
+      </Box>
+    </Box>
+  )
+}
+
+function KeyPapersStrip({
+  paperRoles,
+  language,
+}: {
+  paperRoles: NodeViewModel['paperRoles']
+  language: 'zh' | 'en'
+}) {
+  const { t } = useI18n()
+  const papers = paperRoles.slice(0, 5)
+  if (papers.length === 0) return null
+
+  return (
+    <Box sx={{ mb: 3.5 }}>
+      <SectionEyebrow label={t('node.research.keyPapers', 'Key papers')} count={papers.length} />
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', lg: 'repeat(5, 1fr)' },
+          gap: 1.5,
+        }}
+      >
+        {papers.map((paper) => {
+          const config = getRoleConfig(paper.role)
+          const year = paper.publishedAt ? new Date(paper.publishedAt).getFullYear() : null
+          return (
+            <Card
+              key={paper.paperId}
+              sx={{
+                borderRadius: '18px',
+                border: '1px solid rgba(0,0,0,0.06)',
+                bgcolor: `${config.bgColor}55`,
+                boxShadow: 'none',
+                height: '100%',
+              }}
+            >
+              <CardContent sx={{ p: 1.75 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, mb: 1.25 }}>
+                  <Chip
+                    label={paper.role}
+                    size="small"
+                    sx={{
+                      height: 22,
+                      fontSize: 10,
+                      bgcolor: config.bgColor,
+                      color: config.color,
+                      fontWeight: 800,
+                    }}
+                  />
+                  {year ? (
+                    <Typography sx={{ fontSize: 10, color: 'rgba(0,0,0,0.42)', mt: 0.5 }}>
+                      {year}
+                    </Typography>
+                  ) : null}
+                </Box>
+                <Typography sx={{ fontSize: 12, lineHeight: 1.45, fontWeight: 700, color: 'rgba(0,0,0,0.76)' }}>
+                  {clipText(paper.title, language === 'zh' ? 34 : 48)}
+                </Typography>
+                {paper.contribution ? (
+                  <Typography sx={{ mt: 1, fontSize: 11, lineHeight: 1.45, color: 'rgba(0,0,0,0.52)' }}>
+                    {clipText(paper.contribution, language === 'zh' ? 42 : 64)}
+                  </Typography>
+                ) : null}
+              </CardContent>
+            </Card>
+          )
+        })}
+      </Box>
+    </Box>
+  )
+}
+
+function MethodFindingLimitGrid({
+  viewModel,
+  language,
+}: {
+  viewModel: NodeViewModel
+  language: 'zh' | 'en'
+}) {
+  const { t } = useI18n()
+  const methodCards = viewModel.researchView.methods.entries.slice(0, 3).map((entry) => ({
+    key: `method:${entry.paperId}:${entry.title}`,
+    label: t('node.research.method', 'Method'),
+    title: pickResearchNarrative(language, entry.titleEn, entry.title),
+    body: pickResearchNarrative(language, entry.summary, entry.keyPoints[0]),
+  }))
+  const findingCards = viewModel.researchView.evidence.paperBriefs.slice(0, 3).map((brief) => ({
+    key: `finding:${brief.paperId}`,
+    label: t('node.research.finding', 'Finding'),
+    title: brief.paperTitle,
+    body: brief.contribution || brief.summary,
+  }))
+  const limitCards = viewModel.researchView.problems.items.slice(0, 3).map((item) => ({
+    key: `limit:${item.paperId}:${item.title}`,
+    label: item.status === 'open'
+      ? t('node.research.unresolved', 'Unresolved')
+      : item.status === 'partial'
+        ? t('node.research.limited', 'Limited')
+        : t('node.research.resolved', 'Resolved'),
+    title: pickResearchNarrative(language, item.titleEn, item.title),
+    body: item.paperTitle,
+  }))
+  const cards = [...methodCards, ...findingCards, ...limitCards].slice(0, 9)
+  if (cards.length === 0) return null
+
+  return (
+    <Box sx={{ mb: 4 }}>
+      <SectionEyebrow label={t('node.research.methodFindingLimit', 'Methods / findings / limits')} count={cards.length} />
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' },
+          gap: 1.5,
+        }}
+      >
+        {cards.map((card) => (
+          <Card
+            key={card.key}
+            sx={{
+              borderRadius: '18px',
+              border: '1px solid rgba(0,0,0,0.06)',
+              boxShadow: '0 4px 16px rgba(15,23,42,0.035)',
+            }}
+          >
+            <CardContent sx={{ p: 2 }}>
+              <Typography sx={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#7d1938' }}>
+                {card.label}
+              </Typography>
+              <Typography sx={{ mt: 1, fontSize: 13, fontWeight: 800, lineHeight: 1.38, color: 'rgba(0,0,0,0.82)' }}>
+                {clipText(card.title, language === 'zh' ? 34 : 54)}
+              </Typography>
+              {card.body ? (
+                <Typography sx={{ mt: 1, fontSize: 12, lineHeight: 1.5, color: 'rgba(0,0,0,0.55)' }}>
+                  {clipText(card.body, language === 'zh' ? 58 : 88)}
+                </Typography>
+              ) : null}
+            </CardContent>
+          </Card>
+        ))}
+      </Box>
+    </Box>
+  )
+}
+
+function DisputeOpenIssuePanel({
+  viewModel,
+  language,
+}: {
+  viewModel: NodeViewModel
+  language: 'zh' | 'en'
+}) {
+  const { t } = useI18n()
+  const openQuestions = viewModel.researchView.problems.openQuestions.slice(0, 4)
+  const partialProblems = viewModel.researchView.problems.items
+    .filter((item) => item.status !== 'solved')
+    .slice(0, 4)
+
+  if (openQuestions.length === 0 && partialProblems.length === 0) return null
+
+  return (
+    <Box sx={{ mb: 4 }}>
+      <SectionEyebrow label={t('node.research.disputes', 'Disputes and open issues')} count={openQuestions.length + partialProblems.length} />
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '0.9fr 1.1fr' }, gap: 2 }}>
+        <Card sx={{ borderRadius: '20px', border: '1px solid rgba(0,0,0,0.06)', bgcolor: '#fffaf0', boxShadow: 'none' }}>
+          <CardContent sx={{ p: 2.25 }}>
+            <Typography sx={{ fontSize: 12, fontWeight: 800, color: 'rgba(0,0,0,0.72)', mb: 1.5 }}>
+              {t('node.research.openQuestions', 'Open questions')}
+            </Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              {openQuestions.map((question, index) => (
+                <Box key={`${index}:${question}`} sx={{ display: 'grid', gridTemplateColumns: '24px 1fr', gap: 1 }}>
+                  <Box sx={{ width: 22, height: 22, borderRadius: '50%', bgcolor: '#7d1938', color: 'white', fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {index + 1}
+                  </Box>
+                  <Typography sx={{ fontSize: 12, lineHeight: 1.55, color: 'rgba(0,0,0,0.62)' }}>
+                    {clipText(question, language === 'zh' ? 70 : 105)}
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
+          </CardContent>
+        </Card>
+        <Card sx={{ borderRadius: '20px', border: '1px solid rgba(0,0,0,0.06)', boxShadow: 'none' }}>
+          <CardContent sx={{ p: 2.25 }}>
+            <Typography sx={{ fontSize: 12, fontWeight: 800, color: 'rgba(0,0,0,0.72)', mb: 1.5 }}>
+              {t('node.research.unsettledClaims', 'Unsettled claims')}
+            </Typography>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+              {partialProblems.map((item) => (
+                <Chip
+                  key={`${item.paperId}:${item.title}`}
+                  label={clipText(pickResearchNarrative(language, item.titleEn, item.title), language === 'zh' ? 34 : 52)}
+                  sx={{
+                    maxWidth: '100%',
+                    height: 'auto',
+                    py: 0.75,
+                    borderRadius: '12px',
+                    bgcolor: item.status === 'open' ? 'rgba(125,25,56,0.08)' : 'rgba(0,0,0,0.05)',
+                    color: item.status === 'open' ? '#7d1938' : 'rgba(0,0,0,0.62)',
+                    '& .MuiChip-label': { whiteSpace: 'normal', fontSize: 11, lineHeight: 1.35 },
+                  }}
+                />
+              ))}
+            </Box>
+          </CardContent>
+        </Card>
+      </Box>
+    </Box>
+  )
+}
+
+function FinalJudgmentCard({
+  viewModel,
+  language,
+}: {
+  viewModel: NodeViewModel
+  language: 'zh' | 'en'
+}) {
+  const { t } = useI18n()
+  const judgment = viewModel.researchView.coreJudgment
+  const judgmentText = judgment
+    ? pickResearchNarrative(language, judgment.contentEn, judgment.content)
+    : pickResearchNarrative(language, viewModel.standfirst, viewModel.summary, viewModel.explanation)
+
+  if (!judgmentText) return null
+
+  return (
+    <Card
+      sx={{
+        mb: 4,
+        borderRadius: '24px',
+        border: '1px solid rgba(0,0,0,0.06)',
+        bgcolor: '#111',
+        color: 'white',
+        boxShadow: '0 18px 50px rgba(0,0,0,0.16)',
+      }}
+    >
+      <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+        <Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.55)', fontWeight: 800 }}>
+          {t('node.research.finalJudgment', 'Research judgment')}
+        </Typography>
+        <Typography sx={{ mt: 1.75, fontSize: { xs: 18, md: 23 }, lineHeight: 1.42, fontWeight: 700, letterSpacing: '-0.025em' }}>
+          {clipText(judgmentText, language === 'zh' ? 140 : 210)}
+        </Typography>
+        {judgment?.confidence ? (
+          <Chip
+            label={`${t('node.research.confidence', 'confidence')}: ${judgment.confidence}`}
+            size="small"
+            sx={{ mt: 2, bgcolor: 'rgba(255,255,255,0.12)', color: 'white', fontSize: 11, fontWeight: 800 }}
+          />
+        ) : null}
+      </CardContent>
+    </Card>
+  )
+}
+
 // ============================================================================
 // Main Research View - Visual-First Poster Style
 // ============================================================================
@@ -1125,6 +1555,17 @@ export function ResearchView({
         py: compact ? 1 : 2,
       }}
     >
+      <ResearchBriefHeader
+        viewModel={viewModel}
+        language={effectiveLanguage}
+        evidenceCount={evidence.length}
+      />
+
+      <KeyPapersStrip
+        paperRoles={viewModel.paperRoles}
+        language={effectiveLanguage}
+      />
+
       {/* Core Arguments Section - NEW: Prominent Cards */}
       <CoreArgumentsSection
         viewModel={viewModel}
@@ -1148,6 +1589,16 @@ export function ResearchView({
         compact={compact}
       />
 
+      <MethodFindingLimitGrid
+        viewModel={viewModel}
+        language={effectiveLanguage}
+      />
+
+      <DisputeOpenIssuePanel
+        viewModel={viewModel}
+        language={effectiveLanguage}
+      />
+
       {/* Paper Section - REDESIGNED: Poster-style cards */}
       <PaperSection
         paperRoles={viewModel.paperRoles}
@@ -1161,6 +1612,11 @@ export function ResearchView({
           language={effectiveLanguage}
         />
       )}
+
+      <FinalJudgmentCard
+        viewModel={viewModel}
+        language={effectiveLanguage}
+      />
     </Box>
   )
 }

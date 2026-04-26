@@ -2576,19 +2576,6 @@ async function saveTopicBlueprint(
     },
   })
 
-  // Create topic stages separately
-  await prisma.topic_stages.createMany({
-    data: blueprint.stages.map((stage) => ({
-      id: crypto.randomUUID(),
-      topicId: topic.id,
-      order: stage.order,
-      name: pickNonEmpty(stage.locales.zh.name, stage.name, `阶段 ${stage.order}`),
-      nameEn: pickNonEmpty(stage.locales.en.name, stage.nameEn, `Stage ${stage.order}`),
-      description: pickNonEmpty(stage.locales.zh.description, stage.description),
-      descriptionEn: pickNonEmpty(stage.locales.en.description, stage.descriptionEn),
-    })),
-  })
-
   const localizationPayload = {
     schemaVersion: 'topic-localization-v2',
     languageMode: input.languageMode,

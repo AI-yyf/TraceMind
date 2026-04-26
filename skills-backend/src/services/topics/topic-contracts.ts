@@ -574,7 +574,6 @@ export function assertTopicViewModelContract(value: unknown): asserts value is T
   )
   assertRecord(value.timeline, 'Topic view model is missing "timeline".')
   assertArray(value.timeline.stages, 'Topic timeline stages are missing.')
-  assertContract(value.timeline.stages.length > 0, 'Topic timeline stages are missing.')
   const stageIndexes = new Set<number>()
   value.timeline.stages.forEach((stage, index) => {
     assertRecord(stage, `Topic timeline stage ${index + 1} is invalid.`)

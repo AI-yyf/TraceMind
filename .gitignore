@@ -113,7 +113,3 @@ skills-backend/scripts/__pycache__/
 frontend/generated/
 generated-data/references/
 generated-data/search-results/
-
-# Local external code dumps / experiments
-codeexample/
-new/

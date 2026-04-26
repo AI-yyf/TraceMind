@@ -70,7 +70,7 @@ export function CreateTopicPage() {
         title: TOPIC_LANGUAGE_LABELS.zh,
         description: t(
           'create.languageOption.zh',
-          'Create the topic from Simplified Chinese and generate the full 8-language research blueprint.',
+          'Create a lightweight topic shell from Simplified Chinese, then let stages grow from real research material.',
         ),
       },
       {
@@ -79,7 +79,7 @@ export function CreateTopicPage() {
         title: TOPIC_LANGUAGE_LABELS.en,
         description: t(
           'create.languageOption.en',
-          'Use English as the source language and expand it into a full 8-language research blueprint.',
+          'Use English as the source language, create a lightweight topic shell, and grow stages from evidence.',
         ),
       },
       {
@@ -464,7 +464,7 @@ export function CreateTopicPage() {
               <div className="mt-6 rounded-[24px] border border-dashed border-black/10 bg-[var(--surface-soft)] px-4 py-8 text-[14px] leading-7 text-black/54">
                 {t(
                   'create.previewEmpty',
-                  'After preview generation, the primary title, multilingual anchors, summary, and stage recommendation will appear here.',
+                  'After preview generation, the primary title, multilingual anchors, summary, and research focus will appear here.',
                 )}
               </div>
             ) : (
@@ -542,11 +542,12 @@ export function CreateTopicPage() {
                       {enPreviewLocale?.focusLabel || preview.focusLabelEn || preview.focusLabel}
                     </div>
                     <div>
-                      {t('create.stageCountTitle', 'Recommended Stages')}:
+                      {t('create.stageSourceTitle', 'Stage Source')}:
                       {' '}
-                      {renderTemplate(t('create.stageCountValue', '{count} stages'), {
-                        count: preview.recommendedStages,
-                      })}
+                      {t(
+                        'create.stageSourceValue',
+                        'Emerges from discovered papers, synthesized nodes, and evidence windows.',
+                      )}
                     </div>
                   </div>
                 </section>

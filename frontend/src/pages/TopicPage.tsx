@@ -155,6 +155,228 @@ function resolveReadableTopicNodeTitle(
   )
 }
 
+function formatTopicPaperYear(value: string | null | undefined) {
+  if (!value) return ''
+  const date = new Date(value)
+  return Number.isNaN(+date) ? '' : String(date.getFullYear())
+}
+
+function ResearchProgressOverview({
+  viewModel,
+  stages,
+  nodes,
+  t,
+}: {
+  viewModel: TopicViewModel
+  stages: Array<{
+    stageIndex: number
+    displayTitle: string
+    badgeLabel: string
+    overview: string
+    nodeCount: number
+    paperCount: number
+  }>
+  nodes: DisplayNode[]
+  t: Translate
+}) {
+  const keyPapers = [...viewModel.papers]
+    .sort((left, right) => {
+      const citationDelta = (right.citationCount ?? 0) - (left.citationCount ?? 0)
+      if (citationDelta !== 0) return citationDelta
+      return +new Date(right.publishedAt) - +new Date(left.publishedAt)
+    })
+    .slice(0, 4)
+  const stageChips = stages.slice(0, 5)
+  const latestNodes = nodes.slice(0, 3)
+  const stats = [
+    {
+      label: t('topic.progressStages', 'Real stages'),
+      value: viewModel.stats.stageCount,
+      hint: t('topic.progressStagesHint', 'from papers'),
+    },
+    {
+      label: t('topic.progressNodes', 'Research nodes'),
+      value: viewModel.stats.nodeCount,
+      hint: t('topic.progressNodesHint', 'synthesized'),
+    },
+    {
+      label: t('topic.progressPapers', 'Key papers'),
+      value: viewModel.stats.paperCount,
+      hint: t('topic.progressPapersHint', 'tracked'),
+    },
+    {
+      label: t('topic.progressEvidence', 'Evidence'),
+      value: viewModel.stats.evidenceCount,
+      hint: t('topic.progressEvidenceHint', 'figures/tables'),
+    },
+  ]
+
+  return (
+    <section className="mx-auto mt-8 max-w-[1500px] rounded-[32px] border border-black/8 bg-[#fffdf8] p-5 shadow-[0_18px_60px_rgba(15,23,42,0.06)] md:p-6">
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-stretch">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full bg-black px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white">
+              {t('topic.progressEyebrow', 'Research progress')}
+            </span>
+            <span className="rounded-full border border-black/8 bg-white px-3 py-1 text-[11px] text-black/52">
+              {t('topic.progressSource', 'Stages grow from real papers, nodes, and evidence')}
+            </span>
+          </div>
+          <h2 className="mt-4 max-w-[820px] font-display text-[26px] leading-[1.08] tracking-[-0.035em] text-black md:text-[36px]">
+            {viewModel.hero?.title || viewModel.title}
+          </h2>
+          <p className="mt-3 max-w-[860px] text-[14px] leading-7 text-black/60">
+            {clipText(viewModel.hero?.standfirst || viewModel.summary || viewModel.description, 180)}
+          </p>
+
+          <div className="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            {stats.map((item) => (
+              <div key={item.label} className="rounded-[20px] border border-black/8 bg-white px-4 py-3">
+                <div className="text-[24px] font-semibold tracking-[-0.04em] text-black">{item.value}</div>
+                <div className="mt-1 text-[12px] font-medium text-black/62">{item.label}</div>
+                <div className="mt-0.5 text-[11px] text-black/38">{item.hint}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-5 flex flex-wrap gap-2">
+            {stageChips.length > 0 ? stageChips.map((stage) => (
+              <a
+                key={stage.stageIndex}
+                href={`#${anchorDomId(`stage:${stage.stageIndex}`)}`}
+                className="inline-flex max-w-[280px] items-center gap-2 rounded-full border border-black/8 bg-white px-3 py-1.5 text-[12px] text-black/64 transition hover:border-black/18 hover:text-black"
+              >
+                <span className="h-2 w-2 shrink-0 rounded-full bg-[#7d1938]" />
+                <span className="truncate">{stage.displayTitle || stage.badgeLabel}</span>
+                <span className="text-black/34">{stage.nodeCount}/{stage.paperCount}</span>
+              </a>
+            )) : (
+              <span className="rounded-full border border-dashed border-black/12 bg-white px-3 py-1.5 text-[12px] text-black/44">
+                {t('topic.progressNoStages', 'No real stage yet')}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="grid min-w-0 gap-3 lg:w-[430px]">
+          <div className="rounded-[24px] border border-black/8 bg-white p-4">
+            <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-black/38">
+              {t('topic.progressKeyPapers', 'Key papers')}
+            </div>
+            <div className="space-y-2">
+              {keyPapers.length > 0 ? keyPapers.map((paper) => (
+                <Link
+                  key={paper.paperId}
+                  to={paper.route}
+                  className="group grid grid-cols-[auto,1fr] gap-3 rounded-[16px] border border-black/6 bg-[#fbfaf6] p-3 transition hover:border-black/14 hover:bg-white"
+                >
+                  <div className="flex h-12 w-12 items-center justify-center rounded-[14px] bg-black text-[11px] font-semibold text-white">
+                    {formatTopicPaperYear(paper.publishedAt) || 'P'}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="line-clamp-2 text-[12px] font-semibold leading-5 text-black/78 group-hover:text-black">
+                      {paper.title}
+                    </div>
+                    <div className="mt-1 flex gap-2 text-[10px] text-black/40">
+                      <span>{paper.citationCount ?? 0} cites</span>
+                      <span>{paper.figuresCount + paper.tablesCount + paper.formulasCount} evidence</span>
+                    </div>
+                  </div>
+                </Link>
+              )) : (
+                <div className="rounded-[16px] border border-dashed border-black/12 bg-[#fbfaf6] px-4 py-5 text-[12px] leading-6 text-black/46">
+                  {t('topic.progressNoPapers', 'No paper has entered this topic yet.')}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {latestNodes.length > 0 ? (
+            <div className="rounded-[24px] border border-black/8 bg-white p-4">
+              <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-black/38">
+                {t('topic.progressFastEntry', 'Fast node entry')}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {latestNodes.map((node) => (
+                  <Link
+                    key={node.nodeId}
+                    to={node.route}
+                    className="rounded-full border border-black/8 bg-[#fbfaf6] px-3 py-1.5 text-[12px] text-black/62 transition hover:border-black/18 hover:bg-white hover:text-black"
+                  >
+                    {clipText(node.title, 34)}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function TopicResearchEmptyState({
+  viewModel,
+  onOpenWorkbench,
+  t,
+}: {
+  viewModel: TopicViewModel
+  onOpenWorkbench: () => void
+  t: Translate
+}) {
+  const steps = [
+    t('topic.emptyStepDiscover', 'Discover or import papers'),
+    t('topic.emptyStepScreen', 'Screen material into key papers'),
+    t('topic.emptyStepGrow', 'Let stages and nodes grow from evidence'),
+  ]
+
+  return (
+    <section className="mx-auto mt-8 max-w-[1500px] rounded-[32px] border border-dashed border-black/12 bg-[var(--surface-soft)] p-6 text-center md:p-8">
+      <div className="mx-auto flex max-w-[780px] flex-col items-center">
+        <span className="rounded-full border border-black/10 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-black/44">
+          {t('topic.emptyResearchEyebrow', 'Light topic shell')}
+        </span>
+        <h2 className="mt-4 font-display text-[28px] leading-[1.08] tracking-[-0.04em] text-black md:text-[38px]">
+          {t('topic.emptyResearchTitle', 'No real research material has entered this topic yet')}
+        </h2>
+        <p className="mt-3 max-w-[680px] text-[14px] leading-7 text-black/58">
+          {t(
+            'topic.emptyResearchDescription',
+            'The topic has been created. Stages will not be planned up front: they appear after paper discovery, screening, node synthesis, and time-window archival produce real material.',
+          )}
+        </p>
+        <div className="mt-6 grid w-full gap-3 sm:grid-cols-3">
+          {[
+            ['0', t('topic.progressPapers', 'Key papers')],
+            ['0', t('topic.progressNodes', 'Research nodes')],
+            [String(viewModel.stats.stageCount), t('topic.progressStages', 'Real stages')],
+          ].map(([value, label]) => (
+            <div key={label} className="rounded-[22px] border border-black/8 bg-white px-4 py-4">
+              <div className="text-[28px] font-semibold tracking-[-0.05em] text-black">{value}</div>
+              <div className="mt-1 text-[12px] text-black/46">{label}</div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-6 flex flex-wrap justify-center gap-2">
+          {steps.map((step, index) => (
+            <span key={step} className="rounded-full border border-black/8 bg-white px-3 py-1.5 text-[12px] text-black/58">
+              {index + 1}. {step}
+            </span>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={onOpenWorkbench}
+          className="mt-6 rounded-full bg-black px-5 py-2.5 text-[13px] font-semibold text-white transition hover:bg-black/82"
+        >
+          {t('topic.emptyResearchAction', 'Open research workbench')}
+        </button>
+      </div>
+    </section>
+  )
+}
+
 
 function buildDisplayNodes(viewModel: TopicViewModel): DisplayNode[] {
   const paperTitleMap = new Map(
@@ -1052,8 +1274,22 @@ export function TopicPage() {
     ? TOPIC_WORKBENCH_DESKTOP_RESERVED_SPACE + 8
     : 0
   const graphRightSafetyInset = reserveWorkbenchDesktopSpace ? 32 : 0
+  const hasRealResearchMaterial = Boolean(
+    viewModel &&
+      (
+        viewModel.stats.paperCount > 0 ||
+        viewModel.stats.nodeCount > 0 ||
+        viewModel.timeline.stages.length > 0
+      ),
+  )
   const graphStatus = useMemo(() => {
     if (!viewModel) return null
+    const hasMaterial =
+      viewModel.stats.paperCount > 0 ||
+      viewModel.stats.nodeCount > 0 ||
+      viewModel.timeline.stages.length > 0
+
+    if (!hasMaterial) return null
 
     const graphMissing =
       !viewModel.graph?.nodes?.length ||
@@ -1305,14 +1541,12 @@ return (
           </div>
         </header>
 
-        {topicArticleMarkdown ? (
-          <section className="mx-auto mt-8" style={{ maxWidth: 'min(210mm, 100%)' }}>
-            <ArticleMarkdown
-              content={topicArticleMarkdown}
-              className="article-prose a4-container rounded-[32px] border border-black/8 bg-[#fffdfa] px-6 py-8 shadow-[0_18px_48px_rgba(15,23,42,0.06)] md:px-10"
-            />
-          </section>
-        ) : null}
+        <ResearchProgressOverview
+          viewModel={viewModel}
+          stages={displayedStageSections}
+          nodes={displayedNodes}
+          t={t}
+        />
 
         {shouldShowDashboard && dashboardData ? (
           <div className="mx-auto mt-8 max-w-[1500px]">
@@ -1324,29 +1558,42 @@ return (
           </div>
         ) : null}
 
-        <div className="mx-auto w-full max-w-[1500px]">
-          <TopicGraphSection
-            stages={graphStages}
-            lanes={displayedLanes}
-            nodes={displayedNodes}
-            timelines={displayedTimelines}
-            activeAnchor={highlightedAnchor}
-            getStageDomId={anchorDomId}
-            onFocusStage={focusAnchor}
-            rightSafetyInset={graphRightSafetyInset}
-            maxCardsPerStage={MAX_TOPIC_STAGE_GRAPH_CARDS}
-            renderNode={(node) => (
-              <NodeCard
-                key={node.nodeId}
-                node={node as DisplayNode}
-                highlighted={highlightedAnchor === node.anchorId}
-                language={uiLanguage}
-                stageWindowMonths={effectiveStageWindowMonths}
-                t={t}
-              />
-            )}
-          />
-        </div>
+        {hasRealResearchMaterial ? (
+          <div className="mx-auto w-full max-w-[1500px]">
+            <TopicGraphSection
+              stages={graphStages}
+              lanes={displayedLanes}
+              nodes={displayedNodes}
+              timelines={displayedTimelines}
+              activeAnchor={highlightedAnchor}
+              getStageDomId={anchorDomId}
+              onFocusStage={focusAnchor}
+              rightSafetyInset={graphRightSafetyInset}
+              maxCardsPerStage={MAX_TOPIC_STAGE_GRAPH_CARDS}
+              renderNode={(node) => (
+                <NodeCard
+                  key={node.nodeId}
+                  node={node as DisplayNode}
+                  highlighted={highlightedAnchor === node.anchorId}
+                  language={uiLanguage}
+                  stageWindowMonths={effectiveStageWindowMonths}
+                  t={t}
+                />
+              )}
+            />
+          </div>
+        ) : (
+          <TopicResearchEmptyState viewModel={viewModel} onOpenWorkbench={openWorkbench} t={t} />
+        )}
+
+        {topicArticleMarkdown ? (
+          <section className="mx-auto mt-8" style={{ maxWidth: 'min(210mm, 100%)' }}>
+            <ArticleMarkdown
+              content={topicArticleMarkdown}
+              className="article-prose a4-container rounded-[32px] border border-black/8 bg-[#fffdfa] px-6 py-8 shadow-[0_18px_48px_rgba(15,23,42,0.06)] md:px-10"
+            />
+          </section>
+        ) : null}
 
         {!topicArticleMarkdown && closingParagraphs.length > 0 ? (
           <div className="mx-auto max-w-[1320px]">

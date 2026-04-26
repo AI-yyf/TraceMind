@@ -451,26 +451,12 @@ export function deriveTemporalStageBuckets(args: {
   ).sort((left, right) => +left - +right)
 
   if (orderedBucketStarts.length === 0) {
-    const fallbackAssignment = useCalendarMonthBuckets
-      ? buildCalendarAssignment(anchorDay, 1, calendarWindowMonths)
-      : buildAssignment(anchorDay, 1, windowDays)
     return {
       windowDays,
-      buckets: [
-        {
-          ...fallbackAssignment,
-          description: buildTemporalStageDescription(fallbackAssignment.label, windowDays),
-          descriptionEn: buildTemporalStageDescriptionEn(
-            fallbackAssignment.labelEn,
-            windowDays,
-          ),
-          paperIds: [],
-          nodeIds: [],
-        },
-      ],
+      buckets: [],
       paperAssignments,
       nodeAssignments,
-      fallbackAssignment,
+      fallbackAssignment: null,
     }
   }
 

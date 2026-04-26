@@ -81,7 +81,6 @@ Ignored:
 - screenshots and visual QA output
 - Playwright result folders
 - local uploads and logs
-- `codeexample/` external code dumps
 - duplicate frontend generated snapshots
 
 ## Release Checklist

@@ -117,7 +117,7 @@ export function TopicBuilderDialog({
         description: text(
           'create.languageOption.zh',
           'create.languageOption.zh',
-          'Create the topic from Simplified Chinese and generate the full 8-language research blueprint.',
+          'Create a lightweight topic shell from Simplified Chinese, then let stages grow from real research material.',
         ),
       },
       {
@@ -127,7 +127,7 @@ export function TopicBuilderDialog({
         description: text(
           'create.languageOption.en',
           'create.languageOption.en',
-          'Use English as the source language and expand it into a full 8-language research blueprint.',
+          'Use English as the source language, create a lightweight topic shell, and grow stages from evidence.',
         ),
       },
       {
@@ -520,7 +520,7 @@ export function TopicBuilderDialog({
                 {text(
                   'create.previewEmpty',
                   'create.previewEmpty',
-                  'After preview generation, the primary title, multilingual anchors, summary, and stage recommendation will appear here.',
+                  'After preview generation, the primary title, multilingual anchors, summary, and research focus will appear here.',
                 )}
               </p>
             ) : (
@@ -598,11 +598,12 @@ export function TopicBuilderDialog({
                       {enPreviewLocale?.focusLabel || preview.focusLabelEn || preview.focusLabel}
                     </div>
                     <div>
-                      {text('create.stageCountTitle', 'create.stageCountTitle', 'Recommended Stages')}:
+                      {text('create.stageSourceTitle', 'create.stageSourceTitle', 'Stage Source')}:
                       {' '}
-                      {renderTemplate(
-                        text('create.stageCountValue', 'create.stageCountValue', '{count} stages'),
-                        { count: preview.recommendedStages },
+                      {text(
+                        'create.stageSourceValue',
+                        'create.stageSourceValue',
+                        'Emerges from discovered papers, synthesized nodes, and evidence windows.',
                       )}
                     </div>
                   </div>

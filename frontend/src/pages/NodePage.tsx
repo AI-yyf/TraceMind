@@ -228,7 +228,7 @@ function buildNodeViewModelPath(nodeId: string, stageWindowMonths?: number, enha
 }
 
 function readRequestedNodeViewMode(searchParams: URLSearchParams): ViewMode {
-  return searchParams.get('view') === 'research' ? 'research' : 'article'
+  return searchParams.get('view') === 'article' ? 'article' : 'research'
 }
 
 function hasEnhancedContinuousArticleFlow(
