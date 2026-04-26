@@ -112,4 +112,5 @@ generated-data/public/
 generated-data/app-data/workflow/
 
 # Local external code dumps / experiments
+codeexample/
 new/
