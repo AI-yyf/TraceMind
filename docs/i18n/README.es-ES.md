@@ -1,6 +1,8 @@
 # TraceMind
 
-TraceMind es un banco de trabajo de investigación con IA para lectura e indagación rigurosas. Conecta descubrimiento de artículos, extracción de evidencia, nodos de investigación, redacción de juicios y preguntas contextualizadas en un flujo trazable.
+TraceMind es un banco de trabajo personal de investigación con IA para lectura e indagación rigurosas. Conecta descubrimiento de artículos, extracción de evidencia, nodos de investigación, redacción de juicios y preguntas contextualizadas en un flujo trazable.
+
+No es solo un chatbot ni una lista de papers, sino un espacio de trabajo duradero para desarrollar un tema de investigación personal.
 
 ## Qué Problema Resuelve
 

@@ -1,6 +1,8 @@
 # TraceMind
 
-TraceMind ist eine KI-gestützte Forschungsumgebung für ernsthafte Recherche und Lektüre. Sie verbindet Paper Discovery, Evidenzextraktion, Forschungsnoten, Urteilsbildung und kontextgebundene Rückfragen in einem nachvollziehbaren Arbeitsfluss.
+TraceMind ist eine KI-gestützte persönliche Forschungsumgebung für ernsthafte Recherche und Lektüre. Sie verbindet Paper Discovery, Evidenzextraktion, Forschungsnoten, Urteilsbildung und kontextgebundene Rückfragen in einem nachvollziehbaren Arbeitsfluss.
+
+Es ist nicht nur ein Chatbot oder eine Literaturliste, sondern ein langfristiger Arbeitsraum für persönliche Forschungsthemen.
 
 ## Welches Problem Es Löst
 

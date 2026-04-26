@@ -1,20 +1,24 @@
 # TraceMind Documentation
 
-This directory is the public documentation entry for TraceMind. It describes the product as it exists in the repository, not temporary planning notes.
+溯知 TraceMind 的文档不是给机器看的配置清单，而是给真正要做研究的人看的产品手册。这里会解释：它为什么存在、适合谁、能做什么、为什么这样设计，以及如何把它跑起来。
 
-## Start Here
+## 推荐阅读路径
 
-1. [Getting Started](getting-started.md): install, configure, and run the frontend/backend.
-2. [Architecture](architecture.md): the end-to-end research loop and major system boundaries.
-3. [Backend Research Architecture](backend-research-architecture.md): API routes, search aggregation, PDF extraction, scheduling, and model routing.
-4. [Model Configuration](model-config-migration.md): how model providers and runtime slots are configured.
-5. [Developer Operations](developer-operations.md): local development, tests, quality gates, and release hygiene.
-6. [Roadmap](roadmap.md): current completeness level and next product milestones.
-7. [Open Source References](open-source-references.md): frameworks, APIs, and prior art used by or referenced by TraceMind.
+1. [产品定位](product-positioning.md)：理解溯知为什么是 AI 个人研究工作台，而不是聊天框或文献管理器。
+2. [研究初心](research-intent.md)：理解这个项目想解决的真实研究痛点。
+3. [设计原则](design-principles.md)：理解证据优先、长期记忆、节点化研究和人类判断为什么重要。
+4. [横向对比](comparison.md)：理解溯知与 Zotero、NotebookLM、Elicit、Perplexity、通用聊天模型的关系。
+5. [快速上手](getting-started.md)：安装、配置、启动前后端。
+6. [系统架构](architecture.md)：理解主题、论文、证据、节点、模型网关和工作台如何协作。
+7. [后端研究架构](backend-research-architecture.md)：理解搜索聚合、PDF 抽取、调度、模型路由和 API 边界。
+8. [模型配置](model-config-migration.md)：理解多模型、多供应商和运行时角色配置。
+9. [开发与运维](developer-operations.md)：理解测试、构建、仓库卫生和发布纪律。
+10. [路线图](roadmap.md)：理解当前边界和下一步方向。
+11. [开源参考](open-source-references.md)：查看框架、接口和开放生态来源。
 
-## User Introductions in 8 Languages
+## 八语言项目介绍
 
-TraceMind currently supports eight UI languages. The user-facing project introduction is mirrored in the same set:
+溯知界面支持八种语言。用户向的项目介绍也同步提供：
 
 - [中文](i18n/README.zh-CN.md)
 - [English](i18n/README.en-US.md)
@@ -25,8 +29,9 @@ TraceMind currently supports eight UI languages. The user-facing project introdu
 - [Español](i18n/README.es-ES.md)
 - [Русский](i18n/README.ru-RU.md)
 
-## Documentation Principles
+## 文档写作约定
 
-- Public docs explain stable concepts, supported workflows, and real commands.
-- Local agent instructions, screenshots, temporary QA output, and one-off planning files are intentionally excluded from the public repository.
-- When code changes route contracts, model configuration, or generated data requirements, update these docs in the same pull request.
+- 面向用户先讲「为什么」，再讲「怎么做」，最后讲「实现细节」。
+- 不夸大 AI 能力，不隐藏不确定性，不把模型输出包装成事实。
+- 对比其他工具时保持尊重：溯知不是要替代所有工具，而是补上个人长期研究工作台这一层。
+- 本地代理说明、运行截图、临时 QA 输出、一轮性计划和私有数据不进入公开文档。

@@ -1,0 +1,18 @@
+<svg width="960" height="240" viewBox="0 0 960 240" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">TraceMind logo</title>
+  <desc id="desc">A minimal transparent TraceMind wordmark with branching research nodes.</desc>
+  <g transform="translate(72 42)">
+    <path d="M42 18V138" stroke="#111827" stroke-width="10" stroke-linecap="round"/>
+    <path d="M42 78C74 78 94 58 120 36C134 24 148 18 166 18" stroke="#0F766E" stroke-width="8" stroke-linecap="round"/>
+    <path d="M42 78C78 78 98 100 124 122C138 134 150 138 166 138" stroke="#2563EB" stroke-width="8" stroke-linecap="round"/>
+    <circle cx="42" cy="18" r="14" fill="#111827"/>
+    <circle cx="42" cy="78" r="14" fill="#F5B84B"/>
+    <circle cx="42" cy="138" r="14" fill="#111827"/>
+    <circle cx="166" cy="18" r="13" fill="#0F766E"/>
+    <circle cx="166" cy="138" r="13" fill="#2563EB"/>
+    <path d="M90 78C104 62 125 53 148 53C171 53 192 62 206 78C192 94 171 103 148 103C125 103 104 94 90 78Z" stroke="#111827" stroke-width="7" stroke-linejoin="round"/>
+    <circle cx="148" cy="78" r="12" fill="#111827"/>
+  </g>
+  <text x="332" y="108" fill="#111827" font-family="Georgia, 'Times New Roman', serif" font-size="66" font-weight="600" letter-spacing="-1.8">TraceMind</text>
+  <text x="335" y="154" fill="#4B5563" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="22" font-weight="500" letter-spacing="3.8">AI PERSONAL RESEARCH WORKBENCH</text>
+</svg>

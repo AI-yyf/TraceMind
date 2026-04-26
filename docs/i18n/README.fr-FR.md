@@ -1,6 +1,8 @@
 # TraceMind
 
-TraceMind est un atelier de recherche assisté par IA pour la lecture et l'investigation exigeantes. Il relie découverte d'articles, extraction de preuves, nœuds de recherche, rédaction de jugement et questions contextualisées dans une boucle traçable.
+TraceMind est un atelier personnel de recherche assisté par IA pour la lecture et l'investigation exigeantes. Il relie découverte d'articles, extraction de preuves, nœuds de recherche, rédaction de jugement et questions contextualisées dans une boucle traçable.
+
+Ce n'est pas seulement un chatbot ou une liste d'articles, mais un espace durable pour faire évoluer un sujet de recherche personnel.
 
 ## Problème Résolu
 

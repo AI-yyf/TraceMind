@@ -1,35 +1,43 @@
 # Roadmap
 
-This roadmap describes the public baseline after repository cleanup.
+溯知的长期方向是成为个人研究者的 AI Research OS：不是替你做研究，而是把你的研究现场组织得更清楚、更可靠、更能延续。
 
-## Stable Baseline
+## 当前稳定基线
 
-- Frontend workbench routes are present for home, topic, node, research, settings, Prompt Studio, and workbench views.
-- Backend routes are present for topics, papers, nodes, search, PDF, research, tasks, model configs, Omni, prompt templates, evidence, sync, and Zotero export.
-- Generated demo data and static paper assets are available for local exploration.
-- Eight UI languages are defined: Chinese, English, Japanese, Korean, German, French, Spanish, and Russian.
-- Local-only development artifacts are ignored and removed from Git tracking.
+- 前端已有首页、主题、节点、研究、设置、Prompt Studio、Workbench 等主要路径。
+- 后端已有 topics、papers、nodes、search、PDF、research、tasks、model configs、Omni、prompt templates、evidence、sync、Zotero export 等接口。
+- 主题配置、示例论文和静态 paper assets 可支撑本地演示。
+- 八种界面语言已定义：中文、英语、日语、韩语、德语、法语、西班牙语、俄语。
+- 本地代理说明、运行截图、Playwright 输出、临时搜索结果和外部代码包已从 Git 跟踪中移除。
+- 公开文档、License、贡献说明、安全策略、Issue/PR 模板和透明 SVG Logo 已补齐。
 
-## Near-Term Priorities
+## 近期优先级
 
-- Harden long-running research tasks with a persistent queue layer.
-- Add clearer source health dashboards for academic providers.
-- Improve PDF extraction fallbacks for difficult formulas, scans, and figure captions.
-- Expand export formats for research reports, node articles, and Zotero workflows.
-- Publish a stable API contract for third-party integrations.
+- 持久化队列：让长时间研究任务更稳定，支持暂停、恢复和失败重试。
+- Source health：让用户知道不同学术来源的可用性、延迟和覆盖情况。
+- PDF 强化：改善扫描件、复杂公式、图表标题和跨页表格的抽取质量。
+- 导出增强：支持更完整的节点文章、研究简报、Zotero bundle 和报告格式。
+- API 契约：发布稳定的第三方集成接口和示例。
 
-## Product Direction
+## 中期方向
 
-TraceMind should become a research memory system, not just a paper search app. Future work should strengthen:
+- 研究节点可编辑：让用户能直接修正节点命名、证据归属和阶段判断。
+- 证据置信度：对图表、公式、引用和文本抽取增加可解释质量标记。
+- 个人研究记忆：让用户偏好、长期问题、已否定路线和开放问题更自然地进入下一次生成。
+- 多模型评审：让不同模型对同一判断进行交叉检查，但保留人类最终判断。
+- 更好的多语言写作：不仅翻译界面，也支持跨语言阅读和双语研究表达。
 
-- reproducible evidence trails
-- topic-level memory across sessions
-- human approval points for uncertain AI output
-- transparent model/provider selection
-- multilingual research reading and writing
+## 长期愿景
 
-## Non-Goals
+- 一个主题可以陪伴研究者数月甚至数年。
+- 每个重要结论都能回到证据。
+- 每次对话都能沉淀，而不是消失。
+- 每次模型升级都不会推翻已有研究结构。
+- 个人研究者拥有自己的研究数据库、模型配置和知识工作台。
 
-- Replacing peer review or expert judgment.
-- Hiding uncertainty behind fluent prose.
-- Committing local credentials, uploads, screenshots, or agent scratch files.
+## 非目标
+
+- 不替代同行评议。
+- 不宣称 AI 输出自动正确。
+- 不追求把所有知识管理功能都塞进一个产品。
+- 不把私有资料、上传文件、截图和本地 Agent 说明提交到公开仓库。

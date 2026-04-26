@@ -1,60 +1,85 @@
-# Architecture
+# 系统架构
 
-TraceMind is built around a research loop:
+溯知的架构围绕一个个人研究闭环设计：
 
 ```text
-topic intent
-  -> academic search
-  -> candidate filtering
-  -> PDF/evidence extraction
-  -> research node modeling
-  -> judgment and synthesis
-  -> grounded conversation
-  -> exportable artifacts
+研究意图
+  -> 论文发现
+  -> 候选筛选
+  -> PDF / 图表 / 公式 / 引用抽取
+  -> 证据归档
+  -> 研究节点建模
+  -> 阶段性判断
+  -> 工作台追问
+  -> 研究产物导出
+  -> 主题记忆更新
 ```
 
-## Main Components
+这不是单向流水线，而是一个会反复回流的研究现场。用户可以从搜索进入，也可以从论文、节点、证据、对话或 Prompt Studio 进入。
 
-- `frontend/`: React + Vite application for the research workbench, topic pages, node reading, settings, and Prompt Studio.
-- `skills-backend/`: Express API, Prisma persistence, search aggregation, PDF extraction, topic runtime services, scheduling, and model routing.
-- `generated-data/`: curated topic/paper data and static paper assets used by the app.
-- `model-runtime/`: experimental connector runtime for model and agent integrations.
+## 四层结构
 
-## Frontend Boundary
+| 层 | 目录 | 责任 |
+| --- | --- | --- |
+| 体验层 | `frontend/` | 主题页、节点页、阅读页、右侧工作台、设置、Prompt Studio、i18n |
+| 研究服务层 | `skills-backend/src/services/` | 搜索聚合、PDF 抽取、证据归档、主题图谱、研究报告、调度 |
+| 模型治理层 | `skills-backend/src/services/omni/` | 模型供应商配置、任务路由、角色模型、密钥存储 |
+| 运行数据层 | `generated-data/` + Prisma | 主题配置、论文资产、运行快照、数据库实体 |
 
-The frontend owns:
+## 关键数据流
 
-- routing and page composition
-- topic, node, research, settings, prompt studio, and workbench UI
-- i18n and bilingual display state
-- local reading workspace state
-- typed API access and client-side presentation models
+1. 用户创建或打开 Topic。
+2. 后端从 topic config、数据库和 generated data 构建主题视图。
+3. 搜索聚合器拉取或合并学术来源候选。
+4. PDF 和证据服务抽取文本、图表、公式、表格和引用。
+5. Topic services 将论文映射到阶段、节点和图谱。
+6. Editorial services 根据证据和模型配置生成节点文章或研究简报。
+7. Workbench 将用户追问、证据选择和当前阅读焦点放入同一个上下文。
+8. 主题记忆记录研究连续性，供下一次生成或追问使用。
 
-The frontend does not own long-running research orchestration. It asks the backend to search, generate, extract, configure models, or synchronize topic data.
+## 前端边界
 
-## Backend Boundary
+前端负责：
 
-The backend owns:
+- 路由和页面组合。
+- 主题、节点、研究、设置、Prompt Studio、Workbench 的界面表达。
+- 多语言和双语显示状态。
+- 当前阅读工作区状态。
+- API 类型和客户端展示模型。
 
-- API route contracts under `/api/*`
-- model configuration and Omni Gateway routing
-- academic search providers and source health
-- PDF, figure, formula, and evidence extraction
-- topic graph, paper association, research reports, and scheduler services
-- generated runtime materialization from `topic-config/` into `generated-data/`
+前端不直接执行长时间研究任务，也不直接调用模型供应商。它通过后端请求搜索、抽取、生成、同步和模型配置。
 
-## Data Boundary
+## 后端边界
 
-TraceMind separates three data classes:
+后端负责：
 
-- Source code and configuration: tracked in Git.
-- Curated demo/runtime data: tracked when required for the application to render useful examples.
-- Local runtime output: ignored by Git, including screenshots, Playwright result folders, uploads, local agent notes, and temporary search dumps.
+- `/api/*` 路由契约。
+- Omni Gateway 和模型配置。
+- 学术搜索源和 source health。
+- PDF、图表、公式和证据抽取。
+- 主题图谱、论文关联、研究报告和调度。
+- 从 `topic-config/` 到 `generated-data/` 的运行时物化。
 
-## Model Boundary
+## 数据边界
 
-Model calls should go through Omni Gateway and model configuration services. Direct provider calls are kept behind connectors and service boundaries so the UI can switch providers without code changes.
+溯知区分三类数据：
 
-## Reliability Posture
+- 源码和配置：进入 Git。
+- 策划过的演示数据：进入 Git，用于让新用户打开就能体验主题和论文视图。
+- 本地运行产物：不进入 Git，包括截图、Playwright 结果、上传文件、本地 Agent 说明和临时搜索结果。
 
-TraceMind is designed to keep evidence and uncertainty visible. The product should prefer a grounded partial answer over a polished unsupported claim.
+## 模型边界
+
+模型调用必须走 Omni Gateway。这样做的原因是：
+
+- 模型供应商可以切换。
+- 不同任务可以使用不同模型角色。
+- 密钥留在后端。
+- UI 不需要知道供应商 SDK 细节。
+- 未来可以加入成本、延迟、质量和隐私策略。
+
+## 可靠性姿态
+
+溯知宁愿给出一个带证据和不确定性的部分判断，也不应该给出一个漂亮但无法追溯的完整幻觉。
+
+这条原则贯穿架构：证据对象、节点文章、研究简报、模型路由和工作台对话都应该服务于可追溯性。

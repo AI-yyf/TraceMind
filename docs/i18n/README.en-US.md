@@ -1,6 +1,8 @@
 # TraceMind
 
-TraceMind is an AI research workbench for serious reading and investigation. It connects paper discovery, evidence extraction, research nodes, judgment writing, and grounded follow-up into one traceable loop.
+TraceMind is an AI personal research workbench for serious reading and investigation. It connects paper discovery, evidence extraction, research nodes, judgment writing, and grounded follow-up into one traceable loop.
+
+It is not just a chatbot or a paper list. It helps individual researchers maintain a long-running research workspace around a topic.
 
 ## What It Solves
 
