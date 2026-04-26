@@ -46,3 +46,25 @@
 - [Perplexity](https://www.perplexity.ai/) 启发了带来源的答案体验。
 
 溯知不会复制这些产品的定位。它实现的是一个开源、可自托管、围绕个人长期主题记忆和证据链的研究工作台。
+
+## GitHub 文档风格参考
+
+这一版公开文档也参考了成熟开源项目的 README 组织方式。参考的不是它们的产品定位，而是它们如何帮助新用户快速理解项目：
+
+- [Supabase](https://github.com/supabase/supabase)：首屏清楚、能力分层明确、快速把用户带到文档和自托管路径。
+- [LangChain](https://github.com/langchain-ai/langchain)：生态入口清晰，能把框架、组件、文档和示例连接起来。
+- [Dify](https://github.com/langgenius/dify)：强调自托管、产品能力、部署路径和社区入口。
+- [Immich](https://github.com/immich-app/immich)：README 中清楚呈现产品边界、链接、警示和用户期待管理。
+- [Next.js](https://github.com/vercel/next.js)：快速开始、学习路径和贡献入口简洁。
+- [Visual Studio Code](https://github.com/microsoft/vscode)：开源项目治理、贡献路径、构建说明和社区入口完整。
+- [Excalidraw](https://github.com/excalidraw/excalidraw)：产品表达克制，用户能很快理解用途和体验。
+- [Open WebUI](https://github.com/open-webui/open-webui)：自托管 AI 应用的能力展示、部署路径和社区入口比较完整。
+
+溯知从这些项目里吸收的文档原则是：
+
+- README 必须先回答「这是什么」和「为什么需要它」。
+- 功能列表要面向用户任务，而不是堆内部模块名。
+- 快速开始要靠前，不能藏在很深的目录里。
+- 横向对比要尊重其他工具，说明协作关系和边界。
+- 路线图要说清楚非目标，避免过度承诺。
+- 品牌资产、贡献指南、安全策略和许可证应该出现在公开仓库的常规位置。

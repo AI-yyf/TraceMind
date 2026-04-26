@@ -2,6 +2,8 @@
 
 TraceMind runs as a Vite frontend and an Express/Prisma backend. Local development uses SQLite by default; Docker Compose provides PostgreSQL and Redis for a production-like stack.
 
+If you are evaluating TraceMind for the first time, start with the local frontend and backend. If you want a closer production shape, use Docker Compose.
+
 ## Prerequisites
 
 - Node.js 18 or newer
@@ -53,6 +55,8 @@ OMNI_MULTIMODAL_MODEL=glm-4.6v
 
 Do not commit real API keys.
 
+Model configuration is part of the trust boundary. The frontend should never contain provider secrets, and user-facing generation should make evidence and uncertainty visible.
+
 ## Docker Compose
 
 ```bash
@@ -74,3 +78,12 @@ Services:
 4. Run search/discovery to gather candidate papers.
 5. Inspect papers, evidence, figures, and node-level summaries.
 6. Use Workbench or Prompt Studio for grounded follow-up and generation.
+
+For a deeper walkthrough, see [Research Workflow](research-workflow.md).
+
+## Before You Add Private Material
+
+- Keep private PDFs and uploads local.
+- Do not paste real provider keys into issues, screenshots, commits, or logs.
+- Remember that external model providers may receive prompt context when AI features are enabled.
+- Treat extracted notes and topic memory as sensitive research material.

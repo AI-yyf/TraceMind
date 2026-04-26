@@ -24,6 +24,12 @@ What should have happened?
 
 What happened instead?
 
+## Research Context
+
+- Topic or page:
+- Was AI/model output involved?
+- Was PDF/evidence extraction involved?
+
 ## Environment
 
 - OS:
@@ -35,3 +41,7 @@ What happened instead?
 ## Logs Or Screenshots
 
 Do not include API keys, private PDFs, or personal data.
+
+## Possible Impact
+
+Does this affect evidence visibility, model configuration, exported artifacts, or user trust?

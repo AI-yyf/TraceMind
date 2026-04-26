@@ -1,6 +1,8 @@
 # Contributing to TraceMind
 
-Thank you for helping improve TraceMind. The project values changes that make research workflows more traceable, reliable, and understandable.
+Thank you for helping improve TraceMind. The project values changes that make personal research workflows more traceable, reliable, understandable, and self-hostable.
+
+TraceMind is not trying to be a generic AI demo. Contributions should strengthen its identity as an AI personal research workbench: evidence first, memory over chat, nodes over folders, and human judgment at the center.
 
 ## Development Setup
 
@@ -16,6 +18,8 @@ See [Getting Started](docs/getting-started.md) for full commands.
 - Keep changes focused and reversible.
 - Do not commit API keys, local uploads, screenshots, Playwright results, or local agent notes.
 - Update documentation when user workflows, routes, model configuration, or generated data contracts change.
+- Explain user impact in the PR summary, not only implementation details.
+- Call out known limitations honestly, especially for AI-generated or evidence-extraction behavior.
 - Run relevant quality gates:
 
 ```bash
@@ -36,7 +40,26 @@ npm run test
 - Keep model-provider calls behind backend gateways.
 - Keep long-running research work out of synchronous request handlers.
 - Make evidence and uncertainty visible in user-facing AI output.
+- Prefer small, reviewable changes over broad rewrites.
+- Preserve i18n patterns for user-facing UI text.
+- Keep generated demo data intentional and redistributable.
 
 ## Documentation Style
 
-Public documentation should be practical and user-facing. Avoid committing temporary plans, local execution logs, or one-off debugging notes.
+Public documentation should be practical and user-facing. A good TraceMind doc should help a new user answer:
+
+- What problem does this solve?
+- When should I use it, and when should I not?
+- How do I run it locally?
+- How does evidence move through the system?
+- What are the current limits and risks?
+
+Avoid committing temporary plans, local execution logs, one-off debugging notes, private screenshots, or agent instructions. If a change affects the public workflow, update the README or the relevant file under `docs/`.
+
+## Good First Contribution Areas
+
+- Improve a specific document with clearer examples or fewer assumptions.
+- Add tests around search, evidence extraction, model configuration, or API contracts.
+- Improve error states and empty states in the research workbench.
+- Add safe export formats that preserve source metadata.
+- Improve i18n coverage without changing product meaning.
