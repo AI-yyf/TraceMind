@@ -1,14 +1,7 @@
-/**
- * MethodMap - Methodology comparison across papers in the node
- * 
- * Displays:
- * - Method comparison table (dimensions from PaperSubsection method)
- * - Evolution timeline visualization
- */
+import { ArrowRight, Beaker, Clock } from 'lucide-react'
 
-import { ArrowRight, Beaker, Clock, GitBranch } from 'lucide-react'
 import { useI18n } from '@/i18n'
-import type { PaperSubsection, MethodEvolutionStep } from '@/types/article'
+import type { MethodEvolutionStep, PaperSubsection } from '@/types/article'
 
 function renderTemplate(template: string, variables: Record<string, string | number>) {
   return Object.entries(variables).reduce(
@@ -25,188 +18,182 @@ export interface MethodEntry {
 }
 
 export interface MethodMapProps {
-  /** Methods extracted from paper subsections */
   methods: MethodEntry[]
-  /** Evolution timeline from synthesis block */
   evolutionSteps?: MethodEvolutionStep[]
-  /** Language preference */
+  dimensions?: string[]
   language?: 'zh' | 'en'
+  compact?: boolean
 }
 
-/**
- * Extract key method dimensions from subsection content
- */
-function extractMethodDimensions(methods: MethodEntry[]): string[] {
-  const dimensions = new Set<string>()
-  
-  methods.forEach(({ subsection }) => {
-    const content = subsection.content
-    const contentEn = subsection.contentEn || ''
-    
-    // Extract common method dimensions
-    const patterns = [
-      /架构|architecture|framework|model|结构/i,
-      /训练|training|learning|优化|optimization/i,
-      /数据|data|dataset|corpus/i,
-      /评估|evaluation|benchmark|metric|测试/i,
-      /效率|efficiency|performance|速度|speed/i,
-      /规模|scale|size|参数|parameters/i,
-    ]
-    
-    patterns.forEach(pattern => {
-      if (pattern.test(content) || pattern.test(contentEn)) {
-        const match = pattern.exec(content) || pattern.exec(contentEn)
-        if (match) {
-          dimensions.add(match[0])
+function subsectionSurfaceLabel(value: string | null | undefined, language: 'zh' | 'en') {
+  const normalized = (value ?? '').trim().toLowerCase()
+  if (!normalized) return ''
+
+  const labels =
+    language === 'en'
+      ? {
+          framing: 'Framing',
+          background: 'Background',
+          problem: 'Core problem',
+          method: 'Method',
+          experiment: 'Experiment',
+          result: 'Result',
+          results: 'Results',
+          analysis: 'Analysis',
+          contribution: 'Contribution',
+          significance: 'Significance',
+          limitation: 'Limitation',
+          figure: 'Figure',
+          table: 'Table',
+          formula: 'Formula',
+          section: 'Section',
         }
-      }
-    })
-    
-    // Use keyPoints as dimensions if available
-    subsection.keyPoints.slice(0, 3).forEach(point => {
-      const shortPoint = point.split(/[，,：:]/)[0].trim()
-      if (shortPoint.length < 20) {
-        dimensions.add(shortPoint)
-      }
-    })
-  })
-  
-  return Array.from(dimensions).slice(0, 5)
+      : {
+          framing: '问题界定',
+          background: '研究背景',
+          problem: '核心问题',
+          method: '方法',
+          experiment: '实验',
+          result: '结果',
+          results: '结果',
+          analysis: '分析',
+          contribution: '核心贡献',
+          significance: '意义',
+          limitation: '局限',
+          figure: '图',
+          table: '表',
+          formula: '公式',
+          section: '正文段落',
+        }
+
+  return labels[normalized as keyof typeof labels] ?? value ?? ''
 }
 
-export function MethodMap({ methods, evolutionSteps = [], language = 'zh' }: MethodMapProps) {
+export function MethodMap({
+  methods,
+  evolutionSteps = [],
+  dimensions = [],
+  language = 'zh',
+  compact = false,
+}: MethodMapProps) {
   const { t } = useI18n()
-  
-  if (methods.length === 0) {
-    return null
-  }
+  if (methods.length === 0) return null
 
-  const dimensions = extractMethodDimensions(methods)
+  const transitionKindLabels =
+    language === 'en'
+      ? {
+          'method-evolution': 'Method evolution',
+          'problem-shift': 'Problem shift',
+          'scale-up': 'Scale-up',
+          'scope-broaden': 'Scope broaden',
+          complementary: 'Complementary',
+        }
+      : {
+          'method-evolution': '方法推进',
+          'problem-shift': '问题迁移',
+          'scale-up': '规模放大',
+          'scope-broaden': '范围扩展',
+          complementary: '互补分支',
+        }
 
   return (
-    <section className="rounded-[22px] border border-black/8 bg-white p-6 shadow-[0_4px_16px_rgba(15,23,42,0.04)]">
-      {/* Header */}
-      <div className="flex items-center gap-2 mb-4">
+    <section className="rounded-[22px] border border-black/8 bg-white p-5 shadow-[0_6px_18px_rgba(15,23,42,0.04)]">
+      <div className="mb-4 flex items-center gap-2">
         <Beaker className="h-5 w-5 text-black/40" />
         <span className="text-[11px] uppercase tracking-[0.18em] text-black/38">
           {t('node.methodMapEyebrow', 'Methodology Map')}
         </span>
       </div>
 
-      {/* Method Count */}
-      <div className="text-[13px] text-black/54 mb-5">
-        {renderTemplate(t('node.methodCount', '{count} methodologies compared'), { count: methods.length })}
+      <div className="mb-5 text-[13px] text-black/54">
+        {renderTemplate(t('node.methodCount', '{count} methodologies compared'), {
+          count: methods.length,
+        })}
       </div>
 
-      {/* Method Evolution Timeline */}
-      {evolutionSteps.length > 0 && (
-        <div className="mb-6 rounded-[12px] bg-[linear-gradient(180deg,#f8f5f0_0%,#fff_100%)] p-4">
-          <div className="flex items-center gap-2 mb-3">
+      {evolutionSteps.length > 0 ? (
+        <div className="mb-5 rounded-[16px] bg-[var(--surface-soft)] p-4">
+          <div className="mb-3 flex items-center gap-2">
             <Clock className="h-4 w-4 text-black/40" />
             <span className="text-[12px] font-medium text-black/62">
               {t('node.methodEvolution', 'Method Evolution')}
             </span>
           </div>
-          
-          <div className="space-y-2">
-            {evolutionSteps.slice(0, 4).map((step, index) => (
-              <div key={`evolution-${index}`} className="flex items-center gap-3">
-                <div className="flex-shrink-0 w-2 h-2 rounded-full bg-black/30" />
-                <div className="flex-1 min-w-0">
-                  <div className="text-[13px] font-medium text-black truncate">
-                    {step.contribution}
+          <div className="space-y-3">
+            {evolutionSteps.slice(0, compact ? 3 : 4).map((step, index) => (
+              <div key={`${step.paperId}:${index}`} className="flex items-center gap-3">
+                <div className="h-2 w-2 shrink-0 rounded-full bg-black/30" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2 text-[13px] font-medium text-black/72">
+                    <span>
+                      {step.fromPaperTitle && step.toPaperTitle
+                        ? `${step.fromPaperTitle} → ${step.toPaperTitle}`
+                        : step.paperTitle}
+                    </span>
+                    {step.transitionType ? (
+                      <span className="rounded-full border border-black/10 bg-white px-2 py-0.5 text-[10px] font-normal text-black/52">
+                        {transitionKindLabels[step.transitionType]}
+                      </span>
+                    ) : null}
                   </div>
-                  <div className="text-[11px] text-black/40 mt-0.5">
-                    {step.paperTitle}
-                  </div>
+                  <div className="mt-1 text-[12px] leading-6 text-black/56">{step.contribution}</div>
+                  {step.improvementOverPrevious ? (
+                    <div className="mt-1 text-[11px] leading-5 text-black/44">
+                      {step.improvementOverPrevious}
+                    </div>
+                  ) : null}
                 </div>
-                {index < evolutionSteps.length - 1 && (
-                  <ArrowRight className="h-4 w-4 text-black/20 flex-shrink-0" />
-                )}
+                {index < evolutionSteps.length - 1 ? (
+                  <ArrowRight className="h-4 w-4 shrink-0 text-black/20" />
+                ) : null}
               </div>
             ))}
           </div>
         </div>
-      )}
+      ) : null}
 
-      {/* Method Comparison Grid */}
-      <div className="space-y-3">
-        {methods.slice(0, 5).map((method) => (
-          <MethodCard key={method.paperId} method={method} language={language} />
-        ))}
+      <div className={compact ? 'grid gap-3' : 'grid gap-3 md:grid-cols-2'}>
+        {methods.slice(0, compact ? 3 : 4).map((method) => {
+          const localizedTitle =
+            language === 'en'
+              ? (method.subsection.titleEn || method.subsection.title)
+              : method.subsection.title
+          const title = subsectionSurfaceLabel(localizedTitle || method.subsection.kind, language)
+          const content =
+            language === 'en'
+              ? (method.subsection.contentEn || method.subsection.content)
+              : method.subsection.content
+          const yearSuffix = method.publishedAt ? ` | ${new Date(method.publishedAt).getFullYear()}` : ''
+
+          return (
+            <div key={method.paperId} className="rounded-[16px] border border-black/6 bg-white px-4 py-3">
+              <div className="text-[14px] font-medium leading-6 text-black">{title}</div>
+              <div className="mt-1 text-[11px] text-black/40">
+                {method.paperTitle}
+                {yearSuffix}
+              </div>
+              <p className="mt-3 text-[13px] leading-6 text-black/58">
+                {content.replace(/\s+/gu, ' ').trim().slice(0, compact ? 96 : 120)}
+                {content.length > (compact ? 96 : 120) ? '...' : ''}
+              </p>
+            </div>
+          )
+        })}
       </div>
 
-      {/* Dimension Tags */}
-      {dimensions.length > 0 && (
-        <div className="mt-5 pt-4 border-t border-black/8">
-          <div className="flex items-center gap-2 mb-2">
-            <GitBranch className="h-4 w-4 text-black/40" />
-            <span className="text-[12px] text-black/54">
-              {t('node.methodDimensions', 'Key Dimensions')}
-            </span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {dimensions.map((dim, index) => (
-              <span 
-                key={`dim-${index}`}
-                className="rounded-full border border-black/10 bg-white px-2.5 py-1 text-[11px] text-black/54"
-              >
-                {dim}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-    </section>
-  )
-}
-
-function MethodCard({ method, language }: { method: MethodEntry; language: 'zh' | 'en' }) {
-  const title = language === 'en' 
-    ? (method.subsection.titleEn || method.subsection.title)
-    : method.subsection.title
-  
-  const content = language === 'en'
-    ? (method.subsection.contentEn || method.subsection.content)
-    : method.subsection.content
-
-  // Extract brief summary (first 150 chars)
-  const summary = content.replace(/\s+/g, ' ').trim().slice(0, 150)
-  const hasMore = content.length > 150
-
-  return (
-    <div className="rounded-[14px] border border-black/6 bg-white p-4 hover:border-black/12 transition-colors">
-      <div className="flex items-start justify-between gap-3 mb-2">
-        <div className="min-w-0 flex-1">
-          <div className="text-[14px] font-medium leading-6 text-black truncate">
-            {title}
-          </div>
-          <div className="text-[11px] text-black/40 mt-0.5">
-            {method.paperTitle}
-            {method.publishedAt && ` · ${new Date(method.publishedAt).getFullYear()}`}
-          </div>
-        </div>
-        <Beaker className="h-5 w-5 text-black/30 flex-shrink-0" />
-      </div>
-      
-      <div className="text-[13px] leading-7 text-black/58">
-        {summary}{hasMore ? '...' : ''}
-      </div>
-      
-      {/* Key Points */}
-      {method.subsection.keyPoints.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {method.subsection.keyPoints.slice(0, 3).map((point, index) => (
-            <span 
-              key={`kp-${index}`}
-              className="rounded-[8px] bg-black/4 px-2 py-0.5 text-[11px] text-black/48"
+      {dimensions.length > 0 ? (
+        <div className="mt-5 flex flex-wrap gap-2">
+          {dimensions.slice(0, compact ? 4 : 6).map((dimension) => (
+            <span
+              key={dimension}
+              className="rounded-full border border-black/10 bg-white px-3 py-1 text-[11px] text-black/54"
             >
-              {point.split(/[，,：:]/)[0]}
+              {dimension}
             </span>
           ))}
         </div>
-      )}
-    </div>
+      ) : null}
+    </section>
   )
 }
 

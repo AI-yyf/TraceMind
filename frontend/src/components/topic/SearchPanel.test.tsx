@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -35,8 +35,10 @@ function renderWithI18n(node: ReactNode) {
   return render(<I18nProvider>{node}</I18nProvider>)
 }
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+async function flushSearchDebounce() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 260))
+  })
 }
 
 function makeSearchResponse(stageLabels: string[]): SearchResponse {
@@ -117,7 +119,7 @@ describe('SearchPanel stage filters', () => {
       target: { value: 'retrieval' },
     })
 
-    await sleep(260)
+    await flushSearchDebounce()
 
     await waitFor(() => {
       expect(apiGetMock).toHaveBeenCalledWith(
@@ -127,7 +129,7 @@ describe('SearchPanel stage filters', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /^2026\.03\s*·\s*2$/u }))
 
-    await sleep(260)
+    await flushSearchDebounce()
 
     await waitFor(() => {
       expect(apiGetMock).toHaveBeenLastCalledWith(
@@ -165,19 +167,19 @@ describe('SearchPanel stage filters', () => {
       target: { value: 'retrieval' },
     })
 
-    await sleep(260)
+    await flushSearchDebounce()
     await waitFor(() => {
       expect(apiGetMock).toHaveBeenCalledTimes(1)
     })
 
     fireEvent.click(screen.getByRole('button', { name: /^2026\.03\s*·\s*2$/u }))
 
-    await sleep(260)
+    await flushSearchDebounce()
     await waitFor(() => {
       expect(apiGetMock).toHaveBeenCalledTimes(2)
     })
 
-    await sleep(260)
+    await flushSearchDebounce()
     await waitFor(() => {
       expect(apiGetMock).toHaveBeenCalledTimes(3)
     })

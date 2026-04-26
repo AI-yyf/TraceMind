@@ -12,9 +12,11 @@ export type TopicDashboardPanelState =
 export function TopicDashboardPanel({
   state,
   onRetry,
+  stageWindowMonths,
 }: {
   state: TopicDashboardPanelState
   onRetry: () => void
+  stageWindowMonths?: number
 }) {
   const { t } = useI18n()
 
@@ -24,7 +26,7 @@ export function TopicDashboardPanel({
       className="mt-5 rounded-[30px] border border-black/8 bg-white p-4 shadow-[0_16px_36px_rgba(15,23,42,0.05)] md:p-6"
     >
       {state.status === 'ready' ? (
-        <TopicDashboard dashboard={state.data} />
+        <TopicDashboard dashboard={state.data} stageWindowMonths={stageWindowMonths} />
       ) : state.status === 'error' ? (
         <div
           data-testid="topic-dashboard-error"

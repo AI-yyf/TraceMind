@@ -4,6 +4,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 import { defaultBaseUrlForProvider, inferCapabilities } from './catalog'
 import { getResolvedUserModelConfig, type ResolvedProviderModelConfig } from './config-store'
 import { isResearchRoleId, preferredSlotForRole, resolveTaskRouteTarget } from './routing'
+import { LLMGenerationError } from './retry'
 import type {
   ModelSlot,
   OmniAttachment,
@@ -12,25 +13,11 @@ import type {
   OmniIssue,
   OmniMessage,
   OmniTask,
-  ProviderCapability,
   ProviderId,
   ProviderModelRef,
   ResearchRoleId,
   TaskRouteTarget,
 } from './types'
-
-const BACKEND_FALLBACK_CAPABILITY: ProviderCapability = {
-  text: true,
-  image: false,
-  pdf: false,
-  chart: false,
-  formula: false,
-  citationsNative: false,
-  fileParserNative: false,
-  toolCalling: false,
-  jsonMode: true,
-  streaming: true,
-}
 
 const COMPATIBLE_PROVIDER_HEADERS: Partial<Record<ProviderId, Record<string, string>>> = {
   deepseek: { 'X-Client-Source': 'arxiv-chronicle-alpha' },
@@ -595,36 +582,38 @@ function timeoutTierForRequest(config: ResolvedProviderModelConfig, request: Omn
   const model = config.model.toLowerCase()
   const reasoningModel = /(reason|think|kimi|m2\.5|glm5|deepseek|sonnet)/iu.test(model)
   const visionTask = wantsVision(request.task, request.messages)
+  // Kimi models require longer timeout due to extended reasoning
+  const kimiModel = /kimi/iu.test(model)
 
   let baseMs = 25000
 
   switch (request.task) {
     case 'topic_chat':
     case 'topic_summary':
-      baseMs = 40000
+      baseMs = kimiModel ? 120000 : 40000
       break
     case 'topic_chat_vision':
     case 'evidence_explainer':
-      baseMs = 65000
+      baseMs = kimiModel ? 180000 : 65000
       break
     case 'document_parse':
     case 'figure_analysis':
     case 'formula_recognition':
     case 'table_extraction':
-      baseMs = 90000
+      baseMs = kimiModel ? 240000 : 90000
       break
     default:
-      baseMs = 25000
+      baseMs = kimiModel ? 90000 : 25000
       break
   }
 
   if (request.json) baseMs += 10000
-  if (visionTask) baseMs += 15000
-  if (reasoningModel) baseMs += 20000
+  if (visionTask && !kimiModel) baseMs += 15000
+  if (reasoningModel && !kimiModel) baseMs += 20000
 
   return {
     streamMs: baseMs,
-    nonStreamMs: baseMs + 15000,
+    nonStreamMs: baseMs + 30000,
   }
 }
 
@@ -648,7 +637,7 @@ function buildOpenAICompatiblePayload(
   const resolvedMaxTokens =
     options?.maxTokensOverride ??
     request.maxTokens ??
-    (options?.omitImplicitMaxTokens ? undefined : config.options?.maxTokens ?? 1800)
+    (options?.omitImplicitMaxTokens ? undefined : config.options?.maxTokens ?? 8000)
 
   if (typeof resolvedMaxTokens === 'number' && Number.isFinite(resolvedMaxTokens)) {
     payload.max_tokens = resolvedMaxTokens
@@ -1064,28 +1053,15 @@ export class OmniGateway {
   async complete(request: OmniCompleteRequest): Promise<OmniCompletionResult> {
     const { preferredSlot, selection } = await this.resolveSelection(request)
 
+    // NO FALLBACK: Throw error when no API key available
     if (!selection?.config?.apiKey) {
-      const issue: OmniIssue = {
-        code: 'missing_key',
-        title: '\u672a\u68c0\u6d4b\u5230\u53ef\u7528\u7684 Key',
-        message:
-          preferredSlot === 'multimodal'
-            ? '\u8bf7\u5148\u914d\u7f6e\u591a\u6a21\u6001\u6a21\u578b Key\uff0c\u6216\u8005\u66f4\u6362\u4e00\u4e2a\u65b0\u7684 Key\u3002'
-            : '\u8bf7\u5148\u914d\u7f6e\u8bed\u8a00\u6a21\u578b Key\uff0c\u6216\u8005\u66f4\u6362\u4e00\u4e2a\u65b0\u7684 Key\u3002',
-        provider: 'backend',
-        model: 'backend-fallback',
-        slot: preferredSlot,
-      }
-
-      return {
-        text: this.buildBackendFallback(request, issue),
-        provider: 'backend',
-        model: 'backend-fallback',
-        slot: preferredSlot,
-        capabilities: BACKEND_FALLBACK_CAPABILITY,
-        usedFallback: true,
-        issue,
-      }
+      throw new LLMGenerationError(
+        `No API key configured for ${preferredSlot} slot. Please configure a ${preferredSlot === 'multimodal' ? 'multimodal' : 'language'} model key.`,
+        0,
+        new Error('missing_key'),
+        'backend',
+        'backend-fallback'
+      )
     }
 
     const capabilities = inferCapabilities(selection.config.provider, selection.config.model)
@@ -1128,16 +1104,15 @@ export class OmniGateway {
         usedFallback: false,
       }
     } catch (error) {
-      const issue = this.buildProviderIssue(selection, error)
-      return {
-        text: this.buildBackendFallback(request, issue),
-        provider: selection.config.provider,
-        model: selection.config.model,
-        slot: selection.slot,
-        capabilities,
-        usedFallback: true,
-        issue,
-      }
+      // NO FALLBACK: Throw error instead of returning template content
+      const err = error instanceof Error ? error : new Error(String(error))
+      throw new LLMGenerationError(
+        `LLM call failed for ${selection.config.provider}/${selection.config.model}: ${err.message}`,
+        1,
+        err,
+        selection.config.provider,
+        selection.config.model
+      )
     }
   }
 
@@ -1365,9 +1340,9 @@ export class OmniGateway {
       messages: userMessages.map((message) => ({
         role: message.role === 'assistant' ? 'assistant' : 'user',
         content: buildAnthropicContent(message),
-      })) as any,
+      })) as unknown as Anthropic.Messages.MessageParam[],
       temperature: request.temperature ?? config.options?.temperature ?? 0.2,
-      max_tokens: request.maxTokens ?? config.options?.maxTokens ?? 1800,
+      max_tokens: request.maxTokens ?? config.options?.maxTokens ?? 8000,
     })
 
     return response.content
@@ -1382,9 +1357,9 @@ export class OmniGateway {
       model: config.model,
       generationConfig: {
         temperature: request.temperature ?? config.options?.temperature ?? 0.2,
-        maxOutputTokens: request.maxTokens ?? config.options?.maxTokens ?? 1800,
+        maxOutputTokens: request.maxTokens ?? config.options?.maxTokens ?? 8000,
       },
-    } as any)
+    } as unknown as Parameters<typeof client.getGenerativeModel>[0])
 
     const parts = request.messages.flatMap((message) => {
       const prefix =
@@ -1396,7 +1371,7 @@ export class OmniGateway {
       return buildGoogleParts({ ...message, content: prefix })
     })
 
-    const response = await model.generateContent(parts as any)
+    const response = await model.generateContent(parts as unknown as Parameters<typeof model.generateContent>[0])
     return response.response.text()
   }
 

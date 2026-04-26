@@ -23,12 +23,6 @@ vi.mock('@/hooks/useProductCopy', () => ({
   }),
 }))
 
-vi.mock('@/hooks', () => ({
-  useTopicRegistry: () => ({
-    activeTopics: [],
-  }),
-}))
-
 const apiGetMock = vi.mocked(apiGet)
 
 function renderWithProviders(node: ReactNode) {
@@ -46,9 +40,12 @@ function renderWithProviders(node: ReactNode) {
   )
 }
 
-async function flushSearchDebounce() {
-  await vi.advanceTimersByTimeAsync(260)
-  await Promise.resolve()
+async function flushUiCycle() {
+  await act(async () => {
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 0))
+    await Promise.resolve()
+    await Promise.resolve()
+  })
 }
 
 function makeSearchResponse(items: SearchResponse['groups']): SearchResponse {
@@ -80,7 +77,7 @@ function makeAllResponse() {
   return makeSearchResponse([
     {
       group: 'node',
-      label: '节点',
+      label: '鑺傜偣',
       items: [
         {
           id: 'node-1',
@@ -109,7 +106,7 @@ function makeAllResponse() {
     },
     {
       group: 'paper',
-      label: '论文',
+      label: '璁烘枃',
       items: [
         {
           id: 'paper-2',
@@ -117,7 +114,7 @@ function makeAllResponse() {
           title: 'Topic two paper',
           subtitle: 'Paper summary',
           excerpt: 'Paper excerpt',
-          route: '/paper/paper-2',
+          route: '/node/node-2?anchor=paper%3Apaper-2',
           topicId: 'topic-2',
           topicTitle: 'Topic Two',
           tags: ['retrieval'],
@@ -134,7 +131,7 @@ function makeStageFilteredResponse() {
   return makeSearchResponse([
     {
       group: 'paper',
-      label: '论文',
+      label: '璁烘枃',
       items: [
         {
           id: 'paper-2',
@@ -142,7 +139,7 @@ function makeStageFilteredResponse() {
           title: 'Topic two paper',
           subtitle: 'Paper summary',
           excerpt: 'Paper excerpt',
-          route: '/paper/paper-2',
+          route: '/node/node-2?anchor=paper%3Apaper-2',
           topicId: 'topic-2',
           topicTitle: 'Topic Two',
           tags: ['retrieval'],
@@ -159,7 +156,7 @@ function makeTopicFilteredResponse() {
   return makeSearchResponse([
     {
       group: 'node',
-      label: '节点',
+      label: '鑺傜偣',
       items: [
         {
           id: 'node-1',
@@ -196,7 +193,6 @@ function makeEmptyFilteredResponse() {
 describe('GlobalSearch backend-driven filters', () => {
   beforeEach(() => {
     localStorage.clear()
-    vi.useFakeTimers()
     apiGetMock.mockReset()
     Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
       configurable: true,
@@ -205,14 +201,16 @@ describe('GlobalSearch backend-driven filters', () => {
   })
 
   afterEach(() => {
-    vi.runOnlyPendingTimers()
-    vi.useRealTimers()
     cleanup()
     vi.clearAllMocks()
   })
 
   it('re-queries the backend when a stage filter is selected', async () => {
     apiGetMock.mockImplementation(async (path: string) => {
+      if (path === '/api/topics') {
+        return []
+      }
+
       if (path.includes('&stages=2026.03')) {
         return makeStageFilteredResponse()
       }
@@ -220,35 +218,35 @@ describe('GlobalSearch backend-driven filters', () => {
       return makeAllResponse()
     })
 
-    renderWithProviders(<GlobalSearch open onClose={vi.fn()} />)
+    renderWithProviders(<GlobalSearch open onClose={vi.fn()} focusDelayMs={0} searchDebounceMs={0} />)
+    await flushUiCycle()
 
     fireEvent.change(screen.getByTestId('global-search-input'), {
       target: { value: 'retrieval' },
     })
-
-    await act(async () => {
-      await flushSearchDebounce()
-    })
+    await flushUiCycle()
 
     expect(apiGetMock).toHaveBeenCalledWith('/api/search?q=retrieval&scope=global&limit=28')
     expect(screen.getByTestId('global-search-topic-filter-topic-1')).toBeVisible()
     expect(screen.getByTestId('global-search-topic-filter-topic-2')).toBeVisible()
+    expect(screen.getByTestId('global-search-stage-filters')).toBeVisible()
 
     fireEvent.click(screen.getByTestId('global-search-stage-filter-1'))
-
-    await act(async () => {
-      await flushSearchDebounce()
-    })
+    await flushUiCycle()
 
     expect(apiGetMock).toHaveBeenLastCalledWith(
       '/api/search?q=retrieval&scope=global&stages=2026.03&limit=28',
     )
-    expect(screen.queryByText('Topic one node')).not.toBeInTheDocument()
     expect(screen.getByText('Topic two paper')).toBeVisible()
+    expect(screen.queryByText('Topic one node')).not.toBeInTheDocument()
   })
 
   it('combines topic and stage filters in backend requests', async () => {
     apiGetMock.mockImplementation(async (path: string) => {
+      if (path === '/api/topics') {
+        return []
+      }
+
       if (path.includes('&topics=topic-1&stages=2026.03')) {
         return makeEmptyFilteredResponse()
       }
@@ -260,22 +258,20 @@ describe('GlobalSearch backend-driven filters', () => {
       return makeAllResponse()
     })
 
-    renderWithProviders(<GlobalSearch open onClose={vi.fn()} />)
+    renderWithProviders(<GlobalSearch open onClose={vi.fn()} focusDelayMs={0} searchDebounceMs={0} />)
+    await flushUiCycle()
 
     fireEvent.change(screen.getByTestId('global-search-input'), {
       target: { value: 'retrieval' },
     })
-
-    await act(async () => {
-      await flushSearchDebounce()
-    })
+    await flushUiCycle()
 
     expect(screen.getByTestId('global-search-stage-filters')).toBeVisible()
-    fireEvent.click(screen.getByTestId('global-search-topic-filter-topic-1'))
+    expect(screen.getByTestId('global-search-topic-filter-topic-1')).toBeVisible()
+    expect(apiGetMock).toHaveBeenCalledWith('/api/search?q=retrieval&scope=global&limit=28')
 
-    await act(async () => {
-      await flushSearchDebounce()
-    })
+    fireEvent.click(screen.getByTestId('global-search-topic-filter-topic-1'))
+    await flushUiCycle()
 
     expect(apiGetMock).toHaveBeenLastCalledWith(
       '/api/search?q=retrieval&scope=global&topics=topic-1&limit=28',
@@ -284,15 +280,38 @@ describe('GlobalSearch backend-driven filters', () => {
     expect(screen.queryByText('Topic two paper')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByTestId('global-search-stage-filter-1'))
-
-    await act(async () => {
-      await flushSearchDebounce()
-    })
+    await flushUiCycle()
 
     expect(apiGetMock).toHaveBeenLastCalledWith(
       '/api/search?q=retrieval&scope=global&topics=topic-1&stages=2026.03&limit=28',
     )
-    expect(screen.getByText('No matching results yet. Try another keyword or narrow the search types first.')).toBeVisible()
+    expect(
+      screen.getByText(
+        'No matching results yet. Try another keyword or narrow the search types first.',
+      ),
+    ).toBeVisible()
     expect(screen.queryByRole('button', { name: 'Clear' })).toBeVisible()
+  })
+
+  it('persists opened queries into recent search storage', async () => {
+    apiGetMock.mockImplementation(async (path: string) => {
+      if (path === '/api/topics') {
+        return []
+      }
+
+      return makeAllResponse()
+    })
+
+    renderWithProviders(<GlobalSearch open onClose={vi.fn()} focusDelayMs={0} searchDebounceMs={0} />)
+    await flushUiCycle()
+
+    fireEvent.change(screen.getByTestId('global-search-input'), {
+      target: { value: 'retrieval' },
+    })
+    await flushUiCycle()
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Open Result' })[0]!)
+
+    expect(localStorage.getItem('global-search:recent')).toContain('retrieval')
   })
 })

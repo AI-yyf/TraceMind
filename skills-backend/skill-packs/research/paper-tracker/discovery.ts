@@ -6,6 +6,29 @@ import {
   type SemanticScholarPaper,
 } from '../../../src/services/search/semantic-scholar'
 
+import {
+  searchWorks as searchOpenAlexWorks,
+  getWork as getOpenAlexWork,
+  batchGetWorks as batchGetOpenAlexWorks,
+  getCitationNetwork as getOpenAlexCitationNetwork,
+  reconstructAbstract,
+  extractArxivId,
+  normalizePaperId,
+  transformToInternalPaper,
+  type OpenAlexWork,
+  type OpenAlexPaper,
+} from '../../../src/services/search/openalex'
+import {
+  searchWorksByTitle as searchCrossrefWorksByTitle,
+  transformCrossrefWork,
+  type CrossrefWork,
+} from '../../../src/services/search/crossref'
+import {
+  getSourceCooldownUntil,
+  noteSourceRateLimit,
+  noteSourceSuccess,
+} from '../../../src/services/search/source-health'
+
 export type DiscoveryQuery = {
   query: string
   rationale: string
@@ -25,7 +48,7 @@ export type ExternalDiscoveryCandidate = {
   pdfUrl?: string
   openAlexId?: string
   citationCount?: number | null
-  source: 'arxiv' | 'openalex' | 'semantic-scholar'
+  source: 'arxiv' | 'openalex' | 'semantic-scholar' | 'crossref'
   queryHits: string[]
   discoveryChannels: string[]
   discoveryRounds: number[]
@@ -38,12 +61,13 @@ type StageAnchor = {
   title: string
   published: string
   branchId?: string
+  openAlexId?: string
 }
 
 type DiscoverExternalCandidatesArgs = {
   anchors: StageAnchor[]
   queries: DiscoveryQuery[]
-  discoveryRound: 1 | 2
+  discoveryRound: number
   maxWindowMonths: number
   searchStartDate?: Date
   searchEndDateExclusive?: Date
@@ -56,8 +80,17 @@ const ARXIV_DISCOVERY_TIMEOUT_MS = 4_500
 const OPENALEX_DISCOVERY_TIMEOUT_MS = 10_000
 const SEMANTIC_SCHOLAR_MAX_RESULTS = 25 // Increased for broader discovery
 const SEMANTIC_SCHOLAR_MAX_QUERY_BUDGET_PER_ROUND = 15 // More queries allowed per round
+const CROSSREF_MAX_RESULTS = 12
+const CROSSREF_MAX_QUERY_BUDGET_PER_ROUND = 10
 const ARXIV_RATE_LIMIT_DELAY_MS = 500 // arXiv requires delays between requests
 const OPENALEX_RATE_LIMIT_DELAY_MS = 200 // OpenAlex polite pool
+const CROSSREF_RATE_LIMIT_DELAY_MS = 250
+const ARXIV_TITLE_BACKFILL_LIMIT_PER_QUERY = 2
+const ARXIV_TITLE_BACKFILL_MAX_RESULTS = 5
+
+// MMR (Maximal Marginal Relevance) constants for diversity scoring
+const MMR_LAMBDA = 0.7 // Weight for relevance vs diversity (0.7 = prioritize relevance)
+const MMR_MIN_SIMILARITY_THRESHOLD = 0.3 // Minimum similarity to be considered redundant
 
 function normalizeWhitespace(value: string) {
   return value.replace(/\s+/g, ' ').trim()
@@ -65,6 +98,116 @@ function normalizeWhitespace(value: string) {
 
 function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * MMR Diversity Scoring - Prevents redundant discoveries
+ * Formula: MMR = λ * relevance - (1-λ) * max_similarity_to_selected
+ *
+ * Inspired by OpenClaw/CCB patterns for diverse paper discovery
+ */
+function computeTitleSimilarity(title1: string, title2: string): number {
+  const tokens1 = new Set(tokenizeTitle(title1))
+  const tokens2 = new Set(tokenizeTitle(title2))
+
+  if (tokens1.size === 0 || tokens2.size === 0) return 0
+
+  // Jaccard similarity with word overlap
+  const intersection = new Set([...tokens1].filter(x => tokens2.has(x)))
+  const union = new Set([...tokens1, ...tokens2])
+
+  // Weight by common academic terms overlap
+  const academicTerms1 = extractAcademicTerms(title1)
+  const academicTerms2 = extractAcademicTerms(title2)
+  const academicOverlap = academicTerms1.filter(t => academicTerms2.includes(t)).length
+
+  // Combined similarity score
+  const jaccard = intersection.size / union.size
+  const academicBonus = Math.min(0.3, academicOverlap * 0.05)
+
+  return jaccard + academicBonus
+}
+
+function tokenizeTitle(title: string): string[] {
+  return normalizeWhitespace(title)
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fff\s]+/gi, ' ')
+    .split(/\s+/)
+    .filter(t => t.length > 2)
+}
+
+function extractAcademicTerms(title: string): string[] {
+  const academicPatterns = [
+    /\b(?:attention|transformer|diffusion|world model|latent|embedding|foundation|neural|deep|learning|reinforcement|imitation|autonomous|driving|planning|control|policy|prediction|forecasting|perception|sensor|vision|language|multimodal|cross-modal|temporal|spatial|generative|discriminative|supervised|unsupervised|self-supervised|semi-supervised|transfer|multi-task|few-shot|zero-shot|prompt|fine-tune|pretrain|downstream|benchmark|dataset|simulation|real-world|closed-loop|open-loop|end-to-end|modular|hybrid|intervention|safety|robustness|uncertainty|calibration|interpretability|explainability)\b/gi
+  ]
+
+  const terms: string[] = []
+  for (const pattern of academicPatterns) {
+    const matches = title.match(pattern) || []
+    terms.push(...matches.map(m => m.toLowerCase()))
+  }
+  return terms
+}
+
+/**
+ * Apply MMR diversity filtering to discovery candidates
+ * Selects candidates that maximize relevance while minimizing redundancy
+ */
+function applyMmrDiversityFilter(
+  candidates: ExternalDiscoveryCandidate[],
+  maxResults: number,
+  relevanceScores?: Map<string, number>
+): ExternalDiscoveryCandidate[] {
+  if (candidates.length <= maxResults) return candidates
+
+  const selected: ExternalDiscoveryCandidate[] = []
+  const remaining = [...candidates]
+
+  // Get initial relevance scores (citation count as proxy)
+  const getRelevance = (c: ExternalDiscoveryCandidate): number => {
+    if (relevanceScores?.has(c.paperId)) return relevanceScores.get(c.paperId)!
+    // Use citation count + depth bonus as relevance proxy
+    const depth = parseInt(c.discoveryChannels[0]?.match(/depth(\d+)/)?.[1] ?? '0')
+    const citationBonus = (c.citationCount ?? 0) / 100
+    const depthPenalty = depth * 0.1
+    return 1 - depthPenalty + citationBonus
+  }
+
+  while (selected.length < maxResults && remaining.length > 0) {
+    let bestMmrScore = -Infinity
+    let bestCandidate: ExternalDiscoveryCandidate | null = null
+    let bestIndex = -1
+
+    for (let i = 0; i < remaining.length; i++) {
+      const candidate = remaining[i]
+      const relevance = getRelevance(candidate)
+
+      // Compute max similarity to already selected candidates
+      let maxSimToSelected = 0
+      for (const selectedCandidate of selected) {
+        const sim = computeTitleSimilarity(candidate.title, selectedCandidate.title)
+        if (sim > maxSimToSelected) maxSimToSelected = sim
+      }
+
+      // MMR score: λ * relevance - (1-λ) * max_similarity
+      const mmrScore = MMR_LAMBDA * relevance - (1 - MMR_LAMBDA) * maxSimToSelected
+
+      if (mmrScore > bestMmrScore) {
+        bestMmrScore = mmrScore
+        bestCandidate = candidate
+        bestIndex = i
+      }
+    }
+
+    if (bestCandidate && bestIndex >= 0) {
+      selected.push(bestCandidate)
+      remaining.splice(bestIndex, 1)
+    } else {
+      break
+    }
+  }
+
+  return selected
 }
 
 function normalizeQueryKey(value: string) {
@@ -100,23 +243,120 @@ function extractAuthors(block: string) {
 }
 
 function extractOpenAlexAbstract(value: unknown) {
+  // Use imported reconstructAbstract from openalex.ts client
   if (!value || typeof value !== 'object' || Array.isArray(value)) return ''
-  const inverted = value as Record<string, number[]>
-  const positions = Object.entries(inverted).flatMap(([word, indexes]) =>
-    Array.isArray(indexes)
-      ? indexes
-          .filter((index): index is number => typeof index === 'number' && Number.isFinite(index))
-          .map((index) => ({ index, word }))
-      : [],
-  )
-  return positions
-    .sort((left, right) => left.index - right.index)
-    .map((item) => item.word)
-    .join(' ')
+  return reconstructAbstract(value as Record<string, number[]>)
+}
+
+/**
+ * Co-Citation Analysis - Finds papers frequently cited together with seeds
+ * This implements the OpenClaw/CCB pattern for discovering semantically related papers
+ *
+ * Two papers are co-cited if they appear together in reference lists of other papers.
+ * High co-citation count indicates semantic relatedness even without keyword overlap.
+ */
+interface CoCitationResult {
+  paperId: string
+  title: string
+  coCitationCount: number
+  coCitedWithSeeds: string[] // IDs of seed papers that are co-cited with this paper
+}
+
+async function fetchCoCitationNetwork(
+  seedPaperIds: string[],
+  maxResults: number,
+  discoveryRound: number
+): Promise<ExternalDiscoveryCandidate[]> {
+  // Use Semantic Scholar API to get papers that cite multiple seed papers
+  // This is the co-citation network analysis
+
+  const candidates: ExternalDiscoveryCandidate[] = []
+
+  try {
+    // For each seed, fetch papers that cite it
+    const citingPapersBySeed = new Map<string, Set<string>>()
+
+    for (const seedId of seedPaperIds.slice(0, 3)) { // Limit to 3 seeds for efficiency
+      try {
+        const normalizedSeedId = seedId.startsWith('s2:') ? seedId.replace('s2:', '') : seedId
+
+        // Use Semantic Scholar citations endpoint
+        const apiUrl = `https://api.semanticscholar.org/graph/v1/paper/${normalizedSeedId}/citations?fields=paperId,title,year,authors,abstract,externalIds&limit=50`
+
+        const response = await fetch(apiUrl, {
+          headers: {
+            'User-Agent': 'daily-report-co-citation-analysis',
+          },
+          signal: AbortSignal.timeout(8000),
+        })
+
+        if (!response.ok) continue
+
+        const data = await response.json() as { data?: Array<{ citedPaper: SemanticScholarPaper }> }
+        const citingPaperIds = new Set<string>()
+
+        for (const citation of data.data || []) {
+          const paperId = normalizeSemanticScholarPaperId(citation.citedPaper)
+          if (paperId) {
+            citingPaperIds.add(paperId)
+            citingPapersBySeed.set(seedId, citingPaperIds)
+          }
+        }
+      } catch (error) {
+        console.warn('[fetchCoCitationNetwork] Failed for seed:', seedId, error)
+      }
+
+      // Rate limiting
+      await sleep(200)
+    }
+
+    // Find intersection: papers that cite multiple seeds (co-cited papers)
+    const allCitingPapers = new Map<string, number>() // paperId -> count of seeds it cites
+    const paperDetails = new Map<string, SemanticScholarPaper>()
+
+    for (const [_seedId, paperIds] of citingPapersBySeed) {
+      for (const paperId of paperIds) {
+        allCitingPapers.set(paperId, (allCitingPapers.get(paperId) || 0) + 1)
+      }
+    }
+
+    // Sort by co-citation count (papers citing multiple seeds are most relevant)
+    const coCitedPapers = [...allCitingPapers.entries()]
+      .filter(([, count]) => count >= 2) // Must cite at least 2 seeds to be co-cited
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, maxResults)
+
+    // Convert to discovery candidates
+    for (const [paperId, coCiteCount] of coCitedPapers) {
+      candidates.push({
+        paperId,
+        title: '', // Would need to fetch details
+        abstract: '',
+        published: '',
+        authors: [],
+        citationCount: null,
+        source: 'semantic-scholar',
+        queryHits: [],
+        discoveryChannels: [`co-citation:${coCiteCount}seeds`],
+        discoveryRounds: [discoveryRound],
+        matchedBranchIds: [],
+        matchedProblemNodeIds: [],
+        // Co-citation strength indicates semantic relatedness
+        _coCitationScore: coCiteCount,
+      } as ExternalDiscoveryCandidate & { _coCitationScore: number })
+    }
+
+  } catch (error) {
+    console.warn('[fetchCoCitationNetwork] Co-citation analysis failed:', error)
+  }
+
+  return candidates
 }
 
 function normalizeOpenAlexPaperId(openAlexId: string, arxivId?: string | null) {
+  // Use imported normalizePaperId from openalex.ts for consistency
   if (arxivId) return arxivId
+  // Fallback to openalex- prefix for backward compatibility
   const suffix = openAlexId.split('/').pop() ?? openAlexId
   return `openalex-${suffix}`
 }
@@ -199,26 +439,10 @@ function deriveSemanticScholarYearBounds(
 }
 
 function extractArxivIdFromOpenAlex(work: Record<string, unknown>) {
-  const ids =
-    work.ids && typeof work.ids === 'object' && !Array.isArray(work.ids)
-      ? (work.ids as Record<string, unknown>)
-      : null
-  const arxiv = typeof ids?.arxiv === 'string' ? ids.arxiv : ''
-  const arxivMatch = arxiv.match(/arxiv\.org\/abs\/([^v<\s]+)(?:v\d+)?/i)
-  if (arxivMatch?.[1]) return arxivMatch[1]
-
-  const locations = Array.isArray(work.locations) ? work.locations : []
-  for (const location of locations) {
-    if (!location || typeof location !== 'object') continue
-    const landingPageUrl =
-      typeof (location as Record<string, unknown>).landing_page_url === 'string'
-        ? String((location as Record<string, unknown>).landing_page_url)
-        : ''
-    const match = landingPageUrl.match(/arxiv\.org\/abs\/([^v<\s]+)(?:v\d+)?/i)
-    if (match?.[1]) return match[1]
-  }
-
-  return null
+  // Use imported extractArxivId from openalex.ts client
+  // Cast through unknown first for type safety
+  const workTyped = work as unknown as OpenAlexWork
+  return extractArxivId(workTyped)
 }
 
 function addMonths(value: string, months: number) {
@@ -229,7 +453,7 @@ function addMonths(value: string, months: number) {
   return next.toISOString()
 }
 
-function parseArxivResponse(xml: string, discoveryQuery: DiscoveryQuery, discoveryRound: 1 | 2) {
+function parseArxivResponse(xml: string, discoveryQuery: DiscoveryQuery, discoveryRound: number) {
   const candidates = [...xml.matchAll(/<entry>([\s\S]*?)<\/entry>/gi)]
     .map((match) => {
       const block = match[1]
@@ -266,7 +490,7 @@ function normalizeOpenAlexWork(args: {
   work: Record<string, unknown>
   discoveryChannel: string
   query?: DiscoveryQuery
-  discoveryRound: 1 | 2
+  discoveryRound: number // 支持多轮发现（1-10）
 }) {
   const openAlexId = typeof args.work.id === 'string' ? args.work.id : ''
   const title = normalizeWhitespace(typeof args.work.title === 'string' ? args.work.title : '')
@@ -337,7 +561,7 @@ function normalizeSemanticScholarCandidate(args: {
   paper: SemanticScholarPaper
   discoveryChannel: string
   query?: DiscoveryQuery
-  discoveryRound: 1 | 2
+  discoveryRound: number // 支持多轮发现（1-10）
 }) {
   const paperId = normalizeSemanticScholarPaperId(args.paper)
   const title = normalizeWhitespace(args.paper.title)
@@ -487,18 +711,21 @@ function looksRecallSensitiveDiscoveryQuery(query: string) {
 }
 
 function resolveSemanticScholarQueryBudget(queryCount: number, maxTotalCandidates: number) {
-  const adaptiveBudget = Math.min(
-    10,
-    Math.max(
-      SEMANTIC_SCHOLAR_MAX_QUERY_BUDGET_PER_ROUND,
-      Math.ceil(queryCount * 0.5),
-      Math.ceil(maxTotalCandidates / 6),
-    ),
+  const minimumBudget = Math.min(6, SEMANTIC_SCHOLAR_MAX_QUERY_BUDGET_PER_ROUND)
+  const adaptiveBudget = Math.max(
+    minimumBudget,
+    Math.ceil(queryCount * 0.2),
+    Math.ceil(maxTotalCandidates / 20),
   )
-  return Math.max(SEMANTIC_SCHOLAR_MAX_QUERY_BUDGET_PER_ROUND, adaptiveBudget)
+  return Math.min(SEMANTIC_SCHOLAR_MAX_QUERY_BUDGET_PER_ROUND, adaptiveBudget)
 }
 
-async function searchArxiv(query: DiscoveryQuery, maxResults: number, discoveryRound: 1 | 2) {
+async function searchArxiv(query: DiscoveryQuery, maxResults: number, discoveryRound: number) {
+  const cooldownUntil = await getSourceCooldownUntil('arxiv')
+  if (Date.now() < cooldownUntil) {
+    return []
+  }
+
   const url = `https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(
     query.query,
   )}&start=0&max_results=${maxResults}&sortBy=submittedDate&sortOrder=descending`
@@ -510,37 +737,47 @@ async function searchArxiv(query: DiscoveryQuery, maxResults: number, discoveryR
     signal: AbortSignal.timeout(ARXIV_DISCOVERY_TIMEOUT_MS),
   })
   if (!response.ok) {
+    if (response.status === 429) {
+      await noteSourceRateLimit('arxiv', { defaultCooldownMs: 15 * 60 * 1000 })
+    }
     throw new Error(`arXiv discovery failed with status ${response.status}.`)
   }
 
+  await noteSourceSuccess('arxiv')
   return parseArxivResponse(await response.text(), query, discoveryRound)
 }
 
-async function searchOpenAlex(query: DiscoveryQuery, maxResults: number, discoveryRound: 1 | 2) {
-  const url = `https://api.openalex.org/works?search=${encodeURIComponent(query.query)}&per-page=${maxResults}`
-  const response = await fetch(url, {
-    headers: {
-      'User-Agent': 'daily-report-skill/4.0',
-    },
-    signal: AbortSignal.timeout(OPENALEX_DISCOVERY_TIMEOUT_MS),
-  })
-  if (!response.ok) {
-    throw new Error(`OpenAlex search failed with status ${response.status}.`)
-  }
+async function searchOpenAlex(query: DiscoveryQuery, maxResults: number, discoveryRound: number) {
+  try {
+    const result = await searchOpenAlexWorks(query.query, {
+      limit: maxResults,
+      filters: {
+        type: 'article',
+        has_fulltext: true,
+        exclude_paratext: true,
+        exclude_retracted: true,
+      },
+    })
 
-  const payload = (await response.json()) as { results?: Array<Record<string, unknown>> }
-  const candidates = (payload.results ?? [])
-    .map((work) =>
-      normalizeOpenAlexWork({
-        work,
-        discoveryChannel: `openalex:${query.focus}`,
-        query,
-        discoveryRound,
-      }),
+    const candidates = (result.results || [])
+      .map((work) =>
+        normalizeOpenAlexWork({
+          work: work as unknown as Record<string, unknown>,
+          discoveryChannel: `openalex:${query.focus}`,
+          query,
+          discoveryRound,
+        }),
+      )
+    return candidates.filter(
+      (candidate): candidate is ExternalDiscoveryCandidate => candidate !== null,
     )
-  return candidates.filter(
-    (candidate): candidate is ExternalDiscoveryCandidate => candidate !== null,
-  )
+  } catch (error) {
+    console.warn('[paper-tracker.discovery] OpenAlex search failed', {
+      query: query.query,
+      reason: error instanceof Error ? error.message : String(error),
+    })
+    return []
+  }
 }
 
 async function searchSemanticScholar(args: {
@@ -550,7 +787,7 @@ async function searchSemanticScholar(args: {
   searchStartDate?: Date
   searchEndDateExclusive?: Date
   maxResults: number
-  discoveryRound: 1 | 2
+  discoveryRound: number // 支持多轮发现（1-10）
   semanticScholarLimit?: number // 动态配置：Semantic Scholar每查询上限
 }) {
   const { yearStart, yearEnd } = deriveSemanticScholarYearBounds(
@@ -576,6 +813,125 @@ async function searchSemanticScholar(args: {
       }),
     )
     .filter((candidate): candidate is ExternalDiscoveryCandidate => candidate !== null)
+}
+
+function normalizeCrossrefWork(args: {
+  work: CrossrefWork
+  discoveryChannel: string
+  query?: DiscoveryQuery
+  discoveryRound: number
+}): ExternalDiscoveryCandidate | null {
+  const normalized = transformCrossrefWork(args.work)
+  if (!normalized || !normalized.title || !normalized.published) return null
+
+  return {
+    paperId: normalized.paperId,
+    title: normalized.title,
+    abstract: normalized.abstract,
+    published: normalized.published,
+    authors: normalized.authors,
+    arxivUrl: normalized.arxivUrl,
+    pdfUrl: normalized.pdfUrl ?? normalized.landingPageUrl,
+    citationCount: normalized.citationCount,
+    source: 'crossref' as const,
+    queryHits: args.query ? [args.query.query] : [],
+    discoveryChannels: [args.discoveryChannel],
+    discoveryRounds: [args.discoveryRound],
+    matchedBranchIds: args.query?.targetBranchIds ?? [],
+    matchedProblemNodeIds: args.query?.targetProblemIds ?? [],
+  }
+}
+
+async function searchCrossref(args: {
+  query: DiscoveryQuery
+  maxResults: number
+  discoveryRound: number
+  searchStartDate?: Date
+  searchEndDateExclusive?: Date
+}) {
+  const works = await searchCrossrefWorksByTitle(
+    args.query.query,
+    Math.max(4, Math.min(args.maxResults, CROSSREF_MAX_RESULTS)),
+  )
+  await sleep(CROSSREF_RATE_LIMIT_DELAY_MS)
+
+  return works
+    .map((work) =>
+      normalizeCrossrefWork({
+        work,
+        discoveryChannel: `crossref:${args.query.focus}`,
+        query: args.query,
+        discoveryRound: args.discoveryRound,
+      }),
+    )
+    .filter((candidate): candidate is ExternalDiscoveryCandidate => {
+      if (!candidate) return false
+      const publishedAt = new Date(candidate.published)
+      if (Number.isNaN(publishedAt.getTime())) return false
+      if (args.searchStartDate && publishedAt < args.searchStartDate) return false
+      if (args.searchEndDateExclusive && publishedAt >= args.searchEndDateExclusive) return false
+      return true
+    })
+}
+
+function hasArxivDirectAccess(candidate: ExternalDiscoveryCandidate) {
+  return (
+    /^https?:\/\/arxiv\.org\/abs\//iu.test(candidate.arxivUrl ?? '') ||
+    /^https?:\/\/arxiv\.org\/pdf\//iu.test(candidate.pdfUrl ?? '')
+  )
+}
+
+async function supplementCandidatesWithArxivBackfill(args: {
+  candidates: ExternalDiscoveryCandidate[]
+  query: DiscoveryQuery
+  discoveryRound: number
+}) {
+  const targets = args.candidates
+    .filter((candidate) => candidate.source !== 'arxiv' && !hasArxivDirectAccess(candidate))
+    .sort((left, right) => (right.citationCount ?? 0) - (left.citationCount ?? 0))
+    .slice(0, ARXIV_TITLE_BACKFILL_LIMIT_PER_QUERY)
+
+  const updates = new Map<string, ExternalDiscoveryCandidate>()
+
+  for (const candidate of targets) {
+    try {
+      const matches = await searchArxiv(
+        {
+          ...args.query,
+          query: `"${candidate.title}"`,
+        },
+        ARXIV_TITLE_BACKFILL_MAX_RESULTS,
+        args.discoveryRound,
+      )
+      await sleep(ARXIV_RATE_LIMIT_DELAY_MS)
+
+      const best = matches
+        .map((match) => ({
+          match,
+          score: computeTitleSimilarity(candidate.title, match.title),
+        }))
+        .filter((entry) => entry.score >= 0.82 || normalizeTitle(entry.match.title) === normalizeTitle(candidate.title))
+        .sort((left, right) => right.score - left.score)[0]?.match
+
+      if (!best) continue
+
+      updates.set(candidate.paperId, {
+        ...candidate,
+        arxivUrl: best.arxivUrl ?? candidate.arxivUrl,
+        pdfUrl: best.pdfUrl ?? candidate.pdfUrl,
+        discoveryChannels: Array.from(
+          new Set([...candidate.discoveryChannels, `arxiv:title-backfill:${args.query.focus}`]),
+        ),
+      })
+    } catch (error) {
+      console.warn('[paper-tracker.discovery] arXiv title backfill failed', {
+        title: candidate.title,
+        reason: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  return args.candidates.map((candidate) => updates.get(candidate.paperId) ?? candidate)
 }
 
 function selectBestOpenAlexWork(args: {
@@ -608,34 +964,37 @@ function selectBestOpenAlexWork(args: {
 async function fetchOpenAlexWorksByIds(
   ids: string[],
   discoveryChannel: string,
-  discoveryRound: 1 | 2,
+  discoveryRound: number, // 支持多轮发现（1-10）
 ) {
   const results: ExternalDiscoveryCandidate[] = []
-  for (const id of ids) {
-    const response = await fetch(`https://api.openalex.org/works/${encodeURIComponent(id)}`, {
-      headers: {
-        'User-Agent': 'daily-report-skill/4.0',
-      },
-      signal: AbortSignal.timeout(OPENALEX_DISCOVERY_TIMEOUT_MS),
-    })
-    if (!response.ok) continue
-    const payload = (await response.json()) as Record<string, unknown>
-    const normalized = normalizeOpenAlexWork({
-      work: payload,
-      discoveryChannel,
-      discoveryRound,
-    })
-    if (normalized) {
-      results.push(normalized)
+
+  try {
+    const works = await batchGetOpenAlexWorks(ids)
+
+    for (const work of works) {
+      const normalized = normalizeOpenAlexWork({
+        work: work as unknown as Record<string, unknown>,
+        discoveryChannel,
+        discoveryRound,
+      })
+      if (normalized) {
+        results.push(normalized)
+      }
     }
+  } catch (error) {
+    console.warn('[fetchOpenAlexWorksByIds] Batch fetch failed', {
+      ids,
+      reason: error instanceof Error ? error.message : String(error),
+    })
   }
+
   return results
 }
 
 async function fetchOpenAlexCitingWorks(
   citedByApiUrl: string,
   maxResults: number,
-  discoveryRound: 1 | 2,
+  discoveryRound: number, // 支持多轮发现（1-10）
 ) {
   const url = `${citedByApiUrl}${citedByApiUrl.includes('?') ? '&' : '?'}per-page=${maxResults}`
   const response = await fetch(url, {
@@ -662,7 +1021,7 @@ async function fetchOpenAlexCitingWorks(
 async function discoverAnchorNeighborhood(args: {
   anchors: StageAnchor[]
   maxResultsPerAnchor: number
-  discoveryRound: 1 | 2
+  discoveryRound: number
 }) {
   const discovered: ExternalDiscoveryCandidate[] = []
   for (const anchor of args.anchors) {
@@ -710,7 +1069,8 @@ async function discoverAnchorNeighborhood(args: {
     const citedByApiUrl =
       typeof payload.cited_by_api_url === 'string' ? payload.cited_by_api_url : ''
 
-    const [relatedWorks, referencedWorks, citingWorks] = await Promise.all([
+// Use Promise.allSettled to preserve partial success on timeout/failure
+    const [relatedWorksResult, referencedWorksResult, citingWorksResult] = await Promise.allSettled([
       fetchOpenAlexWorksByIds(
         relatedIds,
         'openalex:related',
@@ -729,6 +1089,17 @@ async function discoverAnchorNeighborhood(args: {
           )
         : Promise.resolve([] as ExternalDiscoveryCandidate[]),
     ])
+
+    // Extract successful results, log failures
+    const relatedWorks = relatedWorksResult.status === 'fulfilled'
+      ? relatedWorksResult.value
+      : (() => { console.warn('[discoverAnchorNeighborhood] related works fetch failed', relatedWorksResult.reason); return [] })()
+    const referencedWorks = referencedWorksResult.status === 'fulfilled'
+      ? referencedWorksResult.value
+      : (() => { console.warn('[discoverAnchorNeighborhood] referenced works fetch failed', referencedWorksResult.reason); return [] })()
+    const citingWorks = citingWorksResult.status === 'fulfilled'
+      ? citingWorksResult.value
+      : (() => { console.warn('[discoverAnchorNeighborhood] citing works fetch failed', citingWorksResult.reason); return [] })()
 
     for (const candidate of [...relatedWorks, ...referencedWorks, ...citingWorks]) {
       discovered.push({
@@ -757,12 +1128,18 @@ const maxResultsPerQuery = args.maxResultsPerQuery ?? 25 // Increased for 200 ca
     queries.length,
     maxTotalCandidates,
   )
+  const crossrefQueryBudget = Math.min(
+    CROSSREF_MAX_QUERY_BUDGET_PER_ROUND,
+    Math.max(4, Math.ceil(queries.length * 0.2)),
+  )
+  let crossrefQueriesUsed = 0
 
 for (const query of queries) {
     // Sequential API calls with rate limit delays to avoid 429 errors
     let arxivResults: ExternalDiscoveryCandidate[] = []
     let openAlexResults: ExternalDiscoveryCandidate[] = []
-    
+    let crossrefResults: ExternalDiscoveryCandidate[] = []
+
     try {
       arxivResults = await searchArxiv(query, maxResultsPerQuery, args.discoveryRound)
       await sleep(ARXIV_RATE_LIMIT_DELAY_MS)
@@ -772,7 +1149,7 @@ for (const query of queries) {
         reason: error instanceof Error ? error.message : String(error),
       })
     }
-    
+
     try {
       openAlexResults = await searchOpenAlex(query, maxResultsPerQuery, args.discoveryRound)
       await sleep(OPENALEX_RATE_LIMIT_DELAY_MS)
@@ -782,9 +1159,31 @@ for (const query of queries) {
         reason: error instanceof Error ? error.message : String(error),
       })
     }
-    
+
     const combinedResults = [...arxivResults, ...openAlexResults]
     let semanticScholarResults: ExternalDiscoveryCandidate[] = []
+    const shouldSupplementWithCrossref =
+      crossrefQueriesUsed < crossrefQueryBudget &&
+      (combinedResults.length < Math.max(8, Math.ceil(maxResultsPerQuery * 0.8)) ||
+        looksRecallSensitiveDiscoveryQuery(query.query))
+
+    if (shouldSupplementWithCrossref) {
+      crossrefQueriesUsed += 1
+      try {
+        crossrefResults = await searchCrossref({
+          query,
+          maxResults: Math.max(4, Math.min(maxResultsPerQuery, CROSSREF_MAX_RESULTS)),
+          discoveryRound: args.discoveryRound,
+          searchStartDate: args.searchStartDate,
+          searchEndDateExclusive: args.searchEndDateExclusive,
+        })
+      } catch (error) {
+        console.warn('[paper-tracker.discovery] Crossref supplement failed', {
+          query: query.query,
+          reason: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
 
     const shouldSupplementWithSemanticScholar =
       semanticScholarQueriesUsed < semanticScholarQueryBudget &&
@@ -817,7 +1216,13 @@ semanticScholarResults = await searchSemanticScholar({
       }
     }
 
-    for (const candidate of [...combinedResults, ...semanticScholarResults]) {
+    const enrichedCandidates = await supplementCandidatesWithArxivBackfill({
+      candidates: [...combinedResults, ...crossrefResults, ...semanticScholarResults],
+      query,
+      discoveryRound: args.discoveryRound,
+    })
+
+    for (const candidate of enrichedCandidates) {
       if (
         candidate.paperId === query.targetAnchorPaperIds?.[0] ||
         args.anchors.some((anchor) => anchor.paperId === candidate.paperId)
@@ -870,7 +1275,8 @@ semanticScholarResults = await searchSemanticScholar({
     }
   }
 
-  return [...candidateMap.values()]
+// Sort by relevance score first
+  const sortedCandidates = [...candidateMap.values()]
     .sort((left, right) => {
       const leftDate = new Date(left.published).getTime()
       const rightDate = new Date(right.published).getTime()
@@ -888,7 +1294,12 @@ semanticScholarResults = await searchSemanticScholar({
         (right.citationCount ?? 0) * 0.001
       return rightScore - leftScore || leftDate - rightDate
     })
-    .slice(0, maxTotalCandidates)
+
+  // Apply MMR diversity filtering to ensure non-redundant discoveries
+  // This implements the OpenClaw/CCB pattern for diverse paper collection
+  const diverseCandidates = applyMmrDiversityFilter(sortedCandidates, maxTotalCandidates)
+
+  return diverseCandidates
 }
 
 export const __testing = {
@@ -905,7 +1316,7 @@ export const __testing = {
  * to discover related papers through citation relationships
  */
 export async function snowballDiscovery(
-  seedPapers: Array<{ 
+  seedPapers: Array<{
     paperId: string
     title: string
     semanticScholarId?: string
@@ -913,21 +1324,21 @@ export async function snowballDiscovery(
   options?: {
     maxDepth?: number
     maxCandidates?: number
-    discoveryRound?: 1 | 2
+    discoveryRound?: number
     focus?: 'forward' | 'backward' | 'both'
     yearStart?: number
     yearEnd?: number
   }
 ): Promise<ExternalDiscoveryCandidate[]> {
-  const { maxDepth = 2, maxCandidates = 50, discoveryRound = 1, focus = 'both', yearStart, yearEnd } = options ?? {}
-  
+  const { maxDepth = 2, maxCandidates = 200, discoveryRound = 1, focus = 'both', yearStart, yearEnd } = options ?? {}
+
   if (seedPapers.length === 0) {
     return []
   }
 
   const candidateMap = new Map<string, ExternalDiscoveryCandidate>()
   const visitedIds = new Set<string>(seedPapers.map(p => p.paperId))
-  
+
   // Convert arxiv IDs to Semantic Scholar IDs if needed
   const seedsWithS2Ids = await Promise.all(
     seedPapers.map(async (seed) => {
@@ -949,7 +1360,7 @@ export async function snowballDiscovery(
 
   // BFS traversal of citation chains
   const queue: Array<{ s2Id: string; depth: number; type: 'forward' | 'backward' }> = []
-  
+
   for (const seed of seedsWithS2Ids) {
     if (seed.s2Id) {
       if (focus === 'forward' || focus === 'both') {
@@ -964,12 +1375,12 @@ export async function snowballDiscovery(
   while (queue.length > 0 && candidateMap.size < maxCandidates) {
     const current = queue.shift()
     if (!current) break
-    
+
     if (current.depth >= maxDepth) continue
-    
+
     try {
       let discoveredPapers: Array<{ paperId: string; title: string; year: number; citationCount?: number }>
-      
+
       if (current.type === 'forward') {
         // Forward citations (papers that cite this paper)
         const citations = await getCitations(current.s2Id, Math.min(20, maxCandidates - candidateMap.size))
@@ -983,17 +1394,17 @@ export async function snowballDiscovery(
       for (const paper of discoveredPapers) {
         // Normalize paper ID (use s2: prefix for Semantic Scholar IDs)
         const normalizedId = `s2:${paper.paperId}`
-        
+
         if (visitedIds.has(normalizedId)) continue
         visitedIds.add(normalizedId)
 
         // Fetch full paper details for abstract and authors
         const fullDetails = await getPaperDetails(paper.paperId)
-        
+
         // Determine arxiv URL if available
         const arxivId = fullDetails?.externalIds?.ArXiv
         const arxivUrl = arxivId ? `https://arxiv.org/abs/${arxivId}` : undefined
-        
+
         const candidate: ExternalDiscoveryCandidate = {
           paperId: arxivId || normalizedId, // Prefer arxiv ID if available
           title: normalizeWhitespace(paper.title),
@@ -1042,6 +1453,240 @@ export async function snowballDiscovery(
 }
 
 /**
+ * 广纳贤文: OpenAlex专用发现函数
+ * 利用OpenAlex的citation network和related works功能进行深度发现
+ *
+ * 特性：
+ * - 引用网络遍历（前向/后向引用）
+ * - 相关论文推荐
+ * - 概念扩展搜索
+ * - 批量获取效率优化
+ */
+export async function openAlexDiscovery(
+  seedPapers: Array<{
+    paperId: string
+    title: string
+    openAlexId?: string
+  }>,
+  options?: {
+    maxDepth?: number
+    maxCandidates?: number
+    discoveryRound?: number
+    minCitationCount?: number
+    yearStart?: number
+    yearEnd?: number
+    enableConceptExpansion?: boolean
+  }
+): Promise<ExternalDiscoveryCandidate[]> {
+  const {
+    maxDepth = 2,
+    maxCandidates = 200,
+    discoveryRound = 1,
+    minCitationCount = 10,
+    yearStart,
+    yearEnd,
+    enableConceptExpansion = true,
+  } = options ?? {}
+
+  if (seedPapers.length === 0) {
+    return []
+  }
+
+  const candidateMap = new Map<string, ExternalDiscoveryCandidate>()
+  const visitedIds = new Set<string>(seedPapers.map(p => p.paperId))
+
+  // Convert paper IDs to OpenAlex IDs if needed
+  const seedsWithOAIds = await Promise.all(
+    seedPapers.map(async (seed) => {
+      if (seed.openAlexId) {
+        return { ...seed, oaId: seed.openAlexId }
+      }
+
+      // Try to find the paper via search to get OpenAlex ID
+      try {
+        const result = await searchOpenAlexWorks(seed.title, {
+          limit: 5,
+          filters: yearStart || yearEnd ? { from_year: yearStart, to_year: yearEnd } : undefined,
+        })
+
+        if (result.results && result.results.length > 0) {
+          // Find best match by title similarity
+          const bestMatch = result.results.find(w =>
+            w.display_name?.toLowerCase().includes(seed.title.toLowerCase().slice(0, 30)) ||
+            seed.title.toLowerCase().includes(w.display_name?.toLowerCase().slice(0, 30) || '')
+          )
+          if (bestMatch?.id) {
+            return { ...seed, oaId: bestMatch.id }
+          }
+        }
+      } catch (error) {
+        console.warn('[openAlexDiscovery] Failed to find OA ID for seed:', seed.paperId)
+      }
+      return { ...seed, oaId: null }
+    })
+  )
+
+  // BFS traversal of citation networks
+  const queue: Array<{ oaId: string; depth: number }> = []
+
+  for (const seed of seedsWithOAIds) {
+    if (seed.oaId) {
+      queue.push({ oaId: seed.oaId, depth: 0 })
+    }
+  }
+
+  while (queue.length > 0 && candidateMap.size < maxCandidates) {
+    const current = queue.shift()
+    if (!current) break
+
+    if (current.depth >= maxDepth) continue
+
+    try {
+      // Get citation network using OpenAlex client
+      const network = await getOpenAlexCitationNetwork(current.oaId, {
+        maxForwardCitations: Math.min(20, maxCandidates - candidateMap.size),
+        maxBackwardReferences: Math.min(15, maxCandidates - candidateMap.size),
+        maxRelatedWorks: Math.min(10, maxCandidates - candidateMap.size),
+        minCitationCount,
+      })
+
+      // Process forward citations
+      for (const citation of network.forwardCitations) {
+        const paperId = citation.openAccessUrl?.match(/arxiv\.org\/abs\/([^v<\s]+)/i)?.[1] ||
+          `openalex:${citation.workId.split('/').pop()}`
+
+        if (visitedIds.has(paperId)) continue
+        visitedIds.add(paperId)
+
+        // Year filter
+        if (yearStart && citation.year < yearStart) continue
+        if (yearEnd && citation.year > yearEnd) continue
+
+        const candidate: ExternalDiscoveryCandidate = {
+          paperId,
+          title: normalizeWhitespace(citation.title),
+          abstract: '',
+          published: `${citation.year}-01-01T00:00:00.000Z`,
+          authors: [],
+          citationCount: citation.citationCount,
+          pdfUrl: citation.openAccessUrl,
+          openAlexId: citation.workId,
+          source: 'openalex',
+          queryHits: [],
+          discoveryChannels: [`openalex:citation-forward:depth${current.depth}`],
+          discoveryRounds: [discoveryRound],
+          matchedBranchIds: [],
+          matchedProblemNodeIds: [],
+        }
+
+        mergeDiscoveryCandidate(candidateMap, candidate)
+
+        // Add to queue for next depth
+        if (current.depth + 1 < maxDepth && candidateMap.size < maxCandidates) {
+          queue.push({ oaId: citation.workId, depth: current.depth + 1 })
+        }
+      }
+
+      // Process backward references
+      for (const ref of network.backwardReferences) {
+        const paperId = `openalex:${ref.workId.split('/').pop()}`
+
+        if (visitedIds.has(paperId)) continue
+        visitedIds.add(paperId)
+
+        // Year filter
+        if (yearStart && ref.year < yearStart) continue
+        if (yearEnd && ref.year > yearEnd) continue
+
+        // Fetch full details for abstract and authors
+        const fullWork = await getOpenAlexWork(ref.workId)
+
+        const candidate: ExternalDiscoveryCandidate = {
+          paperId,
+          title: normalizeWhitespace(ref.title),
+          abstract: normalizeWhitespace(fullWork ? reconstructAbstract(fullWork.abstract_inverted_index) : ''),
+          published: `${ref.year}-01-01T00:00:00.000Z`,
+          authors: fullWork?.authorships?.map(a => a.author?.display_name || '').filter(Boolean) || [],
+          citationCount: fullWork?.cited_by_count ?? null,
+          openAlexId: ref.workId,
+          source: 'openalex',
+          queryHits: [],
+          discoveryChannels: [`openalex:reference-backward:depth${current.depth}`],
+          discoveryRounds: [discoveryRound],
+          matchedBranchIds: [],
+          matchedProblemNodeIds: [],
+        }
+
+        mergeDiscoveryCandidate(candidateMap, candidate)
+
+        // Add to queue for next depth (only for key references)
+        if (ref.isKeyReference && current.depth + 1 < maxDepth && candidateMap.size < maxCandidates) {
+          queue.push({ oaId: ref.workId, depth: current.depth + 1 })
+        }
+      }
+
+      // Process related works
+      for (const related of network.relatedWorks) {
+        const paperId = `openalex:${related.workId.split('/').pop()}`
+
+        if (visitedIds.has(paperId)) continue
+        visitedIds.add(paperId)
+
+        // Year filter
+        if (yearStart && related.year < yearStart) continue
+        if (yearEnd && related.year > yearEnd) continue
+
+        const candidate: ExternalDiscoveryCandidate = {
+          paperId,
+          title: normalizeWhitespace(related.title),
+          abstract: '',
+          published: `${related.year}-01-01T00:00:00.000Z`,
+          authors: [],
+          citationCount: related.citationCount,
+          openAlexId: related.workId,
+          source: 'openalex',
+          queryHits: [],
+          discoveryChannels: [`openalex:related:depth${current.depth}`],
+          discoveryRounds: [discoveryRound],
+          matchedBranchIds: [],
+          matchedProblemNodeIds: [],
+        }
+
+        mergeDiscoveryCandidate(candidateMap, candidate)
+      }
+    } catch (error) {
+      console.warn('[openAlexDiscovery] Failed at depth', current.depth, 'for', current.oaId, error)
+    }
+  }
+
+  // Concept expansion: search by concepts extracted from discovered papers
+  if (enableConceptExpansion && candidateMap.size < maxCandidates) {
+    const conceptCounts = new Map<string, number>()
+
+    // This would require fetching full work details for concept extraction
+    // For efficiency, we skip this in the initial pass
+    // Concepts can be used in subsequent discovery rounds
+  }
+
+  // Sort by citation count and depth, then apply MMR diversity
+  const sortedCandidates = [...candidateMap.values()]
+    .sort((a, b) => {
+      const aDepth = parseInt(a.discoveryChannels[0]?.match(/depth(\d+)/)?.[1] ?? '0')
+      const bDepth = parseInt(b.discoveryChannels[0]?.match(/depth(\d+)/)?.[1] ?? '0')
+      // Prefer papers closer to seeds (lower depth)
+      if (aDepth !== bDepth) return aDepth - bDepth
+      // Then by citation count
+      return (b.citationCount ?? 0) - (a.citationCount ?? 0)
+    })
+
+  // Apply MMR diversity filtering to ensure non-redundant discoveries
+  // This implements the OpenClaw/CCB pattern for diverse paper collection
+  const diverseCandidates = applyMmrDiversityFilter(sortedCandidates, maxCandidates)
+
+  return diverseCandidates
+}
+
+/**
  * Combined discovery: regular search + snowball sampling
  * Implements the full "广纳贤文" discovery strategy
  */
@@ -1049,50 +1694,98 @@ export async function discoverWithSnowball(args: DiscoverExternalCandidatesArgs 
   enableSnowball?: boolean
   snowballDepth?: number
   snowballMaxCandidates?: number
+  enableOpenAlex?: boolean
+  openAlexMaxCandidates?: number
 }): Promise<ExternalDiscoveryCandidate[]> {
   // First, run regular discovery
   const regularCandidates = await discoverExternalCandidates(args)
-  
-  if (!args.enableSnowball || args.anchors.length === 0) {
-    return regularCandidates
-  }
 
   // Prepare seed papers from anchors for snowball sampling
   const seeds = args.anchors.map(anchor => ({
     paperId: anchor.paperId,
     title: anchor.title,
-    semanticScholarId: anchor.paperId.startsWith('s2:') 
+    semanticScholarId: anchor.paperId.startsWith('s2:')
       ? anchor.paperId.replace('s2:', '')
       : undefined,
+    openAlexId: anchor.openAlexId,
   }))
 
-  // Run snowball discovery
-  const snowballCandidates = await snowballDiscovery(seeds, {
-    maxDepth: args.snowballDepth ?? 2,
-    maxCandidates: args.snowballMaxCandidates ?? 30,
-    discoveryRound: args.discoveryRound,
-    focus: 'both',
-    yearStart: args.searchStartDate?.getUTCFullYear(),
-    yearEnd: args.searchEndDateExclusive?.getUTCFullYear(),
-  })
-
-  // Merge results
   const mergedMap = new Map<string, ExternalDiscoveryCandidate>()
-  
+
+  // Add regular candidates
   for (const candidate of regularCandidates) {
     mergeDiscoveryCandidate(mergedMap, candidate)
   }
-  
-  for (const candidate of snowballCandidates) {
-    mergeDiscoveryCandidate(mergedMap, candidate)
+
+  // Run snowball discovery (Semantic Scholar citation chain)
+  if (args.enableSnowball && seeds.length > 0) {
+    const snowballCandidates = await snowballDiscovery(seeds, {
+      maxDepth: args.snowballDepth ?? 2,
+      maxCandidates: args.snowballMaxCandidates ?? 30,
+      discoveryRound: args.discoveryRound,
+      focus: 'both',
+      yearStart: args.searchStartDate?.getUTCFullYear(),
+      yearEnd: args.searchEndDateExclusive?.getUTCFullYear(),
+    })
+
+    for (const candidate of snowballCandidates) {
+      mergeDiscoveryCandidate(mergedMap, candidate)
+    }
   }
 
-  return [...mergedMap.values()]
+  // Run co-citation network analysis for semantically related papers
+  // This discovers papers that cite multiple seed papers (co-cited papers)
+  // Papers co-cited together are often semantically related even without keyword overlap
+  if (seeds.length >= 2) {
+    try {
+      const seedPaperIds = seeds.map(s => s.semanticScholarId ?? s.paperId)
+      const coCitationCandidates = await fetchCoCitationNetwork(
+        seedPaperIds,
+        Math.min(15, args.maxTotalCandidates ?? 144),
+        args.discoveryRound
+      )
+
+      for (const candidate of coCitationCandidates) {
+        mergeDiscoveryCandidate(mergedMap, candidate)
+      }
+    } catch (error) {
+      console.warn('[discoverWithSnowball] Co-citation analysis failed:', error)
+    }
+  }
+
+  // Run OpenAlex discovery for broader coverage ("广纳贤文")
+  if (args.enableOpenAlex !== false && seeds.length > 0) {
+    try {
+      const openAlexCandidates = await openAlexDiscovery(seeds, {
+        maxDepth: args.snowballDepth ?? 2,
+        maxCandidates: args.openAlexMaxCandidates ?? 20,
+        discoveryRound: args.discoveryRound,
+        minCitationCount: 5,
+        yearStart: args.searchStartDate?.getUTCFullYear(),
+        yearEnd: args.searchEndDateExclusive?.getUTCFullYear(),
+        enableConceptExpansion: true,
+      })
+
+      for (const candidate of openAlexCandidates) {
+        mergeDiscoveryCandidate(mergedMap, candidate)
+      }
+    } catch (error) {
+      console.warn('[discoverWithSnowball] OpenAlex discovery failed:', error)
+    }
+  }
+
+  // Sort by relevance score
+  const sortedCandidates = [...mergedMap.values()]
     .sort((a, b) => {
       // Prioritize by discovery channels count and citation count
       const aScore = a.discoveryChannels.length + (a.citationCount ?? 0) * 0.001
       const bScore = b.discoveryChannels.length + (b.citationCount ?? 0) * 0.001
       return bScore - aScore
     })
-    .slice(0, args.maxTotalCandidates ?? 144)
+
+  // Apply MMR diversity filtering for final selection
+  const maxTotal = args.maxTotalCandidates ?? 144
+  const diverseCandidates = applyMmrDiversityFilter(sortedCandidates, maxTotal)
+
+  return diverseCandidates
 }

@@ -2,6 +2,11 @@
 
 import { prisma } from '../lib/prisma'
 import { asyncHandler, AppError } from '../middleware/errorHandler'
+import { validate } from '../middleware/requestValidator'
+import {
+  CreateTopicSchema,
+  UpdateTopicSchema,
+} from './schemas'
 import {
   loadTopicGenerationMemory,
 } from '../services/generation/memory-store'
@@ -28,9 +33,19 @@ import {
   saveTopicStageConfig,
   type TopicStageConfigState,
 } from '../services/topics/topic-stage-config'
+import {
+  loadGlobalResearchConfig,
+  saveGlobalResearchConfig,
+} from '../services/topics/topic-research-config'
+import { buildResearchHealthReport } from '../services/topics/research-health'
 import { syncTopicResearchWorldSnapshot } from '../services/topics/research-world'
 import { collectTopicSessionMemoryContext } from '../services/topics/topic-session-memory'
 import { buildTopicCognitiveMemory } from '../services/topics/topic-cognitive-memory'
+import {
+  assertBackendTopicCollectionContract,
+  assertTopicDashboardContract,
+  assertTopicResearchBriefContract,
+} from '../services/topics/topic-contracts'
 import { logger } from '../utils/logger'
 
 const router = Router()
@@ -67,6 +82,22 @@ async function safeLoadTopicStageConfigMap(topicIds: string[]) {
       ...safeParseError(error),
     })
     return new Map<string, TopicStageConfigState>()
+  }
+}
+
+function enforceRouteContract<T>(
+  value: T,
+  validator: (payload: unknown) => void,
+  context: string,
+) {
+  try {
+    validator(value)
+    return value
+  } catch (error) {
+    throw new AppError(
+      500,
+      `${context} ${error instanceof Error ? error.message : 'Unknown contract validation failure.'}`,
+    )
   }
 }
 
@@ -279,13 +310,14 @@ router.get(
       safeLoadTopicStageConfigMap(topicIds),
     ])
 
-    res.json({
-      success: true,
-      data: topics.map((topic) => {
+    const data = enforceRouteContract(
+      topics.map((topic) => {
         const stageConfig = stageConfigMap.get(topic.id)
 
         return {
           ...topic,
+          createdAt: topic.createdAt.toISOString(),
+          updatedAt: topic.updatedAt.toISOString(),
           paperCount: topic._count.papers,
           nodeCount: topic._count.research_nodes,
           stageCount: topic._count.topic_stages,
@@ -299,7 +331,70 @@ router.get(
           _count: undefined,
         }
       }),
+      assertBackendTopicCollectionContract,
+      'Topic list contract drifted before reaching the client.',
+    )
+
+    res.json({
+      success: true,
+      data,
     })
+  }),
+)
+
+// Research config routes - 研究流程配置 (必须在 /:id 之前)
+interface ResearchConfigPayload {
+  maxCandidatesPerStage: number
+  discoveryQueryLimit: number
+  maxPapersPerNode: number
+  minPapersPerNode: number
+  targetCandidatesBeforeAdmission: number
+  admissionThreshold: number
+  highConfidenceThreshold: number
+  semanticScholarLimit: number
+  discoveryRounds: number
+}
+
+function toResearchConfigPayload(config: Awaited<ReturnType<typeof loadGlobalResearchConfig>>): ResearchConfigPayload {
+  return {
+    maxCandidatesPerStage: config.maxCandidatesPerStage,
+    discoveryQueryLimit: config.discoveryQueryLimit,
+    maxPapersPerNode: config.maxPapersPerNode,
+    minPapersPerNode: config.minPapersPerNode,
+    targetCandidatesBeforeAdmission: config.targetCandidatesBeforeAdmission,
+    admissionThreshold: config.admissionThreshold,
+    highConfidenceThreshold: config.highConfidenceThreshold,
+    semanticScholarLimit: config.semanticScholarLimit,
+    discoveryRounds: config.discoveryRounds,
+  }
+}
+
+router.get(
+  '/research-config',
+  asyncHandler(async (_req, res) => {
+    const config = await loadGlobalResearchConfig()
+    res.json(toResearchConfigPayload(config))
+  }),
+)
+
+router.get(
+  '/research-health',
+  asyncHandler(async (_req, res) => {
+    res.json({
+      success: true,
+      data: await buildResearchHealthReport(),
+    })
+  }),
+)
+
+router.patch(
+  '/research-config',
+  asyncHandler(async (req, res) => {
+    const updates = req.body as Partial<ResearchConfigPayload>
+    const nextConfig = await saveGlobalResearchConfig(updates)
+    const payload = toResearchConfigPayload(nextConfig)
+    logger.info('Updated research config', { config: payload })
+    res.json(payload)
   }),
 )
 
@@ -346,6 +441,7 @@ router.get(
 
 router.post(
   '/',
+  validate(CreateTopicSchema),
   asyncHandler(async (req, res) => {
     const { nameZh, nameEn, focusLabel, summary, description } = req.body
 
@@ -372,6 +468,7 @@ router.post(
 
 router.patch(
   '/:id',
+  validate(UpdateTopicSchema),
   asyncHandler(async (req, res) => {
     const { id } = req.params
     const { nameZh, nameEn, focusLabel, summary, description, status } = req.body
@@ -548,9 +645,8 @@ router.get(
       world,
     })
 
-    res.json({
-      success: true,
-      data: {
+    const brief = enforceRouteContract(
+      {
         topicId: id,
         session: {
           ...session,
@@ -562,6 +658,13 @@ router.get(
         guidance,
         cognitiveMemory,
       },
+      assertTopicResearchBriefContract,
+      'Topic research brief contract drifted before reaching the client.',
+    )
+
+    res.json({
+      success: true,
+      data: brief,
     })
   }),
 )
@@ -582,7 +685,13 @@ router.get(
       throw new AppError(404, 'Topic not found.')
     }
 
-    const topicViewModel = await getTopicViewModel(topicId, { stageWindowMonths })
+    let topicViewModel;
+    try {
+      topicViewModel = await getTopicViewModel(topicId, { stageWindowMonths });
+    } catch (vmErr) {
+      logger.warn('Dashboard view model failed, using fallback', { topicId, err: vmErr instanceof Error ? vmErr.message : String(vmErr) });
+      topicViewModel = { stages: [], unmappedPapers: [] };
+    }
 
     const [nodes, papers] = await Promise.all([
       prisma.research_nodes.findMany({
@@ -665,11 +774,18 @@ router.get(
     const totalPapers = papers.length
     const totalNodes = nodes.length
     const totalStages = new Set(nodes.map((node) => node.stageIndex)).size
-    const mappedPaperIds = new Set(topicViewModel.stages.flatMap((stage) => stage.nodes.flatMap((node) => node.paperIds)))
+    const mappedPaperIds = new Set(
+      (topicViewModel.stages ?? []).flatMap((stage) =>
+        (stage.nodes ?? []).flatMap((node) => node.paperIds ?? [])
+      )
+    )
     const mappedPapers = mappedPaperIds.size
     const pendingPapers = topicViewModel.unmappedPapers.length
     const mappedStages = topicViewModel.stages.filter((stage) => stage.mappedPaperCount > 0 || stage.nodes.length > 0).length
-    const years = papers.map((paper) => new Date(paper.published).getFullYear())
+    const years = papers
+      .map((paper) => new Date(paper.published))
+      .filter((d) => !isNaN(d.getTime()))
+      .map((d) => d.getFullYear())
     const timeSpanYears = years.length > 1 ? Math.max(...years) - Math.min(...years) : 0
     const avgPapersPerNode = totalNodes > 0 ? Number((totalPapers / totalNodes).toFixed(1)) : 0
     const citationCoverage =
@@ -758,8 +874,11 @@ router.get(
 
     const pendingPaperItems = topicViewModel.unmappedPapers.map((paper) => ({
       paperId: paper.paperId,
+      title: paper.title,
+      publishedAt: paper.publishedAt,
       stageIndex: paper.stageIndex,
       stageLabel: paper.stageLabel,
+      summary: paper.summary,
       route: paper.route,
     }))
 
@@ -769,9 +888,8 @@ router.get(
       ) || [])
     const uniqueMethods = [...new Set(methodKeywords.map((keyword) => keyword.toLowerCase()))]
 
-    res.json({
-      success: true,
-      data: {
+    const dashboard = enforceRouteContract(
+      {
         topicId,
         topicTitle: topic.nameZh || topic.nameEn || '',
         researchThreads,
@@ -796,6 +914,13 @@ router.get(
           methodShifts: uniqueMethods.length > 0 ? [`Methods: ${uniqueMethods.join(', ')}`] : [],
         },
       },
+      assertTopicDashboardContract,
+      'Topic dashboard contract drifted before reaching the client.',
+    )
+
+    res.json({
+      success: true,
+      data: dashboard,
     })
   }),
 )

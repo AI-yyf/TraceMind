@@ -179,8 +179,8 @@ const curatedEntries = {
   'research.durationCompact': ['{hours} 小时 / 每轮 {seconds} 秒', '{hours}h / {seconds}s'],
   'research.durationHoursCompact': ['{hours} 小时', '{hours}h'],
   'research.progressDurationSummary': [
-    '持续研究 {durationHours} 小时 · 阶段 {currentStage}/{totalStages} · 当前停滞 {stageStalls}',
-    'Timed research {durationHours}h / Stage {currentStage}/{totalStages} / Current stalls {stageStalls}',
+    '???? {duration} / ?? {currentStage}/{totalStages} / ???? {stageStalls}',
+    'Research window {duration} / Stage {currentStage}/{totalStages} / Current stalls {stageStalls}',
   ],
   'research.progressSummary': ['阶段 {currentStage}/{totalStages} · 当前轮次 {currentRuns}/{targetRuns}', 'Stage {currentStage}/{totalStages} / Current runs {currentRuns}/{targetRuns}'],
   'research.runSummary': ['阶段 {stage} · 新发现 {discovered} · 准入 {admitted} · 生成 {generated}', 'Stage {stage} / Discovered {discovered} / Admitted {admitted} / Generated {generated}'],

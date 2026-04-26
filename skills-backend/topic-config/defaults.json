@@ -6,6 +6,7 @@
   "windowPolicy": "auto",
   "minStageWindowMonths": 2,
   "maxStageWindowMonths": 8,
+  "stageDurationDays": 30,
   "maxActiveBranches": 10,
   "branchModel": "problem-node-driven",
   "allowBranchMerge": true,

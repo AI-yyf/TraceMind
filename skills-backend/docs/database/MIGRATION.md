@@ -1,179 +1,50 @@
-# 数据库迁移指南 | Database Migration Guide
+# 数据库与部署迁移说明
 
-## 从 SQLite 迁移到 PostgreSQL
+## 当前默认状态
 
-### 1. 准备工作
+溯知当前默认开发路径仍然是：
 
-#### 安装 PostgreSQL
-```bash
-# Ubuntu/Debian
-sudo apt install postgresql postgresql-contrib
+- Prisma
+- SQLite
+- 后端端口 `3303`
 
-# macOS
-brew install postgresql
+也就是说，**PostgreSQL 不是这份仓库当前的默认本地开发前提**。
 
-# Docker
-docker run --name postgres -e POSTGRES_PASSWORD=password -p 5432:5432 -d postgres
-```
+## 什么时候需要 PostgreSQL / Redis
 
-#### 创建数据库
-```bash
-# 连接到 PostgreSQL
-psql -U postgres
+以下场景才建议切到更重的部署形态：
 
-# 创建数据库
-CREATE DATABASE arxiv_chronicle;
-CREATE USER arxiv_user WITH ENCRYPTED PASSWORD 'your_password';
-GRANT ALL PRIVILEGES ON DATABASE arxiv_chronicle TO arxiv_user;
-\c arxiv_chronicle
-GRANT ALL ON SCHEMA public TO arxiv_user;
-```
+- 多人共享环境
+- 持久化队列或更复杂的任务编排
+- 需要更强的并发、备份或服务化部署能力
+- 想直接使用 `docker-compose.yml` 中的完整环境
 
-### 2. 修改环境配置
-
-#### 开发环境 (.env)
-```env
-DATABASE_URL="file:./dev.db"
-NODE_ENV=development
-```
-
-#### 生产环境 (.env)
-```env
-# 注释掉 SQLite 配置
-# DATABASE_URL="file:./dev.db"
-
-# 添加 PostgreSQL 配置
-DATABASE_URL="postgresql://arxiv_user:your_password@localhost:5432/arxiv_chronicle?schema=public"
-NODE_ENV=production
-```
-
-### 3. 修改 Prisma Schema
-
-编辑 `prisma/schema.prisma`:
-
-```prisma
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
-```
-
-### 4. 执行迁移
+## 本地默认开发
 
 ```bash
 cd skills-backend
-
-# 安装依赖
 npm install
-
-# 生成 Prisma Client
-npx prisma generate
-
-# 推送 schema 到数据库 (开发环境)
-npx prisma db push
-
-# 生产环境 - 创建迁移
-npx prisma migrate dev --name init_postgresql
-npx prisma migrate deploy
+npm run dev
 ```
 
-### 5. 数据迁移 (如有现有数据)
+默认数据库由 `prisma/schema.prisma` 和本地 `DATABASE_URL` 决定；当前仓库与测试都仍兼容 SQLite 开发。
 
-#### 导出 SQLite 数据
-```bash
-# 使用 prisma studio 或脚本导出
-npx prisma studio
-```
+## 如果要迁移到 PostgreSQL
 
-#### 导入 PostgreSQL
-```bash
-# 使用 pgloader 或手动导入
-pgloader source.db postgresql://user:pass@host/dbname
-```
+请把它当作**显式架构决策**，而不是日常步骤：
 
-### 6. Docker 部署
+1. 修改 `prisma/schema.prisma` 的 datasource provider
+2. 更新 `DATABASE_URL`
+3. 重新生成 Prisma Client
+4. 执行迁移或 `db push`
+5. 验证后端路由、调度、研究任务与模型配置链路
 
-#### docker-compose.yml
-```yaml
-version: '3.8'
+## Docker 路径
 
-services:
-  postgres:
-    image: postgres:15-alpine
-    environment:
-      POSTGRES_DB: arxiv_chronicle
-      POSTGRES_USER: arxiv_user
-      POSTGRES_PASSWORD: your_password
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+根目录 `docker-compose.yml` 已提供 PostgreSQL、Redis 与应用服务编排。若使用这条路径，请以 compose 配置中的端口和服务名为准，而不是历史文档中的 `3001` 或旧项目命名。
 
-  backend:
-    build: .
-    depends_on:
-      - postgres
-    environment:
-      DATABASE_URL: postgresql://arxiv_user:your_password@postgres:5432/arxiv_chronicle
-      NODE_ENV: production
-    ports:
-      - "3001:3001"
+## 当前建议
 
-volumes:
-  postgres_data:
-```
-
-#### 启动
-```bash
-docker-compose up -d
-```
-
-### 7. 验证迁移
-
-```bash
-# 检查连接
-npx prisma db execute --stdin <<< "SELECT 1"
-
-# 查看表
-npx prisma db execute --stdin <<< "\dt"
-
-# 检查数据
-npx prisma studio
-```
-
-### 8. 常见问题
-
-#### 问题: 连接被拒绝
-```bash
-# 检查 PostgreSQL 是否运行
-pg_isready
-
-# 检查 pg_hba.conf 配置
-# 确保允许 md5 或 scram-sha-256 认证
-```
-
-#### 问题: 迁移失败
-```bash
-# 查看详细错误
-npx prisma migrate dev --name init --create-only
-npx prisma migrate status
-```
-
-#### 问题: 性能问题
-```sql
--- 为常用查询添加索引
-CREATE INDEX CONCURRENTLY idx_papers_topic_published ON papers(topic_id, published DESC);
-CREATE INDEX CONCURRENTLY idx_nodes_topic_stage ON research_nodes(topic_id, stage_index);
-```
-
-### 9. 生产环境检查清单
-
-- [ ] PostgreSQL 已安装并运行
-- [ ] 数据库和用户已创建
-- [ ] `.env` 配置已更新
-- [ ] `schema.prisma` provider 已更改
-- [ ] `npx prisma generate` 已执行
-- [ ] `npx prisma db push` 或迁移已执行
-- [ ] 应用可以连接数据库
-- [ ] 关键查询有适当索引
-- [ ] 备份策略已配置
+- 想跑本地开发：优先 SQLite
+- 想跑完整服务编排：使用根目录 `docker-compose.yml`
+- 想做正式迁移：先在 `docs/implementation-roadmap.md` 记录理由，再实施

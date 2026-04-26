@@ -16,6 +16,7 @@ export function NotebookPanel({
   hasSelectedEvidence,
   hasAssistantInsight,
   exportingDossier,
+  dossierExportError,
   onCaptureSelectedEvidence,
   onCaptureAssistantInsight,
   onOpenNotebook,
@@ -25,11 +26,13 @@ export function NotebookPanel({
   onExportHighlights,
   onExportMarkdown,
   onExportJson,
+  onClearDossierError,
 }: {
   notes: FavoriteExcerpt[]
   hasSelectedEvidence: boolean
   hasAssistantInsight: boolean
   exportingDossier: boolean
+  dossierExportError: string | null
   onCaptureSelectedEvidence: () => void
   onCaptureAssistantInsight: () => void
   onOpenNotebook: () => void
@@ -39,6 +42,7 @@ export function NotebookPanel({
   onExportHighlights: () => void
   onExportMarkdown: () => void
   onExportJson: () => void
+  onClearDossierError: () => void
 }) {
   const { copy } = useProductCopy()
   const { preference, t } = useI18n()
@@ -123,6 +127,21 @@ export function NotebookPanel({
             onClick={onOpenNotebook}
           />
         </div>
+
+        {dossierExportError && (
+          <div className="mt-3 rounded-[12px] border border-red-200 bg-red-50 px-3 py-2">
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-[11px] leading-5 text-red-700">{dossierExportError}</p>
+              <button
+                type="button"
+                onClick={onClearDossierError}
+                className="text-[11px] text-red-500 hover:text-red-700"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        )}
 
         {latestSavedAt ? (
           <p className="mt-4 text-[11px] leading-6 text-black/46">

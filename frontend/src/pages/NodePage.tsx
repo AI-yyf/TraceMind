@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Download, Upload, X } from 'lucide-react'
+import { ArrowLeft, Upload, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react'
 import JSZip from 'jszip'
 import { saveAs } from 'file-saver'
 
@@ -9,30 +9,42 @@ import {
   parseInlineArticleReferences,
   renderInlineArticleText,
 } from '@/components/reading/ArticleInlineText'
+import { ArticleMarkdown } from '@/components/reading/ArticleMarkdown'
+import { ReadingEvidenceBlock } from '@/components/reading/ReadingEvidenceBlock'
 import { PaperSectionBlock } from '@/components/reading/PaperSectionBlock'
 import { RightSidebarShell } from '@/components/topic/RightSidebarShell'
+import {
+  TOPIC_WORKBENCH_DESKTOP_RESERVED_SPACE,
+  isTopicWorkbenchDesktopViewport,
+} from '@/components/topic/workbench-layout'
 import { ZoteroExportDialog } from '@/components/ZoteroExportDialog'
 import { ResearchViewToggle, type ViewMode } from '@/components/node/ResearchViewToggle'
 import { ResearchView } from '@/components/node/ResearchView'
 import { usePageScrollRestoration, useReadingWorkspace } from '@/contexts/readingWorkspaceHooks'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useProductCopy } from '@/hooks/useProductCopy'
-import { useI18n, getTranslation } from '@/i18n'
-import type { LanguageCode } from '@/i18n'
+import { useWebSocket, type ResearchProgress } from '@/hooks/useWebSocket'
+import { useI18n } from '@/i18n'
+import type { LanguagePreference } from '@/i18n'
 import { isLowSignalResearchLine } from '@/utils/researchCopy'
 import type {
   ArticleFlowBlock,
   CitationRef,
   ContextPill,
   EvidenceExplanation,
-  EvidencePayload,
   NodeViewModel,
   PaperViewModel,
   SearchResultItem,
   SuggestedAction,
+  WorkbenchReferenceEntry,
 } from '@/types/alpha'
-import type { NodeArticleFlowBlock } from '@/types/article'
+import type { NodeArticleFlowBlock, NodeIntroductionBlock, NodeSynthesisBlock } from '@/types/article'
 import { apiGet } from '@/utils/api'
+import {
+  assertNodeViewModelContract,
+} from '@/utils/contracts'
+import { logger } from '@/utils/logger'
+import { buildPaperAnchorRoute, resolvePrimaryReadingRouteForPaper } from '@/utils/readingRoutes'
 import {
   readStageWindowSearchParam,
   withOptionalStageWindowQuery,
@@ -80,22 +92,17 @@ function normalizeNarrativeKey(value: string | null | undefined) {
   return (value ?? '')
     .normalize('NFKC')
     .replace(/\s+/gu, ' ')
-    .replace(/[「」『』《》“”"'`]/gu, '')
-    .replace(/[，。！？!?；;：:、]/gu, ' ')
+    .replace(/[銆屻€嶃€庛€忋€娿€嬧€溾€?'`]/gu, '')
+    .replace(/[，。！？；：、“”]/gu, ' ')
     .replace(/\s+/gu, ' ')
     .trim()
     .toLowerCase()
 }
 
 const LOW_SIGNAL_NODE_NARRATIVE_PATTERNS = [
-  /不是单篇结论/u,
-  /围绕同一问题形成的研究推进/u,
-  /节点级判断不能只停在/u,
-  /节点总结不能只停在/u,
-  /如果读完这个节点后仍然不知道/u,
-  /一个好的节点应该让读者看清/u,
-  /节点级组织仍然不够成功/u,
-  /图、表、公式在这里的意义不是材料很多/u,
+  /不是单篇论文结论/u,
+  /如果读者还看不清每篇论文做了什么/u,
+  /好的节点应该让读者看清/u,
   /this node is not a single-paper conclusion/iu,
   /node-level judgment cannot stop at/iu,
   /if readers still cannot tell what each paper did/iu,
@@ -205,7 +212,7 @@ function dedupeNodeFlow(
 }
 
 function buildPaperAnchor(nodeId: string, paperId: string) {
-  return `/node/${nodeId}?anchor=${encodeURIComponent(`paper:${paperId}`)}`
+  return buildPaperAnchorRoute(`/node/${nodeId}`, paperId)
 }
 
 function buildNodeViewModelPath(nodeId: string, stageWindowMonths?: number, enhanced?: boolean) {
@@ -220,6 +227,21 @@ function buildNodeViewModelPath(nodeId: string, stageWindowMonths?: number, enha
   return basePath
 }
 
+function readRequestedNodeViewMode(searchParams: URLSearchParams): ViewMode {
+  return searchParams.get('view') === 'research' ? 'research' : 'article'
+}
+
+function hasEnhancedContinuousArticleFlow(
+  viewModel: Pick<NodeViewModel, 'enhancedArticleFlow'> | null | undefined,
+) {
+  return (
+    Array.isArray(viewModel?.enhancedArticleFlow) &&
+    viewModel.enhancedArticleFlow.some((block) => block.type === 'paper-article')
+  )
+}
+
+const ENHANCED_NODE_ARTICLE_CLIENT_TIMEOUT_MS = 180_000
+
 function formatPublishedDate(value?: string) {
   if (!value) return ''
   const date = new Date(value)
@@ -227,89 +249,288 @@ function formatPublishedDate(value?: string) {
   return `${date.getFullYear()}.${`${date.getMonth() + 1}`.padStart(2, '0')}.${`${date.getDate()}`.padStart(2, '0')}`
 }
 
-type NodeReferenceEntry = {
-  paperId: string
-  title: string
-  publishedAt?: string
-  authors?: string[]
-  citationCount?: number | null
-  originalUrl?: string
-  pdfUrl?: string
+/** 鎬?- 鑺傜偣姒傝堪绔犺妭 (Node Introduction Section) */
+function NodeIntroSection({
+  introduction,
+  referenceMap,
+  stageWindowMonths,
+  t,
+  preference,
+}: {
+  introduction: NodeIntroductionBlock
+  referenceMap: Map<string, ArticleInlineReference>
+  stageWindowMonths: number
+  t: (key: string, fallback?: string) => string
+  preference: LanguagePreference
+}) {
+  const displayLanguage = preference.primary === 'zh' ? 'zh' : 'en'
+  const introTitle = displayLanguage === 'zh'
+    ? t('node.intro.title', '节点概览')
+    : t('node.intro.titleEn', 'Node Overview')
+
+  const paragraphs = splitNarrativeParagraphs(introduction.content)
+
+  return (
+    <section
+      id={anchorDomId('node:intro')}
+      className="pt-4"
+    >
+      <h2 className="text-[24px] font-semibold leading-[1.14] text-black">
+        {introTitle}
+      </h2>
+
+      <div className="mt-6 space-y-5">
+        {paragraphs.map((paragraph, index) => (
+          <p
+            key={`${index}:${paragraph}`}
+            className="text-[16px] leading-9 text-black/68"
+          >
+            {renderInlineArticleText(paragraph, referenceMap, stageWindowMonths)}
+          </p>
+        ))}
+      </div>
+
+      {introduction.contextStatement ? (
+        <p className="mt-6 text-[15px] leading-8 text-black/60">
+          {renderInlineArticleText(introduction.contextStatement, referenceMap, stageWindowMonths)}
+        </p>
+      ) : null}
+
+      {introduction.coreQuestion ? (
+        <p className="mt-4 text-[16px] leading-8 text-black/78">
+          {renderInlineArticleText(introduction.coreQuestion, referenceMap, stageWindowMonths)}
+        </p>
+      ) : null}
+
+      {introduction.keyMethods && introduction.keyMethods.length > 0 ? (
+        <p className="mt-5 text-[14px] leading-8 text-black/56">
+          {displayLanguage === 'zh'
+            ? `贯穿这一节点的方法抓手主要包括：${introduction.keyMethods.join('、')}。`
+            : `The methods that repeatedly structure this node are ${introduction.keyMethods.join(', ')}.`}
+        </p>
+      ) : null}
+    </section>
+  )
 }
 
-function formatReferenceAuthors(authors?: string[]) {
-  if (!authors || authors.length === 0) return ''
-  if (authors.length <= 4) return authors.join(', ')
-  return `${authors.slice(0, 4).join(', ')}, et al.`
-}
+/** 鎬?- 缁煎悎鍒嗘瀽绔犺妭 (Node Synthesis Section) */
+function NodeSynthesisSection({
+  synthesis,
+  referenceMap,
+  stageWindowMonths,
+  t,
+  preference,
+}: {
+  synthesis: NodeSynthesisBlock
+  referenceMap: Map<string, ArticleInlineReference>
+  stageWindowMonths: number
+  t: (key: string, fallback?: string) => string
+  preference: LanguagePreference
+}) {
+  const displayLanguage = preference.primary === 'zh' ? 'zh' : 'en'
+  const synthesisTitle = displayLanguage === 'zh'
+    ? t('node.synthesis.title', '综合判断')
+    : t('node.synthesis.titleEn', 'Synthesis')
 
-function formatReferenceYear(value?: string) {
-  if (!value) return ''
-  const date = new Date(value)
-  if (Number.isNaN(+date)) return ''
-  return String(date.getFullYear())
-}
+  const paragraphs = splitNarrativeParagraphs(synthesis.content)
 
-function buildReferenceEntriesFromFlow(
-  flow: Array<Exclude<NodeArticleFlowBlock, { type: 'introduction' }>>,
-) {
-  return flow.reduce<NodeReferenceEntry[]>((entries, block) => {
-    if (block.type !== 'paper-article') return entries
+  return (
+    <section
+      id={anchorDomId('node:synthesis')}
+      className="pt-6"
+    >
+      <h2 className="text-[24px] font-semibold leading-[1.14] text-black">
+        {synthesisTitle}
+      </h2>
 
-    entries.push({
-      paperId: block.paperId,
-      title: block.title,
-      publishedAt: block.publishedAt,
-      authors: block.authors,
-      citationCount: block.citationCount,
-      originalUrl: block.originalUrl,
-      pdfUrl: block.pdfUrl,
-    })
-
-    return entries
-  }, [])
-}
-
-function formatReferenceCitation(entry: NodeReferenceEntry, language: LanguageCode) {
-  const authors = formatReferenceAuthors(entry.authors)
-  const year = formatReferenceYear(entry.publishedAt)
-
-  if (authors && year) return `${authors} (${year}).`
-  if (authors) return `${authors}.`
-  if (year) {
-    const template = getTranslation('node.publishedYear', language, 'Published in {year}.')
-    return renderTemplate(template, { year })
-  }
-
-  return ''
+      <div className="mt-6 space-y-5">
+        {paragraphs.map((paragraph, index) => (
+          <p
+            key={`${index}:${paragraph}`}
+            className="text-[16px] leading-9 text-black/68"
+          >
+            {renderInlineArticleText(paragraph, referenceMap, stageWindowMonths)}
+          </p>
+        ))}
+      </div>
+    </section>
+  )
 }
 
 export function NodePage() {
   const { nodeId = '' } = useParams<{ nodeId: string }>()
   const location = useLocation()
   const navigate = useNavigate()
-  const { rememberTrail } = useReadingWorkspace()
+  const { rememberTrail, state: readingWorkspaceState } = useReadingWorkspace()
   const [searchParams, setSearchParams] = useSearchParams()
+  const requestedViewMode = useMemo(() => readRequestedNodeViewMode(searchParams), [searchParams])
   const [viewModel, setViewModel] = useState<NodeViewModel | null>(null)
-  const [selectedEvidence, setSelectedEvidence] = useState<EvidencePayload | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const [hydratedReferences, setHydratedReferences] = useState<Map<string, ArticleInlineReference>>(
     () => new Map(),
   )
-const [selectedPaperIds, setSelectedPaperIds] = useState<string[]>([])
-  const [paperBundleOpen, setPaperBundleOpen] = useState(false)
-  const [viewMode, setViewMode] = useState<ViewMode>('article')
+  const [selectedReferenceIds, setSelectedReferenceIds] = useState<string[]>([])
+  const [viewMode, setViewMode] = useState<ViewMode>(requestedViewMode)
   const [loading, setLoading] = useState(true)
-  const [isDownloading, setIsDownloading] = useState(false)
-  const [downloadProgress, setDownloadProgress] = useState(0)
+  const [isEnhancingArticle, setIsEnhancingArticle] = useState(false)
+  const [articleEnhancementError, setArticleEnhancementError] = useState<string | null>(null)
+  const [isDownloadingReferences, setIsDownloadingReferences] = useState(false)
+  const [referenceDownloadProgress, setReferenceDownloadProgress] = useState(0)
   const [zoteroDialogOpen, setZoteroDialogOpen] = useState(false)
+  const [isDesktopViewport, setIsDesktopViewport] = useState(() => {
+    if (typeof window === 'undefined') return true
+    return isTopicWorkbenchDesktopViewport(window.innerWidth)
+  })
+  const [researchProgress, setResearchProgress] = useState<ResearchProgress | null>(null)
   const { copy } = useProductCopy()
   const { t, preference } = useI18n()
-  const activeAnchor = searchParams.get('evidence') || searchParams.get('anchor')
+
+  // Zoom controls for poster-style viewing
+  const [zoomLevel, setZoomLevel] = useState(100)
+  const MIN_ZOOM = 50
+  const MAX_ZOOM = 200
+  const ZOOM_STEP = 25
+
+  const handleZoomIn = useCallback(() => {
+    setZoomLevel((prev) => Math.min(prev + ZOOM_STEP, MAX_ZOOM))
+  }, [])
+
+  const handleZoomOut = useCallback(() => {
+    setZoomLevel((prev) => Math.max(prev - ZOOM_STEP, MIN_ZOOM))
+  }, [])
+
+  const handleZoomReset = useCallback(() => {
+    setZoomLevel(100)
+  }, [])
+
   const requestedStageWindowMonths = useMemo(
     () => readStageWindowSearchParam(searchParams),
     [searchParams],
   )
+  const requestNodeViewModel = useCallback(
+    async (enhanced: boolean, signal?: AbortSignal) => {
+      const payload = await apiGet<NodeViewModel>(
+        buildNodeViewModelPath(nodeId, requestedStageWindowMonths, enhanced),
+        signal,
+      )
+      assertNodeViewModelContract(payload)
+      return payload
+    },
+    [nodeId, requestedStageWindowMonths],
+  )
+
+  // Ref to track mounted state for async download operations
+  const downloadMountedRef = useRef(true)
+  const latestViewModelRef = useRef<NodeViewModel | null>(null)
+  const allowEnhancementSignalsRef = useRef(true)
+
+  // WebSocket subscription for node-level research progress
+  const { isConnected, subscribe, unsubscribe } = useWebSocket({
+    onProgress: (sessionId, progress) => {
+      if (sessionId === nodeId) {
+        setResearchProgress(progress)
+        if (progress.status === 'started' || progress.status === 'progress' || progress.percent) {
+          if (latestViewModelRef.current) {
+            if (allowEnhancementSignalsRef.current) {
+              setIsEnhancingArticle(true)
+            }
+          } else {
+            setLoading(true)
+          }
+        }
+      }
+    },
+    onComplete: (sessionId, _result) => {
+      if (sessionId === nodeId) {
+        setResearchProgress(null)
+        allowEnhancementSignalsRef.current = false
+        setIsEnhancingArticle(false)
+        setArticleEnhancementError(null)
+        if (!latestViewModelRef.current) {
+          setLoading(false)
+        }
+
+        requestNodeViewModel(true)
+          .then((payload) => {
+            setViewModel(payload)
+            setError(null)
+          })
+          .catch((nextError) => {
+            const message = nextError instanceof Error ? nextError.message : String(nextError)
+            if (latestViewModelRef.current) {
+              setArticleEnhancementError(message)
+            } else {
+              setViewModel(null)
+              setError(message)
+            }
+          })
+      }
+    },
+    onError: (sessionId, error) => {
+      if (sessionId === nodeId) {
+        if (latestViewModelRef.current) {
+          logger.warn('NodePage', 'Background article refinement did not finish', error)
+        } else {
+          logger.error('NodePage', 'Research error', error)
+        }
+        setResearchProgress(null)
+        allowEnhancementSignalsRef.current = false
+        setIsEnhancingArticle(false)
+        if (!latestViewModelRef.current) {
+          setLoading(false)
+        }
+        setArticleEnhancementError(typeof error === 'string' ? error : String(error))
+      }
+    },
+  })
+
+  // Subscribe to nodeId for WebSocket progress when connected
+  useEffect(() => {
+    if (nodeId && isConnected) {
+      subscribe(nodeId)
+      return () => unsubscribe(nodeId)
+    }
+  }, [nodeId, isConnected, subscribe, unsubscribe])
+
+  // Track mounted state for download operations
+  useEffect(() => {
+    downloadMountedRef.current = true
+    return () => {
+      downloadMountedRef.current = false
+    }
+  }, [])
+  useEffect(() => {
+    latestViewModelRef.current = viewModel
+  }, [viewModel])
+  useEffect(() => {
+    setViewMode((current) => (current === requestedViewMode ? current : requestedViewMode))
+  }, [requestedViewMode])
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+
+    const syncViewport = () => {
+      setIsDesktopViewport(isTopicWorkbenchDesktopViewport(window.innerWidth))
+    }
+
+    syncViewport()
+    window.addEventListener('resize', syncViewport)
+    return () => window.removeEventListener('resize', syncViewport)
+  }, [])
+  const activeAnchor = searchParams.get('evidence') || searchParams.get('anchor')
   const stageWindowMonths = viewModel?.stageWindowMonths ?? requestedStageWindowMonths ?? 1
+  const handleViewModeChange = useCallback(
+    (nextViewMode: ViewMode) => {
+      setViewMode(nextViewMode)
+      const nextParams = new URLSearchParams(searchParams)
+      if (nextViewMode === 'article') {
+        nextParams.delete('view')
+      } else {
+        nextParams.set('view', nextViewMode)
+      }
+      setSearchParams(nextParams, { replace: true })
+    },
+    [searchParams, setSearchParams],
+  )
   const hasFocusAnchor = Boolean(searchParams.get('anchor') || searchParams.get('evidence'))
   const topicReturnRoute = useMemo(
     () =>
@@ -334,24 +555,90 @@ const [selectedPaperIds, setSelectedPaperIds] = useState<string[]>([])
   )
 
   useEffect(() => {
+    const quickController = new AbortController()
+    const enhancedController = new AbortController()
     let alive = true
-    apiGet<NodeViewModel>(
-      buildNodeViewModelPath(nodeId, requestedStageWindowMonths, true), // enhanced=true for 8-Pass deep analysis
-    )
+    let enhancementClientTimer: ReturnType<typeof globalThis.setTimeout> | null = null
+
+    setLoading(true)
+    setViewModel(null)
+    setError(null)
+    allowEnhancementSignalsRef.current = true
+    setIsEnhancingArticle(false)
+    setArticleEnhancementError(null)
+
+    requestNodeViewModel(false, quickController.signal)
       .then((payload) => {
-        if (alive) setViewModel(payload)
+        if (!alive) return
+
+        setViewModel(payload)
+        setError(null)
+        setLoading(false)
+
+        if (hasEnhancedContinuousArticleFlow(payload)) {
+          return
+        }
+
+        setIsEnhancingArticle(true)
+        enhancementClientTimer = globalThis.setTimeout(() => {
+          if (enhancedController.signal.aborted) return
+          allowEnhancementSignalsRef.current = false
+          enhancedController.abort()
+          if (!alive) return
+          setIsEnhancingArticle(false)
+          setArticleEnhancementError(
+            preference.primary === 'zh'
+              ? '深度文章生成超过前台等待时间，当前先展示稳定节点文章。'
+              : 'Deep article synthesis exceeded the foreground wait window, so the stable node article is shown for now.',
+          )
+        }, ENHANCED_NODE_ARTICLE_CLIENT_TIMEOUT_MS)
+        void requestNodeViewModel(true, enhancedController.signal)
+          .then((enhancedPayload) => {
+            if (!alive || enhancedController.signal.aborted) return
+            allowEnhancementSignalsRef.current = false
+            setViewModel(enhancedPayload)
+            setError(null)
+            setArticleEnhancementError(null)
+          })
+          .catch((nextError) => {
+            if (!alive || enhancedController.signal.aborted) return
+            const message = nextError instanceof Error ? nextError.message : String(nextError)
+            logger.warn('NodePage', 'Enhanced article request failed', {
+              nodeId,
+              stageWindowMonths: requestedStageWindowMonths,
+              error: message,
+            })
+            setArticleEnhancementError(message)
+          })
+          .finally(() => {
+            if (enhancementClientTimer) {
+              globalThis.clearTimeout(enhancementClientTimer)
+              enhancementClientTimer = null
+            }
+            if (alive && !enhancedController.signal.aborted) {
+              setIsEnhancingArticle(false)
+            }
+          })
       })
-      .catch(() => {
-        if (alive) setViewModel(null)
-      })
-      .finally(() => {
-        if (alive) setLoading(false)
+      .catch((nextError) => {
+        if (alive && !quickController.signal.aborted) {
+          const message = nextError instanceof Error ? nextError.message : String(nextError)
+          setViewModel(null)
+          setError(message)
+          setLoading(false)
+        }
       })
 
     return () => {
       alive = false
+      allowEnhancementSignalsRef.current = false
+      if (enhancementClientTimer) {
+        globalThis.clearTimeout(enhancementClientTimer)
+      }
+      quickController.abort()
+      enhancedController.abort()
     }
-  }, [nodeId, requestedStageWindowMonths])
+  }, [nodeId, preference.primary, requestNodeViewModel, requestedStageWindowMonths])
 
   useEffect(() => {
     if (!viewModel || !topicReturnRoute) return
@@ -380,27 +667,6 @@ const [selectedPaperIds, setSelectedPaperIds] = useState<string[]>([])
   ])
 
   useEffect(() => {
-    const evidenceAnchor = searchParams.get('evidence')
-    if (!evidenceAnchor) {
-      setSelectedEvidence(null)
-      return
-    }
-
-    let alive = true
-    apiGet<EvidencePayload>(`/api/evidence/${encodeURIComponent(evidenceAnchor)}`)
-      .then((payload) => {
-        if (alive) setSelectedEvidence(payload)
-      })
-      .catch(() => {
-        if (alive) setSelectedEvidence(null)
-      })
-
-    return () => {
-      alive = false
-    }
-  }, [searchParams])
-
-  useEffect(() => {
     if (!activeAnchor) return
     const element = document.getElementById(anchorDomId(activeAnchor))
     if (!element) return
@@ -409,7 +675,7 @@ const [selectedPaperIds, setSelectedPaperIds] = useState<string[]>([])
 
   useEffect(() => {
     setHydratedReferences(new Map())
-  }, [viewModel?.nodeId, stageWindowMonths])
+  }, [preference.primary, viewModel?.nodeId, stageWindowMonths])
 
   const evidenceById = useMemo(
     () => new Map((viewModel?.evidence ?? []).map((item) => [item.anchorId, item])),
@@ -472,14 +738,14 @@ const [selectedPaperIds, setSelectedPaperIds] = useState<string[]>([])
     () =>
       [viewModel?.stageLabel, viewModel?.article.periodLabel, viewModel?.article.timeRangeLabel]
         .filter((item, index, values): item is string => Boolean(item) && values.indexOf(item) === index)
-        .join(' · '),
+        .join(' | '),
     [viewModel],
   )
   const metaLine = useMemo(
     () =>
       [viewModel?.article.periodLabel, viewModel?.article.timeRangeLabel]
         .filter((item, index, values): item is string => Boolean(item) && values.indexOf(item) === index)
-        .join(' · '),
+        .join(' | '),
     [viewModel],
   )
   void metaLine
@@ -501,37 +767,112 @@ const [selectedPaperIds, setSelectedPaperIds] = useState<string[]>([])
 
     return [viewModel.stageLabel, paperCountLabel, evidenceLabel]
       .filter((item, index, values): item is string => Boolean(item) && values.indexOf(item) === index)
-      .join(' · ')
+      .join(' | ')
   }, [t, viewModel])
-  const suggestedQuestions = useMemo(
-    () =>
-      viewModel
-        ? [
-            renderTemplate(
-              t(
-                'workbench.nodeExplainPromptTemplate',
-                'Put the node "{title}" back into the full topic mainline and explain what judgment it carries.',
-              ),
-              { title: viewModel.title },
-            ),
-            renderTemplate(
-              t(
-                'workbench.nodePapersPromptTemplate',
-                'Explain how the papers beneath "{title}" divide the work, and which one is most decisive.',
-              ),
-              { title: viewModel.title },
-            ),
-            renderTemplate(
-              t(
-                'workbench.nodeCritiquePromptTemplate',
-                'Question the weakest part of the node "{title}" from the standpoint of evidence and counterargument.',
-              ),
-              { title: viewModel.title },
-            ),
-          ]
-        : [],
-    [t, viewModel],
+  const activeMainView: ViewMode = viewMode === 'research' ? 'research' : 'article'
+  const showResearchToggle = true
+  const showResearchOnly = activeMainView === 'research'
+  const showArticleFlow = activeMainView === 'article'
+  const articleMarkdown = useMemo(
+    () => viewModel?.articleMarkdown?.trim() ?? '',
+    [viewModel?.articleMarkdown],
   )
+  const hasMarkdownArticle = articleMarkdown.length > 0
+  const normalizedTitleEn = (viewModel?.titleEn ?? '').replace(/\s+/gu, ' ').trim()
+  const normalizedTitle = (viewModel?.title ?? '').replace(/\s+/gu, ' ').trim()
+  const showDistinctTitleEn =
+    Boolean(normalizedTitleEn) && normalizedTitleEn.toLowerCase() !== normalizedTitle.toLowerCase()
+  const leadParagraphsToRender = leadParagraphs
+  const researchHeaderSummary = useMemo(() => {
+    if (!viewModel) return ''
+
+    return (
+      viewModel.researchView.coreJudgment?.content ||
+      viewModel.researchView.evidence.paperBriefs[0]?.summary ||
+      viewModel.standfirst ||
+      viewModel.summary ||
+      ''
+    )
+  }, [viewModel])
+  const researchHeaderHighlights = useMemo(() => {
+    if (!viewModel) {
+      return [] as Array<{
+        id: string
+        label: string
+        value: string
+        detail?: string
+      }>
+    }
+
+    const evidenceCount =
+      viewModel.stats.figureCount + viewModel.stats.tableCount + viewModel.stats.formulaCount
+    const openQuestion = viewModel.researchView.problems.openQuestions[0]
+    const featuredContribution = viewModel.researchView.evidence.paperBriefs[0]?.contribution || ''
+
+    return [
+      {
+        id: 'papers',
+        label: t('node.researchHeaderPaperCoverage', 'Paper coverage'),
+        value: renderTemplate(t('node.surfacePaperCount', '{count} papers'), {
+          count: viewModel.paperRoles.length,
+        }),
+        detail:
+          viewModel.paperRoles.length > 0
+            ? t(
+                'node.researchHeaderPaperCoverageDetail',
+                'The article and research views stay grounded in every paper folded into this node.',
+              )
+            : '',
+      },
+      {
+        id: 'evidence',
+        label: t('node.researchHeaderEvidenceCoverage', 'Evidence coverage'),
+        value: renderTemplate(t('node.surfaceEvidenceCount', '{count} figures, tables, and formulas'), {
+          count: evidenceCount,
+        }),
+        detail:
+          evidenceCount > 0
+            ? [
+                renderTemplate(t('node.surfaceFigureCount', '{count} figures'), {
+                  count: viewModel.stats.figureCount,
+                }),
+                renderTemplate(t('node.surfaceTableCount', '{count} tables'), {
+                  count: viewModel.stats.tableCount,
+                }),
+                renderTemplate(t('node.surfaceFormulaCount', '{count} formulas'), {
+                  count: viewModel.stats.formulaCount,
+                }),
+              ]
+                .filter((item) => !item.startsWith('0 '))
+                .join(' · ')
+            : t(
+                'node.researchHeaderEvidenceCoverageDetail',
+                'No renderable figure, table, or formula anchors have landed yet.',
+              ),
+      },
+      {
+        id: 'takeaway',
+        label: t('node.researchHeaderTakeaway', 'Current takeaway'),
+        value:
+          openQuestion ||
+          featuredContribution ||
+          researchHeaderSummary,
+      },
+    ].filter((item) => Boolean(item.value.trim()))
+  }, [researchHeaderSummary, t, viewModel])
+  const workbenchTopicId = viewModel?.topic.topicId ?? ''
+  const workbenchOpen = workbenchTopicId
+    ? readingWorkspaceState.workbenchByTopic[workbenchTopicId]?.open ?? false
+    : false
+  const desktopWorkbenchOverlayOffset = TOPIC_WORKBENCH_DESKTOP_RESERVED_SPACE + 40
+  const isWorkbenchOpenOnDesktop = isDesktopViewport && workbenchOpen
+  const desktopNodeContentMaxWidth = '1880px'
+  const articleCanvasMaxWidth = 'min(210mm, 100%)'
+  const researchCanvasMaxWidth = '1180px'
+  const desktopNodeShellMaxWidth = isWorkbenchOpenOnDesktop
+    ? `min(${desktopNodeContentMaxWidth}, calc(100vw - ${desktopWorkbenchOverlayOffset}px))`
+    : desktopNodeContentMaxWidth
+  const suggestedQuestions = useMemo(() => [] as string[], [])
   const contextSuggestions = useMemo(
     () =>
       viewModel
@@ -575,7 +916,7 @@ const [selectedPaperIds, setSelectedPaperIds] = useState<string[]>([])
               id: paper.paperId,
               kind: 'paper' as const,
               title: paper.title,
-              subtitle: `${paper.role}${paper.publishedAt ? ` · ${formatPublishedDate(paper.publishedAt)}` : ''}`,
+              subtitle: `${paper.role}${paper.publishedAt ? ` | ${formatPublishedDate(paper.publishedAt)}` : ''}`,
               description: paper.contribution,
               route: withStageWindowRoute(buildPaperAnchor(viewModel.nodeId, paper.paperId), stageWindowMonths),
             })),
@@ -583,48 +924,24 @@ const [selectedPaperIds, setSelectedPaperIds] = useState<string[]>([])
         : [],
     [stageWindowMonths, t, viewModel],
   )
-  const papers = useMemo(() => viewModel?.paperRoles ?? [], [viewModel])
-  const referenceEntries = useMemo(() => {
-    if (viewModel?.references?.length) {
-      return viewModel.references
-    }
-
-    const fromFlow = hasEnhancedContinuousArticle
-      ? buildReferenceEntriesFromFlow(
-          enhancedBodyFlow as Array<Exclude<NodeArticleFlowBlock, { type: 'introduction' }>>,
-        )
-      : []
-
-    if (fromFlow.length > 0) {
-      return fromFlow
-    }
-
-    return papers.map((paper) => ({
-      paperId: paper.paperId,
-      title: paper.title,
-      publishedAt: paper.publishedAt,
-      authors: paper.authors,
-      citationCount: paper.citationCount,
-      originalUrl: paper.originalUrl,
-      pdfUrl: paper.pdfUrl,
-    }))
-  }, [enhancedBodyFlow, hasEnhancedContinuousArticle, papers, viewModel?.references])
+const papers = useMemo(() => viewModel?.paperRoles ?? [], [viewModel])
+  const referenceEntries = useMemo<WorkbenchReferenceEntry[]>(
+    () => viewModel?.references ?? [],
+    [viewModel?.references],
+  )
   const downloadableReferences = useMemo(
     () => referenceEntries.filter((entry) => Boolean(entry.pdfUrl)),
     [referenceEntries],
   )
   const selectedDownloadReferences = useMemo(
-    () => downloadableReferences.filter((entry) => selectedPaperIds.includes(entry.paperId)),
-    [downloadableReferences, selectedPaperIds],
+    () => downloadableReferences.filter((entry) => selectedReferenceIds.includes(entry.paperId)),
+    [downloadableReferences, selectedReferenceIds],
   )
   useEffect(() => {
-    setSelectedPaperIds(downloadableReferences.map((entry) => entry.paperId))
+    setSelectedReferenceIds(downloadableReferences.map((entry) => entry.paperId))
   }, [nodeId, downloadableReferences])
-  useEffect(() => {
-    setPaperBundleOpen(false)
-  }, [nodeId])
-  const togglePaperSelection = useCallback((paperId: string) => {
-    setSelectedPaperIds((current) =>
+  const toggleReferenceSelection = useCallback((paperId: string) => {
+    setSelectedReferenceIds((current) =>
       current.includes(paperId)
         ? current.filter((item) => item !== paperId)
         : [...current, paperId],
@@ -632,39 +949,61 @@ const [selectedPaperIds, setSelectedPaperIds] = useState<string[]>([])
   }, [])
   const downloadSelectedPdfs = useCallback(async () => {
     if (selectedDownloadReferences.length === 0) return
-    
-    setIsDownloading(true)
-    setDownloadProgress(0)
-    
+
+    setIsDownloadingReferences(true)
+    setReferenceDownloadProgress(0)
+
     try {
       const zip = new JSZip()
       const total = selectedDownloadReferences.length
       let completed = 0
-      
+      const failedPapers: string[] = []
+
       for (const entry of selectedDownloadReferences) {
-        if (!entry.pdfUrl) continue
-        
+        if (!entry.pdfUrl) {
+          failedPapers.push(entry.title)
+          continue
+        }
+
         try {
-          const response = await fetch(entry.pdfUrl)
+          // Use backend proxy route to avoid CORS issues
+          const response = await fetch(`/api/pdf/proxy/${entry.paperId}`)
+          if (!response.ok) {
+            throw new Error(`Proxy fetch failed: ${response.status}`)
+          }
           const blob = await response.blob()
           const safeTitle = entry.title.replace(/[<>:"/\\|?*]/g, '_').slice(0, 100)
           zip.file(`${safeTitle}.pdf`, blob)
         } catch (e) {
-          console.warn(`Failed to fetch PDF: ${entry.title}`, e)
+          logger.error('NodePage', `Failed to fetch PDF: ${entry.title}`, e)
+          failedPapers.push(entry.title)
         }
-        
+
         completed++
-        setDownloadProgress(Math.round((completed / total) * 100))
+        if (downloadMountedRef.current) {
+          setReferenceDownloadProgress(Math.round((completed / total) * 100))
+        }
       }
-      
+
+      // Only proceed if still mounted
+      if (!downloadMountedRef.current) return
+
       const content = await zip.generateAsync({ type: 'blob' })
       const safeNodeTitle = viewModel?.title?.replace(/[<>:"/\\|?*]/g, '_').slice(0, 50) || 'papers'
       saveAs(content, `${safeNodeTitle}-papers.zip`)
+
+      // Show user feedback for failed downloads
+      if (failedPapers.length > 0) {
+        logger.warn('NodePage', `Failed to download ${failedPapers.length} papers: ${failedPapers.join(', ')}`)
+        // TODO: Consider adding toast notification for user visibility
+      }
     } catch (e) {
-      console.error('Failed to create ZIP', e)
+      logger.error('NodePage', 'Failed to create ZIP', e)
     } finally {
-      setIsDownloading(false)
-      setDownloadProgress(0)
+      if (downloadMountedRef.current) {
+        setIsDownloadingReferences(false)
+        setReferenceDownloadProgress(0)
+      }
     }
   }, [selectedDownloadReferences, viewModel?.title])
   const narrativeReferenceIds = useMemo(
@@ -676,7 +1015,7 @@ const [selectedPaperIds, setSelectedPaperIds] = useState<string[]>([])
             if (block.type === 'paper-article') {
               return [
                 block.introduction,
-                ...block.subsections.map((subsection) => subsection.content),
+                ...(block.subsections?.map((subsection) => subsection.content) ?? []),
                 block.conclusion,
               ]
             }
@@ -851,7 +1190,7 @@ const [selectedPaperIds, setSelectedPaperIds] = useState<string[]>([])
               label: payload.title,
               route: primaryNode
                 ? `/node/${primaryNode.nodeId}?anchor=${encodeURIComponent(`paper:${referenceId}`)}`
-                : `/paper/${referenceId}`,
+                : `/topic/${payload.topic.topicId}?anchor=${encodeURIComponent(`paper:${referenceId}`)}`,
             }
           }
 
@@ -896,18 +1235,12 @@ const [selectedPaperIds, setSelectedPaperIds] = useState<string[]>([])
     }
   }, [missingNarrativeReferenceIds, stageWindowMonths, viewModel])
 
-  const openEvidence = useCallback(async (anchorId: string) => {
-    try {
-      const evidence = await apiGet<EvidencePayload>(`/api/evidence/${encodeURIComponent(anchorId)}`)
-      setSelectedEvidence(evidence)
-      const next = new URLSearchParams(searchParams)
-      next.set('evidence', anchorId)
-      next.set('stageMonths', String(stageWindowMonths))
-      next.delete('anchor')
-      setSearchParams(next, { replace: true })
-    } catch {
-      setSelectedEvidence(null)
-    }
+  const openEvidence = useCallback((anchorId: string) => {
+    const next = new URLSearchParams(searchParams)
+    next.set('evidence', anchorId)
+    next.set('stageMonths', String(stageWindowMonths))
+    next.delete('anchor')
+    setSearchParams(next, { replace: true })
   }, [searchParams, setSearchParams, stageWindowMonths])
 
   const focusAnchor = useCallback(
@@ -929,6 +1262,27 @@ const [selectedPaperIds, setSelectedPaperIds] = useState<string[]>([])
       citation.type === 'section'
     ) {
       void openEvidence(citation.anchorId)
+      return
+    }
+
+    if (citation.type === 'paper') {
+      const citedPaperId = citation.anchorId.startsWith('paper:')
+        ? citation.anchorId.slice('paper:'.length)
+        : null
+      if (citedPaperId && papers.some((paper) => paper.paperId === citedPaperId)) {
+        focusAnchor(`paper:${citedPaperId}`)
+        return
+      }
+      navigate(
+        withStageWindowRoute(
+          resolvePrimaryReadingRouteForPaper({
+            paperId: citedPaperId ?? citation.anchorId,
+            route: citation.route,
+            topicId: viewModel?.topic.topicId,
+          }),
+          stageWindowMonths,
+        ),
+      )
       return
     }
 
@@ -974,7 +1328,11 @@ const [selectedPaperIds, setSelectedPaperIds] = useState<string[]>([])
       const referencedPaper = articleReferenceMap.get(nextPaperId.toLowerCase())
       navigate(
         withStageWindowRoute(
-          referencedPaper?.route || `/paper/${nextPaperId}`,
+          resolvePrimaryReadingRouteForPaper({
+            paperId: nextPaperId,
+            route: referencedPaper?.route,
+            topicId: viewModel.topic.topicId,
+          }),
           stageWindowMonths,
         ),
       )
@@ -1016,7 +1374,18 @@ const [selectedPaperIds, setSelectedPaperIds] = useState<string[]>([])
         return
       }
 
-      navigate(withStageWindowRoute(item.route, stageWindowMonths))
+      const resolvedRoute =
+        item.kind === 'paper'
+          ? resolvePrimaryReadingRouteForPaper({
+              paperId: item.id,
+              route: item.route,
+              nodeRoute: item.nodeRoute,
+              relatedNodes: item.relatedNodes,
+              topicId: item.topicId ?? viewModel?.topic.topicId,
+            })
+          : item.route
+
+      navigate(withStageWindowRoute(resolvedRoute, stageWindowMonths))
     },
     [focusAnchor, navigate, nodeId, openEvidence, papers, stageWindowMonths, viewModel],
   )
@@ -1026,9 +1395,19 @@ const [selectedPaperIds, setSelectedPaperIds] = useState<string[]>([])
       topicId={viewModel.topic.topicId}
       topicTitle={viewModel.topic.title}
       suggestedQuestions={suggestedQuestions}
-      selectedEvidence={selectedEvidence}
       contextSuggestions={contextSuggestions}
       resources={resources}
+      references={referenceEntries}
+      referenceContextLabel={viewModel.title}
+      selectedReferenceIds={selectedReferenceIds}
+      onToggleReferenceSelection={toggleReferenceSelection}
+      onSelectAllReferences={() =>
+        setSelectedReferenceIds(downloadableReferences.map((entry) => entry.paperId))
+      }
+      onClearReferenceSelection={() => setSelectedReferenceIds([])}
+      onDownloadSelectedReferences={downloadSelectedPdfs}
+      isDownloadingReferences={isDownloadingReferences}
+      referenceDownloadProgress={referenceDownloadProgress}
       searchStageWindowMonths={stageWindowMonths}
       onOpenCitation={handleCitation}
       onAction={handleAction}
@@ -1036,153 +1415,43 @@ const [selectedPaperIds, setSelectedPaperIds] = useState<string[]>([])
       surfaceMode="reading"
     />
   ) : null
-  const paperBundleContent =
-    downloadableReferences.length > 0 ? (
-      <div data-testid="node-paper-bundle" className="space-y-4">
-        <div className="rounded-[20px] border border-black/8 bg-[linear-gradient(180deg,#fcfaf6_0%,#ffffff_100%)] px-4 py-3">
-          <div className="text-[11px] uppercase tracking-[0.18em] text-black/36">
-            {t('node.paperBundleEyebrow', 'Paper bundle')}
-          </div>
-          <div className="mt-1 text-[13px] leading-6 text-black/62">
-            {renderTemplate(t('node.paperBundleSummary', '{selected} selected · {downloadable} PDFs ready'), {
-              selected: selectedDownloadReferences.length,
-              downloadable: downloadableReferences.length,
-            })}
-          </div>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() =>
-              setSelectedPaperIds(downloadableReferences.map((entry) => entry.paperId))
-            }
-            className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-[11px] text-black/62 transition hover:border-black/18 hover:text-black"
-          >
-            {t('node.selectAllPapers', 'Select all papers')}
-          </button>
-          <button
-            type="button"
-            onClick={() => setSelectedPaperIds([])}
-            className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-[11px] text-black/62 transition hover:border-black/18 hover:text-black"
-          >
-            {t('node.clearPaperSelection', 'Clear selection')}
-          </button>
-<button
-            type="button"
-            onClick={downloadSelectedPdfs}
-            disabled={selectedDownloadReferences.length === 0 || isDownloading}
-            className="inline-flex items-center gap-1 rounded-full bg-black px-3 py-1.5 text-[11px] text-white transition hover:bg-black/92 disabled:cursor-not-allowed disabled:bg-black/25"
-          >
-            <Download className="h-3.5 w-3.5" />
-            {isDownloading 
-              ? `${downloadProgress}%`
-              : renderTemplate(t('node.downloadSelectedPdfs', 'Download {count} PDFs'), {
-                  count: selectedDownloadReferences.length,
-                })
-            }
-          </button>
-        </div>
-
-        <div className="max-h-[56vh] space-y-2.5 overflow-y-auto pr-1">
-          {downloadableReferences.map((entry) => (
-            <label
-              key={entry.paperId}
-              className="flex items-start gap-3 rounded-[16px] border border-black/6 bg-white px-3 py-3"
-            >
-              <input
-                type="checkbox"
-                className="mt-1 h-4 w-4 rounded border-black/18 text-black"
-                checked={selectedPaperIds.includes(entry.paperId)}
-                onChange={() => togglePaperSelection(entry.paperId)}
-              />
-              <div className="min-w-0 flex-1">
-                <div className="text-[13px] font-medium leading-6 text-black">
-                  {entry.title}
-                </div>
-                <div className="mt-0.5 text-[11px] leading-5 text-black/54">
-                  {[formatReferenceAuthors(entry.authors), formatReferenceYear(entry.publishedAt)]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </div>
-              </div>
-              <a
-                href={entry.pdfUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="shrink-0 rounded-full border border-black/10 bg-white px-3 py-1.5 text-[11px] text-black/58 transition hover:border-black/18 hover:text-black"
-              >
-                {t('node.downloadPdf', 'Download PDF')}
-              </a>
-            </label>
-          ))}
-        </div>
-      </div>
-    ) : null
-  const paperBundleLauncher =
-    downloadableReferences.length > 0 ? (
-      <button
-        type="button"
-        data-testid="node-paper-bundle-trigger"
-        onClick={() => setPaperBundleOpen(true)}
-        className="fixed bottom-5 left-4 z-[72] inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-4 py-2.5 text-[12px] text-black shadow-[0_16px_36px_rgba(15,23,42,0.12)] transition hover:border-black/16 hover:shadow-[0_18px_40px_rgba(15,23,42,0.14)] md:bottom-6 md:left-6"
-      >
-        <Download className="h-3.5 w-3.5" />
-        {renderTemplate(
-          t('node.paperBundleSummary', '{selected} selected · {downloadable} PDFs ready'),
-          {
-            selected: selectedDownloadReferences.length,
-            downloadable: downloadableReferences.length,
-          },
-        )}
-      </button>
-    ) : null
-  const paperBundleDialog =
-    paperBundleOpen && paperBundleContent ? (
-      <div
-        className="fixed inset-0 z-[84] flex items-end justify-center bg-black/18 p-4 backdrop-blur-[2px] md:items-center"
-        role="dialog"
-        aria-modal="true"
-      >
-        <button
-          type="button"
-          className="absolute inset-0 cursor-default"
-          aria-label={t('common.close', 'Close')}
-          onClick={() => setPaperBundleOpen(false)}
-        />
-
-        <div className="relative z-[85] w-full max-w-[720px] overflow-hidden rounded-[26px] border border-black/8 bg-[linear-gradient(180deg,#fcfaf6_0%,#ffffff_100%)] p-5 shadow-[0_24px_60px_rgba(15,23,42,0.18)]">
-          <div className="mb-4 flex items-start justify-between gap-4">
-            <div>
-              <div className="text-[11px] uppercase tracking-[0.18em] text-black/36">
-                {t('node.paperBundleEyebrow', 'Paper bundle')}
-              </div>
-              <div className="mt-2 text-[24px] font-semibold leading-[1.2] text-black">
-                {t('node.paperBundleTitle', 'Batch PDF Download')}
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setPaperBundleOpen(false)}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/10 bg-white text-black/54 transition hover:border-black/16 hover:text-black"
-              aria-label={t('common.close', 'Close')}
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-
-          {paperBundleContent}
-        </div>
-      </div>
-    ) : null
 
   if (loading) {
     return (
       <>
-        <main className="px-4 pb-20 pt-6 md:px-6 xl:px-10">
-          <div className="mx-auto max-w-[920px] py-12 text-[14px] text-black/56">
-            {copy('reading.nodeLoading', t('node.loading', 'Loading node…'))}
+        <main
+          data-testid="node-reading"
+          data-node-main-view={activeMainView}
+          className="px-4 pb-20 pt-6 md:px-6 xl:px-10"
+        >
+          <div
+            className={isWorkbenchOpenOnDesktop ? 'mr-auto' : 'mx-auto'}
+            style={{
+              maxWidth: desktopNodeShellMaxWidth,
+            }}
+          >
+            <div className="mx-auto py-10" style={{ maxWidth: articleCanvasMaxWidth }}>
+              <article
+                data-testid="node-article-flow"
+                aria-busy="true"
+                className="article-prose a4-container space-y-6"
+              >
+                <div className="h-4 w-40 rounded-full bg-black/8" />
+                <div className="space-y-3">
+                  <div className="h-4 w-full rounded-full bg-black/6" />
+                  <div className="h-4 w-[92%] rounded-full bg-black/6" />
+                  <div className="h-4 w-[84%] rounded-full bg-black/6" />
+                </div>
+                <div className="space-y-3">
+                  <div className="h-4 w-full rounded-full bg-black/6" />
+                  <div className="h-4 w-[88%] rounded-full bg-black/6" />
+                  <div className="h-4 w-[79%] rounded-full bg-black/6" />
+                </div>
+              </article>
+              <div className="mt-6 text-[14px] text-black/56">
+                {copy('reading.nodeLoading', t('node.loading', 'Loading node...'))}
+              </div>
+            </div>
           </div>
         </main>
         {sidebarShell}
@@ -1205,6 +1474,9 @@ const [selectedPaperIds, setSelectedPaperIds] = useState<string[]>([])
             <h1 className="mt-6 text-[32px] font-semibold text-black">
               {copy('reading.nodeUnavailableTitle', t('node.unavailableTitle', 'Node unavailable'))}
             </h1>
+            {error ? (
+              <p className="mt-4 max-w-[760px] text-[14px] leading-7 text-black/58">{error}</p>
+            ) : null}
           </div>
         </main>
         {sidebarShell}
@@ -1216,10 +1488,16 @@ const [selectedPaperIds, setSelectedPaperIds] = useState<string[]>([])
     <>
     <main
       data-testid="node-reading"
-      className="px-4 pb-20 pt-6 md:px-6 xl:px-10 xl:pr-[404px] 2xl:pr-[428px]"
+      data-node-main-view={activeMainView}
+      className="px-4 pb-20 pt-6 md:px-6 xl:px-10"
     >
-      <div className="mx-auto max-w-[980px]">
-        <div className="flex items-center justify-between">
+      <div
+        className={isWorkbenchOpenOnDesktop ? 'mr-auto' : 'mx-auto'}
+        style={{
+          maxWidth: desktopNodeShellMaxWidth,
+        }}
+      >
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <Link
             to={topicReturnRoute ?? withStageWindowRoute(viewModel.topic.route, stageWindowMonths)}
             className="inline-flex items-center gap-2 text-sm text-black/54 transition hover:text-black"
@@ -1228,7 +1506,44 @@ const [selectedPaperIds, setSelectedPaperIds] = useState<string[]>([])
             {copy('reading.backTopic', t('node.backTopic', 'Back to Topic'))}
           </Link>
           <div className="flex items-center gap-3">
-            <ResearchViewToggle mode={viewMode} onChange={setViewMode} />
+            {showResearchToggle ? (
+              <ResearchViewToggle mode={viewMode} onChange={handleViewModeChange} />
+            ) : null}
+
+            {/* Zoom Controls - only show in article view */}
+            {activeMainView === 'article' ? (
+              <div className="inline-flex items-center gap-1 rounded-[10px] border border-black/10 bg-white px-2 py-1">
+                <button
+                  onClick={handleZoomOut}
+                  disabled={zoomLevel <= MIN_ZOOM}
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-black/60 transition hover:bg-black/5 hover:text-black disabled:opacity-40"
+                  title={t('node.zoomOut', 'Zoom out')}
+                >
+                  <ZoomOut className="h-4 w-4" />
+                </button>
+                <span className="min-w-[3rem] text-center text-[12px] text-black/60">
+                  {zoomLevel}%
+                </span>
+                <button
+                  onClick={handleZoomIn}
+                  disabled={zoomLevel >= MAX_ZOOM}
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-black/60 transition hover:bg-black/5 hover:text-black disabled:opacity-40"
+                  title={t('node.zoomIn', 'Zoom in')}
+                >
+                  <ZoomIn className="h-4 w-4" />
+                </button>
+                {zoomLevel !== 100 ? (
+                  <button
+                    onClick={handleZoomReset}
+                    className="ml-1 flex h-7 w-7 items-center justify-center rounded-md text-black/60 transition hover:bg-black/5 hover:text-black"
+                    title={t('node.zoomReset', 'Reset zoom')}
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+
             <button
               onClick={() => setZoteroDialogOpen(true)}
               className="inline-flex items-center gap-2 rounded-[10px] border border-black/10 bg-white px-3 py-1.5 text-[13px] font-medium text-black/70 transition hover:bg-black/5 hover:text-black"
@@ -1238,148 +1553,182 @@ const [selectedPaperIds, setSelectedPaperIds] = useState<string[]>([])
             </button>
           </div>
         </div>
-        <header id={anchorDomId('node:intro')} className="mx-auto mt-8 max-w-[920px]">
-          <div className="text-[11px] uppercase tracking-[0.24em] text-black/38">
-            {editorialMetaLine || surfaceMetaLine}
-          </div>
-          <h1 className="mt-4 font-display text-[38px] leading-[1.08] text-black md:text-[58px]">
-            {viewModel.title}
-          </h1>
-          {viewModel.titleEn ? (
-            <div className="mt-3 text-[14px] leading-7 text-black/42">{viewModel.titleEn}</div>
-          ) : null}
-
-          {/* 核心判断 - 节点级别的一句话判断 */}
-
-          {leadParagraphs.map((paragraph, index) => (
-            <p
-              key={`${index}:${paragraph}`}
-              className={index === 0 ? 'mt-5 text-[17px] leading-9 text-black/72' : 'mt-5 text-[16px] leading-9 text-black/64'}
-            >
-              {renderInlineArticleText(paragraph, articleReferenceMap, stageWindowMonths)}
-            </p>
-          ))}
-</header>
-
-        {/* Conditional View Rendering */}
-        {viewMode === 'research' ? (
-          <div className="mx-auto mt-10 max-w-[920px]">
-            <ResearchView 
-              viewModel={viewModel}
-              onOpenEvidence={openEvidence}
-            />
-          </div>
-        ) : (
-          <article
-            data-testid="node-article-flow"
-            className="article-prose mx-auto mt-10 max-w-[920px] space-y-14"
-          >
-            {hasEnhancedContinuousArticle
-              ? enhancedBodyFlow.map((block) => (
-                  <EnhancedFlowBlock
-                    key={block.id}
-                    block={block}
-                    referenceMap={articleReferenceMap}
-                    evidenceById={evidenceById}
-                    stageWindowMonths={stageWindowMonths}
-                    activeAnchor={activeAnchor}
-                    t={t}
-                  />
-                ))
-              : legacyFlow.map((block) => (
-                  <FlowBlock
-                    key={block.id}
-                    block={block}
-                    nodeId={viewModel.nodeId}
-                    evidenceById={evidenceById}
-                    activeAnchor={activeAnchor}
-                    referenceMap={articleReferenceMap}
-                    stageWindowMonths={stageWindowMonths}
-                  />
-                ))}
-          </article>
-        )}
-
-{/* References - only show in article view */}
-        {viewMode === 'article' && referenceEntries.length > 0 ? (
-          <footer className="mx-auto mt-16 max-w-[920px] border-t border-black/8 pt-10">
-            {referenceEntries.length > 0 ? (
-              <>
-                <div className="text-[11px] uppercase tracking-[0.22em] text-black/34">
-                  {t('node.referencesEyebrow', 'References')}
+        <div className="mt-8">
+          <div className="min-w-0">
+            {showResearchOnly ? (
+              <section
+                data-testid="node-research-header"
+                id={anchorDomId('node:intro')}
+                className="mx-auto"
+                style={{ maxWidth: researchCanvasMaxWidth }}
+              >
+                <div className="text-[11px] uppercase tracking-[0.24em] text-black/38">
+                  {editorialMetaLine || surfaceMetaLine}
                 </div>
-                <h2 className="mt-3 text-[28px] font-semibold leading-[1.16] text-black">
-                  {t('node.referencesTitle', 'Reference List')}
-                </h2>
-
-                <ol className="mt-6 space-y-4">
-                  {referenceEntries.map((entry, index) => {
-                    const citationLead = formatReferenceCitation(
-                      entry,
-                      preference.primary,
-                    )
-
-                    return (
-                      <li
-                        key={`${entry.paperId}:${index}`}
-                        className="flex gap-4 border-t border-black/6 pt-4 text-[15px] leading-8 text-black/66 first:border-t-0 first:pt-0"
+                <div className="mt-2 text-[11px] uppercase tracking-[0.18em] text-black/40">
+                  {t('node.researchView', 'Research View')}
+                </div>
+                <h1 className="mt-2 font-display text-[22px] leading-[1.2] text-black md:text-[28px]">
+                  {viewModel.title}
+                </h1>
+                {showDistinctTitleEn ? (
+                  <div className="mt-1 text-[13px] leading-6 text-black/40">{viewModel.titleEn}</div>
+                ) : null}
+                {researchHeaderHighlights.length > 0 ? (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {researchHeaderHighlights.slice(0, 2).map((highlight) => (
+                      <span
+                        key={highlight.id}
+                        className="rounded-full border border-black/10 bg-white px-2.5 py-1 text-[11px] text-black/54"
                       >
-                        <span className="w-8 shrink-0 text-black/34">[{index + 1}]</span>
-                        <div className="min-w-0 flex-1">
-                          {citationLead ? <span>{citationLead} </span> : null}
-                          <span className="text-black">{entry.title}</span>
-                          {entry.citationCount !== null && entry.citationCount !== undefined ? (
-                            <span className="text-black/42">
-                              {` · ${renderTemplate(t('node.citations', 'Cited {count} times'), {
-                                count: entry.citationCount,
-                              })}`}
-                            </span>
-                          ) : null}
-                          {(entry.originalUrl || entry.pdfUrl) ? (
-                            <span className="ml-2 inline-flex flex-wrap gap-2 align-middle">
-                              {entry.originalUrl ? (
-                                <a
-                                  href={entry.originalUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="rounded-full border border-black/10 bg-white px-3 py-1 text-[11px] leading-5 text-black/58 transition hover:border-black/18 hover:text-black"
-                                >
-                                  {t('node.openSource', 'Original source')}
-                                </a>
-                              ) : null}
-                              {entry.pdfUrl ? (
-                                <a
-                                  href={entry.pdfUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="rounded-full border border-black/10 bg-white px-3 py-1 text-[11px] leading-5 text-black/58 transition hover:border-black/18 hover:text-black"
-                                >
-                                  {t('node.downloadPdf', 'Download PDF')}
-                                </a>
-                              ) : null}
-                            </span>
-                          ) : null}
-                        </div>
-                      </li>
-                    )
-                  })}
-                </ol>
-              </>
+                        <span className="font-medium text-black/72">{highlight.label}: </span>
+                        <span>{highlight.value}</span>
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </section>
+            ) : (
+              <header
+                id={anchorDomId('node:intro')}
+                className="mx-auto w-full"
+                style={{ maxWidth: articleCanvasMaxWidth }}
+              >
+                <div className="text-[11px] uppercase tracking-[0.24em] text-black/38">
+                  {editorialMetaLine || surfaceMetaLine}
+                </div>
+                <h1 className="mt-4 font-display text-[26px] leading-[1.16] text-black md:text-[38px]">
+                  {viewModel.title}
+                </h1>
+                {showDistinctTitleEn ? (
+                  <div className="mt-3 text-[14px] leading-7 text-black/42">{viewModel.titleEn}</div>
+                ) : null}
+                {isEnhancingArticle ? (
+                  <div
+                    data-testid="node-article-enhancing-status"
+                    className="mt-4 inline-flex max-w-full items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-[12px] font-medium text-amber-900/80"
+                  >
+                    <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500 animate-pulse" />
+                    <span className="truncate">
+                      {researchProgress?.message ||
+                        t(
+                          'node.enhancingArticle',
+                          preference.primary === 'zh'
+                            ? '深度文章仍在结合图、表、公式继续生成。'
+                            : 'Deep article synthesis is still grounding figures, tables, and formulas.',
+                        )}
+                    </span>
+                  </div>
+                ) : null}
+                {!isEnhancingArticle && articleEnhancementError ? (
+                  <div
+                    data-testid="node-article-enhancement-error"
+                    className="mt-4 rounded-[14px] border border-red-200 bg-red-50/80 px-4 py-3 text-[13px] leading-6 text-red-900/72"
+                  >
+                    {articleEnhancementError ||
+                      t(
+                        'node.enhancingArticleUnavailable',
+                        preference.primary === 'zh'
+                          ? '这次请求未完成深度文章更新，当前先展示最新的稳定节点文章。'
+                          : 'The deep article update did not finish on this request. Showing the latest stable node article.',
+                      )}
+                  </div>
+                ) : null}
+
+                {!hasMarkdownArticle ? leadParagraphsToRender.map((paragraph, index) => (
+                  <p
+                    key={`${index}:${paragraph}`}
+                    className={
+                      index === 0
+                        ? 'mt-5 max-w-[840px] text-[15.6px] leading-[2.02] text-black/74'
+                        : 'mt-5 max-w-[840px] text-[15px] leading-[2.02] text-black/66'
+                    }
+                  >
+                    {renderInlineArticleText(paragraph, articleReferenceMap, stageWindowMonths)}
+                  </p>
+                )) : null}
+              </header>
+            )}
+
+            {showArticleFlow ? (
+              <div
+                className="zoom-container mx-auto mt-14"
+                style={{
+                  maxWidth: articleCanvasMaxWidth,
+                  transform: `scale(${zoomLevel / 100})`,
+                  transformOrigin: 'top center',
+                }}
+              >
+              <article
+                data-testid={hasMarkdownArticle ? undefined : 'node-article-flow'}
+                className={`article-prose a4-container${hasMarkdownArticle ? '' : ' space-y-16'}`}
+              >
+                {hasMarkdownArticle ? (
+                  <ArticleMarkdown dataTestId="node-article-flow" content={articleMarkdown} />
+                ) : (
+                  <>
+                    {leadParagraphsToRender.length === 0 && hasEnhancedContinuousArticle && enhancedIntroduction ? (
+                      <NodeIntroSection
+                        introduction={enhancedIntroduction}
+                        referenceMap={articleReferenceMap}
+                        stageWindowMonths={stageWindowMonths}
+                        t={t}
+                        preference={preference}
+                      />
+                    ) : null}
+
+                    {hasEnhancedContinuousArticle
+                      ? enhancedBodyFlow.map((block) => (
+                          <EnhancedFlowBlock
+                            key={block.id}
+                            block={block}
+                            referenceMap={articleReferenceMap}
+                            evidenceById={evidenceById}
+                            stageWindowMonths={stageWindowMonths}
+                            activeAnchor={activeAnchor}
+                            t={t}
+                            preference={preference}
+                          />
+                        ))
+                      : legacyFlow.map((block) => (
+                          <FlowBlock
+                            key={block.id}
+                            block={block}
+                            nodeId={viewModel.nodeId}
+                            evidenceById={evidenceById}
+                            activeAnchor={activeAnchor}
+                            referenceMap={articleReferenceMap}
+                            stageWindowMonths={stageWindowMonths}
+                            whyItMattersLabel={t('node.whyItMatters', 'Why it matters')}
+                          />
+                        ))}
+                  </>
+                )}
+              </article>
+              </div>
             ) : null}
-          </footer>
-        ) : null}
+
+            {showResearchOnly ? (
+              <div
+                data-testid="node-research-view"
+                className="mx-auto mt-10"
+                style={{ maxWidth: researchCanvasMaxWidth }}
+              >
+                <ResearchView viewModel={viewModel} onOpenEvidence={openEvidence} />
+              </div>
+            ) : null}
+          </div>
+        </div>
       </div>
-</main>
-    {paperBundleLauncher}
-    {paperBundleDialog}
-    {sidebarShell}
-    <ZoteroExportDialog
-      isOpen={zoteroDialogOpen}
-      onClose={() => setZoteroDialogOpen(false)}
-      nodeId={nodeId}
-      topicName={viewModel?.title}
-      paperIds={papers.map(p => p.paperId)}
-    />
+    </main>
+      {sidebarShell}
+      <ZoteroExportDialog
+        isOpen={zoteroDialogOpen}
+        onClose={() => setZoteroDialogOpen(false)}
+        nodeId={nodeId}
+        topicName={viewModel?.title}
+        paperIds={papers.map((p) => p.paperId)}
+      />
     </>
   )
 }
@@ -1391,6 +1740,7 @@ function FlowBlock({
   activeAnchor,
   referenceMap,
   stageWindowMonths,
+  whyItMattersLabel,
 }: {
   block: ArticleFlowBlock
   nodeId: string
@@ -1398,6 +1748,7 @@ function FlowBlock({
   activeAnchor: string | null
   referenceMap: Map<string, ArticleInlineReference>
   stageWindowMonths: number
+  whyItMattersLabel: string
 }) {
   if (block.type === 'text') {
     return (
@@ -1422,10 +1773,10 @@ function FlowBlock({
     return (
       <section
         id={anchorDomId(`paper:${block.paperId}`)}
-        className={`border-t border-black/6 pt-8 ${highlighted ? 'scroll-mt-24' : ''}`}
+        className={`pt-10 ${highlighted ? 'scroll-mt-24' : ''}`}
       >
         <div className="text-[12px] leading-6 text-black/44">
-          {[block.role, publishedAtLabel].filter(Boolean).join(' · ')}
+          {[block.role, publishedAtLabel].filter(Boolean).join(' | ')}
         </div>
         <h2 className="mt-2 text-[28px] font-semibold leading-[1.2] text-black">{block.title}</h2>
         {block.titleEn ? <div className="mt-2 text-[13px] text-black/44">{block.titleEn}</div> : null}
@@ -1438,7 +1789,7 @@ function FlowBlock({
 
   if (block.type === 'comparison') {
     return (
-      <section className="border-t border-black/6 pt-8">
+      <section className="pt-6">
         <h2 className="text-[26px] font-semibold leading-[1.2] text-black">{block.title}</h2>
         <p className="mt-4 text-[16px] leading-8 text-black/66">
           {renderInlineArticleText(block.summary, referenceMap, stageWindowMonths)}
@@ -1457,7 +1808,7 @@ function FlowBlock({
 
   if (block.type === 'critique') {
     return (
-      <section className="border-t border-black/6 pt-8">
+      <section className="pt-6">
         <h2 className="text-[24px] font-semibold text-black">{block.title}</h2>
         <p className="mt-4 text-[16px] leading-8 text-black/66">
           {renderInlineArticleText(block.summary, referenceMap, stageWindowMonths)}
@@ -1475,7 +1826,7 @@ function FlowBlock({
 
   if (block.type === 'closing') {
     return (
-      <section className="border-t border-black/6 pt-8">
+      <section className="pt-6">
         {block.title ? <h2 className="text-[24px] font-semibold text-black">{block.title}</h2> : null}
         <NarrativeParagraphGroup
           paragraphs={block.body}
@@ -1501,8 +1852,15 @@ function FlowBlock({
   const evidence = block.evidence ?? evidenceById.get(block.id.replace(/^flow-/u, ''))
   if (!evidence) return null
   void nodeId
-  void activeAnchor
-  return null
+  return (
+    <ReadingEvidenceBlock
+      anchorId={anchorDomId(evidence.anchorId)}
+      evidence={evidence}
+      highlighted={activeAnchor === evidence.anchorId}
+      whyItMattersLabel={whyItMattersLabel}
+      variant="article-inline"
+    />
+  )
 }
 
 function NarrativeParagraphGroup({
@@ -1541,8 +1899,8 @@ function PaperTransitionParagraph({
   stageWindowMonths: number
 }) {
   return (
-    <section id={anchorDomId(anchorId)} className="border-t border-black/6 pt-8">
-      <p className="text-[15px] leading-8 text-black/56">
+    <section id={anchorDomId(anchorId)} className="pt-5">
+      <p className="text-[15px] leading-8 text-black/52 italic">
         {renderInlineArticleText(content, referenceMap, stageWindowMonths)}
       </p>
     </section>
@@ -1556,6 +1914,7 @@ function EnhancedFlowBlock({
   stageWindowMonths,
   activeAnchor,
   t,
+  preference,
 }: {
   block: Exclude<NodeArticleFlowBlock, { type: 'introduction' }>
   referenceMap: Map<string, ArticleInlineReference>
@@ -1563,8 +1922,12 @@ function EnhancedFlowBlock({
   stageWindowMonths: number
   activeAnchor: string | null
   t: (key: string, fallback?: string) => string
+  preference: LanguagePreference
 }) {
   if (block.type === 'paper-article') {
+    // Support both new poster-style (v2) and legacy (v1) content structures
+    const isPosterStyle = block.contentVersion === 'v2' || (block.paragraphs && block.paragraphs.length > 0)
+
     return (
       <PaperSectionBlock
         paperId={block.paperId}
@@ -1574,9 +1937,17 @@ function EnhancedFlowBlock({
         publishedAt={block.publishedAt}
         citationCount={block.citationCount}
         role={block.role}
+        // Legacy fields (v1)
         introduction={block.introduction}
         subsections={block.subsections}
         conclusion={block.conclusion}
+        // New poster-style fields (v2)
+        coreThesis={block.coreThesis}
+        coreThesisEn={block.coreThesisEn}
+        paragraphs={block.paragraphs}
+        closingInsight={block.closingInsight}
+        closingInsightEn={block.closingInsightEn}
+        contentVersion={block.contentVersion ?? (isPosterStyle ? 'v2' : 'v1')}
         anchorId={anchorDomId(block.anchorId)}
         coverImage={block.coverImage}
         originalUrl={block.originalUrl}
@@ -1602,43 +1973,22 @@ function EnhancedFlowBlock({
 
   if (block.type === 'synthesis') {
     return (
-      <section className="border-t border-black/6 pt-8">
-        <h2 className="text-[26px] font-semibold leading-[1.2] text-black">{block.title}</h2>
-        <NarrativeParagraphGroup
-          paragraphs={[block.content, ...block.insights]}
-          referenceMap={referenceMap}
-          stageWindowMonths={stageWindowMonths}
-          className="text-[16px] leading-9 text-black/66"
-        />
-      </section>
+      <NodeSynthesisSection
+        synthesis={block}
+        referenceMap={referenceMap}
+        stageWindowMonths={stageWindowMonths}
+        t={t}
+        preference={preference}
+      />
     )
   }
 
   if (block.type === 'critique') {
-    return (
-      <section className="border-t border-black/6 pt-10">
-        <h2 className="text-[24px] font-semibold text-black">
-          {block.title || t('node.critique.title', 'Critical Analysis')}
-        </h2>
-        <p className="mt-4 text-[16px] leading-8 text-black/66">
-          {block.summary}
-        </p>
-        {block.bullets && block.bullets.length > 0 && (
-          <ul className="mt-6 space-y-3">
-            {block.bullets.map((bullet, index) => (
-              <li key={index} className="flex gap-3 text-[15px] leading-7 text-black/62">
-                <span className="text-black/40">•</span>
-                <span>{bullet}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-    )
+    return null
   }
 
   return (
-    <section className="border-t border-black/6 pt-8">
+    <section className="pt-6">
       <h2 className="text-[24px] font-semibold text-black">{block.title}</h2>
       <NarrativeParagraphGroup
         paragraphs={[block.content, ...block.keyTakeaways, block.transitionToNext]}

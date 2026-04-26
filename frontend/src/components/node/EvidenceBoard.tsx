@@ -1,15 +1,8 @@
-/**
- * EvidenceBoard - Evidence strength visualization with type badges
- * 
- * Displays evidence cards from EvidenceExplanation[] with:
- * - Type badges: figure, table, formula, section
- * - Strength/importance visualization
- * - Source paper attribution
- */
+import { BarChart3, Calculator, ExternalLink, FileText, Shield } from 'lucide-react'
 
-import { BarChart3, Calculator, Image, FileText, ExternalLink, Shield } from 'lucide-react'
-import { useI18n } from '@/i18n'
+import { getTranslation } from '@/i18n'
 import type { EvidenceExplanation } from '@/types/alpha'
+import { resolveApiAssetUrl } from '@/utils/api'
 
 function renderTemplate(template: string, variables: Record<string, string | number>) {
   return Object.entries(variables).reduce(
@@ -18,56 +11,74 @@ function renderTemplate(template: string, variables: Record<string, string | num
   )
 }
 
-export type EvidenceType = 'figure' | 'table' | 'formula' | 'section'
+type EvidenceType = 'figure' | 'table' | 'formula' | 'section'
 
 export interface EvidenceBoardProps {
-  /** Evidence explanations from NodeViewModel */
   evidence: EvidenceExplanation[]
-  /** Language preference */
   language?: 'zh' | 'en'
-  /** Callback to open evidence detail */
   onOpenEvidence?: (anchorId: string) => void
+  paperCoverMap?: Map<string, string | null>
+  featuredAnchorIds?: string[]
+  supportingAnchorIds?: string[]
+  compact?: boolean
 }
 
 const EVIDENCE_TYPE_CONFIG = {
   figure: {
-    label: '图表',
-    labelEn: 'Figure',
-    icon: Image,
-    color: 'text-violet-600',
-    bgColor: 'bg-violet-50',
-    borderColor: 'border-violet-200',
+    labelKey: 'node.evidenceTypeFigure',
+    fallback: 'Figure',
+    icon: BarChart3,
+    color: 'text-[#7d1938]',
+    tint: 'rgba(125,25,56,0.08)',
   },
   table: {
-    label: '表格',
-    labelEn: 'Table',
+    labelKey: 'node.evidenceTypeTable',
+    fallback: 'Table',
     icon: BarChart3,
-    color: 'text-teal-600',
-    bgColor: 'bg-teal-50',
-    borderColor: 'border-teal-200',
+    color: 'text-[#0f766e]',
+    tint: 'rgba(15,118,110,0.08)',
   },
   formula: {
-    label: '公式',
-    labelEn: 'Formula',
+    labelKey: 'node.evidenceTypeFormula',
+    fallback: 'Formula',
     icon: Calculator,
-    color: 'text-blue-600',
-    bgColor: 'bg-blue-50',
-    borderColor: 'border-blue-200',
+    color: 'text-[#1d4ed8]',
+    tint: 'rgba(29,78,216,0.08)',
   },
   section: {
-    label: '段落',
-    labelEn: 'Section',
+    labelKey: 'node.evidenceTypeSection',
+    fallback: 'Section',
     icon: FileText,
-    color: 'text-amber-600',
-    bgColor: 'bg-amber-50',
-    borderColor: 'border-amber-200',
+    color: 'text-[#92400e]',
+    tint: 'rgba(146,64,14,0.08)',
   },
-}
+} as const satisfies Record<
+  EvidenceType,
+  { labelKey: string; fallback: string; icon: typeof BarChart3; color: string; tint: string }
+>
 
 const IMPORTANCE_LEVELS = {
-  high: { label: '关键证据', labelEn: 'Key Evidence', threshold: 8, color: 'text-emerald-600', dots: 3 },
-  medium: { label: '重要证据', labelEn: 'Important', threshold: 5, color: 'text-amber-600', dots: 2 },
-  low: { label: '辅助证据', labelEn: 'Supporting', threshold: 0, color: 'text-slate-500', dots: 1 },
+  high: {
+    labelKey: 'node.evidencePriorityHigh',
+    fallback: 'Key evidence',
+    threshold: 8,
+    color: 'text-emerald-600',
+    dots: 3,
+  },
+  medium: {
+    labelKey: 'node.evidencePriorityMedium',
+    fallback: 'Important',
+    threshold: 5,
+    color: 'text-amber-600',
+    dots: 2,
+  },
+  low: {
+    labelKey: 'node.evidencePriorityLow',
+    fallback: 'Supporting',
+    threshold: 0,
+    color: 'text-slate-500',
+    dots: 1,
+  },
 }
 
 function getImportanceLevel(importance?: number) {
@@ -77,14 +88,41 @@ function getImportanceLevel(importance?: number) {
   return IMPORTANCE_LEVELS.low
 }
 
-export function EvidenceBoard({ evidence, language = 'zh', onOpenEvidence }: EvidenceBoardProps) {
-  const { t } = useI18n()
-  
-  if (evidence.length === 0) {
-    return null
-  }
+function evidencePreviewImage(
+  evidence: EvidenceExplanation,
+  paperCoverMap?: Map<string, string | null>,
+) {
+  return (
+    resolveApiAssetUrl(evidence.thumbnailPath) ||
+    resolveApiAssetUrl(evidence.imagePath) ||
+    (evidence.sourcePaperId ? paperCoverMap?.get(evidence.sourcePaperId) ?? null : null)
+  )
+}
 
-  // Group by type
+function translateNodeLabel(
+  language: 'zh' | 'en',
+  key: string,
+  fallback: string,
+  legacyKey?: string,
+) {
+  return getTranslation(
+    key,
+    language,
+    legacyKey ? getTranslation(legacyKey, language, fallback) : fallback,
+  )
+}
+
+export function EvidenceBoard({
+  evidence,
+  language = 'zh',
+  onOpenEvidence,
+  paperCoverMap,
+  featuredAnchorIds = [],
+  supportingAnchorIds = [],
+  compact = false,
+}: EvidenceBoardProps) {
+  if (evidence.length === 0) return null
+
   const grouped = evidence.reduce<Record<EvidenceType, EvidenceExplanation[]>>((acc, item) => {
     const type = item.type as EvidenceType
     if (!acc[type]) acc[type] = []
@@ -92,163 +130,263 @@ export function EvidenceBoard({ evidence, language = 'zh', onOpenEvidence }: Evi
     return acc
   }, {} as Record<EvidenceType, EvidenceExplanation[]>)
 
-  // Sort by importance
-  const sortedEvidence = [...evidence].sort((a, b) => {
-    const aImportance = a.importance ?? 5
-    const bImportance = b.importance ?? 5
-    return bImportance - aImportance
-  })
-
-  // Stats
-  const totalEvidence = evidence.length
-  const keyEvidence = evidence.filter(e => (e.importance ?? 5) >= 8).length
+  const sortedEvidence = [...evidence].sort((a, b) => (b.importance ?? 5) - (a.importance ?? 5))
+  const evidenceById = new Map(sortedEvidence.map((item) => [item.anchorId, item]))
+  const curatedFeatured = featuredAnchorIds
+    .map((id) => evidenceById.get(id))
+    .filter(Boolean) as EvidenceExplanation[]
+  const curatedSupporting = supportingAnchorIds
+    .map((id) => evidenceById.get(id))
+    .filter(Boolean) as EvidenceExplanation[]
+  const featuredEvidence = curatedFeatured[0] ?? sortedEvidence[0]
+  const supportingEvidence =
+    curatedSupporting.length > 0
+      ? curatedSupporting
+      : sortedEvidence.filter((item) => item.anchorId !== featuredEvidence?.anchorId).slice(0, 4)
+  const visibleSupportingEvidence = compact ? supportingEvidence.slice(0, 3) : supportingEvidence
+  const keyEvidence = evidence.filter((item) => (item.importance ?? 5) >= 8).length
+  const moreCountThreshold = compact ? 4 : 5
 
   return (
-    <section className="rounded-[22px] border border-black/8 bg-white p-6 shadow-[0_4px_16px_rgba(15,23,42,0.04)]">
-      {/* Header */}
-      <div className="flex items-center gap-2 mb-4">
+    <section
+      data-testid="node-evidence-board"
+      className={compact ? 'py-2' : 'py-3'}
+    >
+      <div className="mb-4 flex items-center gap-2">
         <Shield className="h-5 w-5 text-black/40" />
         <span className="text-[11px] uppercase tracking-[0.18em] text-black/38">
-          {t('node.evidenceBoardEyebrow', 'Evidence Board')}
+          {translateNodeLabel(
+            language,
+            'node.evidencePanelEyebrow',
+            'Evidence',
+            'node.evidenceBoardEyebrow',
+          )}
         </span>
       </div>
 
-      {/* Stats Summary */}
-      <div className="flex items-center gap-3 mb-5">
-        <div className="rounded-[8px] bg-black/4 px-3 py-1.5">
-          <span className="text-[12px] text-black/62">
-            {renderTemplate(t('node.evidenceTotal', '{count} evidence items'), { count: totalEvidence })}
-          </span>
-        </div>
-        <div className="rounded-[8px] bg-emerald-50 px-3 py-1.5">
-          <span className="text-[12px] text-emerald-600">
-            {renderTemplate(t('node.keyEvidenceCount', '{count} key evidence'), { count: keyEvidence })}
-          </span>
-        </div>
-      </div>
+      <p className="mb-4 text-[13px] leading-6 text-black/52">
+        {renderTemplate(
+          translateNodeLabel(
+            language,
+            'node.evidenceTotalLabel',
+            '{count} evidence items',
+            'node.evidenceTotal',
+          ),
+          { count: evidence.length },
+        )}
+        {' · '}
+        {renderTemplate(
+          translateNodeLabel(
+            language,
+            'node.evidenceKeyCountLabel',
+            '{count} key evidence',
+            'node.keyEvidenceCount',
+          ),
+          { count: keyEvidence },
+        )}
+      </p>
 
-      {/* Type Distribution */}
-      <div className="flex flex-wrap gap-2 mb-5">
+      <div className="mb-5 flex flex-wrap gap-2">
         {(Object.entries(grouped) as [EvidenceType, EvidenceExplanation[]][]).map(([type, items]) => {
           const config = EVIDENCE_TYPE_CONFIG[type]
+
           return (
-            <div 
+            <div
               key={type}
-              className={`flex items-center gap-1.5 rounded-[8px] ${config.bgColor} ${config.borderColor} border px-2.5 py-1`}
+              className="inline-flex items-center gap-1.5 rounded-full border border-black/8 bg-transparent px-3 py-1 text-[11px] text-black/50"
             >
               <config.icon className={`h-3.5 w-3.5 ${config.color}`} />
-              <span className={`text-[11px] font-medium ${config.color}`}>
-                {language === 'en' ? config.labelEn : config.label}
-              </span>
-              <span className="text-[11px] text-black/40">{items.length}</span>
+              <span>{translateNodeLabel(language, config.labelKey, config.fallback)}</span>
+              <span className="text-black/34">{items.length}</span>
             </div>
           )
         })}
       </div>
 
-      {/* Evidence Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {sortedEvidence.slice(0, 12).map((item) => (
-          <EvidenceCard 
-            key={item.anchorId}
-            evidence={item}
+      {featuredEvidence ? (
+        <div
+          className={
+            compact
+              ? 'grid gap-3'
+              : 'grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.9fr)]'
+          }
+        >
+          <EvidenceCard
+            evidence={featuredEvidence}
             language={language}
             onOpen={onOpenEvidence}
+            paperCoverMap={paperCoverMap}
+            featured
+            compact={compact}
           />
-        ))}
-      </div>
 
-      {/* Show More */}
-      {sortedEvidence.length > 12 && (
-        <div className="mt-4 text-center">
-          <span className="text-[12px] text-black/40">
-            {renderTemplate(t('node.evidenceMore', '+{count} more evidence items'), { count: sortedEvidence.length - 12 })}
-          </span>
+          <div className={compact ? 'grid gap-3' : 'grid gap-3 sm:grid-cols-2 xl:grid-cols-1'}>
+            {visibleSupportingEvidence.map((item) => (
+              <EvidenceCard
+                key={item.anchorId}
+                evidence={item}
+                language={language}
+                onOpen={onOpenEvidence}
+                paperCoverMap={paperCoverMap}
+                compact={compact}
+              />
+            ))}
+          </div>
         </div>
-      )}
+      ) : null}
+
+      {sortedEvidence.length > moreCountThreshold ? (
+        <div className="mt-4 text-center text-[12px] text-black/40">
+          {renderTemplate(
+            translateNodeLabel(
+              language,
+              'node.evidenceMoreLabel',
+              '+{count} more evidence items',
+              'node.evidenceMore',
+            ),
+            { count: sortedEvidence.length - moreCountThreshold },
+          )}
+        </div>
+      ) : null}
     </section>
   )
 }
 
-function EvidenceCard({ 
-  evidence, 
+function EvidenceCard({
+  evidence,
   language,
   onOpen,
-}: { 
+  paperCoverMap,
+  featured = false,
+  compact = false,
+}: {
   evidence: EvidenceExplanation
   language: 'zh' | 'en'
   onOpen?: (anchorId: string) => void
+  paperCoverMap?: Map<string, string | null>
+  featured?: boolean
+  compact?: boolean
 }) {
-  const typeConfig = EVIDENCE_TYPE_CONFIG[evidence.type as EvidenceType]
+  const config = EVIDENCE_TYPE_CONFIG[evidence.type as EvidenceType]
   const importanceLevel = getImportanceLevel(evidence.importance)
-  const TypeIcon = typeConfig.icon
-
-  const handleClick = () => {
-    if (onOpen) {
-      onOpen(evidence.anchorId)
-    }
-  }
+  const TypeIcon = config.icon
+  const previewImage = evidencePreviewImage(evidence, paperCoverMap)
+  const formulaText =
+    evidence.type === 'formula'
+      ? (evidence.formulaLatex || evidence.quote || evidence.content || '')
+          .replace(/\s+/gu, ' ')
+          .trim()
+      : ''
+  const explanation =
+    evidence.whyItMatters ||
+    evidence.explanation ||
+    (evidence.type === 'formula' ? '' : evidence.content || evidence.quote) ||
+    ''
+  const excerpt = explanation.replace(/\s+/gu, ' ').trim()
+  const cardIsFeatured = featured && !compact
+  const previewHeightClass = cardIsFeatured ? 'h-[288px]' : compact ? 'h-[152px]' : 'h-[176px]'
+  const fallbackMinHeightClass =
+    cardIsFeatured ? 'min-h-[220px]' : compact ? 'min-h-[120px]' : 'min-h-[150px]'
+  const titleClass =
+    cardIsFeatured ? 'text-[18px] leading-7' : compact ? 'text-[13px] leading-5' : 'text-[14px] leading-6'
+  const excerptClass =
+    cardIsFeatured ? 'mt-4 text-[14px] leading-7' : compact ? 'mt-2 text-[12px] leading-5' : 'mt-3 text-[12px] leading-6'
+  const excerptLimit = cardIsFeatured ? 180 : compact ? 84 : 96
+  const formulaLimit = cardIsFeatured ? 240 : compact ? 110 : 150
+  const pageLabel = evidence.page
+    ? renderTemplate(translateNodeLabel(language, 'node.evidencePageLabel', 'p.{page}'), {
+        page: evidence.page,
+      })
+    : null
 
   return (
-    <div 
-      className={`rounded-[14px] ${typeConfig.bgColor} ${typeConfig.borderColor} border p-4 cursor-pointer transition-all hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)] hover:border-${typeConfig.borderColor.replace('border-', '')}`}
-      onClick={handleClick}
+    <div
+      className="cursor-pointer overflow-hidden rounded-[20px] border border-black/8 bg-white transition hover:shadow-[0_8px_22px_rgba(15,23,42,0.08)]"
+      onClick={() => onOpen?.(evidence.anchorId)}
       role="button"
       tabIndex={0}
-      onKeyDown={(e) => { if (e.key === 'Enter') handleClick() }}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') onOpen?.(evidence.anchorId)
+      }}
     >
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div className="flex items-center gap-2 min-w-0 flex-1">
-          <div className={`flex-shrink-0 h-6 w-6 rounded-[6px] bg-white flex items-center justify-center`}>
-            <TypeIcon className={`h-3.5 w-3.5 ${typeConfig.color}`} />
+      {previewImage ? (
+        <div
+          className={`relative ${previewHeightClass} overflow-hidden bg-black/4`}
+          style={{
+            backgroundImage: `url(${previewImage})`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+          }}
+        >
+          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.12)_0%,rgba(255,255,255,0.86)_68%,rgba(255,255,255,0.96)_100%)]" />
+          <div className="absolute left-4 top-4 inline-flex items-center gap-2 rounded-full bg-white/92 px-3 py-1.5 shadow-[0_8px_18px_rgba(15,23,42,0.08)]">
+            <TypeIcon className={`h-3.5 w-3.5 ${config.color}`} />
+            <span className={`text-[11px] font-medium ${config.color}`}>
+              {translateNodeLabel(language, config.labelKey, config.fallback)}
+            </span>
           </div>
+        </div>
+      ) : (
+        <div
+          className={`${fallbackMinHeightClass} border-b border-black/6 p-4`}
+          style={{ backgroundColor: config.tint }}
+        >
+          <div className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1.5">
+            <TypeIcon className={`h-3.5 w-3.5 ${config.color}`} />
+            <span className={`text-[11px] font-medium ${config.color}`}>
+              {translateNodeLabel(language, config.labelKey, config.fallback)}
+            </span>
+          </div>
+        </div>
+      )}
+
+      <div className={`p-4 ${cardIsFeatured ? 'md:p-5' : ''}`}>
+        <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <div className="text-[13px] font-medium leading-6 text-black truncate">
-              {evidence.label}
-            </div>
-            <div className="text-[11px] text-black/40 truncate">
-              {evidence.title}
-            </div>
+            <div className={`${titleClass} font-semibold text-black`}>{evidence.label}</div>
+            <div className="mt-1 truncate text-[11px] text-black/40">{evidence.title}</div>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-0.5">
+            {[...Array(importanceLevel.dots)].map((_, index) => (
+              <div
+                key={index}
+                className={`h-2 w-2 rounded-full ${importanceLevel.color.replace('text-', 'bg-')}`}
+              />
+            ))}
           </div>
         </div>
 
-        {/* Importance Indicator */}
-        <div className="flex-shrink-0 flex items-center gap-0.5">
-          {[...Array(importanceLevel.dots)].map((_, i) => (
-            <div 
-              key={i}
-              className={`h-2 w-2 rounded-full ${importanceLevel.color.replace('text-', 'bg-')}`}
-            />
-          ))}
-        </div>
-      </div>
+        {formulaText ? (
+          <div className="mt-3 overflow-hidden rounded-[12px] bg-[var(--surface-soft)] px-3 py-2">
+            <code className="block break-words text-[11px] leading-6 text-black/72">
+              {formulaText.slice(0, formulaLimit)}
+              {formulaText.length > formulaLimit ? '...' : ''}
+            </code>
+          </div>
+        ) : null}
 
-      {/* Quote excerpt */}
-      {evidence.quote && (
-        <div className="text-[12px] leading-6 text-black/58 mb-3">
-          "{evidence.quote.slice(0, 80)}{evidence.quote.length > 80 ? '...' : ''}"
-        </div>
-      )}
+        {excerpt ? (
+          <p className={`${excerptClass} text-black/58`}>
+            {excerpt.slice(0, excerptLimit)}
+            {excerpt.length > excerptLimit ? '...' : ''}
+          </p>
+        ) : null}
 
-      {/* Source attribution */}
-      {evidence.sourcePaperTitle && (
-        <div className="flex items-center gap-1.5 text-[11px] text-black/40">
-          <ExternalLink className="h-3 w-3" />
-          <span className="truncate">{evidence.sourcePaperTitle}</span>
-        </div>
-      )}
+        <div className="mt-3 flex items-center justify-between gap-3">
+          {evidence.sourcePaperTitle ? (
+            <div className="inline-flex min-w-0 items-center gap-1.5 text-[11px] text-black/40">
+              <ExternalLink className="h-3 w-3 shrink-0" />
+              <span className="truncate">{evidence.sourcePaperTitle}</span>
+            </div>
+          ) : (
+            <span className={`text-[11px] font-medium ${importanceLevel.color}`}>
+              {translateNodeLabel(language, importanceLevel.labelKey, importanceLevel.fallback)}
+            </span>
+          )}
 
-      {/* Importance Label */}
-      <div className="mt-3 flex items-center justify-between">
-        <span className={`text-[11px] font-medium ${importanceLevel.color}`}>
-          {language === 'en' ? importanceLevel.labelEn : importanceLevel.label}
-        </span>
-        {evidence.page && (
-          <span className="text-[11px] text-black/30">
-            p.{evidence.page}
-          </span>
-        )}
+          {pageLabel ? <span className="text-[11px] text-black/30">{pageLabel}</span> : null}
+        </div>
       </div>
     </div>
   )

@@ -3,34 +3,32 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { useI18n } from '@/i18n'
 import { cn } from '@/utils/cn'
+import {
+  APP_STATE_STORAGE_KEYS,
+  readBooleanLocalStorageItem,
+  writeLocalStorageJson,
+} from '@/utils/appStateStorage'
 
-const PANEL_STATE_STORAGE_KEY = 'arxiv-chronicle-language-switch-expanded'
 const LANGUAGE_PANEL_ID = 'global-language-switch-panel'
-
-function resolveSecondaryLanguage(primary: string) {
-  return primary === 'zh' ? 'en' : 'zh'
-}
+const FLOATING_LANGUAGE_SWITCH_MAX_WIDTH = 1280 // xl breakpoint
 
 function loadExpandedState() {
-  if (typeof window === 'undefined') return false
-
-  try {
-    return JSON.parse(window.localStorage.getItem(PANEL_STATE_STORAGE_KEY) ?? 'false') === true
-  } catch {
-    return false
-  }
+  return readBooleanLocalStorageItem(APP_STATE_STORAGE_KEYS.languageSwitchExpanded)
 }
 
 export function GlobalLanguageSwitch() {
   const {
     preference,
     setPrimaryLanguage,
-    setSecondaryLanguage,
     setDisplayMode,
     supportedLanguages,
     t,
   } = useI18n()
   const [expanded, setExpanded] = useState(loadExpandedState)
+  const [showFloatingSwitch, setShowFloatingSwitch] = useState(() => {
+    if (typeof window === 'undefined') return true
+    return window.innerWidth < FLOATING_LANGUAGE_SWITCH_MAX_WIDTH
+  })
   const rootRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -55,14 +53,24 @@ export function GlobalLanguageSwitch() {
   }, [])
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
-
-    try {
-      window.localStorage.setItem(PANEL_STATE_STORAGE_KEY, JSON.stringify(expanded))
-    } catch {
-      // Ignore storage write failures.
-    }
+    writeLocalStorageJson(APP_STATE_STORAGE_KEYS.languageSwitchExpanded, expanded)
   }, [expanded])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+
+    const syncViewport = () => {
+      const shouldShow = window.innerWidth < FLOATING_LANGUAGE_SWITCH_MAX_WIDTH
+      setShowFloatingSwitch(shouldShow)
+      if (!shouldShow) {
+        setExpanded(false)
+      }
+    }
+
+    syncViewport()
+    window.addEventListener('resize', syncViewport)
+    return () => window.removeEventListener('resize', syncViewport)
+  }, [])
 
   const currentLanguage = useMemo(
     () =>
@@ -72,10 +80,11 @@ export function GlobalLanguageSwitch() {
 
   function selectLanguage(code: (typeof supportedLanguages)[number]['code']) {
     setPrimaryLanguage(code)
-    if (!preference.secondary || preference.secondary === code) {
-      setSecondaryLanguage(resolveSecondaryLanguage(code))
-    }
     setExpanded(false)
+  }
+
+  if (!showFloatingSwitch) {
+    return null
   }
 
   return (
@@ -222,9 +231,6 @@ export function GlobalLanguageSwitch() {
                     type="button"
                     data-testid="language-mode-bilingual"
                     onClick={() => {
-                      if (!preference.secondary || preference.secondary === preference.primary) {
-                        setSecondaryLanguage(resolveSecondaryLanguage(preference.primary))
-                      }
                       setDisplayMode('bilingual')
                     }}
                     className={cn(

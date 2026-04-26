@@ -19,7 +19,6 @@ import type {
   GenerationRuntimeConfig,
   ModelCapabilitySummary,
   ModelConfigResponse,
-  ModelConfigSaveResponse,
   OmniIssue,
   ProductCopyPatch,
   ProductCopyRecord,
@@ -34,6 +33,10 @@ import type {
   UserModelConfig,
 } from '@/types/alpha'
 import { apiGet, apiPost, buildApiUrl } from '@/utils/api'
+import {
+  assertModelConfigSaveResponseContract,
+  assertPromptStudioBundleContract,
+} from '@/utils/contracts'
 import {
   fetchModelCapabilitySummary,
   fetchModelConfigResponse,
@@ -698,7 +701,8 @@ export function PromptStudioPage() {
   )
 
   const loadStudio = useCallback(async () => {
-    const data = await apiGet<PromptStudioBundle>('/api/prompt-templates/studio')
+    const data = await apiGet<unknown>('/api/prompt-templates/studio')
+    assertPromptStudioBundleContract(data)
     applyBundleState(
       data,
       setBundle,
@@ -860,10 +864,11 @@ export function PromptStudioPage() {
         taskRouting: buildTaskRoutingPayload(taskRoutingForm),
       } satisfies UserModelConfig
 
-      const response = await apiPost<ModelConfigSaveResponse, UserModelConfig>(
+      const response = await apiPost<unknown, UserModelConfig>(
         '/api/model-configs',
         payload,
       )
+      assertModelConfigSaveResponseContract(response)
       invalidateModelCapabilitySummary()
       invalidateModelConfigResponse()
       await loadModels()
@@ -903,10 +908,11 @@ export function PromptStudioPage() {
     if (!runtime) return
     setSavingRuntime(true)
     try {
-      const data = await apiPost<PromptStudioBundle, { runtime: GenerationRuntimeConfig }>(
+      const data = await apiPost<unknown, { runtime: GenerationRuntimeConfig }>(
         '/api/prompt-templates/studio',
         { runtime },
       )
+      assertPromptStudioBundleContract(data)
       applyUpdatedBundle(data)
       setNotice(t('studio.notice.runtimeSaved'))
     } catch {
@@ -919,7 +925,7 @@ export function PromptStudioPage() {
   async function savePrompts() {
     setSavingPrompts(true)
     try {
-      const data = await apiPost<PromptStudioBundle, { templates: PromptTemplatePatch[] }>(
+      const data = await apiPost<unknown, { templates: PromptTemplatePatch[] }>(
         '/api/prompt-templates/studio',
         {
           templates: Object.values(templates).map((template) => ({
@@ -928,6 +934,7 @@ export function PromptStudioPage() {
           })),
         },
       )
+      assertPromptStudioBundleContract(data)
       applyUpdatedBundle(data)
       setNotice(t('studio.notice.promptsSaved'))
     } catch {
@@ -940,7 +947,7 @@ export function PromptStudioPage() {
   async function saveProductCopy() {
     setSavingCopy(true)
     try {
-      const data = await apiPost<PromptStudioBundle, { productCopies: ProductCopyPatch[] }>(
+      const data = await apiPost<unknown, { productCopies: ProductCopyPatch[] }>(
         '/api/prompt-templates/studio',
         {
           productCopies: Object.values(productCopies).map((item) => ({
@@ -949,6 +956,7 @@ export function PromptStudioPage() {
           })),
         },
       )
+      assertPromptStudioBundleContract(data)
       applyUpdatedBundle(data)
       setNotice(t('studio.notice.copySaved'))
     } catch {
@@ -962,7 +970,7 @@ export function PromptStudioPage() {
     setSavingAgents(true)
     try {
       const data = await apiPost<
-        PromptStudioBundle,
+        unknown,
         { externalAgentAssets: ExternalAgentAssetPatch[] }
       >('/api/prompt-templates/studio', {
         externalAgentAssets: Object.values(externalAgentAssets).map((asset) => ({
@@ -970,6 +978,7 @@ export function PromptStudioPage() {
           content: asset.content,
         })),
       })
+      assertPromptStudioBundleContract(data)
       applyUpdatedBundle(data)
       setNotice(t('studio.notice.promptsSaved'))
     } catch {
@@ -981,27 +990,30 @@ export function PromptStudioPage() {
 
   async function resetTemplate(id: string) {
     const data = await apiPost<
-      PromptStudioBundle,
+      unknown,
       { templateId: string; language: PromptLanguageCode }
     >('/api/prompt-templates/reset', { templateId: id, language: selectedLanguage })
+    assertPromptStudioBundleContract(data)
     applyUpdatedBundle(data)
     setNotice(t('studio.notice.templateReset'))
   }
 
   async function resetProductCopy(id: string) {
     const data = await apiPost<
-      PromptStudioBundle,
+      unknown,
       { productCopyId: string; language: PromptLanguageCode }
     >('/api/prompt-templates/reset', { productCopyId: id, language: selectedLanguage })
+    assertPromptStudioBundleContract(data)
     applyUpdatedBundle(data)
     setNotice(t('studio.notice.copyReset'))
   }
 
   async function resetLanguage() {
-    const data = await apiPost<PromptStudioBundle, { language: PromptLanguageCode }>(
+    const data = await apiPost<unknown, { language: PromptLanguageCode }>(
       '/api/prompt-templates/reset',
       { language: selectedLanguage },
     )
+    assertPromptStudioBundleContract(data)
     applyUpdatedBundle(data)
     setNotice(t('studio.notice.languageReset'))
   }
@@ -1009,7 +1021,11 @@ export function PromptStudioPage() {
   async function exportBundle() {
     const response = await fetch(buildApiUrl('/api/prompt-templates/export'))
     const payload = await response.json()
-    const blob = new Blob([JSON.stringify(payload.data ?? payload, null, 2)], {
+    const source = payload && typeof payload === 'object' && 'data' in payload
+      ? (payload as { data?: unknown }).data
+      : payload
+    assertPromptStudioBundleContract(source)
+    const blob = new Blob([JSON.stringify(source, null, 2)], {
       type: 'application/json',
     })
     const url = URL.createObjectURL(blob)
@@ -1028,7 +1044,7 @@ export function PromptStudioPage() {
         : ((parsed as Partial<PromptStudioBundle>) ?? {})
 
     const data = await apiPost<
-      PromptStudioBundle,
+      unknown,
       {
         templates?: PromptTemplatePatch[]
         productCopies?: ProductCopyPatch[]
@@ -1055,6 +1071,7 @@ export function PromptStudioPage() {
       runtime: source.runtime,
     })
 
+    assertPromptStudioBundleContract(data)
     applyUpdatedBundle(data, true)
     setNotice(t('studio.notice.imported'))
   }

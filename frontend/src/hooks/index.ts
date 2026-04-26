@@ -1,2 +1,4 @@
 export { useFavorites } from './useFavorites'
-export { TopicRegistryProvider, useTopicRegistry } from './useTopicRegistry'
+export { useGlobalSearchRecent } from './useGlobalSearchRecent'
+export { useModelConfig } from './useModelConfig'
+export type { ModelConfigStatus, ModelConfigState, UseModelConfigReturn } from './useModelConfig'

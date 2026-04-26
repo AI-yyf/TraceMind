@@ -86,7 +86,40 @@ export function GuidanceLedgerCard({
   const { copy } = useProductCopy()
   const { t } = useI18n()
 
-  if (!guidance) return null
+  if (!guidance) {
+    return (
+      <section
+        data-testid="topic-guidance-ledger-card"
+        className="rounded-[18px] border border-black/8 bg-white px-3 py-3 shadow-[0_12px_26px_rgba(15,23,42,0.05)]"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-[10px] uppercase tracking-[0.22em] text-black/34">
+            {t('workbench.guidanceEyebrow', copy('assistant.guidanceEyebrow', 'Guidance ledger'))}
+          </div>
+          <div className="rounded-full bg-[var(--surface-soft)] px-2.5 py-1 text-[10px] text-black/56">
+            0 {t('workbench.guidanceActiveCount', copy('assistant.guidanceActiveCount', 'active'))}
+          </div>
+        </div>
+
+        <h3 className="mt-2 text-[14px] font-semibold leading-6 text-black">
+          {t(
+            'workbench.guidanceEmptyTitle',
+            copy('assistant.guidanceEmptyTitle', 'No persistent guidance yet'),
+          )}
+        </h3>
+
+        <p className="mt-1.5 text-[11px] leading-6 text-black/58">
+          {t(
+            'workbench.guidanceFallbackDek',
+            copy(
+              'assistant.guidanceEmptyDek',
+              'This rail stays visible so durable focus, challenge, and style guidance can land here as soon as the topic intel refreshes.',
+            ),
+          )}
+        </p>
+      </section>
+    )
+  }
 
   const latestApplication = guidance.latestApplication
   const latestApplicationDirectives = latestApplication?.directives.slice(0, 2) ?? []

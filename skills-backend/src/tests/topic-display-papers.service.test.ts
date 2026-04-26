@@ -14,7 +14,7 @@ function createPaper(
     explanation: string
   }>,
 ) {
-  return {
+return {
     id,
     topicId: 'topic-test',
     title: overrides?.title ?? id,
@@ -25,18 +25,21 @@ function createPaper(
     published: new Date(publishedAt),
     authors: '[]',
     arxivUrl: null,
+    openAlexId: null,
     pdfUrl: null,
     pdfPath: null,
     citationCount: null,
     coverPath: null,
     figurePaths: '[]',
     tablePaths: '[]',
+    formulaPaths: '',
     tags: '[]',
     status: 'candidate',
     contentMode: 'editorial',
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
     figures: [],
+    figure_groups: [],
     tables: [],
     formulas: [],
     paper_sections: [],
@@ -193,10 +196,37 @@ test('topic map node paper ids prefer reader-side aggregated papers when they st
   assert.deepEqual(
     __testing.pickTopicMapNodePaperIds?.({
       nodePaperIds: ['paper-a'],
+      primaryPaperId: 'paper-a',
       stageScopedPaperIds: new Set(['paper-a', 'paper-b']),
       readerPaperIds: ['paper-a', 'paper-b', 'paper-c'],
     }),
     ['paper-a', 'paper-b'],
+  )
+})
+
+test('topic map node paper ids preserve explicit merge-node papers outside the stage bucket', () => {
+  assert.deepEqual(
+    __testing.pickTopicMapNodePaperIds?.({
+      nodePaperIds: ['paper-a', 'paper-b', 'paper-c'],
+      primaryPaperId: 'paper-c',
+      stageScopedPaperIds: new Set(['paper-a']),
+      readerPaperIds: ['paper-a', 'paper-b', 'paper-c'],
+      preserveExplicitPaperIds: true,
+    }),
+    ['paper-c', 'paper-a', 'paper-b'],
+  )
+})
+
+test('topic map node paper ids keep canonical merge membership even when reader aggregation is incomplete', () => {
+  assert.deepEqual(
+    __testing.pickTopicMapNodePaperIds?.({
+      nodePaperIds: ['paper-a', 'paper-b', 'paper-c'],
+      primaryPaperId: 'paper-c',
+      stageScopedPaperIds: new Set(['paper-c']),
+      readerPaperIds: ['paper-c'],
+      preserveExplicitPaperIds: true,
+    }),
+    ['paper-c', 'paper-a', 'paper-b'],
   )
 })
 

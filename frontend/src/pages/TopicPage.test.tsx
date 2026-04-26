@@ -1,16 +1,20 @@
 // @vitest-environment jsdom
 
 import '@testing-library/jest-dom/vitest'
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useSearchParams } from 'react-router-dom'
+import JSZip from 'jszip'
+import { saveAs } from 'file-saver'
 
 import { ReadingWorkspaceProvider } from '@/contexts/ReadingWorkspaceContext'
-import { I18nProvider } from '@/i18n'
+import { I18nProvider, useI18n } from '@/i18n'
+import { makeTopicResearchBrief } from '@/test/topicResearchBrief'
 import type { TopicResearchBrief, TopicViewModel } from '@/types/alpha'
 import { fetchTopicResearchBrief, primeTopicResearchBrief } from '@/utils/omniRuntimeCache'
 import { apiGet } from '@/utils/api'
+import { APP_STATE_STORAGE_KEYS, getTopicSearchRecentStorageKey } from '@/utils/appStateStorage'
 import { TopicPage } from './TopicPage'
 
 vi.mock('@/utils/api', async () => {
@@ -24,16 +28,56 @@ vi.mock('@/utils/api', async () => {
 
 vi.mock('@/utils/omniRuntimeCache', () => ({
   fetchTopicResearchBrief: vi.fn(),
+  invalidateTopicResearchBrief: vi.fn(),
   primeTopicResearchBrief: vi.fn(),
 }))
 
 vi.mock('@/components/topic/RightSidebarShell', () => ({
-  RightSidebarShell: () => <div data-testid="topic-sidebar-stub" />,
+  RightSidebarShell: ({
+    references = [],
+    selectedReferenceIds = [],
+    onDownloadSelectedReferences,
+  }: {
+    references?: Array<{ paperId: string }>
+    selectedReferenceIds?: string[]
+    onDownloadSelectedReferences?: () => void
+  }) => {
+    const [searchParams] = useSearchParams()
+    return (
+      <div data-testid="topic-sidebar-stub">
+        <div data-testid="topic-sidebar-reference-count">{references.length}</div>
+        <div data-testid="topic-sidebar-selected-reference-count">{selectedReferenceIds.length}</div>
+        <div data-testid="topic-sidebar-selected-evidence-anchor">
+          {searchParams.get('evidence') ?? 'none'}
+        </div>
+        <button type="button" data-testid="topic-sidebar-download-references" onClick={() => onDownloadSelectedReferences?.()}>
+          Download references
+        </button>
+      </div>
+    )
+  },
+}))
+
+vi.mock('file-saver', () => ({
+  saveAs: vi.fn(),
 }))
 
 const apiGetMock = vi.mocked(apiGet)
 const fetchTopicResearchBriefMock = vi.mocked(fetchTopicResearchBrief)
 const primeTopicResearchBriefMock = vi.mocked(primeTopicResearchBrief)
+const saveAsMock = vi.mocked(saveAs)
+
+function KeyedReadingWorkspace({ children }: { children: ReactNode }) {
+  const { preference, contentEpoch } = useI18n()
+  return (
+    <ReadingWorkspaceProvider
+      key={`reading-workspace:${contentEpoch}:${preference.primary}:${preference.secondary}:${preference.mode}`}
+    >
+      {children}
+    </ReadingWorkspaceProvider>
+  )
+}
+
 function renderWithProviders(node: ReactNode, initialEntry: string, path: string) {
   localStorage.setItem(
     'arxiv-chronicle-language-preference',
@@ -42,7 +86,7 @@ function renderWithProviders(node: ReactNode, initialEntry: string, path: string
 
   return render(
     <I18nProvider>
-      <ReadingWorkspaceProvider>
+      <KeyedReadingWorkspace>
         <MemoryRouter
           initialEntries={[initialEntry]}
           future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
@@ -51,8 +95,42 @@ function renderWithProviders(node: ReactNode, initialEntry: string, path: string
             <Route path={path} element={node} />
           </Routes>
         </MemoryRouter>
-      </ReadingWorkspaceProvider>
+      </KeyedReadingWorkspace>
     </I18nProvider>,
+  )
+}
+
+function TopicLanguageHarness() {
+  const { setPrimaryLanguage } = useI18n()
+
+  return (
+    <>
+      <button
+        type="button"
+        data-testid="topic-switch-language"
+        onClick={() => setPrimaryLanguage('zh')}
+      >
+        Switch language
+      </button>
+      <TopicPage />
+    </>
+  )
+}
+
+function TopicDisplayModeHarness() {
+  const { setDisplayMode } = useI18n()
+
+  return (
+    <>
+      <button
+        type="button"
+        data-testid="topic-switch-display-mode"
+        onClick={() => setDisplayMode('bilingual')}
+      >
+        Switch display mode
+      </button>
+      <TopicPage />
+    </>
   )
 }
 
@@ -87,8 +165,14 @@ function makeTopicViewModel(windowMonths = 3): TopicViewModel {
     },
     summaryPanel: {
       thesis: 'Thesis',
-      metaRows: [],
-      stats: [],
+      metaRows: [
+        { label: 'Status', value: 'active' },
+        { label: 'Language', value: 'ZH' },
+      ],
+      stats: [
+        { label: 'Stages', value: 1 },
+        { label: 'Nodes', value: 1 },
+      ],
       actions: [],
     },
     stats: {
@@ -97,7 +181,7 @@ function makeTopicViewModel(windowMonths = 3): TopicViewModel {
       paperCount: 1,
       mappedPaperCount: 1,
       unmappedPaperCount: 0,
-      evidenceCount: 0,
+      evidenceCount: 4,
     },
     timeline: {
       stages: [
@@ -133,6 +217,8 @@ function makeTopicViewModel(windowMonths = 3): TopicViewModel {
           roleLabel: 'Mainline',
           label: 'Node title',
           labelEn: 'Node title',
+          legendLabel: 'Mainline Node title',
+          legendLabelEn: 'Mainline Node title',
           description: 'Node summary',
           periodLabel: '2026.01-2026.03',
           nodeCount: 1,
@@ -153,6 +239,11 @@ function makeTopicViewModel(windowMonths = 3): TopicViewModel {
           summary: 'Node summary',
           explanation: 'Node explanation',
           paperCount: 1,
+          figureCount: 2,
+          tableCount: 1,
+          formulaCount: 1,
+          figureGroupCount: 0,
+          evidenceCount: 4,
           paperIds: ['paper-1'],
           primaryPaperTitle: 'Paper title',
           primaryPaperId: 'paper-1',
@@ -228,6 +319,11 @@ function makeTopicViewModel(windowMonths = 3): TopicViewModel {
             summary: 'Node summary',
             explanation: 'Node explanation',
             paperCount: 1,
+            figureCount: 2,
+            tableCount: 1,
+            formulaCount: 1,
+            figureGroupCount: 0,
+            evidenceCount: 4,
             paperIds: ['paper-1'],
             primaryPaperTitle: 'Paper title',
             primaryPaperId: 'paper-1',
@@ -251,7 +347,7 @@ function makeTopicViewModel(windowMonths = 3): TopicViewModel {
       {
         paperId: 'paper-1',
         anchorId: 'paper:paper-1',
-        route: '/paper/paper-1',
+        route: '/topic/topic-1?anchor=paper%3Apaper-1',
         title: 'Paper title',
         titleEn: 'Paper title',
         summary: 'Paper summary',
@@ -259,6 +355,8 @@ function makeTopicViewModel(windowMonths = 3): TopicViewModel {
         publishedAt: '2026-02-01T00:00:00.000Z',
         authors: ['Author'],
         citationCount: 1,
+        originalUrl: 'https://example.com/paper-1',
+        pdfUrl: 'https://example.com/paper-1.pdf',
         coverImage: null,
         figuresCount: 0,
         tablesCount: 0,
@@ -281,9 +379,7 @@ function makeTopicViewModel(windowMonths = 3): TopicViewModel {
 }
 
 function makeResearchBrief(): TopicResearchBrief {
-  return {
-    topicId: 'topic-1',
-  } as unknown as TopicResearchBrief
+  return makeTopicResearchBrief()
 }
 
 describe('TopicPage timeline map', () => {
@@ -293,6 +389,7 @@ describe('TopicPage timeline map', () => {
     apiGetMock.mockReset()
     fetchTopicResearchBriefMock.mockReset()
     primeTopicResearchBriefMock.mockReset()
+    saveAsMock.mockReset()
     fetchTopicResearchBriefMock.mockResolvedValue(makeResearchBrief())
   })
 
@@ -319,11 +416,272 @@ describe('TopicPage timeline map', () => {
     expect(apiGetMock).toHaveBeenCalledWith('/api/topics/topic-1/view-model?stageMonths=3')
     const stageMap = screen.getByTestId('topic-stage-map')
     expect(stageMap).toBeVisible()
+    expect(screen.getByText('Summary')).toBeVisible()
+    expect(screen.getByText('Description')).toBeVisible()
+    expect(screen.getByText('Closing paragraph')).toBeVisible()
     expect(within(stageMap).getByRole('link', { name: 'Open article' })).toHaveAttribute(
       'href',
       '/node/node-1?stageMonths=3',
     )
+    expect(screen.getByText('Papers 1')).toBeVisible()
+    expect(screen.getByText('Fig 2')).toBeVisible()
+    expect(screen.getByText('Tbl 1')).toBeVisible()
+    expect(screen.getByText('Eq 1')).toBeVisible()
     expect(screen.getByTestId('topic-sidebar-stub')).toBeVisible()
+    expect(screen.getByTestId('topic-sidebar-reference-count')).toHaveTextContent('1')
+    expect(fetchTopicResearchBriefMock).toHaveBeenCalledWith('topic-1', { force: true })
+  })
+
+  it('clears persisted topic content before reloading after language changes', async () => {
+    apiGetMock.mockImplementation(async (path: string) => {
+      if (path.startsWith('/api/topics/topic-1/view-model')) {
+        return makeTopicViewModel(3)
+      }
+
+      throw new Error(`Unexpected GET ${path}`)
+    })
+    localStorage.setItem('topic-chat:topic-1', JSON.stringify({ threads: [{ id: 'legacy-thread' }] }))
+    localStorage.setItem('global-search:recent', JSON.stringify(['legacy query']))
+    localStorage.setItem(getTopicSearchRecentStorageKey('topic-1'), JSON.stringify(['legacy topic query']))
+    sessionStorage.setItem('topic-context-queue', JSON.stringify(['legacy context']))
+    const legacyWorkspaceState = JSON.stringify({ workbenchByTopic: { 'topic-1': { open: true } } })
+    sessionStorage.setItem(
+      APP_STATE_STORAGE_KEYS.readingWorkspace,
+      legacyWorkspaceState,
+    )
+
+    renderWithProviders(<TopicLanguageHarness />, '/topic/topic-1?stageMonths=3', '/topic/:topicId')
+
+    expect(
+      await screen.findByRole('heading', { name: 'Topic title', level: 1 }),
+    ).toBeVisible()
+    expect(apiGetMock).toHaveBeenCalledTimes(1)
+    expect(fetchTopicResearchBriefMock).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByTestId('topic-switch-language'))
+
+    await waitFor(() => {
+      expect(apiGetMock).toHaveBeenCalledTimes(2)
+    })
+    expect(fetchTopicResearchBriefMock).toHaveBeenCalledTimes(2)
+    expect(fetchTopicResearchBriefMock).toHaveBeenLastCalledWith('topic-1', { force: true })
+    expect(localStorage.getItem('topic-chat:topic-1')).toBeNull()
+    expect(localStorage.getItem('global-search:recent')).toBeNull()
+    expect(localStorage.getItem(getTopicSearchRecentStorageKey('topic-1'))).toBeNull()
+    expect(sessionStorage.getItem('topic-context-queue')).toBeNull()
+
+    expect(sessionStorage.getItem(APP_STATE_STORAGE_KEYS.readingWorkspace)).not.toBe(
+      legacyWorkspaceState,
+    )
+  })
+
+  it('clears persisted topic content before reloading after display-mode i18n changes', async () => {
+    apiGetMock.mockImplementation(async (path: string) => {
+      if (path.startsWith('/api/topics/topic-1/view-model')) {
+        return makeTopicViewModel(3)
+      }
+
+      throw new Error(`Unexpected GET ${path}`)
+    })
+    localStorage.setItem('topic-chat:topic-1', JSON.stringify({ threads: [{ id: 'legacy-thread' }] }))
+    localStorage.setItem('global-search:recent', JSON.stringify(['legacy query']))
+    localStorage.setItem(getTopicSearchRecentStorageKey('topic-1'), JSON.stringify(['legacy topic query']))
+    sessionStorage.setItem('topic-context-queue', JSON.stringify(['legacy context']))
+    const legacyWorkspaceState = JSON.stringify({ workbenchByTopic: { 'topic-1': { open: true } } })
+    sessionStorage.setItem(
+      APP_STATE_STORAGE_KEYS.readingWorkspace,
+      legacyWorkspaceState,
+    )
+
+    renderWithProviders(
+      <TopicDisplayModeHarness />,
+      '/topic/topic-1?stageMonths=3',
+      '/topic/:topicId',
+    )
+
+    expect(
+      await screen.findByRole('heading', { name: 'Topic title', level: 1 }),
+    ).toBeVisible()
+    expect(apiGetMock).toHaveBeenCalledTimes(1)
+    expect(fetchTopicResearchBriefMock).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByTestId('topic-switch-display-mode'))
+
+    await waitFor(() => {
+      expect(apiGetMock).toHaveBeenCalledTimes(2)
+    })
+    expect(fetchTopicResearchBriefMock).toHaveBeenCalledTimes(2)
+    expect(localStorage.getItem('topic-chat:topic-1')).toBeNull()
+    expect(localStorage.getItem('global-search:recent')).toBeNull()
+    expect(localStorage.getItem(getTopicSearchRecentStorageKey('topic-1'))).toBeNull()
+    expect(sessionStorage.getItem('topic-context-queue')).toBeNull()
+    expect(localStorage.getItem(APP_STATE_STORAGE_KEYS.languagePreference)).toContain(
+      '"mode":"bilingual"',
+    )
+
+    expect(sessionStorage.getItem(APP_STATE_STORAGE_KEYS.readingWorkspace)).not.toBe(
+      legacyWorkspaceState,
+    )
+  })
+
+  it('downloads selected topic references through the workbench callback', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      blob: async () => new Blob(['pdf-bytes'], { type: 'application/pdf' }),
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const zipFileSpy = vi.spyOn(JSZip.prototype, 'file')
+    const zipGenerateSpy = vi.spyOn(JSZip.prototype, 'generateAsync').mockResolvedValue(
+      new Blob(['zip-bytes'], { type: 'application/zip' }),
+    )
+
+    apiGetMock.mockImplementation(async (path: string) => {
+      if (path.startsWith('/api/topics/topic-1/view-model')) {
+        return makeTopicViewModel(3)
+      }
+
+      throw new Error(`Unexpected GET ${path}`)
+    })
+
+    renderWithProviders(<TopicPage />, '/topic/topic-1?stageMonths=3', '/topic/:topicId')
+
+    expect(
+      await screen.findByRole('heading', { name: 'Topic title', level: 1 }),
+    ).toBeVisible()
+    expect(screen.getByTestId('topic-sidebar-selected-reference-count')).toHaveTextContent('1')
+
+    fireEvent.click(screen.getByTestId('topic-sidebar-download-references'))
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith('/api/pdf/proxy/paper-1')
+    })
+
+    expect(zipFileSpy).toHaveBeenCalledTimes(1)
+    expect(zipGenerateSpy).toHaveBeenCalledTimes(1)
+    expect(saveAsMock).toHaveBeenCalledTimes(1)
+
+    zipFileSpy.mockRestore()
+    zipGenerateSpy.mockRestore()
+    vi.unstubAllGlobals()
+  })
+
+  it('shows an explicit contract error when the backend view model has no graph layout', async () => {
+    apiGetMock.mockImplementation(async (path: string) => {
+      if (path.startsWith('/api/topics/topic-1/view-model')) {
+        const model = makeTopicViewModel(3)
+        model.graph = null as never
+        model.generationState = {
+          hero: 'ready',
+          stageTimeline: 'ready',
+          nodeCards: 'ready',
+          closing: 'ready',
+        }
+        return model
+      }
+
+      throw new Error(`Unexpected GET ${path}`)
+    })
+
+    renderWithProviders(<TopicPage />, '/topic/topic-1?stageMonths=3', '/topic/:topicId')
+
+    expect(
+      await screen.findByText(
+        'Topic view model is missing graph layout from the backend contract.',
+      ),
+    ).toBeVisible()
+  })
+
+  it('rejects malformed evidence payloads without corrupting the topic workbench state', async () => {
+    apiGetMock.mockImplementation(async (path: string) => {
+      if (path.startsWith('/api/topics/topic-1/view-model')) {
+        return makeTopicViewModel(3)
+      }
+
+      if (path === '/api/evidence/figure%3Abroken') {
+        return {
+          anchorId: 'figure:broken',
+          type: 'figure',
+        }
+      }
+
+      throw new Error(`Unexpected GET ${path}`)
+    })
+
+    renderWithProviders(
+      <TopicPage />,
+      '/topic/topic-1?stageMonths=3&evidence=figure:broken',
+      '/topic/:topicId',
+    )
+
+    expect(
+      await screen.findByRole('heading', { name: 'Topic title', level: 1 }),
+    ).toBeVisible()
+    expect(apiGetMock).not.toHaveBeenCalledWith('/api/evidence/figure%3Abroken')
+    expect(screen.getByTestId('topic-sidebar-selected-evidence-anchor')).toHaveTextContent('figure:broken')
+    expect(screen.getByTestId('topic-stage-map')).toBeVisible()
+  })
+
+  it('shows an explicit contract error when a graph node points to a missing lane', async () => {
+    apiGetMock.mockImplementation(async (path: string) => {
+      if (path.startsWith('/api/topics/topic-1/view-model')) {
+        const model = makeTopicViewModel(3)
+        model.graph.nodes[0]!.layoutHint.laneIndex = 9
+        return model
+      }
+
+      throw new Error(`Unexpected GET ${path}`)
+    })
+
+    renderWithProviders(<TopicPage />, '/topic/topic-1?stageMonths=3', '/topic/:topicId')
+
+    expect(
+      await screen.findByText(
+        'Topic graph node 1 references lane 9, but the backend lane list does not contain that lane.',
+      ),
+    ).toBeVisible()
+  })
+
+  it('shows an explicit contract error when a lane points to a missing latest node anchor', async () => {
+    apiGetMock.mockImplementation(async (path: string) => {
+      if (path.startsWith('/api/topics/topic-1/view-model')) {
+        const model = makeTopicViewModel(3)
+        model.graph.lanes[0]!.latestNodeId = 'missing-node'
+        return model
+      }
+
+      throw new Error(`Unexpected GET ${path}`)
+    })
+
+    renderWithProviders(<TopicPage />, '/topic/topic-1?stageMonths=3', '/topic/:topicId')
+
+    expect(
+      await screen.findByText(
+        'Topic graph lane 1 references latestNodeId "missing-node", but that node is missing from the backend payload.',
+      ),
+    ).toBeVisible()
+  })
+
+  it('keeps the timeline inside a stable reading width for a single-node stage', async () => {
+    apiGetMock.mockImplementation(async (path: string) => {
+      if (path.startsWith('/api/topics/topic-1/view-model')) {
+        return makeTopicViewModel(3)
+      }
+
+      throw new Error(`Unexpected GET ${path}`)
+    })
+
+    renderWithProviders(<TopicPage />, '/topic/topic-1?stageMonths=3', '/topic/:topicId')
+
+    expect(
+      await screen.findByRole('heading', { name: 'Topic title', level: 1 }),
+    ).toBeVisible()
+
+    const canvas = screen.getByTestId('topic-stage-map-canvas')
+    const width = Number.parseFloat(canvas.style.width)
+
+    expect(Number.isFinite(width)).toBe(true)
+    expect(width).toBeGreaterThan(400)
+    expect(width).toBeLessThanOrEqual(1120)
   })
 
   it('omits empty placeholder stages from the visible map', async () => {
@@ -447,7 +805,7 @@ describe('TopicPage timeline map', () => {
           {
             paperId: 'paper-2',
             anchorId: 'paper:paper-2',
-            route: '/paper/paper-2',
+            route: '/topic/topic-1?anchor=paper%3Apaper-2',
             title: 'Awaiting synthesis paper',
             titleEn: 'Awaiting synthesis paper',
             summary: 'A pending paper that should stay visible at the topic level.',
@@ -462,7 +820,7 @@ describe('TopicPage timeline map', () => {
         model.papers.push({
           paperId: 'paper-2',
           anchorId: 'paper:paper-2',
-          route: '/paper/paper-2',
+          route: '/topic/topic-1?anchor=paper%3Apaper-2',
           title: 'Awaiting synthesis paper',
           titleEn: 'Awaiting synthesis paper',
           summary: 'A pending paper that should stay visible at the topic level.',
@@ -494,7 +852,7 @@ describe('TopicPage timeline map', () => {
     ).toBeGreaterThan(0)
   })
 
-  it('reserves desktop space for the right workbench when the drawer is already open', async () => {
+  it('keeps the topic canvas width stable when the right workbench is already open', async () => {
     Object.defineProperty(window, 'innerWidth', {
       configurable: true,
       writable: true,
@@ -532,6 +890,460 @@ describe('TopicPage timeline map', () => {
     expect(
       await screen.findByRole('heading', { name: 'Topic title', level: 1 }),
     ).toBeVisible()
-    expect(screen.getByRole('main')).toHaveStyle({ paddingRight: '416px' })
+    expect(screen.getByRole('main')).not.toHaveStyle({ paddingRight: '416px' })
+    expect(Number.parseFloat(screen.getByTestId('topic-stage-map-canvas').style.width)).toBeGreaterThan(400)
+  })
+
+  it('keeps up to ten parallel node cards inside the stable reading width', async () => {
+    apiGetMock.mockImplementation(async (path: string) => {
+      if (path.startsWith('/api/topics/topic-1/view-model')) {
+        const model = makeTopicViewModel(3)
+        const laneLayout = [
+          { laneIndex: 0, side: 'center' as const },
+          { laneIndex: 1, side: 'right' as const },
+          { laneIndex: -1, side: 'left' as const },
+          { laneIndex: 2, side: 'right' as const },
+          { laneIndex: -2, side: 'left' as const },
+          { laneIndex: 3, side: 'right' as const },
+          { laneIndex: -3, side: 'left' as const },
+          { laneIndex: 4, side: 'right' as const },
+          { laneIndex: -4, side: 'left' as const },
+          { laneIndex: 5, side: 'right' as const },
+        ]
+
+        model.graph!.lanes = laneLayout.map((lane, index) => ({
+          id: `lane-${index + 1}`,
+          laneIndex: lane.laneIndex,
+          branchIndex: null,
+          isMainline: lane.laneIndex === 0,
+          side: lane.side,
+          color: '#7d1938',
+          roleLabel: lane.laneIndex === 0 ? 'Mainline' : 'Branch',
+          label: `Node ${index + 1}`,
+          labelEn: `Node ${index + 1}`,
+          legendLabel: `${lane.laneIndex === 0 ? 'Mainline' : 'Branch'} Node ${index + 1}`,
+          legendLabelEn: `${lane.laneIndex === 0 ? 'Mainline' : 'Branch'} Node ${index + 1}`,
+          description: `Node ${index + 1} summary`,
+          periodLabel: '2026.01-2026.03',
+          nodeCount: 1,
+          stageCount: 1,
+          latestNodeId: `node-${index + 1}`,
+          latestAnchorId: `node:node-${index + 1}`,
+        }))
+
+        model.graph!.nodes = laneLayout.map((lane, index) => ({
+          ...model.graph!.nodes[0],
+          nodeId: `node-${index + 1}`,
+          anchorId: `node:node-${index + 1}`,
+          route: `/node/node-${index + 1}`,
+          title: `Node ${index + 1}`,
+          titleEn: `Node ${index + 1}`,
+          summary: `Node ${index + 1} summary`,
+          explanation: `Node ${index + 1} explanation`,
+          primaryPaperTitle: `Paper ${index + 1}`,
+          primaryPaperId: `paper-${index + 1}`,
+          paperIds: [`paper-${index + 1}`],
+          layoutHint: {
+            column: index + 1,
+            span: 1,
+            row: 1,
+            emphasis: lane.laneIndex === 0 ? 'primary' : 'branch',
+            laneIndex: lane.laneIndex,
+            branchIndex: null,
+            isMainline: lane.laneIndex === 0,
+            side: lane.side,
+          },
+        }))
+
+        model.stages[0].nodes = model.graph!.nodes.map((node) => ({
+          ...model.stages[0].nodes[0],
+          nodeId: node.nodeId,
+          anchorId: node.anchorId,
+          route: node.route,
+          title: node.title,
+          titleEn: node.titleEn,
+          summary: node.summary,
+          explanation: node.explanation,
+          primaryPaperTitle: node.primaryPaperTitle,
+          primaryPaperId: node.primaryPaperId,
+          paperIds: node.paperIds,
+        }))
+
+        model.papers = model.graph!.nodes.map((_, index) => ({
+          ...model.papers[0],
+          paperId: `paper-${index + 1}`,
+          anchorId: `paper:paper-${index + 1}`,
+          route: `/topic/topic-1?anchor=paper%3Apaper-${index + 1}`,
+          title: `Paper ${index + 1}`,
+          titleEn: `Paper ${index + 1}`,
+        }))
+
+        model.stats.nodeCount = model.graph!.nodes.length
+        model.stats.paperCount = model.graph!.nodes.length
+        model.stats.mappedPaperCount = model.graph!.nodes.length
+        model.stages[0].trackedPaperCount = model.graph!.nodes.length
+        model.stages[0].mappedPaperCount = model.graph!.nodes.length
+
+        return model
+      }
+
+      throw new Error(`Unexpected GET ${path}`)
+    })
+
+    renderWithProviders(<TopicPage />, '/topic/topic-1?stageMonths=3', '/topic/:topicId')
+
+    const stageMap = await screen.findByTestId('topic-stage-map')
+    const canvas = screen.getByTestId('topic-stage-map-canvas')
+
+    expect(within(stageMap).getAllByRole('link', { name: 'Open article' })).toHaveLength(10)
+    expect(Number.parseFloat(canvas.style.width)).toBeGreaterThan(1600)
+    expect(Number.parseFloat(canvas.style.width)).toBeLessThan(2400)
+  })
+
+  it('keeps split and merge stages readable inside the same fixed-width timeline canvas', async () => {
+    apiGetMock.mockImplementation(async (path: string) => {
+      if (path.startsWith('/api/topics/topic-1/view-model')) {
+        const model = makeTopicViewModel(3)
+        model.stats.stageCount = 2
+        model.stats.nodeCount = 5
+        model.stats.paperCount = 5
+        model.stats.mappedPaperCount = 5
+        model.timeline = {
+          stages: [
+            model.timeline!.stages[0],
+            {
+              stageIndex: 2,
+              title: '2026.04-2026.06',
+              titleEn: '2026.04-2026.06',
+              description: 'Merge stage',
+              branchLabel: '2026.04-2026.06',
+              branchColor: '#7d1938',
+              yearLabel: '2026',
+              dateLabel: '2026.04-2026.06',
+              timeLabel: '2026.04-2026.06',
+              stageThesis: 'Merge thesis',
+              editorial: {
+                kicker: 'Window',
+                summary: 'Merge summary',
+                transition: 'Merge transition',
+              },
+            },
+          ],
+        }
+
+        const graphNodes = [
+          {
+            ...model.graph!.nodes[0],
+            nodeId: 'node-root',
+            anchorId: 'node:node-root',
+            route: '/node/node-root',
+            title: 'Root node',
+            titleEn: 'Root node',
+            primaryPaperTitle: 'Paper 1',
+            primaryPaperId: 'paper-1',
+            paperIds: ['paper-1'],
+            parentNodeIds: [],
+            stageIndex: 1,
+            layoutHint: {
+              column: 1,
+              span: 1,
+              row: 1,
+              emphasis: 'primary' as const,
+              laneIndex: 0,
+              branchIndex: null,
+              isMainline: true,
+              side: 'center' as const,
+            },
+          },
+          {
+            ...model.graph!.nodes[0],
+            nodeId: 'node-left',
+            anchorId: 'node:node-left',
+            route: '/node/node-left',
+            title: 'Left branch',
+            titleEn: 'Left branch',
+            primaryPaperTitle: 'Paper 2',
+            primaryPaperId: 'paper-2',
+            paperIds: ['paper-2'],
+            parentNodeIds: ['node-root'],
+            stageIndex: 2,
+            layoutHint: {
+              column: 1,
+              span: 1,
+              row: 1,
+              emphasis: 'branch' as const,
+              laneIndex: -1,
+              branchIndex: null,
+              isMainline: false,
+              side: 'left' as const,
+            },
+          },
+          {
+            ...model.graph!.nodes[0],
+            nodeId: 'node-center',
+            anchorId: 'node:node-center',
+            route: '/node/node-center',
+            title: 'Center branch',
+            titleEn: 'Center branch',
+            primaryPaperTitle: 'Paper 3',
+            primaryPaperId: 'paper-3',
+            paperIds: ['paper-3'],
+            parentNodeIds: ['node-root'],
+            stageIndex: 2,
+            layoutHint: {
+              column: 2,
+              span: 1,
+              row: 1,
+              emphasis: 'primary' as const,
+              laneIndex: 0,
+              branchIndex: null,
+              isMainline: true,
+              side: 'center' as const,
+            },
+          },
+          {
+            ...model.graph!.nodes[0],
+            nodeId: 'node-right',
+            anchorId: 'node:node-right',
+            route: '/node/node-right',
+            title: 'Right branch',
+            titleEn: 'Right branch',
+            primaryPaperTitle: 'Paper 4',
+            primaryPaperId: 'paper-4',
+            paperIds: ['paper-4'],
+            parentNodeIds: ['node-root'],
+            stageIndex: 2,
+            layoutHint: {
+              column: 3,
+              span: 1,
+              row: 1,
+              emphasis: 'branch' as const,
+              laneIndex: 1,
+              branchIndex: null,
+              isMainline: false,
+              side: 'right' as const,
+            },
+          },
+          {
+            ...model.graph!.nodes[0],
+            nodeId: 'node-merge',
+            anchorId: 'node:node-merge',
+            route: '/node/node-merge',
+            title: 'Merged node',
+            titleEn: 'Merged node',
+            primaryPaperTitle: 'Paper 5',
+            primaryPaperId: 'paper-5',
+            paperIds: ['paper-5'],
+            parentNodeIds: ['node-left', 'node-center', 'node-right'],
+            stageIndex: 2,
+            layoutHint: {
+              column: 2,
+              span: 1,
+              row: 2,
+              emphasis: 'merge' as const,
+              laneIndex: 0,
+              branchIndex: null,
+              isMainline: true,
+              side: 'center' as const,
+            },
+          },
+        ]
+
+        model.graph!.lanes = [
+          {
+            id: 'lane-main',
+            laneIndex: 0,
+            branchIndex: null,
+            isMainline: true,
+            side: 'center',
+            color: '#7d1938',
+            roleLabel: 'Mainline',
+            label: 'Mainline',
+            labelEn: 'Mainline',
+            legendLabel: 'Mainline Mainline',
+            legendLabelEn: 'Mainline Mainline',
+            description: 'Mainline',
+            periodLabel: '2026.01-2026.06',
+            nodeCount: 3,
+            stageCount: 2,
+            latestNodeId: 'node-merge',
+            latestAnchorId: 'node:node-merge',
+          },
+          {
+            id: 'lane-left',
+            laneIndex: -1,
+            branchIndex: null,
+            isMainline: false,
+            side: 'left',
+            color: '#7d1938',
+            roleLabel: 'Branch',
+            label: 'Left',
+            labelEn: 'Left',
+            legendLabel: 'Branch Left',
+            legendLabelEn: 'Branch Left',
+            description: 'Left branch',
+            periodLabel: '2026.04-2026.06',
+            nodeCount: 1,
+            stageCount: 1,
+            latestNodeId: 'node-left',
+            latestAnchorId: 'node:node-left',
+          },
+          {
+            id: 'lane-right',
+            laneIndex: 1,
+            branchIndex: null,
+            isMainline: false,
+            side: 'right',
+            color: '#7d1938',
+            roleLabel: 'Branch',
+            label: 'Right',
+            labelEn: 'Right',
+            legendLabel: 'Branch Right',
+            legendLabelEn: 'Branch Right',
+            description: 'Right branch',
+            periodLabel: '2026.04-2026.06',
+            nodeCount: 1,
+            stageCount: 1,
+            latestNodeId: 'node-right',
+            latestAnchorId: 'node:node-right',
+          },
+        ]
+        model.graph!.nodes = graphNodes
+        model.stages = [
+          {
+            ...model.stages[0],
+            stageIndex: 1,
+            trackedPaperCount: 1,
+            mappedPaperCount: 1,
+            nodes: [
+              {
+                ...model.stages[0].nodes[0],
+                nodeId: 'node-root',
+                anchorId: 'node:node-root',
+                route: '/node/node-root',
+                title: 'Root node',
+                titleEn: 'Root node',
+                primaryPaperTitle: 'Paper 1',
+                primaryPaperId: 'paper-1',
+                paperIds: ['paper-1'],
+              },
+            ],
+          },
+          {
+            ...model.stages[0],
+            stageIndex: 2,
+            title: 'Stage 2',
+            titleEn: 'Stage 2',
+            branchLabel: '2026.04-2026.06',
+            trackedPaperCount: 4,
+            mappedPaperCount: 4,
+            nodes: graphNodes.slice(1).map((node) => ({
+              ...model.stages[0].nodes[0],
+              nodeId: node.nodeId,
+              anchorId: node.anchorId,
+              route: node.route,
+              title: node.title,
+              titleEn: node.titleEn,
+              primaryPaperTitle: node.primaryPaperTitle,
+              primaryPaperId: node.primaryPaperId,
+              paperIds: node.paperIds,
+            })),
+          },
+        ]
+        model.papers = [1, 2, 3, 4, 5].map((index) => ({
+          ...model.papers[0],
+          paperId: `paper-${index}`,
+          anchorId: `paper:paper-${index}`,
+          route: `/topic/topic-1?anchor=paper%3Apaper-${index}`,
+          title: `Paper ${index}`,
+          titleEn: `Paper ${index}`,
+        }))
+
+        return model
+      }
+
+      throw new Error(`Unexpected GET ${path}`)
+    })
+
+    renderWithProviders(<TopicPage />, '/topic/topic-1?stageMonths=3', '/topic/:topicId')
+
+    expect(
+      await screen.findByRole('heading', { name: 'Topic title', level: 1 }),
+    ).toBeVisible()
+
+    const stageMap = screen.getByTestId('topic-stage-map')
+    const canvas = screen.getByTestId('topic-stage-map-canvas')
+
+    expect(within(stageMap).getAllByRole('link', { name: 'Open article' })).toHaveLength(5)
+    expect(Number.parseFloat(canvas.style.width)).toBeGreaterThan(800)
+    expect(Number.parseFloat(canvas.style.width)).toBeLessThan(1400)
+    expect(Number.parseFloat(canvas.style.minHeight)).toBeGreaterThan(420)
+  })
+
+  it('expands stage height when backend stage editorial text is longer than a single node card', async () => {
+    apiGetMock.mockImplementation(async (path: string) => {
+      if (path.startsWith('/api/topics/topic-1/view-model')) {
+        const model = makeTopicViewModel(3)
+        model.stages[0]!.editorial.summary = Array(8)
+          .fill('This stage explanation stays backend-authored and must remain fully visible inside the horizontal stage rail.')
+          .join(' ')
+        return model
+      }
+
+      throw new Error(`Unexpected GET ${path}`)
+    })
+
+    renderWithProviders(<TopicPage />, '/topic/topic-1?stageMonths=3', '/topic/:topicId')
+
+    expect(
+      await screen.findByRole('heading', { name: 'Topic title', level: 1 }),
+    ).toBeVisible()
+
+    const stageBand = screen.getByTestId('topic-stage-band-1')
+    expect(Number.parseFloat(stageBand.style.height)).toBeGreaterThan(260)
+  })
+
+  it('trusts backend-provided node summaries, stage overviews, and lane labels directly', async () => {
+    apiGetMock.mockImplementation(async (path: string) => {
+      if (path.startsWith('/api/topics/topic-1/view-model')) {
+        const model = makeTopicViewModel(3)
+        model.graph.lanes[0]!.label = 'Backend lane label'
+        model.graph.lanes[0]!.labelEn = 'Backend lane label'
+        model.graph.lanes[0]!.legendLabel = 'Backend lane label'
+        model.graph.lanes[0]!.legendLabelEn = 'Backend lane label'
+        model.graph.nodes[0]!.summary = 'Backend node summary stays authoritative'
+        model.graph.nodes[0]!.explanation = 'Backend node explanation fallback'
+        model.graph.nodes[0]!.cardEditorial.digest = 'Digest that TopicPage must ignore'
+        model.graph.nodes[0]!.cardEditorial.whyNow = 'Why-now text that TopicPage must ignore'
+        model.timeline!.stages[0]!.editorial.summary = 'Timeline stage summary that TopicPage must ignore'
+        model.timeline!.stages[0]!.description = 'Timeline description that TopicPage must ignore'
+        model.stages[0]!.editorial.summary = 'Backend stage editorial summary'
+        model.stages[0]!.description = 'Stage description that TopicPage must ignore'
+        model.stages[0]!.nodes[0]!.summary = model.graph.nodes[0]!.summary
+        model.stages[0]!.nodes[0]!.explanation = model.graph.nodes[0]!.explanation
+        model.stages[0]!.nodes[0]!.editorial.digest = 'Stage node digest that TopicPage must ignore'
+        model.stages[0]!.nodes[0]!.editorial.whyNow = 'Stage node why-now that TopicPage must ignore'
+        return model
+      }
+
+      throw new Error(`Unexpected GET ${path}`)
+    })
+
+    renderWithProviders(<TopicPage />, '/topic/topic-1?stageMonths=3', '/topic/:topicId')
+
+    const heading = await screen.findByRole('heading', { name: 'Topic title', level: 1 })
+    expect(heading).toBeVisible()
+
+    const stageMap = screen.getByTestId('topic-stage-map')
+
+    expect(screen.getByText('Backend lane label')).toBeVisible()
+    expect(within(stageMap).getByText('Backend stage editorial summary')).toBeVisible()
+    expect(within(stageMap).getByText(/Backend node summary/)).toBeVisible()
+
+    expect(screen.queryByText('Digest that TopicPage must ignore')).not.toBeInTheDocument()
+    expect(screen.queryByText('Why-now text that TopicPage must ignore')).not.toBeInTheDocument()
+    expect(within(stageMap).queryByText('Timeline stage summary that TopicPage must ignore')).not.toBeInTheDocument()
+    expect(within(stageMap).queryByText('Timeline description that TopicPage must ignore')).not.toBeInTheDocument()
+    expect(within(stageMap).queryByText('Stage description that TopicPage must ignore')).not.toBeInTheDocument()
   })
 })

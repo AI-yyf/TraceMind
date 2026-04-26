@@ -1,12 +1,14 @@
 import { Router } from 'express'
 import { prisma } from '../lib/prisma'
 import { asyncHandler } from '../middleware/errorHandler'
+import { validate } from '../middleware/requestValidator'
+import { SyncDataSchema } from './schemas'
 import { logger } from '../utils/logger'
 
 const router = Router()
 
 // 同步所有数据
-router.post('/', asyncHandler(async (req, res) => {
+router.post('/', validate(SyncDataSchema), asyncHandler(async (req, res) => {
   const { topics, papers, nodes } = req.body
 
   logger.info('开始数据同步', { 

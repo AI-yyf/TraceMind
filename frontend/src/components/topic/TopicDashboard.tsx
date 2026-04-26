@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 
 import type { TopicDashboard as TopicDashboardData } from '@/types/article'
 import { useI18n } from '@/i18n'
+import { canonicalizePaperLikeRoute } from '@/utils/readingRoutes'
 import { withStageWindowRoute } from '@/utils/stageWindow'
 
 interface TopicDashboardProps {
@@ -236,7 +237,14 @@ export const TopicDashboard: React.FC<TopicDashboardProps> = ({
               pendingPapers.map((paper) => (
                 <Link
                   key={paper.paperId}
-                  to={withStageWindowRoute(paper.route, stageWindowMonths ?? 1)}
+                  to={withStageWindowRoute(
+                    canonicalizePaperLikeRoute({
+                      paperId: paper.paperId,
+                      route: paper.route,
+                      topicId: dashboard.topicId,
+                    }),
+                    stageWindowMonths ?? 1,
+                  )}
                   className="block rounded-[12px] border border-dashed border-black/10 bg-[#fcfaf6] px-2.5 py-2 transition hover:border-black/18 hover:bg-white"
                 >
                   <div className="text-[9px] uppercase tracking-[0.14em] text-black/38">

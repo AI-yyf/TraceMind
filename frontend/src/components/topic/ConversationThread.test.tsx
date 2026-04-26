@@ -142,4 +142,26 @@ describe('ConversationThread guidance receipts', () => {
       'I still keep the current mainline centered on preference optimization and evidence boundaries.',
     )
   })
+
+  it('renders export actions for assistant messages when an export handler is supplied', () => {
+    const onExportMessage = vi.fn()
+
+    renderWithI18n(
+      <ConversationThread
+        messages={[makeMessage()]}
+        onOpenCitation={vi.fn()}
+        onAction={vi.fn()}
+        onUsePrompt={vi.fn()}
+        onExportMessage={onExportMessage}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Export Markdown' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Export JSON' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Export TXT' }))
+
+    expect(onExportMessage).toHaveBeenNthCalledWith(1, expect.objectContaining({ id: 'assistant-1' }), 'md')
+    expect(onExportMessage).toHaveBeenNthCalledWith(2, expect.objectContaining({ id: 'assistant-1' }), 'json')
+    expect(onExportMessage).toHaveBeenNthCalledWith(3, expect.objectContaining({ id: 'assistant-1' }), 'txt')
+  })
 })

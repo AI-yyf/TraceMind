@@ -1,6 +1,5 @@
 import type {
   NodeViewModel,
-  PaperViewModel,
   ResearchPipelineContextSummary,
   TopicGuidanceLedgerState,
   TopicResearchExportBatch,
@@ -9,6 +8,9 @@ import type {
 } from '@/types/alpha'
 import type { LanguageCode } from '@/i18n/types'
 import type { FavoriteExcerpt, ResearchNoteKind } from '@/types/tracker'
+import {
+  resolvePrimaryReadingRouteForPaper,
+} from './readingRoutes'
 
 type NotebookLanguage = LanguageCode
 
@@ -172,7 +174,6 @@ const NOTEBOOK_COPY = {
     figuresTablesFormulasSections: '图 / 表 / 公式 / 正文段落',
     paperBody: '论文正文',
     paperClosing: '论文收束',
-    paperDossiers: '论文档案',
     notebookAppendix: '研究笔记附录',
     coveredTopics: '覆盖主题',
     candidateNotes: '候选笔记',
@@ -266,7 +267,6 @@ const NOTEBOOK_COPY = {
     figuresTablesFormulasSections: 'Figures / Tables / Formulae / Sections',
     paperBody: 'Paper Body',
     paperClosing: 'Paper Closing',
-    paperDossiers: 'Paper Dossiers',
     notebookAppendix: 'Notebook Appendix',
     coveredTopics: 'Covered Topics',
     candidateNotes: 'Candidate Notes',
@@ -654,7 +654,6 @@ const CLEAN_ZH_NOTEBOOK_COPY_OVERRIDES: Partial<NotebookCopy> = {
   figuresTablesFormulasSections: '图 / 表 / 公式 / 正文段落',
   paperBody: '论文正文',
   paperClosing: '论文收束',
-  paperDossiers: '论文档案',
   notebookAppendix: '研究笔记附录',
   coveredTopics: '覆盖主题',
   candidateNotes: '候选笔记',
@@ -1097,55 +1096,6 @@ function appendNodeDossier(lines: string[], node: NodeViewModel, locale: string)
   }
 }
 
-function appendPaperDossier(lines: string[], paper: PaperViewModel, locale: string) {
-  const copy = getNotebookCopy(locale)
-
-  lines.push(`## ${copy.paper}: ${paper.title}`)
-  lines.push('')
-  lines.push(`- ${copy.time}: ${paper.publishedAt || copy.unknown}`)
-  lines.push(`- ${copy.authors}: ${paper.authors.length > 0 ? paper.authors.join(', ') : copy.unknown}`)
-  lines.push(
-    `- ${copy.linkedNodes}: ${paper.relatedNodes.length > 0 ? paper.relatedNodes.map((node) => node.title).join(' / ') : copy.none}`,
-  )
-  lines.push(
-    `- ${copy.figuresTablesFormulasSections}: ${paper.stats.figureCount} / ${paper.stats.tableCount} / ${paper.stats.formulaCount} / ${paper.stats.sectionCount}`,
-  )
-  lines.push('')
-
-  renderParagraphs(lines, [paper.standfirst, paper.summary, paper.explanation])
-
-  if (paper.article.sections.length > 0) {
-    lines.push(`### ${copy.paperBody}`)
-    lines.push('')
-    paper.article.sections.forEach((section) => {
-      lines.push(`#### ${section.title}`)
-      lines.push('')
-      renderParagraphs(lines, section.body)
-    })
-  }
-
-  lines.push(`### ${copy.critiqueSection}`)
-  lines.push('')
-  renderParagraphs(lines, [paper.critique.summary])
-  renderBullets(lines, paper.critique.bullets)
-
-  const evidenceHighlights = pickEvidenceHighlights(paper.evidence)
-  if (evidenceHighlights.length > 0) {
-    lines.push(`### ${copy.keyEvidence}`)
-    lines.push('')
-    evidenceHighlights.forEach((item) => {
-      lines.push(`- [${item.type}] ${item.label}: ${item.whyItMatters || item.quote}`)
-    })
-    lines.push('')
-  }
-
-  if (paper.article.closing.length > 0) {
-    lines.push(`### ${copy.paperClosing}`)
-    lines.push('')
-    renderParagraphs(lines, paper.article.closing)
-  }
-}
-
 export function normalizeFavoriteExcerpt(value: unknown): FavoriteExcerpt | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
 
@@ -1165,19 +1115,26 @@ export function normalizeFavoriteExcerpt(value: unknown): FavoriteExcerpt | null
   const nodeId = cleanText(record.nodeId) || undefined
   const anchorId = cleanText(record.anchorId) || undefined
   const route = cleanText(record.route)
-  const fallbackNodeRoute = nodeId
-    ? `/node/${nodeId}${
-        anchorId
-          ? `?anchor=${encodeURIComponent(anchorId)}`
-          : paperId
-            ? `?anchor=${encodeURIComponent(`paper:${paperId}`)}`
-            : ''
-      }`
-    : undefined
   const normalizedRoute =
-    route && !(route.startsWith('/paper/') && fallbackNodeRoute)
-      ? route
-      : fallbackNodeRoute || route || (topicId ? `/topic/${topicId}` : paperId ? `/paper/${paperId}` : undefined)
+    paperId && (nodeId || topicId || route)
+      ? resolvePrimaryReadingRouteForPaper({
+          paperId,
+          route,
+          anchorId,
+          nodeRoute: nodeId ? `/node/${nodeId}` : null,
+          topicId,
+        })
+      : route
+        ? route
+        : nodeId
+          ? `/node/${nodeId}${
+              anchorId
+                ? `?anchor=${encodeURIComponent(anchorId)}`
+                : ''
+            }`
+          : topicId
+            ? `/topic/${topicId}${anchorId ? `?anchor=${encodeURIComponent(anchorId)}` : ''}`
+            : undefined
 
   return {
     id,
@@ -1204,7 +1161,11 @@ export function getResearchNoteKindLabel(
   locale = 'zh-CN',
 ) {
   const language = normalizeNotebookLanguage(locale)
-  return CLEAN_NOTE_KIND_LABELS[language]?.[kind ?? 'excerpt'] ?? NOTE_KIND_LABELS.en[kind ?? 'excerpt']
+  return (
+    CLEAN_NOTE_KIND_LABELS[language]?.[kind ?? 'excerpt'] ??
+    NOTE_KIND_LABELS[language]?.[kind ?? 'excerpt'] ??
+    NOTE_KIND_LABELS.en[kind ?? 'excerpt']
+  )
 }
 
 export function buildResearchNotePreview(note: FavoriteExcerpt, maxParagraphs = 2) {
@@ -1344,9 +1305,6 @@ export function buildResearchDossierMarkdown(
   const stageMap = new Map(bundle.stageDossiers.map((stage) => [stage.stageIndex, stage] as const))
   const topicNotes = dedupeNotes(notes).filter((note) => note.topicId === bundle.topic.topicId)
   const nodeDossiers = [...bundle.nodeDossiers].sort((left, right) => left.stageIndex - right.stageIndex)
-  const paperDossiers = [...bundle.paperDossiers].sort(
-    (left, right) => Date.parse(right.publishedAt || '') - Date.parse(left.publishedAt || ''),
-  )
   const lines: string[] = [
     `# ${title}`,
     '',
@@ -1431,7 +1389,6 @@ export function buildResearchDossierMarkdown(
     lines.push('')
     lines.push(`- ${copy.branch}: ${stage.branchLabel}`)
     lines.push(`- ${copy.nodeCount}: ${stage.nodeCount}`)
-    lines.push(`- ${copy.paperCount}: ${stage.paperCount}`)
     if (stage.dateLabel || stage.yearLabel) {
       lines.push(`- ${copy.time}: ${stage.dateLabel || stage.yearLabel}`)
     }
@@ -1466,12 +1423,6 @@ export function buildResearchDossierMarkdown(
       }
       appendNodeDossier(lines, node, locale)
     })
-  }
-
-  if (paperDossiers.length > 0) {
-    lines.push(`## ${copy.paperDossiers}`)
-    lines.push('')
-    paperDossiers.forEach((paper) => appendPaperDossier(lines, paper, locale))
   }
 
   appendPipelineSummary(lines, bundle.pipeline.overview, locale)

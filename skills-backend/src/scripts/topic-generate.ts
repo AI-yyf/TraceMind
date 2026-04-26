@@ -8,32 +8,176 @@
 
 import { createTopicGenerator, type TopicGenerationOutput } from '../services/topic-generator'
 import type { Language } from '../services/prompt-templates'
+import { defaultBaseUrlForProvider } from '../services/omni/catalog'
 import { PrismaClient } from '@prisma/client'
 
-const prisma = new PrismaClient()
+let prisma: PrismaClient | null = null
+
+function getPrisma() {
+  prisma ??= new PrismaClient()
+  return prisma
+}
 
 interface LLMClient {
   generate: (params: { prompt: string; temperature: number; maxTokens: number }) => Promise<{ text: string }>
 }
 
-function createOpenAIClient(): LLMClient {
-  const apiKey = process.env.OPENAI_API_KEY
-  const baseUrl = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'
+type SupportedTopicProvider = 'openai' | 'anthropic'
+
+type ResolvedClientConfig = {
+  apiKey: string
+  baseUrl: string
+  model: string
+}
+
+function trimEnvValue(value?: string | null) {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed : undefined
+}
+
+function getFirstEnvValue(keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = trimEnvValue(process.env[key])
+    if (value) {
+      return value
+    }
+  }
+
+  return undefined
+}
+
+function getOpenAIStyleEnvCandidates(model?: string, baseUrl?: string): string[] {
+  const haystack = `${model ?? ''} ${baseUrl ?? ''}`.toLowerCase()
+  const preferred: string[] = []
+
+  if (/(?:kimi|moonshot|1seey\.com)/u.test(haystack)) {
+    preferred.push('MOONSHOT_API_KEY')
+  }
+  if (/(?:openrouter)/u.test(haystack)) {
+    preferred.push('OPENROUTER_API_KEY')
+  }
+  if (/(?:dashscope|aliyuncs|qwen)/u.test(haystack)) {
+    preferred.push('DASHSCOPE_API_KEY')
+  }
+  if (/(?:deepseek)/u.test(haystack)) {
+    preferred.push('DEEPSEEK_API_KEY')
+  }
+  if (/(?:openai)/u.test(haystack)) {
+    preferred.push('OPENAI_API_KEY')
+  }
+
+  preferred.push('OPENAI_API_KEY')
+  return Array.from(new Set(preferred))
+}
+
+function getOmniTopicValue(key: string) {
+  return getFirstEnvValue([
+    `OMNI_ROLE_TOPIC_ARCHITECT_${key}`,
+    'OMNI_LANGUAGE_' + key,
+    'OMNI_DEFAULT_' + key,
+  ])
+}
+
+function resolveOmniTopicClientConfig(provider: SupportedTopicProvider) {
+  const omniProvider = getOmniTopicValue('PROVIDER')
+
+  if (provider === 'anthropic') {
+    if (omniProvider && omniProvider !== 'anthropic') {
+      return null
+    }
+
+    return {
+      apiKey: getOmniTopicValue('API_KEY'),
+      baseUrl: getOmniTopicValue('BASE_URL'),
+      model: getOmniTopicValue('MODEL'),
+    }
+  }
+
+  if (omniProvider && omniProvider !== 'openai' && omniProvider !== 'openai_compatible') {
+    return null
+  }
+
+  const model = getOmniTopicValue('MODEL')
+  const baseUrl =
+    getOmniTopicValue('BASE_URL') ??
+    (omniProvider === 'openai' ? defaultBaseUrlForProvider('openai') : undefined)
+
+  return {
+    apiKey: getOmniTopicValue('API_KEY') ?? getFirstEnvValue(getOpenAIStyleEnvCandidates(model, baseUrl)),
+    baseUrl,
+    model,
+  }
+}
+
+function normalizeBaseUrl(baseUrl: string) {
+  return baseUrl.replace(/\/+$/u, '')
+}
+
+function anthropicMessagesUrl(baseUrl: string) {
+  return baseUrl.endsWith('/v1') ? `${baseUrl}/messages` : `${baseUrl}/v1/messages`
+}
+
+function resolveOpenAIClientConfig(): ResolvedClientConfig {
+  const omniConfig = resolveOmniTopicClientConfig('openai')
+  const model = omniConfig?.model ?? trimEnvValue(process.env.OPENAI_MODEL) ?? 'gpt-4o'
+  const baseUrl =
+    omniConfig?.baseUrl ??
+    trimEnvValue(process.env.OPENAI_BASE_URL) ??
+    defaultBaseUrlForProvider('openai')
+  const apiKey =
+    omniConfig?.apiKey ??
+    trimEnvValue(process.env.OPENAI_API_KEY) ??
+    getFirstEnvValue(getOpenAIStyleEnvCandidates(model, baseUrl)) ??
+    ''
 
   if (!apiKey) {
-    throw new Error('OPENAI_API_KEY environment variable is not set')
+    throw new Error(
+      'OpenAI topic generation client is not configured. Set OMNI_ROLE_TOPIC_ARCHITECT_*, OMNI_LANGUAGE_*, OMNI_DEFAULT_*, or OPENAI_API_KEY.',
+    )
   }
 
   return {
+    apiKey,
+    baseUrl: normalizeBaseUrl(baseUrl),
+    model,
+  }
+}
+
+function resolveAnthropicClientConfig(): ResolvedClientConfig {
+  const omniConfig = resolveOmniTopicClientConfig('anthropic')
+  const model = omniConfig?.model ?? trimEnvValue(process.env.ANTHROPIC_MODEL) ?? 'claude-3-5-sonnet-20241022'
+  const baseUrl =
+    omniConfig?.baseUrl ??
+    trimEnvValue(process.env.ANTHROPIC_BASE_URL) ??
+    defaultBaseUrlForProvider('anthropic')
+  const apiKey = omniConfig?.apiKey ?? trimEnvValue(process.env.ANTHROPIC_API_KEY) ?? ''
+
+  if (!apiKey) {
+    throw new Error(
+      'Anthropic topic generation client is not configured. Set OMNI_ROLE_TOPIC_ARCHITECT_*, OMNI_LANGUAGE_*, OMNI_DEFAULT_*, or ANTHROPIC_API_KEY.',
+    )
+  }
+
+  return {
+    apiKey,
+    baseUrl: normalizeBaseUrl(baseUrl),
+    model,
+  }
+}
+
+function createOpenAIClient(): LLMClient {
+  const config = resolveOpenAIClientConfig()
+
+  return {
     async generate(params) {
-      const response = await fetch(`${baseUrl}/chat/completions`, {
+      const response = await fetch(`${config.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
+          'Authorization': `Bearer ${config.apiKey}`,
         },
         body: JSON.stringify({
-          model: process.env.OPENAI_MODEL || 'gpt-4o',
+          model: config.model,
           messages: [{ role: 'user', content: params.prompt }],
           temperature: params.temperature,
           max_tokens: params.maxTokens,
@@ -51,23 +195,19 @@ function createOpenAIClient(): LLMClient {
 }
 
 function createAnthropicClient(): LLMClient {
-  const apiKey = process.env.ANTHROPIC_API_KEY
-
-  if (!apiKey) {
-    throw new Error('ANTHROPIC_API_KEY environment variable is not set')
-  }
+  const config = resolveAnthropicClientConfig()
 
   return {
     async generate(params) {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
+      const response = await fetch(anthropicMessagesUrl(config.baseUrl), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': apiKey,
+          'x-api-key': config.apiKey,
           'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify({
-          model: process.env.ANTHROPIC_MODEL || 'claude-3-5-sonnet-20241022',
+          model: config.model,
           messages: [{ role: 'user', content: params.prompt }],
           temperature: params.temperature,
           max_tokens: params.maxTokens,
@@ -122,6 +262,7 @@ async function saveTopicToDB(
   language: Language,
   userDescription: string
 ): Promise<string> {
+  const prisma = getPrisma()
   const stages = []
   const stageNames = language === 'zh'
     ? ['问题提出', '基础方法', '技术改进', '应用拓展', '综合分析']
@@ -224,8 +365,17 @@ async function main() {
     console.error('[CLI] Error:', error)
     process.exit(1)
   } finally {
-    await prisma.$disconnect()
+    if (prisma) {
+      await prisma.$disconnect()
+    }
   }
 }
 
-main()
+export const __testing = {
+  resolveOpenAIClientConfig,
+  resolveAnthropicClientConfig,
+}
+
+if (require.main === module) {
+  void main()
+}

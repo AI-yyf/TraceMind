@@ -8,9 +8,13 @@ import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useProductCopy } from '@/hooks/useProductCopy'
 import { useI18n } from '@/i18n'
 import { resolveLanguageLocale } from '@/i18n/locale'
-import type { TopicResearchExportBatch, TopicResearchExportBundle } from '@/types/alpha'
 import type { FavoriteExcerpt } from '@/types/tracker'
 import { ApiError, apiGet, apiPost } from '@/utils/api'
+import {
+  assertBackendTopicCollectionContract,
+  assertTopicResearchExportBatchContract,
+  assertTopicResearchExportBundleContract,
+} from '@/utils/contracts'
 import {
   buildBatchResearchDossierJson,
   buildBatchResearchDossierMarkdown,
@@ -24,6 +28,7 @@ import {
   getResearchNoteKindLabel,
   slugifyNotebookFilename,
 } from '@/utils/researchNotebook'
+import { canonicalizePaperLikeRoute } from '@/utils/readingRoutes'
 
 type TopicLookup = Record<string, string>
 
@@ -46,15 +51,17 @@ export function FavoritesPage() {
   const [topicLookup, setTopicLookup] = useState<TopicLookup>({})
   const [dossierExporting, setDossierExporting] = useState(false)
   const [batchExporting, setBatchExporting] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const selectedTopicId = searchParams.get('topic')
 
   useDocumentTitle(pageText('favorites.title', 'Research Notebook'))
 
   useEffect(() => {
     let alive = true
-    apiGet<Array<{ id: string; nameZh: string; nameEn?: string }>>('/api/topics')
+    apiGet<unknown>('/api/topics')
       .then((topics) => {
         if (!alive) return
+        assertBackendTopicCollectionContract(topics)
         setTopicLookup(
           topics.reduce<TopicLookup>((accumulator, topic) => {
             accumulator[topic.id] =
@@ -65,12 +72,19 @@ export function FavoritesPage() {
           }, {}),
         )
       })
-      .catch(() => undefined)
+      .catch((error) => {
+        if (!alive) return
+        setErrorMessage(
+          error instanceof ApiError
+            ? error.message
+            : pageText('favorites.topicLookupFailed', 'Failed to load the backend topic list.'),
+        )
+      })
 
     return () => {
       alive = false
     }
-  }, [preference.primary])
+  }, [pageText, preference.primary])
 
   const visibleNotes = useMemo(
     () =>
@@ -161,7 +175,8 @@ export function FavoritesPage() {
     setDossierExporting(true)
 
     try {
-      const bundle = await apiGet<TopicResearchExportBundle>(`/api/topics/${selectedTopicId}/export-bundle`)
+      const bundle = await apiGet<unknown>(`/api/topics/${selectedTopicId}/export-bundle`)
+      assertTopicResearchExportBundleContract(bundle)
       const dossierTitle = `${selectedTopicName || bundle.topic.title} ${pageText('favorites.exportDossier', 'Research Dossier')}`
       const stem = slugifyNotebookFilename(dossierTitle)
       const content =
@@ -182,7 +197,7 @@ export function FavoritesPage() {
               'favorites.exportDossierFailed',
               'Failed to export the research dossier. Please try again later.',
             )
-      window.alert(message)
+      setErrorMessage(message)
     } finally {
       setDossierExporting(false)
     }
@@ -194,12 +209,13 @@ export function FavoritesPage() {
     setBatchExporting(true)
 
     try {
-      const batch = await apiPost<TopicResearchExportBatch, { topicIds: string[] }>(
+      const batch = await apiPost<unknown, { topicIds: string[] }>(
         '/api/topics/export-bundles',
         {
           topicIds: exportableTopicIds,
         },
       )
+      assertTopicResearchExportBatchContract(batch)
       const title = pageText('favorites.batchDossierTitle', 'Multi-Topic Research Collection')
       const stem = slugifyNotebookFilename(title)
       const content =
@@ -220,7 +236,7 @@ export function FavoritesPage() {
               'favorites.exportBatchDossierFailed',
               'Failed to export the research collection. Please try again later.',
             )
-      window.alert(message)
+      setErrorMessage(message)
     } finally {
       setBatchExporting(false)
     }
@@ -228,6 +244,14 @@ export function FavoritesPage() {
 
   return (
     <main className="px-4 pb-20 pt-8 md:px-6 xl:px-10">
+      {errorMessage && (
+        <div className="fixed bottom-4 right-4 rounded-[10px] border border-red-400 bg-red-100 px-4 py-3 text-sm text-red-700 shadow-[0_4px_12px_rgba(0,0,0,0.1)]">
+          {errorMessage}
+          <button onClick={() => setErrorMessage(null)} className="ml-4 font-bold hover:text-red-900">
+            ×
+          </button>
+        </div>
+      )}
       <div className="mx-auto max-w-[1120px]">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Link
@@ -465,10 +489,15 @@ function FavoriteCard({
             : ''
       }`
     : undefined
-  const openRoute =
-    (normalizedRoute?.startsWith('/paper/') && fallbackNodeRoute ? fallbackNodeRoute : normalizedRoute) ||
-    fallbackNodeRoute ||
-    (favorite.topicId ? `/topic/${favorite.topicId}` : undefined)
+  const openRoute = favorite.paperId
+    ? canonicalizePaperLikeRoute({
+        paperId: favorite.paperId,
+        route: normalizedRoute,
+        anchorId: favorite.anchorId,
+        nodeRoute: fallbackNodeRoute,
+        topicId: favorite.topicId,
+      })
+    : normalizedRoute || fallbackNodeRoute || (favorite.topicId ? `/topic/${favorite.topicId}` : undefined)
 
   return (
     <article className="rounded-[26px] border border-black/6 bg-white px-6 py-6 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">

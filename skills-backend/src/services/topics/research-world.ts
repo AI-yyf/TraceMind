@@ -15,6 +15,8 @@ import {
 } from './research-pipeline'
 import { loadTopicResearchReport } from './research-report'
 import { collectTopicSessionMemoryContext } from './topic-session-memory'
+import { assertTopicResearchWorldContract } from './topic-contracts'
+import { resolvePaperAssetPath } from '../paper-links'
 
 const RESEARCH_WORLD_KEY_PREFIX = 'topic-research-world:v1:'
 const MAX_WORLD_CLAIMS = 40
@@ -162,6 +164,12 @@ interface TopicResearchWorldRecord {
 }
 
 type WorldScope = 'topic' | 'stage' | 'node' | 'paper'
+type ParsedGenerationPassId = {
+  templateId: string
+  subjectType: ResearchJudgment['subjectType']
+  subjectId: string
+  language: string
+}
 
 function researchWorldKey(topicId: string) {
   return `${RESEARCH_WORLD_KEY_PREFIX}${topicId}`
@@ -329,7 +337,20 @@ function parseStoredWorld(value: string | null | undefined) {
   if (!value) return null
 
   try {
-    return JSON.parse(value) as TopicResearchWorldRecord
+    const parsed = JSON.parse(value) as Partial<TopicResearchWorldRecord> | null
+    if (!parsed || typeof parsed !== 'object') return null
+    if (parsed.schemaVersion !== 'topic-research-world-record-v1') return null
+    if (typeof parsed.topicId !== 'string' || parsed.topicId.trim().length === 0) return null
+    if (typeof parsed.fingerprint !== 'string' || parsed.fingerprint.trim().length === 0) return null
+    if (typeof parsed.savedAt !== 'string' || parsed.savedAt.trim().length === 0) return null
+
+    assertTopicResearchWorldContract(
+      parsed.world,
+      parsed.topicId,
+      'Stored topic research world',
+    )
+
+    return parsed as TopicResearchWorldRecord
   } catch {
     return null
   }
@@ -343,6 +364,46 @@ function topicPipelineContextOptions(
     stageIndex,
     paperIds,
     historyLimit: 6,
+  }
+}
+
+function resolveWorldStageId(
+  value: string | null | undefined,
+  stageIdByIndex: Map<number, string>,
+  stageIds: Set<string>,
+) {
+  const normalized = clipText(value, 40)
+  if (!normalized) return ''
+  if (stageIds.has(normalized)) return normalized
+
+  const researchStageMatch = normalized.match(/^research-stage:(\d+)(?::|$)/u)
+  if (researchStageMatch?.[1]) {
+    const stageIndex = Number(researchStageMatch[1])
+    if (Number.isInteger(stageIndex)) {
+      return stageIdByIndex.get(stageIndex) ?? normalized
+    }
+  }
+
+  const numericIndex = Number(normalized)
+  if (Number.isInteger(numericIndex)) {
+    return stageIdByIndex.get(numericIndex) ?? normalized
+  }
+
+  return normalized
+}
+
+function parseGenerationPassId(value: string | null | undefined): ParsedGenerationPassId | null {
+  const normalized = clipText(value, 240)
+  if (!normalized) return null
+
+  const match = normalized.match(/^(.*?):(topic|stage|node|paper|evidence):(.+):([a-z]{2})$/u)
+  if (!match) return null
+
+  return {
+    templateId: match[1] ?? '',
+    subjectType: match[2] as ResearchJudgment['subjectType'],
+    subjectId: match[3] ?? '',
+    language: match[4] ?? '',
   }
 }
 
@@ -458,14 +519,112 @@ export async function buildTopicResearchWorld(topicId: string): Promise<{
   })
   const pipelineOverview = buildResearchPipelineContext(pipelineState, { historyLimit: 8 })
   const nodeById = new Map(topic.research_nodes.map((node) => [node.id, node] as const))
+  const paperById = new Map(topic.papers.map((paper) => [paper.id, paper] as const))
 
   const claims: TopicResearchWorldClaim[] = []
   const questions: TopicResearchWorldQuestion[] = []
   const critiques: TopicResearchWorldCritique[] = []
 
-  judgmentState.judgments.forEach((judgment) => {
+  const stageIdByIndex = new Map(topic.topic_stages.map((stage) => [stage.order, stage.id] as const))
+  const stageIds = new Set(topic.topic_stages.map((stage) => stage.id))
+  const paperIds = new Set(topic.papers.map((paper) => paper.id))
+  const toWorldStageId = (value: string | null | undefined) =>
+    resolveWorldStageId(value, stageIdByIndex, stageIds)
+  const nodeIdsByPaperId = new Map<string, string[]>()
+
+  topic.papers.forEach((paper) => {
+    const relatedNodeIds = [...new Set(paper.node_papers.map((entry) => entry.nodeId))]
+    nodeIdsByPaperId.set(paper.id, relatedNodeIds)
+  })
+
+  const collectScopeCandidates = (...values: Array<string | null | undefined>) => {
+    const seen = new Set<string>()
+    const output: string[] = []
+
+    values.forEach((value) => {
+      const normalized = clipText(value, 180)
+      if (!normalized || seen.has(normalized)) return
+      seen.add(normalized)
+      output.push(normalized)
+
+      const [head] = normalized.split(':')
+      if (head && head !== normalized && !seen.has(head)) {
+        seen.add(head)
+        output.push(head)
+      }
+    })
+
+    return output
+  }
+
+  const resolveWorldPaperId = (
+    rawScopeId: string | null | undefined,
+    parsedPass: ParsedGenerationPassId | null,
+  ) => {
+    const passSubjectId = parsedPass?.subjectType === 'paper' ? parsedPass.subjectId : null
+    for (const candidate of collectScopeCandidates(rawScopeId, passSubjectId)) {
+      if (paperIds.has(candidate)) return candidate
+    }
+    return ''
+  }
+
+  const resolveWorldNodeId = (
+    rawScopeId: string | null | undefined,
+    parsedPass: ParsedGenerationPassId | null,
+  ) => {
+    const passNodeId = parsedPass?.subjectType === 'node' ? parsedPass.subjectId : null
+    for (const candidate of collectScopeCandidates(rawScopeId, passNodeId)) {
+      if (nodeById.has(candidate)) return candidate
+    }
+
+    const passPaperId = parsedPass?.subjectType === 'paper' ? parsedPass.subjectId : null
+    for (const candidate of collectScopeCandidates(rawScopeId, passPaperId)) {
+      const relatedNodeIds = nodeIdsByPaperId.get(candidate)
+      if (relatedNodeIds?.[0]) return relatedNodeIds[0]
+    }
+
+    if (
+      topic.research_nodes.length === 1 &&
+      collectScopeCandidates(rawScopeId, passNodeId).some((candidate) => candidate === topicId)
+    ) {
+      return topic.research_nodes[0]?.id ?? ''
+    }
+
+    return ''
+  }
+
+  const resolveJudgmentWorldScope = (judgment: ResearchJudgment) => {
     const scope = normalizeScope(judgment.subjectType)
-    const scopeId = judgment.scopeId || topicId
+    const parsedPass = parseGenerationPassId(judgment.sourcePassId)
+
+    if (scope === 'stage') {
+      const stageId =
+        toWorldStageId(judgment.scopeId) ||
+        toWorldStageId(parsedPass?.subjectType === 'stage' ? parsedPass.subjectId : null)
+      return stageId
+        ? { scope: 'stage' as const, scopeId: stageId }
+        : { scope: 'topic' as const, scopeId: topicId }
+    }
+
+    if (scope === 'node') {
+      const nodeId = resolveWorldNodeId(judgment.scopeId, parsedPass)
+      return nodeId
+        ? { scope: 'node' as const, scopeId: nodeId }
+        : { scope: 'topic' as const, scopeId: topicId }
+    }
+
+    if (scope === 'paper') {
+      const paperId = resolveWorldPaperId(judgment.scopeId, parsedPass)
+      return paperId
+        ? { scope: 'paper' as const, scopeId: paperId }
+        : { scope: 'topic' as const, scopeId: topicId }
+    }
+
+    return { scope: 'topic' as const, scopeId: topicId }
+  }
+
+  judgmentState.judgments.forEach((judgment) => {
+    const { scope, scopeId } = resolveJudgmentWorldScope(judgment)
 
     if (judgment.kind === 'open-question') {
       questions.push({
@@ -506,9 +665,7 @@ export async function buildTopicResearchWorld(topicId: string): Promise<{
       scope === 'node'
         ? [scopeId]
         : scope === 'paper'
-          ? topic.papers
-              .find((paper) => paper.id === scopeId)
-              ?.node_papers.map((entry) => entry.nodeId) ?? []
+          ? paperById.get(scopeId)?.node_papers.map((entry) => entry.nodeId) ?? []
           : []
 
     claims.push({
@@ -692,7 +849,11 @@ export async function buildTopicResearchWorld(topicId: string): Promise<{
       summary: clipText(node.nodeExplanation || node.nodeSummary, 220),
       paperIds,
       primaryPaperId: node.primaryPaperId,
-      coverImage: node.nodeCoverImage,
+      coverImage:
+        resolvePaperAssetPath({
+          assetPath: node.nodeCoverImage,
+          paperId: node.primaryPaperId ?? paperIds[0] ?? undefined,
+        }) ?? null,
       confidence: confidenceBucket(confidenceScore),
       maturity: node.provisional
         ? 'nascent'
@@ -721,7 +882,7 @@ export async function buildTopicResearchWorld(topicId: string): Promise<{
       title: paper.titleZh || paper.title,
       titleEn: paper.titleEn ?? paper.title,
       summary: clipText(paper.explanation || paper.summary, 220),
-      coverImage: paper.coverPath,
+      coverImage: resolvePaperAssetPath({ assetPath: paper.coverPath, paperId: paper.id }) ?? null,
       publishedAt: paper.published.toISOString(),
       nodeIds,
       stageIndexes,
@@ -752,15 +913,16 @@ export async function buildTopicResearchWorld(topicId: string): Promise<{
   })
 
   stages.forEach((stage) => {
+    const stageId = toWorldStageId(String(stage.stageIndex)) || stage.id
     if (
-      !claims.some((claim) => claim.scope === 'stage' && claim.scopeId === String(stage.stageIndex)) &&
+      !claims.some((claim) => claim.scope === 'stage' && claim.scopeId === stageId) &&
       !looksLikeWorldPlaceholder(stage.summary)
     ) {
       const statement = clipText(stage.summary, 220)
       claims.push({
         id: `claim:stage:${stage.stageIndex}:structure:${buildGenerationFingerprint(statement)}`,
         scope: 'stage',
-        scopeId: String(stage.stageIndex),
+        scopeId: stageId,
         statement,
         kind: claimKindFromText(statement),
         confidence: stage.confidence,
@@ -856,19 +1018,18 @@ export async function buildTopicResearchWorld(topicId: string): Promise<{
   })
 
   stages.forEach((stage) => {
+    const stageId = toWorldStageId(String(stage.stageIndex)) || stage.id
     if (
       stage.status !== 'stable' &&
-      !critiques.some(
-        (critique) => critique.targetType === 'stage' && critique.targetId === String(stage.stageIndex),
-      )
+      !critiques.some((critique) => critique.targetType === 'stage' && critique.targetId === stageId)
     ) {
       const summary = useEnglish
         ? `Stage "${stage.title}" still looks under-formed and may need a sharper thesis, split, or rename.`
         : `阶段“${stage.title}”仍然偏松散，可能需要更明确的阶段主张、拆分或重命名。`
       critiques.push({
-        id: buildCritiqueId('stage', String(stage.stageIndex), summary),
+        id: buildCritiqueId('stage', stageId, summary),
         targetType: 'stage',
-        targetId: String(stage.stageIndex),
+        targetId: stageId,
         summary,
         source: 'structure',
         severity: stage.status === 'contested' ? 'high' : 'medium',
@@ -1024,11 +1185,12 @@ export async function buildTopicResearchWorld(topicId: string): Promise<{
     .filter((stage) => stage.status !== 'stable')
     .slice(0, 3)
     .forEach((stage, index) => {
+      const stageId = toWorldStageId(String(stage.stageIndex)) || stage.id
       agenda.push({
-        id: buildAgendaId('re-evaluate-stage', 'stage', String(stage.stageIndex), stage.title),
+        id: buildAgendaId('re-evaluate-stage', 'stage', stageId, stage.title),
         kind: 're-evaluate-stage',
         targetType: 'stage',
-        targetId: String(stage.stageIndex),
+        targetId: stageId,
         title: stage.title,
         rationale:
           'This stage still looks under-formed and may need renaming, splitting, or a clearer stage thesis.',
@@ -1102,7 +1264,7 @@ export async function buildTopicResearchWorld(topicId: string): Promise<{
   }
 
   const fingerprint = buildTopicResearchWorldFingerprint({
-    builderVersion: 'topic-research-world-v2',
+    builderVersion: 'topic-research-world-v2-resolved-scope-1',
     topic: {
       id: topic.id,
       updatedAt: topic.updatedAt.toISOString(),

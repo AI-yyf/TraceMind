@@ -15,9 +15,26 @@ import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useI18n } from '@/i18n'
 import type { LanguagePreference } from '@/i18n/types'
 import { formatDateTimeByLanguage } from '@/i18n/locale'
-import type { StageLocaleMap, TopicLocalizationPayload } from '@/types/alpha'
+import type { ModelConfigResponse, TopicLocalizationPayload } from '@/types/alpha'
 import { apiGet, buildApiUrl } from '@/utils/api'
-import { getStageLocalizedPair, getTopicLocalizedPair } from '@/utils/topicLocalization'
+import {
+  assertTaskDetailResponseContract,
+  assertTaskMutationAckContract,
+  assertTaskListContract,
+  assertTaskTopicsContract,
+} from '@/utils/contracts'
+import { fetchModelConfigResponse } from '@/utils/omniRuntimeCache'
+import {
+  DEFAULT_RESEARCH_DURATION_DAYS,
+  MAX_RESEARCH_DURATION_DAYS,
+  MIN_RESEARCH_DURATION_DAYS,
+  RESEARCH_DURATION_DAY_PRESETS,
+  clampResearchDurationDays,
+  durationDaysToHours,
+  formatResearchDurationDays,
+  formatResearchDurationHours,
+} from '@/utils/researchDuration'
+import { getTopicLocalizedPair } from '@/utils/topicLocalization'
 import { compactTopicSurfaceTitle, isRegressionSeedTopic } from '@/utils/topicPresentation'
 
 type TopicRecord = {
@@ -25,16 +42,6 @@ type TopicRecord = {
   nameZh: string
   nameEn?: string | null
   localization?: TopicLocalizationPayload | null
-}
-
-type StageRecord = {
-  id: string
-  order: number
-  name: string
-  nameEn?: string | null
-  localization?: {
-    locales: StageLocaleMap
-  } | null
 }
 
 type TaskProgress = {
@@ -56,6 +63,11 @@ type TaskProgress = {
   discoveredPapers: number
   admittedPapers: number
   generatedContents: number
+  // Evidence counts
+  figureCount: number
+  tableCount: number
+  formulaCount: number
+  figureGroupCount: number
   startedAt: string | null
   deadlineAt: string | null
   currentStageStalls: number
@@ -71,6 +83,7 @@ type TaskConfig = {
   action: 'discover' | 'refresh' | 'sync'
   researchMode?: 'stage-rounds' | 'duration'
   options?: {
+    stageDurationDays?: number
     maxResults?: number
     stageIndex?: number
     maxIterations?: number
@@ -99,10 +112,23 @@ type TaskDetailResponse = {
   }>
 }
 
-type CronPreset = {
-  label: string
-  value: string
-  description: string
+type TaskDetailApiResponse = {
+  task: TaskConfig
+  progress: TaskProgress | null
+  history: Array<{
+    id: string
+    taskId: string
+    runAt: string
+    duration: number
+    status: 'success' | 'failed' | 'partial'
+    stageIndex: number
+    papersDiscovered: number
+    papersPromoted?: number
+    papersAdmitted?: number
+    contentsGenerated?: number
+    error?: string
+    summary: string
+  }>
 }
 
 type UiLanguage = 'zh' | 'en' | 'ja' | 'ko' | 'de' | 'fr' | 'es' | 'ru'
@@ -110,19 +136,33 @@ type Translate = (key: string, fallback?: string) => string
 type TaskQueueFilter = 'all' | 'running' | 'selected'
 type TaskWorkbenchPanel = 'queue' | 'detail'
 type ResearchPageCreateForm = {
-  cronExpression: string
-  action: TaskConfig['action']
-  researchMode: 'duration' | 'stage-rounds'
-  durationHours: number
-  cycleDelaySeconds: number
+  stageDurationDays: number
   enabled: boolean
 }
+type RuntimeSlotConfig = ModelConfigResponse['config']['language']
 
-const defaultStageRounds = Array.from({ length: 5 }, (_, index) => ({
-  stageIndex: index + 1,
-  rounds: 2,
-}))
 const TASK_ARCHIVE_AFTER_MS = 1000 * 60 * 60 * 48
+const INTERNAL_RESEARCH_TASK_CRON = '0 3 * * *'
+
+function normalizeTaskDetail(detail: TaskDetailApiResponse): TaskDetailResponse {
+  return {
+    task: detail.task,
+    progress: detail.progress,
+    history: detail.history.map((record) => ({
+      id: record.id,
+      taskId: record.taskId,
+      runAt: record.runAt,
+      duration: record.duration,
+      status: record.status,
+      stageIndex: record.stageIndex,
+      papersDiscovered: record.papersDiscovered,
+      papersAdmitted: record.papersAdmitted ?? record.papersPromoted ?? 0,
+      contentsGenerated: record.contentsGenerated ?? 0,
+      error: record.error,
+      summary: record.summary,
+    })),
+  }
+}
 
 function renderTemplate(
   template: string,
@@ -143,16 +183,16 @@ function renderTranslationTemplate(
   return renderTemplate(t(key, fallback), variables)
 }
 
-function formatDurationCompact(
+function formatResearchWindowSummary(
   t: Translate,
-  hours: number | string,
-  seconds: number | string,
+  language: UiLanguage,
+  days: number,
 ) {
   return renderTranslationTemplate(
     t,
-    'research.durationCompact',
-    { hours, seconds },
-    '{hours}h / {seconds}s',
+    'research.durationWindowSummary',
+    { duration: formatResearchDurationDays(days, language) },
+    '{duration} window',
   )
 }
 
@@ -178,6 +218,14 @@ function formatTaskMoment(
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function formatRuntimeSlotLabel(
+  slot: RuntimeSlotConfig | null | undefined,
+  t: Translate,
+) {
+  if (!slot) return t('research.runtimeMissing', 'Not configured')
+  return [slot.provider, slot.model].filter(Boolean).join(' / ')
 }
 
 function getTaskStatusMeta(
@@ -215,6 +263,34 @@ function getTaskStatusMeta(
 
 function getTaskLifecycleStatus(task: TaskConfig) {
   return task.progress?.status ?? (task.enabled ? 'active' : 'paused')
+}
+
+async function requestTaskMutationAck(
+  path: string,
+  options: {
+    method?: 'POST' | 'DELETE'
+    body?: unknown
+  } = {},
+) {
+  const { method = 'POST', body } = options
+  const response = await fetch(buildApiUrl(path), {
+    method,
+    headers: body == null ? undefined : { 'Content-Type': 'application/json' },
+    body: body == null ? undefined : JSON.stringify(body),
+  })
+
+  if (!response.ok) {
+    throw new Error(`task_mutation_http_${String(response.status)}`)
+  }
+
+  const payload = (await response.json()) as unknown
+  assertTaskMutationAckContract(payload)
+
+  if (!payload.success) {
+    throw new Error('task_mutation_rejected')
+  }
+
+  return payload
 }
 
 function getTaskDisplayModeLabel(
@@ -276,19 +352,20 @@ function isTaskDormant(task: TaskConfig) {
   return Date.now() - activityTimestamp > TASK_ARCHIVE_AFTER_MS
 }
 
+function isDurationResearchTask(task: TaskConfig) {
+  return task.action === 'discover' && task.researchMode === 'duration'
+}
+
 export function ResearchPage() {
   const { t, preference } = useI18n()
   const [searchParams] = useSearchParams()
   const presetTopicId = searchParams.get('topic') ?? ''
   const [topics, setTopics] = useState<TopicRecord[]>([])
   const [tasks, setTasks] = useState<TaskConfig[]>([])
-  const [cronPresets, setCronPresets] = useState<CronPreset[]>([])
-  const [stageMap, setStageMap] = useState<Record<string, StageRecord[]>>({})
+  const [runtimeConfig, setRuntimeConfig] = useState<ModelConfigResponse | null>(null)
   const [selectedTopicIds, setSelectedTopicIds] = useState<string[]>(
     presetTopicId ? [presetTopicId] : [],
   )
-  const [stageRounds, setStageRounds] =
-    useState<Array<{ stageIndex: number; rounds: number }>>(defaultStageRounds)
   const [selectedTaskId, setSelectedTaskId] = useState('')
   const [taskDetail, setTaskDetail] = useState<TaskDetailResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -301,12 +378,8 @@ export function ResearchPage() {
   const [taskFilter, setTaskFilter] = useState<TaskQueueFilter>('all')
   const [taskWorkbenchPanel, setTaskWorkbenchPanel] =
     useState<TaskWorkbenchPanel>('queue')
-  const [createForm, setCreateForm] = useState({
-    cronExpression: '0 20 * * *',
-    action: 'discover' as TaskConfig['action'],
-    researchMode: 'duration' as 'duration' | 'stage-rounds',
-    durationHours: 8,
-    cycleDelaySeconds: 2,
+  const [createForm, setCreateForm] = useState<ResearchPageCreateForm>({
+    stageDurationDays: DEFAULT_RESEARCH_DURATION_DAYS,
     enabled: true,
   })
 
@@ -323,32 +396,6 @@ export function ResearchPage() {
     }
     void loadTaskDetail(selectedTaskId)
   }, [selectedTaskId])
-
-  useEffect(() => {
-    if (selectedTopicIds.length === 0) {
-      setStageRounds(defaultStageRounds)
-      return
-    }
-
-    Promise.all(
-      selectedTopicIds.map(async (topicId) => {
-        if (stageMap[topicId]) return stageMap[topicId]
-        const stages = await apiGet<StageRecord[]>(`/api/tasks/topics/${topicId}/stages`)
-        setStageMap((current) => ({ ...current, [topicId]: stages }))
-        return stages
-      }),
-    )
-      .then((lists) => {
-        const maxStageCount = Math.max(1, ...lists.map((list) => list.length || 1))
-        setStageRounds((current) =>
-          Array.from({ length: maxStageCount }, (_, index) => ({
-            stageIndex: index + 1,
-            rounds: current.find((item) => item.stageIndex === index + 1)?.rounds ?? 2,
-          })),
-        )
-      })
-      .catch(() => undefined)
-  }, [selectedTopicIds, stageMap])
 
   const selectedTask = useMemo(
     () => tasks.find((task) => task.id === selectedTaskId) ?? null,
@@ -439,9 +486,9 @@ export function ResearchPage() {
     () => ({
       taskCount: tasks.length,
       activeCount: tasks.filter((task) => getTaskLifecycleStatus(task) === 'active').length,
-      topicCount: new Set(tasks.map((task) => task.topicId).filter(Boolean)).size,
+      topicCount: topics.length,
     }),
-    [tasks],
+    [tasks, topics],
   )
 
   const selectedTopicLabels = useMemo(
@@ -467,16 +514,21 @@ export function ResearchPage() {
   async function loadWorkspace() {
     setLoading(true)
     try {
-      const [topicList, taskList, presets] = await Promise.all([
-        apiGet<TopicRecord[]>('/api/tasks/topics'),
-        apiGet<TaskConfig[]>('/api/tasks'),
-        apiGet<CronPreset[]>('/api/tasks/cron-expressions'),
+      const [topicList, taskList, nextRuntimeConfig] = await Promise.all([
+        apiGet<unknown>('/api/tasks/topics'),
+        apiGet<unknown>('/api/tasks'),
+        fetchModelConfigResponse().catch(() => null),
       ])
+      assertTaskTopicsContract(topicList)
+      assertTaskListContract(taskList)
+      const researchTasks = taskList.filter(isDurationResearchTask)
       setTopics(topicList.filter((topic) => !isRegressionSeedTopic(topic)))
-      setTasks(taskList)
-      setCronPresets(presets)
+      setTasks(researchTasks)
+      setRuntimeConfig(nextRuntimeConfig)
       setSelectedTaskId((current) =>
-        taskList.some((task) => task.id === current) ? current : taskList[0]?.id ?? '',
+        researchTasks.some((task) => task.id === current)
+          ? current
+          : researchTasks[0]?.id ?? '',
       )
     } finally {
       setLoading(false)
@@ -486,8 +538,9 @@ export function ResearchPage() {
   async function loadTaskDetail(taskId: string) {
     setDetailLoading(true)
     try {
-      const detail = await apiGet<TaskDetailResponse>(`/api/tasks/${taskId}`)
-      setTaskDetail(detail)
+      const detail = await apiGet<unknown>(`/api/tasks/${taskId}`)
+      assertTaskDetailResponseContract(detail)
+      setTaskDetail(normalizeTaskDetail(detail))
     } finally {
       setDetailLoading(false)
     }
@@ -503,55 +556,77 @@ export function ResearchPage() {
     setNotice(null)
 
     try {
-      await Promise.all(
-        selectedTopicIds.map(async (topicId) => {
-          const topic = topics.find((item) => item.id === topicId)
-          const topicName = getTopicLocalizedPair(
-            topic?.localization,
-            'name',
-            preference,
-            topic?.nameZh ?? topicId,
-            topic?.nameEn ?? topic?.nameZh ?? topicId,
-          ).primary
-          const body = {
-            id: `task-${topicId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-            name: renderTranslationTemplate(
-              t,
-              'research.taskNameTemplate',
-              { topic: topicName },
-              '{topic} Research Orchestration',
-            ),
-            cronExpression: createForm.cronExpression,
-            enabled: createForm.enabled,
-            topicId,
-            action: createForm.action,
-            researchMode:
-              createForm.action === 'discover' ? createForm.researchMode : undefined,
-            options:
-              createForm.action === 'discover' && createForm.researchMode === 'duration'
-                ? {
-                    durationHours: Math.max(1, Math.min(48, Math.round(createForm.durationHours))),
-                    cycleDelayMs: Math.max(250, Math.round(createForm.cycleDelaySeconds * 1000)),
-                  }
-                : {
-                    stageIndex: 1,
-                    maxIterations: stageRounds[0]?.rounds ?? 1,
-                    stageRounds,
-                  },
-          }
+      const durationHours = durationDaysToHours(createForm.stageDurationDays)
 
-          const response = await fetch(buildApiUrl('/api/tasks'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-          })
+      if (createForm.enabled) {
+        const response = await fetch(buildApiUrl('/api/topics/research-session/batch'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            topicIds: selectedTopicIds,
+            stageDurationDays: createForm.stageDurationDays,
+            durationHours,
+          }),
+        })
 
-          if (!response.ok) throw new Error('create_failed')
-        }),
-      )
+        if (!response.ok) throw new Error('create_failed')
+        const payload = (await response.json()) as { success?: boolean }
+        if (!payload.success) throw new Error('create_failed')
+      } else {
+        await Promise.all(
+          selectedTopicIds.map(async (topicId) => {
+            const topic = topics.find((item) => item.id === topicId)
+            const topicName = getTopicLocalizedPair(
+              topic?.localization,
+              'name',
+              preference,
+              topic?.nameZh ?? topicId,
+              topic?.nameEn ?? topic?.nameZh ?? topicId,
+            ).primary
+            const body = {
+              id: `topic-research:${topicId}`,
+              name: renderTranslationTemplate(
+                t,
+                'research.taskNameTemplate',
+                { topic: topicName },
+                '{topic} Research Orchestration',
+              ),
+              cronExpression: INTERNAL_RESEARCH_TASK_CRON,
+              enabled: false,
+              topicId,
+              action: 'discover',
+              researchMode: 'duration',
+              options: {
+                stageDurationDays: createForm.stageDurationDays,
+                durationHours,
+              },
+            }
+
+            const response = await fetch(buildApiUrl('/api/tasks'), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            })
+
+            if (!response.ok) throw new Error('create_failed')
+            const payload = (await response.json()) as unknown
+            assertTaskMutationAckContract(payload)
+            if (!payload.success) throw new Error('create_failed')
+          }),
+        )
+      }
 
       await loadWorkspace()
-      setNotice(t('research.noticeCreated'))
+      setNotice(
+        renderTranslationTemplate(
+          t,
+          createForm.enabled ? 'research.noticeStartedBatch' : 'research.noticeCreatedBatch',
+          { count: selectedTopicIds.length },
+          createForm.enabled
+            ? 'Started {count} live research lanes.'
+            : 'Created {count} paused research tasks.',
+        ),
+      )
     } catch {
       setNotice(t('research.noticeCreateFailed'))
     } finally {
@@ -562,7 +637,7 @@ export function ResearchPage() {
   async function runTask(taskId: string) {
     setBusyAction(`run:${taskId}`)
     try {
-      await fetch(buildApiUrl(`/api/tasks/${taskId}/run`), { method: 'POST' })
+      await requestTaskMutationAck(`/api/tasks/${taskId}/run`)
       await Promise.all([loadWorkspace(), loadTaskDetail(taskId)])
     } finally {
       setBusyAction(null)
@@ -572,10 +647,8 @@ export function ResearchPage() {
   async function toggleTask(task: TaskConfig) {
     setBusyAction(`toggle:${task.id}`)
     try {
-      await fetch(buildApiUrl(`/api/tasks/${task.id}/toggle`), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled: !task.enabled }),
+      await requestTaskMutationAck(`/api/tasks/${task.id}/toggle`, {
+        body: { enabled: !task.enabled },
       })
       await Promise.all([loadWorkspace(), loadTaskDetail(task.id)])
     } finally {
@@ -586,7 +659,7 @@ export function ResearchPage() {
   async function resetTask(taskId: string) {
     setBusyAction(`reset:${taskId}`)
     try {
-      await fetch(buildApiUrl(`/api/tasks/${taskId}/reset`), { method: 'POST' })
+      await requestTaskMutationAck(`/api/tasks/${taskId}/reset`)
       await Promise.all([loadWorkspace(), loadTaskDetail(taskId)])
     } finally {
       setBusyAction(null)
@@ -596,7 +669,7 @@ export function ResearchPage() {
   async function deleteTask(taskId: string) {
     setBusyAction(`delete:${taskId}`)
     try {
-      await fetch(buildApiUrl(`/api/tasks/${taskId}`), { method: 'DELETE' })
+      await requestTaskMutationAck(`/api/tasks/${taskId}`, { method: 'DELETE' })
       await loadWorkspace()
       if (selectedTaskId === taskId) setSelectedTaskId('')
     } finally {
@@ -604,25 +677,16 @@ export function ResearchPage() {
     }
   }
 
-  function getStageRoundLabel(stageIndex: number) {
-    const names = selectedTopicIds
-      .map((topicId) => {
-        const stage = stageMap[topicId]?.find((item) => item.order === stageIndex)
-        return getStageLocalizedPair(
-          stage?.localization?.locales,
-          'name',
-          preference,
-          stage?.name ?? '',
-          stage?.nameEn ?? stage?.name ?? '',
-        ).primary
-      })
-      .filter((value): value is string => Boolean(value))
-    const unique = [...new Set(names)]
-    return (
-      unique[0] ??
-      renderTemplate(t('research.stageLabelTemplate'), {
-        stage: stageIndex,
-      })
+  function formatEvidenceSummary(progress: TaskProgress) {
+    const totalEvidence =
+      (progress.figureCount ?? 0) +
+      (progress.tableCount ?? 0) +
+      (progress.formulaCount ?? 0) +
+      (progress.figureGroupCount ?? 0)
+    if (totalEvidence === 0) return null
+    return renderTemplate(
+      t('research.evidenceSummary', 'Evidence: {total}'),
+      { total: totalEvidence },
     )
   }
 
@@ -630,25 +694,29 @@ export function ResearchPage() {
     const progress = task.progress
     if (!progress) return t('research.waitingFirstRun')
 
+    const evidenceSummary = formatEvidenceSummary(progress)
+
     if (progress.researchMode === 'duration') {
-      return renderTemplate(
+      const durationLabel = formatResearchDurationHours(
+        progress.durationHours ?? task.options?.durationHours ?? 0,
+        preference.primary,
+      )
+      const baseSummary = renderTemplate(
         t(
           'research.progressDurationSummary',
-          'XX-hour research / {durationHours}h / Stage {currentStage}/{totalStages} / Current stalls {stageStalls}',
+          'Research window {duration} / Stage {currentStage}/{totalStages} / Current stalls {stageStalls}',
         ),
         {
-          durationHours:
-            progress.durationHours ??
-            task.options?.durationHours ??
-            0,
+          duration: durationLabel,
           currentStage: progress.currentStage,
           totalStages: progress.totalStages,
           stageStalls: progress.currentStageStalls,
         },
       )
+      return evidenceSummary ? `${baseSummary} · ${evidenceSummary}` : baseSummary
     }
 
-    return renderTemplate(
+    const baseSummary = renderTemplate(
       t('research.progressSummary'),
       {
         currentStage: progress.currentStage,
@@ -657,6 +725,7 @@ export function ResearchPage() {
         targetRuns: progress.currentStageTargetRuns,
       },
     )
+    return evidenceSummary ? `${baseSummary} · ${evidenceSummary}` : baseSummary
   }
 
   function formatRunSummary(record: TaskDetailResponse['history'][number]) {
@@ -683,7 +752,7 @@ export function ResearchPage() {
 
   return (
     <main
-      className="h-[calc(100vh-16px)] overflow-hidden px-4 pb-4 pt-4 md:px-6 xl:px-8"
+      className="min-h-[calc(100vh-16px)] overflow-y-auto px-4 pb-6 pt-4 md:px-6 xl:px-8"
       data-testid="research-workbench"
     >
       <div className="mx-auto flex h-full max-w-[2160px] flex-col gap-4">
@@ -707,9 +776,9 @@ export function ResearchPage() {
           </div>
         </header>
 
-        <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[34px] border border-black/8 bg-white px-4 py-4 shadow-[0_18px_40px_rgba(15,23,42,0.05)] md:px-5 md:py-5">
-          <div className="shrink-0 flex flex-wrap items-center gap-3 rounded-[22px] bg-[var(--surface-soft)] px-4 py-3">
-            <div className="rounded-full bg-white px-3 py-1.5 text-[11px] font-medium text-black/68">
+        <section className="flex min-h-0 flex-1 flex-col px-1 py-1 md:px-2">
+          <div className="shrink-0 flex flex-wrap items-center gap-3 border-y border-black/8 px-2 py-3">
+            <div className="rounded-full bg-[var(--surface-soft)] px-3 py-1.5 text-[11px] font-medium text-black/68">
               {renderTemplate(
                 t('research.selectionCompactCount', '{count} topics are now in this workbench'),
                 { count: selectedTopicIds.length },
@@ -731,13 +800,13 @@ export function ResearchPage() {
               {selectedTopicLabels.slice(0, 5).map((label) => (
                 <span
                   key={label}
-                  className="rounded-full border border-black/8 bg-white px-3 py-1.5 text-[11px] text-black/62"
+                  className="rounded-full border border-black/8 bg-transparent px-3 py-1.5 text-[11px] text-black/58"
                 >
                   {label}
                 </span>
               ))}
               {selectedTopicLabels.length > 5 ? (
-                <span className="rounded-full border border-black/8 bg-white px-3 py-1.5 text-[11px] text-black/46">
+                <span className="rounded-full border border-black/8 bg-transparent px-3 py-1.5 text-[11px] text-black/42">
                   +{selectedTopicLabels.length - 5}
                 </span>
               ) : null}
@@ -745,27 +814,24 @@ export function ResearchPage() {
           </div>
 
           {notice ? (
-            <div className="mt-4 shrink-0 rounded-[20px] bg-[var(--surface-soft)] px-4 py-3 text-sm text-black/66">
+            <div className="mt-4 shrink-0 border-y border-black/8 px-4 py-3 text-sm text-black/66">
               {notice}
             </div>
           ) : null}
 
-          <div className="mt-4 grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(680px,0.92fr)_minmax(1180px,1.08fr)] 2xl:grid-cols-[minmax(760px,0.92fr)_minmax(1280px,1.08fr)]">
+          <div className="mt-4 grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,0.48fr)_minmax(0,0.52fr)] 2xl:grid-cols-[minmax(0,0.46fr)_minmax(0,0.54fr)]">
             <ResearchComposerCard
               t={t}
               preference={preference}
+              runtimeConfig={runtimeConfig}
               topics={topics}
               selectedTopicIds={selectedTopicIds}
               selectedTopicLabels={selectedTopicLabels}
               topicQuery={topicQuery}
               setTopicQuery={setTopicQuery}
               setSelectedTopicIds={setSelectedTopicIds}
-              cronPresets={cronPresets}
               createForm={createForm}
               setCreateForm={setCreateForm}
-              stageRounds={stageRounds}
-              setStageRounds={setStageRounds}
-              getStageRoundLabel={getStageRoundLabel}
               onCreateTasks={createTasks}
               submitting={submitting}
             />
@@ -805,38 +871,37 @@ export function ResearchPage() {
 function ResearchComposerCard({
   t,
   preference,
+  runtimeConfig,
   topics,
   selectedTopicIds,
   selectedTopicLabels,
   topicQuery,
   setTopicQuery,
   setSelectedTopicIds,
-  cronPresets,
   createForm,
   setCreateForm,
-  stageRounds,
-  setStageRounds,
-  getStageRoundLabel,
   onCreateTasks,
   submitting,
 }: {
   t: Translate
   preference: LanguagePreference
+  runtimeConfig: ModelConfigResponse | null
   topics: TopicRecord[]
   selectedTopicIds: string[]
   selectedTopicLabels: string[]
   topicQuery: string
   setTopicQuery: Dispatch<SetStateAction<string>>
   setSelectedTopicIds: Dispatch<SetStateAction<string[]>>
-  cronPresets: CronPreset[]
   createForm: ResearchPageCreateForm
   setCreateForm: Dispatch<SetStateAction<ResearchPageCreateForm>>
-  stageRounds: Array<{ stageIndex: number; rounds: number }>
-  setStageRounds: Dispatch<SetStateAction<Array<{ stageIndex: number; rounds: number }>>>
-  getStageRoundLabel: (stageIndex: number) => string
   onCreateTasks: () => Promise<void>
   submitting: boolean
 }) {
+  const runtimeLanguageSlot = runtimeConfig?.config.language ?? null
+  const runtimeMultimodalSlot = runtimeConfig?.config.multimodal ?? null
+  const runtimeEndpoint =
+    runtimeLanguageSlot?.baseUrl?.trim() || runtimeMultimodalSlot?.baseUrl?.trim() || ''
+  const runtimeFullyConfigured = Boolean(runtimeLanguageSlot && runtimeMultimodalSlot)
   const orderedTopics = useMemo(
     () =>
       [...topics].sort((left, right) => {
@@ -888,7 +953,7 @@ function ResearchComposerCard({
   }
 
   return (
-    <article className="flex h-full min-h-0 flex-col overflow-hidden rounded-[30px] border border-black/8 bg-[linear-gradient(180deg,#ffffff_0%,#fcfbf9_100%)] p-4 shadow-[0_14px_34px_rgba(15,23,42,0.05)] md:p-5">
+    <article className="flex h-full min-h-0 flex-col overflow-hidden rounded-[24px] bg-white/88 p-4 md:p-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="text-[11px] uppercase tracking-[0.22em] text-black/34">
@@ -911,7 +976,7 @@ function ResearchComposerCard({
         </Link>
       </div>
 
-      <div className="mt-4 rounded-[20px] bg-[var(--surface-soft)] px-4 py-3">
+      <div className="mt-4 border-y border-black/8 px-1 py-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-[12px] font-medium text-black">
             {t('research.selectedSummary', 'Selected topics')}
@@ -932,13 +997,13 @@ function ResearchComposerCard({
               {selectedTopicLabels.slice(0, 6).map((label) => (
                 <span
                   key={label}
-                  className="rounded-full border border-black/8 bg-white px-3 py-1.5 text-[11px] text-black/66"
+                  className="rounded-full border border-black/8 bg-transparent px-3 py-1.5 text-[11px] text-black/62"
                 >
                   {label}
                 </span>
               ))}
               {selectedTopicLabels.length > 6 ? (
-                <span className="rounded-full border border-black/8 bg-white px-3 py-1.5 text-[11px] text-black/44">
+                <span className="rounded-full border border-black/8 bg-transparent px-3 py-1.5 text-[11px] text-black/44">
                   +{selectedTopicLabels.length - 6}
                 </span>
               ) : null}
@@ -954,8 +1019,8 @@ function ResearchComposerCard({
         </div>
       </div>
 
-      <div className="mt-4 grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(360px,0.74fr)_minmax(0,1.26fr)] 2xl:grid-cols-[minmax(400px,0.72fr)_minmax(0,1.28fr)]">
-        <section className="flex min-h-0 flex-col overflow-hidden rounded-[24px] border border-black/8 bg-white px-4 py-4">
+      <div className="mt-4 grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(300px,0.8fr)_minmax(320px,1.2fr)] 2xl:grid-cols-[minmax(340px,0.82fr)_minmax(360px,1.18fr)]">
+        <section className="flex min-h-0 flex-col overflow-hidden rounded-[20px] bg-[var(--surface-soft)]/42 px-4 py-4">
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="text-[10px] uppercase tracking-[0.22em] text-black/34">
@@ -982,7 +1047,7 @@ function ResearchComposerCard({
             value={topicQuery}
             onChange={(event) => setTopicQuery(event.target.value)}
             placeholder={t('research.topicSearchPlaceholder', 'Search topics')}
-            className="mt-4 w-full rounded-[18px] bg-[var(--surface-soft)] px-4 py-3 text-[13px] text-black outline-none placeholder:text-black/28"
+            className="mt-4 w-full rounded-[18px] bg-white px-4 py-3 text-[13px] text-black outline-none placeholder:text-black/28"
           />
 
           <div className="mt-4 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
@@ -1003,8 +1068,8 @@ function ResearchComposerCard({
                   onClick={() => toggleTopic(topic.id)}
                   className={`w-full rounded-[20px] border px-4 py-3 text-left transition ${
                     selected
-                      ? 'border-black bg-black text-white shadow-[0_12px_24px_rgba(15,23,42,0.08)]'
-                      : 'border-black/8 bg-[var(--surface-soft)] text-black/72 hover:border-black/14 hover:bg-white'
+                      ? 'border-black bg-black text-white shadow-[0_10px_20px_rgba(15,23,42,0.08)]'
+                      : 'border-black/8 bg-white text-black/72 hover:border-black/14 hover:bg-[var(--surface-soft)]/35'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -1038,234 +1103,185 @@ function ResearchComposerCard({
         </section>
 
         <section className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
-            <article className="rounded-[24px] border border-black/8 bg-white px-4 py-4">
+            <article className="rounded-[20px] bg-[var(--surface-soft)]/42 px-4 py-4">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <div className="text-[10px] uppercase tracking-[0.22em] text-black/34">
                     {renderTranslationTemplate(t, 'research.stepLabel', { step: 2 }, 'Step {step}')}
                   </div>
                   <div className="mt-1 text-[15px] font-semibold text-black">
-                    {t('research.stepScheduleTitle', 'Set the schedule cadence')}
+                    {t('research.stepScheduleTitle', 'Set the stage research window')}
                   </div>
                   <p className="mt-1 text-[12px] leading-6 text-black/54">
                     {t(
                       'research.stepScheduleDescription',
-                      'Choose a common cadence directly, and expand the advanced section only when you need to edit the raw expression.',
+                      'Choose how long each stage should stay open. The backend will keep revisiting the selected topics throughout that window.',
                     )}
                   </p>
                 </div>
                 <div className="rounded-full bg-[var(--surface-soft)] px-3 py-1.5 text-[11px] text-black/54">
                   {renderTranslationTemplate(
                     t,
-                    'research.presetCount',
-                    { count: cronPresets.length },
-                    '{count} presets',
+                    'research.durationRangeBadge',
+                    {
+                      min: formatResearchDurationDays(MIN_RESEARCH_DURATION_DAYS, preference.primary),
+                      max: formatResearchDurationDays(MAX_RESEARCH_DURATION_DAYS, preference.primary),
+                    },
+                    '{min} - {max}',
                   )}
                 </div>
               </div>
 
-            <div className="mt-4 grid gap-4">
-              <label className="block">
-                <div className="mb-2 text-[12px] text-black/56">{t('research.frequencyLabel')}</div>
+              <div className="mt-4 space-y-4">
+                <label className="block">
+                  <div className="mb-2 text-[12px] text-black/56">
+                    {t('research.durationDaysLabel', 'Stage duration')}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <input
+                      type="number"
+                      min={MIN_RESEARCH_DURATION_DAYS}
+                      max={MAX_RESEARCH_DURATION_DAYS}
+                      value={createForm.stageDurationDays}
+                      onChange={(event) =>
+                        setCreateForm((current) => ({
+                          ...current,
+                          stageDurationDays: clampResearchDurationDays(
+                            Number(event.target.value) || DEFAULT_RESEARCH_DURATION_DAYS,
+                          ),
+                        }))
+                      }
+                      className="h-11 w-24 rounded-full bg-white px-4 text-center text-[13px] text-black outline-none"
+                    />
+                    <span className="text-[12px] text-black/48">
+                      {formatResearchDurationDays(createForm.stageDurationDays, preference.primary, 'long')}
+                    </span>
+                  </div>
+                </label>
+
                 <div className="flex flex-wrap gap-2">
-                  {cronPresets.map((preset) => (
+                  {RESEARCH_DURATION_DAY_PRESETS.map((days) => (
                     <button
-                      key={preset.value}
+                      key={days}
                       type="button"
                       onClick={() =>
                         setCreateForm((current) => ({
                           ...current,
-                          cronExpression: preset.value,
+                          stageDurationDays: days,
                         }))
                       }
                       className={`rounded-full px-3 py-1.5 text-[11px] transition ${
-                        createForm.cronExpression === preset.value
+                        createForm.stageDurationDays === days
                           ? 'bg-black text-white'
                           : 'bg-[var(--surface-soft)] text-black/58 hover:text-black'
                       }`}
-                      title={preset.description}
                     >
-                      {preset.label}
+                      {formatResearchDurationDays(days, preference.primary)}
                     </button>
                   ))}
                 </div>
-              </label>
 
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className="block">
-                  <div className="mb-2 text-[12px] text-black/56">{t('research.actionLabel')}</div>
-                  <select
-                    value={createForm.action}
-                    onChange={(event) =>
-                      setCreateForm((current) => ({
-                        ...current,
-                        action: event.target.value as TaskConfig['action'],
-                      }))
-                    }
-                    className="w-full rounded-[18px] bg-[var(--surface-soft)] px-4 py-3 text-[13px] text-black outline-none"
-                  >
-                    <option value="discover">{t('research.actionDiscover')}</option>
-                    <option value="refresh">{t('research.actionRefresh')}</option>
-                    <option value="sync">{t('research.actionSync')}</option>
-                  </select>
-                </label>
-
-                <label className="block">
-                  <div className="mb-2 text-[12px] text-black/56">{t('research.modeLabel')}</div>
-                  <select
-                    value={createForm.researchMode}
-                    disabled={createForm.action !== 'discover'}
-                    onChange={(event) =>
-                      setCreateForm((current) => ({
-                        ...current,
-                        researchMode: event.target.value as ResearchPageCreateForm['researchMode'],
-                      }))
-                    }
-                    className="w-full rounded-[18px] bg-[var(--surface-soft)] px-4 py-3 text-[13px] text-black outline-none disabled:cursor-not-allowed disabled:text-black/36"
-                  >
-                    <option value="duration">{t('research.modeDuration')}</option>
-                    <option value="stage-rounds">{t('research.modeStageRounds')}</option>
-                  </select>
-                </label>
+                <p className="text-[11px] leading-5 text-black/48">
+                  {t(
+                    'research.durationEditorialHint',
+                    'Each selected topic gets its own sustained research lane. During the chosen window, the agent keeps searching, comparing, rewriting, and deciding whether the stage is ready to advance.',
+                  )}
+                </p>
               </div>
+            </article>
 
-              <details className="rounded-[18px] bg-[var(--surface-soft)] px-4 py-3">
-                <summary className="cursor-pointer list-none text-[12px] font-medium text-black">
-                  {t('research.advancedScheduleOptions', 'Open advanced scheduling options')}
-                </summary>
-                <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
-                  <label className="block">
-                    <div className="mb-2 text-[12px] text-black/56">
-                      {t('research.rawCronExpression', 'Raw cron expression')}
-                    </div>
-                    <input
-                      value={createForm.cronExpression}
-                      onChange={(event) =>
-                        setCreateForm((current) => ({
-                          ...current,
-                          cronExpression: event.target.value,
-                        }))
-                      }
-                      className="w-full rounded-[16px] bg-white px-4 py-3 text-[13px] text-black outline-none"
-                    />
-                  </label>
-
-                  <label className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-2 text-[12px] text-black/60">
-                    <input
-                      type="checkbox"
-                      checked={createForm.enabled}
-                      onChange={(event) =>
-                        setCreateForm((current) => ({
-                          ...current,
-                          enabled: event.target.checked,
-                        }))
-                      }
-                      className="h-4 w-4 accent-black"
-                    />
-                    <span>
-                      {createForm.enabled
-                        ? t('research.enableOnCreate', 'Enable immediately after creation')
-                        : t('research.createManualStart', 'Create now and enable manually later')}
-                    </span>
-                  </label>
-                </div>
-              </details>
-            </div>
-          </article>
-
-          {createForm.action === 'discover' && createForm.researchMode === 'duration' ? (
-            <article className="rounded-[24px] border border-black/8 bg-white px-4 py-4">
+            <article className="rounded-[20px] bg-[var(--surface-soft)]/42 px-4 py-4">
               <div className="mb-4">
                 <div className="text-[10px] uppercase tracking-[0.22em] text-black/34">
                   {renderTranslationTemplate(t, 'research.stepLabel', { step: 3 }, 'Step {step}')}
                 </div>
                 <div className="mt-1 text-[15px] font-semibold text-black">
-                  {t('research.durationSettingsTitle', 'Configure ongoing research mode')}
+                  {t('research.durationSettingsTitle', 'Launch and follow through')}
                 </div>
               </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className="block">
-                  <div className="mb-2 text-[12px] text-black/56">{t('research.durationHoursLabel')}</div>
+
+              <div className="rounded-[18px] border border-black/8 bg-white px-4 py-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[12px] font-medium text-black">
+                      {t('research.runtimeSummaryTitle', 'Effective research runtime')}
+                    </div>
+                    <p className="mt-1 max-w-[520px] text-[11px] leading-5 text-black/48">
+                      {t(
+                        'research.runtimeSummaryDescription',
+                        'The current language and multimodal slots will power every research lane started here.',
+                      )}
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-[var(--surface-soft)] px-3 py-1.5 text-[11px] text-black/58">
+                    {runtimeFullyConfigured
+                      ? t('research.runtimeConfigured', 'Configured')
+                      : t('research.runtimeMissing', 'Not configured')}
+                  </span>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <div className="rounded-[16px] bg-[var(--surface-soft)]/55 px-3 py-3">
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-black/34">
+                      {t('research.runtimeLanguageSlot', 'Language slot')}
+                    </div>
+                    <div className="mt-2 break-words text-[13px] font-medium text-black">
+                      {formatRuntimeSlotLabel(runtimeLanguageSlot, t)}
+                    </div>
+                  </div>
+                  <div className="rounded-[16px] bg-[var(--surface-soft)]/55 px-3 py-3">
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-black/34">
+                      {t('research.runtimeMultimodalSlot', 'Multimodal slot')}
+                    </div>
+                    <div className="mt-2 break-words text-[13px] font-medium text-black">
+                      {formatRuntimeSlotLabel(runtimeMultimodalSlot, t)}
+                    </div>
+                  </div>
+                </div>
+
+                {runtimeEndpoint ? (
+                  <div className="mt-3 rounded-[16px] bg-[var(--surface-soft)]/55 px-3 py-3">
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-black/34">
+                      {t('research.runtimeEndpoint', 'Endpoint')}
+                    </div>
+                    <div className="mt-2 break-all text-[12px] text-black/64">{runtimeEndpoint}</div>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="mt-3 rounded-[18px] bg-white px-4 py-4">
+                <label className="inline-flex items-start gap-3 text-[12px] leading-6 text-black/62">
                   <input
-                    type="number"
-                    min={1}
-                    max={48}
-                    value={createForm.durationHours}
+                    type="checkbox"
+                    checked={createForm.enabled}
                     onChange={(event) =>
                       setCreateForm((current) => ({
                         ...current,
-                        durationHours: Math.max(1, Number(event.target.value) || 1),
+                        enabled: event.target.checked,
                       }))
                     }
-                    className="w-full rounded-[18px] bg-[var(--surface-soft)] px-4 py-3 text-[13px] text-black outline-none"
+                    className="mt-1 h-4 w-4 accent-black"
                   />
+                  <span>
+                    {createForm.enabled
+                      ? t('research.enableOnCreate', 'Enable immediately after creation')
+                      : t('research.createManualStart', 'Create now and enable manually later')}
+                  </span>
                 </label>
 
-                <label className="block">
-                  <div className="mb-2 text-[12px] text-black/56">{t('research.cycleDelayLabel')}</div>
-                  <input
-                    type="number"
-                    min={1}
-                    max={300}
-                    value={createForm.cycleDelaySeconds}
-                    onChange={(event) =>
-                      setCreateForm((current) => ({
-                        ...current,
-                        cycleDelaySeconds: Math.max(1, Number(event.target.value) || 1),
-                      }))
-                    }
-                    className="w-full rounded-[18px] bg-[var(--surface-soft)] px-4 py-3 text-[13px] text-black outline-none"
-                  />
-                </label>
-              </div>
-
-              <p className="mt-3 text-[11px] leading-5 text-black/48">
-                {t('research.modeLegacyHint')}
-              </p>
-            </article>
-          ) : null}
-
-          {createForm.action === 'discover' && createForm.researchMode === 'stage-rounds' ? (
-            <article className="rounded-[24px] border border-black/8 bg-white px-4 py-4">
-              <div className="mb-3">
-                <div className="text-[10px] uppercase tracking-[0.22em] text-black/34">
-                  {renderTranslationTemplate(t, 'research.stepLabel', { step: 3 }, 'Step {step}')}
-                </div>
-                <div className="mt-1 text-[15px] font-semibold text-black">{t('research.stageRoundsLabel')}</div>
-              </div>
-              <div className="mt-3 max-h-[220px] space-y-3 overflow-y-auto pr-1">
-                {stageRounds.map((item) => (
-                  <label
-                    key={item.stageIndex}
-                    className="flex items-center justify-between gap-4 rounded-[18px] bg-[var(--surface-soft)] px-4 py-3"
-                  >
-                    <span className="text-[12px] text-black/66">
-                      {getStageRoundLabel(item.stageIndex)}
-                    </span>
-                    <input
-                      type="number"
-                      min={1}
-                      max={12}
-                      value={item.rounds}
-                      onChange={(event) =>
-                        setStageRounds((current) =>
-                          current.map((round) =>
-                            round.stageIndex === item.stageIndex
-                              ? {
-                                  ...round,
-                                  rounds: Math.max(1, Number(event.target.value) || 1),
-                                }
-                              : round,
-                          ),
-                        )
-                      }
-                      className="h-9 w-16 rounded-full border border-black/10 bg-white px-3 text-center text-[13px] text-black outline-none"
-                    />
-                  </label>
-                ))}
+                <p className="mt-3 text-[11px] leading-5 text-black/48">
+                  {createForm.enabled
+                    ? t(
+                        'research.launchPolicyHint',
+                        'Once enabled, the system keeps orchestrating long-running editorial passes in the background, instead of asking you to configure task cadence by hand.',
+                      )
+                    : t(
+                        'research.pausedPolicyHint',
+                        'Paused mode still creates one duration research task per selected topic, so you can review each lane before starting it.',
+                      )}
+                </p>
               </div>
             </article>
-          ) : null}
 
           <div className="mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-black/6 pt-4">
             <div className="flex flex-wrap gap-2">
@@ -1278,20 +1294,7 @@ function ResearchComposerCard({
                 )}
               </span>
               <span className="rounded-full bg-[var(--surface-soft)] px-3 py-2 text-[12px] text-black/60">
-                {createForm.action === 'discover'
-                  ? createForm.researchMode === 'duration'
-                    ? formatDurationCompact(t, createForm.durationHours, createForm.cycleDelaySeconds)
-                    : renderTranslationTemplate(
-                        t,
-                        'research.summaryStageRounds',
-                        { count: stageRounds.reduce((sum, item) => sum + item.rounds, 0) },
-                        'Stage rounds {count}',
-                      )
-                  : t(
-                      createForm.action === 'refresh'
-                        ? 'research.actionRefresh'
-                        : 'research.actionSync',
-                    )}
+                {formatResearchWindowSummary(t, preference.primary, createForm.stageDurationDays)}
               </span>
               <span className="rounded-full bg-[var(--surface-soft)] px-3 py-2 text-[12px] text-black/60">
                 {createForm.enabled
@@ -1306,7 +1309,9 @@ function ResearchComposerCard({
               className="inline-flex items-center gap-2 rounded-full bg-black px-5 py-3 text-[13px] font-medium text-white transition hover:bg-black/92 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-              {t('research.createButton')}
+              {createForm.enabled
+                ? t('research.createStartNowButton', 'Start Research')
+                : t('research.createPausedButton', 'Create Paused Tasks')}
             </button>
           </div>
         </section>
@@ -1370,7 +1375,7 @@ function ResearchTaskWorkbenchCard({
   ]
 
   return (
-    <article className="flex min-h-0 flex-col overflow-hidden rounded-[30px] border border-black/8 bg-[linear-gradient(180deg,#ffffff_0%,#fcfbf9_100%)] p-4 shadow-[0_14px_34px_rgba(15,23,42,0.05)] md:p-5">
+    <article className="flex min-h-0 flex-col overflow-hidden rounded-[24px] bg-white/88 p-4 md:p-5">
       <div className="flex items-start justify-between gap-4">
         <div className="max-w-[480px]">
           <div className="text-[11px] uppercase tracking-[0.22em] text-black/34">
@@ -1389,7 +1394,7 @@ function ResearchTaskWorkbenchCard({
                 ? formatTaskProgress(selectedTask)
                 : t(
                     'research.operationsDetailDescription',
-                    "This panel shows the selected task's research cadence, latest progress, and run receipts.",
+                    "This panel shows the selected task's research window, latest progress, and run receipts.",
                   )}
           </p>
         </div>
@@ -1589,9 +1594,14 @@ function ResearchTaskQueueCard({
               <span className="rounded-full border border-current/15 px-2.5 py-1">
                 {modeLabel}
               </span>
-              <span className="rounded-full border border-current/15 px-2.5 py-1">
-                {task.cronExpression}
-              </span>
+              {task.researchMode === 'duration' ? (
+                <span className="rounded-full border border-current/15 px-2.5 py-1">
+                  {formatResearchDurationHours(
+                    task.options?.durationHours ?? task.progress?.durationHours ?? 0,
+                    language,
+                  )}
+                </span>
+              ) : null}
               <span>
                 {t('research.lastRunLabel', 'Last run')}:
                 {' '}
@@ -1681,8 +1691,8 @@ function ResearchTaskQueueCard({
     <article
       className={
         embedded
-          ? 'flex h-full min-h-0 flex-col overflow-hidden rounded-[24px] border border-black/8 bg-white px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]'
-          : 'flex min-h-0 flex-col overflow-hidden rounded-[30px] border border-black/8 bg-white px-4 py-4 shadow-[0_14px_34px_rgba(15,23,42,0.05)] md:px-5 md:py-5'
+          ? 'flex h-full min-h-0 flex-col overflow-hidden rounded-[20px] bg-[var(--surface-soft)]/36 px-4 py-4'
+          : 'flex min-h-0 flex-col overflow-hidden rounded-[24px] bg-white/88 px-4 py-4 md:px-5 md:py-5'
       }
     >
       <div className="flex items-center justify-between gap-3">
@@ -1705,7 +1715,7 @@ function ResearchTaskQueueCard({
         </div>
       </div>
 
-      <div className="mt-4 rounded-[22px] bg-[var(--surface-soft)] px-3 py-3">
+      <div className="mt-4 border-y border-black/8 px-1 py-3">
         <div className="flex flex-wrap gap-2">
           {filters.map((filter) => (
             <button
@@ -1715,7 +1725,7 @@ function ResearchTaskQueueCard({
               className={`rounded-full px-3 py-1.5 text-[11px] transition ${
                 taskFilter === filter.id
                   ? 'bg-black text-white'
-                  : 'bg-white text-black/58 hover:text-black'
+                  : 'bg-[var(--surface-soft)] text-black/58 hover:text-black'
               }`}
             >
               {filter.label}
@@ -1723,12 +1733,12 @@ function ResearchTaskQueueCard({
           ))}
         </div>
 
-        <label className="mt-3 flex items-center gap-2 rounded-[18px] bg-white px-3 py-2.5 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
+        <label className="mt-3 flex items-center gap-2 rounded-[18px] bg-white px-3 py-2.5">
           <Search className="h-4 w-4 text-black/38" />
           <input
             value={taskQuery}
             onChange={(event) => setTaskQuery(event.target.value)}
-            placeholder={t('research.queueSearchPlaceholder', 'Search tasks, topics, or schedule cadence')}
+            placeholder={t('research.queueSearchPlaceholder', 'Search tasks or topics')}
             className="w-full bg-transparent text-[13px] text-black outline-none placeholder:text-black/28"
           />
         </label>
@@ -1745,7 +1755,7 @@ function ResearchTaskQueueCard({
 
       <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
         {tasks.length === 0 ? (
-          <div className="rounded-[24px] bg-[var(--surface-soft)] px-4 py-5 text-[13px] leading-7 text-black/56">
+          <div className="rounded-[20px] bg-[var(--surface-soft)]/7 px-4 py-5 text-[13px] leading-7 text-black/56">
             {taskQuery.trim() || taskFilter !== 'all'
               ? t(
                   'research.queueEmptyFiltered',
@@ -1758,7 +1768,7 @@ function ResearchTaskQueueCard({
             {primaryTasks.length > 0 ? (
               renderTaskCards(primaryTasks)
             ) : (
-              <div className="rounded-[24px] bg-[var(--surface-soft)] px-4 py-5 text-[13px] leading-7 text-black/56">
+              <div className="rounded-[20px] bg-[var(--surface-soft)]/7 px-4 py-5 text-[13px] leading-7 text-black/56">
                 {t(
                   'research.queuePrimaryEmpty',
                   'No active or recent tasks are in the main queue right now. Expand the archived list below if you need older paused tasks.',
@@ -1769,7 +1779,7 @@ function ResearchTaskQueueCard({
             {archivedTasks.length > 0 ? (
               <details
                 open={archiveOpen}
-                className="rounded-[24px] border border-black/8 bg-[var(--surface-soft)] px-4 py-4"
+                className="rounded-[20px] bg-[var(--surface-soft)]/36 px-4 py-4"
               >
                 <summary className="cursor-pointer list-none text-[13px] font-medium text-black">
                   {renderTemplate(
@@ -1823,11 +1833,9 @@ function ResearchTaskDetailCard({
     progress != null ? `${progress.currentStage} / ${progress.totalStages}` : '--'
   const progressValue =
     progress?.researchMode === 'duration'
-      ? renderTranslationTemplate(
-          t,
-          'research.durationHoursCompact',
-          { hours: progress.durationHours ?? selectedTask?.options?.durationHours ?? 0 },
-          '{hours}h',
+      ? formatResearchDurationHours(
+          progress.durationHours ?? selectedTask?.options?.durationHours ?? 0,
+          language,
         )
       : progress != null
         ? `${progress.currentStageRuns} / ${progress.currentStageTargetRuns}`
@@ -1837,8 +1845,8 @@ function ResearchTaskDetailCard({
     <article
       className={
         embedded
-          ? 'flex h-full min-h-0 flex-col overflow-hidden rounded-[24px] border border-black/8 bg-white px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]'
-          : 'flex min-h-0 flex-col overflow-hidden rounded-[30px] border border-black/8 bg-white px-4 py-4 shadow-[0_14px_34px_rgba(15,23,42,0.05)] md:px-5 md:py-5'
+          ? 'flex h-full min-h-0 flex-col overflow-hidden rounded-[20px] bg-[var(--surface-soft)]/36 px-4 py-4'
+          : 'flex min-h-0 flex-col overflow-hidden rounded-[24px] bg-white/88 px-4 py-4 md:px-5 md:py-5'
       }
     >
       <div className="flex items-start justify-between gap-3">
@@ -1854,7 +1862,7 @@ function ResearchTaskDetailCard({
               ? formatTaskProgress(selectedTask)
               : t(
                   'research.detailEmpty',
-                  'Select an orchestration task from the task queue to see its research cadence, run summary, and history receipts here.',
+                  'Select an orchestration task from the task queue to see its research window, run summary, and history receipts here.',
                 )}
           </p>
         </div>
@@ -1866,10 +1874,10 @@ function ResearchTaskDetailCard({
       </div>
 
       {!selectedTask ? (
-        <div className="mt-5 flex-1 rounded-[24px] bg-[var(--surface-soft)] px-4 py-5 text-[13px] leading-7 text-black/56">
+        <div className="mt-5 flex-1 rounded-[20px] bg-[var(--surface-soft)]/36 px-4 py-5 text-[13px] leading-7 text-black/56">
           {t(
             'research.detailEmpty',
-            'Select an orchestration task from the task queue to see its research cadence, run summary, and history receipts here.',
+            'Select an orchestration task from the task queue to see its research window, run summary, and history receipts here.',
           )}
         </div>
       ) : (
@@ -1885,30 +1893,48 @@ function ResearchTaskDetailCard({
               label={t('research.detailGeneratedLabel')}
               value={String(progress?.generatedContents ?? 0)}
             />
+            <InfoStat
+              label={t('research.detailFiguresLabel')}
+              value={String(progress?.figureCount ?? 0)}
+            />
+            <InfoStat
+              label={t('research.detailTablesLabel')}
+              value={String(progress?.tableCount ?? 0)}
+            />
+            <InfoStat
+              label={t('research.detailFormulasLabel')}
+              value={String(progress?.formulaCount ?? 0)}
+            />
+            <InfoStat
+              label={t('research.detailFigureGroupsLabel')}
+              value={String(progress?.figureGroupCount ?? 0)}
+            />
           </div>
 
-          <div className="mt-4 grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(340px,0.82fr)_minmax(0,1.18fr)] 2xl:grid-cols-[minmax(380px,0.8fr)_minmax(0,1.2fr)]">
-            <section className="rounded-[24px] bg-[var(--surface-soft)] px-4 py-4">
+          <div className="mt-4 grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(260px,0.74fr)_minmax(0,1.26fr)] 2xl:grid-cols-[minmax(300px,0.72fr)_minmax(0,1.28fr)]">
+            <section className="rounded-[20px] bg-[var(--surface-soft)]/36 px-4 py-4">
               <div className="grid gap-3">
                 <MetaRow
-                  label={t('research.frequencyLabel')}
-                  value={selectedTask.cronExpression}
-                />
-                <MetaRow
-                  label={t('research.actionLabel')}
-                  value={
-                    selectedTask.action === 'discover'
-                      ? t('research.actionDiscover')
-                      : selectedTask.action === 'refresh'
-                        ? t('research.actionRefresh')
-                        : t('research.actionSync')
-                  }
+                  label={t('research.windowEyebrow', 'Research window')}
+                  value={formatResearchDurationHours(
+                    selectedTask.options?.durationHours ?? progress?.durationHours ?? 0,
+                    language,
+                    'long',
+                  )}
                 />
                 <MetaRow
                   label={t('research.modeLabel')}
                   value={
                     selectedTask.action === 'discover'
                       ? getTaskDisplayModeLabel(selectedTask, t, true)
+                      : '--'
+                  }
+                />
+                <MetaRow
+                  label={t('research.detailProgressLabel')}
+                  value={
+                    progress?.researchMode === 'duration'
+                      ? formatTaskProgress(selectedTask)
                       : '--'
                   }
                 />
@@ -1924,13 +1950,17 @@ function ResearchTaskDetailCard({
                 </div>
                 <div className="mt-2 text-[13px] leading-7 text-black/60">
                   {selectedTask.researchMode === 'duration'
-                    ? formatDurationCompact(
+                    ? renderTranslationTemplate(
                         t,
-                        selectedTask.options?.durationHours ?? 0,
-                        Math.max(
-                          1,
-                          Math.round((selectedTask.options?.cycleDelayMs ?? 0) / 1000),
-                        ),
+                        'research.durationNarrative',
+                        {
+                          duration: formatResearchDurationHours(
+                            selectedTask.options?.durationHours ?? progress?.durationHours ?? 0,
+                            language,
+                            'long',
+                          ),
+                        },
+                        'This task keeps one stage open for {duration}, so the agent can repeatedly search, compare, and rewrite before deciding whether the stage should advance.',
                       )
                     : (selectedTask.options?.stageRounds ?? [])
                         .map(
@@ -1944,21 +1974,21 @@ function ResearchTaskDetailCard({
               </div>
             </section>
 
-            <section className="flex min-h-0 flex-col rounded-[24px] border border-black/8 bg-white px-4 py-4">
+            <section className="flex min-h-0 flex-col rounded-[20px] bg-[var(--surface-soft)]/2 px-4 py-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-[12px] font-medium text-black">{t('research.historyTitle')}</div>
                 {detailLoading ? <Loader2 className="h-4 w-4 animate-spin text-black/42" /> : null}
               </div>
               <div className="mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
                 {!detailLoading && (detail?.history.length ?? 0) === 0 ? (
-                  <div className="rounded-[20px] bg-[var(--surface-soft)] px-4 py-4 text-[12px] text-black/48">
+                  <div className="rounded-[18px] bg-[var(--surface-soft)]/36 px-4 py-4 text-[12px] text-black/48">
                     {t('research.historyEmpty')}
                   </div>
                 ) : (
                   detail?.history.map((record) => (
                     <article
                       key={record.id}
-                      className="rounded-[20px] bg-[var(--surface-soft)] px-4 py-4"
+                      className="rounded-[18px] bg-[var(--surface-soft)]/42 px-4 py-4"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="text-[12px] font-medium text-black">
@@ -2025,7 +2055,7 @@ function StatCard({
   compact?: boolean
 }) {
   return (
-    <article className={`rounded-[24px] bg-[var(--surface-soft)] ${compact ? 'px-4 py-4' : 'px-5 py-5'}`}>
+    <article className={`rounded-[24px] bg-white border border-black/6 shadow-[0_4px_16px_rgba(15,23,42,0.04)] transition hover:shadow-[0_8px_24px_rgba(15,23,42,0.08)] hover:border-black/10 ${compact ? 'px-4 py-4' : 'px-5 py-5'}`}>
       <div className="text-[11px] uppercase tracking-[0.18em] text-black/34">{label}</div>
       <div className={`font-semibold text-black ${compact ? 'mt-2 text-[22px]' : 'mt-3 text-[24px]'}`}>
         {value}

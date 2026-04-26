@@ -220,6 +220,92 @@ test('GET /api/search exposes stage and node location details for paper results'
   }
 })
 
+test('GET /api/search keeps canonical origin nodes with stageIndex 0 in related search locations', async () => {
+  const topic = await prisma.topics.create({
+    data: {
+      id: createTestId('search-topic-origin'),
+      nameZh: '起源搜索主题',
+      nameEn: 'Origin Search Topic',
+      language: 'zh',
+      status: 'active',
+      updatedAt: new Date(),
+    },
+  })
+
+  const paper = await prisma.papers.create({
+    data: {
+      id: createTestId('search-paper-origin'),
+      topicId: topic.id,
+      title: 'Origin stage search paper',
+      titleZh: '起源阶段搜索论文',
+      titleEn: 'Origin stage search paper',
+      authors: JSON.stringify(['Origin Searcher']),
+      published: new Date('2026-01-03T00:00:00.000Z'),
+      summary: 'A paper created to validate stage zero related node search metadata.',
+      explanation: 'The search contract should accept canonical origin nodes with stage index zero.',
+      figurePaths: '[]',
+      tablePaths: '[]',
+      tags: JSON.stringify(['origin', 'search']),
+      status: 'candidate',
+      updatedAt: new Date(),
+    },
+  })
+
+  const node = await prisma.research_nodes.create({
+    data: {
+      id: createTestId('search-node-origin'),
+      topicId: topic.id,
+      stageIndex: 0,
+      nodeLabel: '起源节点',
+      nodeSubtitle: 'Origin node',
+      nodeSummary: 'Origin summary',
+      nodeExplanation: 'Origin explanation',
+      primaryPaperId: paper.id,
+      status: 'active',
+      provisional: false,
+      updatedAt: new Date(),
+    },
+  })
+
+  await prisma.node_papers.create({
+    data: {
+      id: createTestId('search-node-paper-origin'),
+      nodeId: node.id,
+      paperId: paper.id,
+      order: 1,
+    },
+  })
+
+  try {
+    await withServer(async (origin) => {
+      const response = await fetch(`${origin}/api/search?q=origin&scope=global&limit=20&stageMonths=3`)
+      assert.equal(response.status, 200)
+
+      const payload = (await response.json()) as {
+        success: boolean
+        data: {
+          groups: Array<{
+            items: Array<{
+              kind: string
+              relatedNodes?: Array<{ nodeId: string; stageIndex: number }>
+            }>
+          }>
+        }
+      }
+
+      const items = payload.data.groups.flatMap((group) => group.items)
+      const paperItem = items.find((item) => item.kind === 'paper' && item.relatedNodes?.[0]?.nodeId === node.id)
+
+      assert.ok(paperItem, 'expected a paper search result linked to the stage zero origin node')
+      assert.equal(paperItem?.relatedNodes?.[0]?.stageIndex, 0)
+    })
+  } finally {
+    await prisma.topics.delete({
+      where: { id: topic.id },
+    })
+  }
+})
+
 test('GET /api/search matches paper locations by author names and arXiv identifiers', async () => {
   const topic = await prisma.topics.create({
     data: {

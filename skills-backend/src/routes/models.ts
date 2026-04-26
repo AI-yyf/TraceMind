@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { prisma } from '../lib/prisma'
 import { asyncHandler, AppError } from '../middleware/errorHandler'
 import { MultiModalClient } from '../../shared/multimodal-client'
+import type { ProviderId } from '../../shared/model-config'
 
 const router = Router()
 
@@ -105,7 +106,7 @@ router.post('/:id/test', asyncHandler(async (req, res) => {
     models: [{
       id: model.modelId,
       name: model.name,
-      provider: model.provider as any,
+      provider: model.provider as ProviderId,
       model: model.model,
       apiKey: model.apiKey,
       baseUrl: model.baseUrl || undefined,

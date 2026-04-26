@@ -39,18 +39,23 @@ describe('GlobalLanguageSwitch', () => {
     vi.unstubAllGlobals()
   })
 
-  it('defaults to Chinese when no stored preference exists', async () => {
+  it('defaults to the browser language when no stored preference exists', async () => {
     renderWithI18n(<GlobalLanguageSwitch />)
 
     await waitFor(() => {
       expect(screen.getByTestId('language-menu-toggle')).toBeInTheDocument()
     })
 
-    expect(document.documentElement.lang).toBe('zh')
-    expect(screen.getByTestId('language-menu-toggle')).toHaveTextContent('中文')
+    expect(document.documentElement.lang).toBe('en')
+    expect(screen.getByTestId('language-menu-toggle')).toHaveTextContent('English')
   })
 
   it('switches the primary language to English from the visible quick action', async () => {
+    localStorage.setItem(
+      'arxiv-chronicle-language-preference',
+      JSON.stringify({ primary: 'zh', secondary: 'en', mode: 'monolingual' }),
+    )
+
     renderWithI18n(<GlobalLanguageSwitch />)
 
     await waitFor(() => expect(screen.getByTestId('language-menu-toggle')).toBeInTheDocument())

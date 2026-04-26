@@ -3,6 +3,11 @@ import { contentGenesisSkill } from '../content-genesis-v2/skill'
 import { buildDecisionMemoryChange, buildExecutionMemoryChange } from '../shared/memory'
 import { paperTrackerSkill } from '../paper-tracker/skill'
 import { topicVisualizerSkill } from '../topic-visualizer/skill'
+import {
+  assessResearchQuality,
+  qualityMeetsThreshold,
+  getRefinementStrategy,
+} from './research-quality'
 
 import {
   asRecord,
@@ -328,10 +333,13 @@ export async function executeOrchestrator(args: {
   }
 
   const workflowMode = resolveWorkflowMode(args.request.input)
+  const envMaxIterations = process.env.ORCHESTRATOR_MAX_ITERATIONS
+    ? parseInt(process.env.ORCHESTRATOR_MAX_ITERATIONS, 10)
+    : 30  // Raised from 20 to 30 for deeper multi-round research
   const maxIterations =
     typeof args.request.input.maxIterations === 'number' && args.request.input.maxIterations > 0
-      ? Math.min(args.request.input.maxIterations, 5)
-      : 1
+      ? Math.min(args.request.input.maxIterations, envMaxIterations)
+      : 15  // Default iterations raised to 15 for deeper multi-round research
   const storageMode = args.request.storageMode ?? 'canonical-only'
   const steps: OrchestratorStepResult[] = []
   const failures: Array<{ step: string; message: string }> = []
@@ -360,8 +368,58 @@ export async function executeOrchestrator(args: {
     })
   }
 
+  let consecutiveEmptyRounds = 0
+
   if (workflowMode === 'discover-only' || workflowMode === 'full-cycle') {
     for (let iteration = 0; iteration < maxIterations; iteration += 1) {
+      // Adaptive early stopping: check evidence saturation + quality assessment
+      const completedSteps = steps.filter(s => s.status === 'completed')
+      const failedSteps = steps.filter(s => s.status === 'failed')
+
+      // Quality-based early stopping (every 3 iterations)
+      if (completedSteps.length >= 3 && iteration >= 2 && iteration % 3 === 2) {
+        try {
+          const quality = await assessResearchQuality({
+            topicId: topic.id,
+            stageIndex: typeof args.request.input.stageIndex === 'number'
+              ? args.request.input.stageIndex
+              : undefined,
+          })
+
+          // If quality meets threshold, consider early termination
+          if (qualityMeetsThreshold(quality)) {
+            retryHints.push(`质量达标 (${quality.overallScore.toFixed(2)})，在第${iteration}轮提前结束迭代打磨。`)
+            break
+          }
+
+          // If quality is critical and no progress, consider intervention
+          if (quality.overallScore < 0.45 && consecutiveEmptyRounds >= 2) {
+            const strategy = getRefinementStrategy(quality.gaps)
+            retryHints.push(`质量严重不足 (${quality.overallScore.toFixed(2)})，缺口: ${quality.gaps.join(', ')}。建议策略: ${strategy.action}`)
+          }
+        } catch (qualityErr) {
+          // Quality assessment failed, continue with standard logic
+        }
+      }
+
+      // Legacy early stopping: evidence saturation
+      if (completedSteps.length >= 3 && failedSteps.length === 0 && iteration >= 3) {
+        // Check if last 3 iterations had substantive progress (papers selected)
+        const lastThreeIterations = steps.slice(-9) // 3 iterations × 3 steps each (discover, content, visualize)
+        const hadPapersSelected = lastThreeIterations.filter(
+          s => s.id.startsWith('discover-') && s.status === 'completed'
+        ).length >= 3
+        // If 3 consecutive successful discovery rounds, consider early termination
+        if (hadPapersSelected) {
+          // Evidence saturation reached: continue only if there are more candidates to process
+          const candidateCount = asStringArray(workingTopicMemory.candidatePaperIds).length
+          if (candidateCount === 0) {
+            retryHints.push(`自适应早停: 连续3轮成功且无剩余候选，在第${iteration}轮提前结束。`)
+            break
+          }
+        }
+      }
+
       try {
         const discoveryResult = await runSubSkill({
           skillId: 'paper-tracker',
@@ -412,7 +470,8 @@ export async function executeOrchestrator(args: {
         const candidate = inferSelectedCandidate(discoveryResult.output)
         const selectedBranch = inferSelectedBranch(discoveryResult.output)
         if (!candidate || !selectedBranch) {
-          retryHints.push('paper-tracker 没有给出符合当前阶段窗口的候选。可以考虑放宽分支时间窗，或先补充新的 canonical 候选后再运行。')
+          consecutiveEmptyRounds++
+          retryHints.push(`paper-tracker 没有给出符合当前阶段窗口的候选 (连续空轮次: ${consecutiveEmptyRounds}/3)。可以考虑放宽分支时间窗，或先补充新的 canonical 候选后再运行。`)
           if (workflowMode === 'full-cycle') {
             appendStep(
               steps,
@@ -437,7 +496,12 @@ export async function executeOrchestrator(args: {
               artifactsChanged,
             )
           }
-          break
+          // Only break after 3 consecutive empty rounds
+          if (consecutiveEmptyRounds >= 3) {
+            retryHints.push('连续3轮未选出论文，编排器停止当前运行。')
+            break
+          }
+          continue  // Try next iteration
         }
 
         if (selectedPaperIds.has(candidate.paperId)) {
@@ -446,6 +510,7 @@ export async function executeOrchestrator(args: {
         }
 
         selectedPaperIds.add(candidate.paperId)
+        consecutiveEmptyRounds = 0  // Reset on successful selection
         selectedPaper = {
           paperId: candidate.paperId,
           candidateType: candidate.candidateType,

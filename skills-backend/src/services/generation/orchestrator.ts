@@ -525,6 +525,34 @@ async function runRefinementPasses<T>(options: {
   )
   let issue = options.initialIssue ?? null
   let successfulRefinePasses = 0
+  const availabilityRequest = {
+    task: options.task,
+    preferredSlot: options.slot,
+    role: options.role,
+    json: true,
+    temperature: resolveTemperature(options.runtime, options.slot, options.temperature),
+    maxTokens: options.maxTokens,
+    messages: [
+      {
+        role: 'system' as const,
+        content: options.systemPrompt,
+      },
+      {
+        role: 'user' as const,
+        content: '',
+      },
+    ],
+  }
+
+  const hasAvailableModel = await omniGateway.hasAvailableModel(availabilityRequest)
+  if (!hasAvailableModel) {
+    return {
+      bestDraft,
+      bestScore,
+      issue,
+      successfulRefinePasses,
+    }
+  }
 
   for (let refineRound = 1; refineRound <= options.rounds; refineRound += 1) {
     const refinedResult = await omniGateway.complete({
@@ -733,26 +761,64 @@ export async function runStructuredGenerationPass<T>(
   })
 
   let issue: OmniIssue | null | undefined = null
+  const availabilityRequest = {
+    task,
+    preferredSlot: slot,
+    role,
+    json: true,
+    temperature: resolveTemperature(runtime, slot, request.temperature),
+    maxTokens: request.maxTokens ?? 1800,
+    messages: [
+      {
+        role: 'system' as const,
+        content: systemPrompt,
+      },
+      {
+        role: 'user' as const,
+        content: userPrompt,
+      },
+    ],
+  }
+  const hasAvailableModel = await omniGateway.hasAvailableModel(availabilityRequest)
+
+  if (!hasAvailableModel) {
+    const fallbackRecord: GenerationPassRecord<T> = {
+      passId,
+      templateId: request.templateId,
+      language,
+      subjectType: request.subjectType,
+      subjectId: request.subjectId,
+      fingerprint,
+      inputFingerprint,
+      contextFingerprint,
+      continuityFingerprint,
+      slot,
+      status: 'fallback',
+      usedCache: false,
+      attemptCount: 0,
+      issue: {
+        code: 'missing_key',
+        title: 'No available model configured',
+        message: `Structured generation skipped ${slot} because no API key was available for ${role}.`,
+      },
+      summary: request.summaryHint ?? summarizeOutput(request.fallback),
+      output: request.fallback,
+      updatedAt: new Date().toISOString(),
+    }
+
+    await writeGenerationPass(request.topicId, fallbackRecord)
+
+    return {
+      output: request.fallback,
+      fromCache: false,
+      usedFallback: true,
+      issue: fallbackRecord.issue,
+      record: fallbackRecord,
+    }
+  }
 
   for (let attempt = 1; attempt <= attemptLimit; attempt += 1) {
-    const result = await omniGateway.complete({
-      task,
-      preferredSlot: slot,
-      role,
-      json: true,
-      temperature: resolveTemperature(runtime, slot, request.temperature),
-      maxTokens: request.maxTokens ?? 1800,
-      messages: [
-        {
-          role: 'system',
-          content: systemPrompt,
-        },
-        {
-          role: 'user',
-          content: userPrompt,
-        },
-      ],
-    })
+    const result = await omniGateway.complete(availabilityRequest)
 
     issue = result.issue
     if (result.usedFallback) {

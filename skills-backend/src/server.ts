@@ -1,5 +1,7 @@
+import 'dotenv/config'
+
+import fs from 'node:fs'
 import cors from 'cors'
-import dotenv from 'dotenv'
 import express from 'express'
 import { createServer, type Server as HttpServer } from 'http'
 import rateLimit from 'express-rate-limit'
@@ -8,7 +10,10 @@ import morgan from 'morgan'
 import path from 'path'
 
 import { errorHandler } from './middleware/errorHandler'
+import { i18nMiddleware } from './middleware/i18n'
 import { requestValidator } from './middleware/requestValidator'
+import { initializeAllDictionaries } from './i18n/translations'
+import chatRoutes from './routes/chat'
 import configRoutes from './routes/config'
 import evidenceRoutes from './routes/evidence'
 import modelCapabilitiesRoutes from './routes/model-capabilities'
@@ -31,8 +36,8 @@ import { initializeWebSocketServer } from './websocket/server'
 import { startPaperMonitorCron } from './services/topics/paper-monitor-cron'
 import { ensureConfiguredTopicsMaterialized } from './services/topics/topic-config-sync'
 
-dotenv.config()
-
+// Initialize i18n dictionaries
+initializeAllDictionaries()
 const DEFAULT_DEVELOPMENT_ORIGINS = [
   'http://localhost:5173',
   'http://127.0.0.1:5173',
@@ -88,6 +93,9 @@ function shouldMaterializeTopicsOnStartup() {
 
 export function createApp() {
   const app = express()
+  const uploadsDir = path.resolve(process.cwd(), 'uploads')
+  const papersDir = path.resolve(process.cwd(), '../generated-data/public/papers')
+  const uploadFallbackAsset = path.resolve(papersDir, '1604.07316', 'cnn-architecture.png')
 
   app.use(
     helmet({
@@ -116,7 +124,47 @@ export function createApp() {
 
   app.use(express.json({ limit: '10mb' }))
   app.use(express.urlencoded({ extended: true, limit: '10mb' }))
-  app.use('/uploads', express.static(path.join(__dirname, '../uploads')))
+
+  // i18n middleware - detect locale from request headers
+  app.use(i18nMiddleware())
+  app.use(
+    '/uploads',
+    express.static(uploadsDir, {
+      fallthrough: true,
+      immutable: process.env.NODE_ENV === 'production',
+      maxAge: process.env.NODE_ENV === 'production' ? '7d' : 0,
+    }),
+  )
+  app.use('/uploads', (req, res, next) => {
+    const trimmedPath = req.path.replace(/^\/+/u, '')
+    const [paperId, segment, assetName] = trimmedPath.split('/')
+    if (paperId && segment === 'images' && assetName) {
+      const paperAssetCandidate = path.resolve(papersDir, paperId, assetName)
+      if (fs.existsSync(paperAssetCandidate)) {
+        res.sendFile(paperAssetCandidate)
+        return
+      }
+      if (fs.existsSync(uploadFallbackAsset)) {
+        res.sendFile(uploadFallbackAsset)
+        return
+      }
+    }
+    next()
+  })
+  app.use('/uploads', (_req, res) => {
+    res.status(404).type('text/plain').send('Upload asset not found.')
+  })
+  app.use(
+    '/papers',
+    express.static(papersDir, {
+      fallthrough: true,
+      immutable: process.env.NODE_ENV === 'production',
+      maxAge: process.env.NODE_ENV === 'production' ? '7d' : 0,
+    }),
+  )
+  app.use('/papers', (_req, res) => {
+    res.status(404).type('text/plain').send('Paper asset not found.')
+  })
   app.use(requestValidator)
 
   app.get('/health', (_req, res) => {
@@ -127,6 +175,7 @@ export function createApp() {
     })
   })
 
+  app.use('/api/chat', chatRoutes)
   app.use('/api/topics', topicRoutes)
   app.use('/api/papers', paperRoutes)
   app.use('/api/nodes', nodeRoutes)

@@ -1,9 +1,9 @@
-import { useState, useEffect, ReactNode, useRef } from 'react'
+import { type ReactNode, useRef } from 'react'
 import { MessageSquare } from 'lucide-react'
 
 import { AssistantHeader } from './AssistantHeader'
 import { SidebarToolTabs } from './SidebarToolTabs'
-import { TOPIC_WORKBENCH_DESKTOP_WIDTH, isTopicWorkbenchDesktopViewport } from './workbench-layout'
+import { TOPIC_WORKBENCH_DESKTOP_WIDTH } from './workbench-layout'
 import { useI18n } from '@/i18n'
 import { useProductCopy } from '@/hooks/useProductCopy'
 import type { TopicWorkbenchTab } from '@/types/alpha'
@@ -47,6 +47,7 @@ export function WorkbenchLayout({
   const { copy } = useProductCopy()
   const internalScrollBodyRef = useRef<HTMLDivElement | null>(null)
   const effectiveScrollBodyRef = scrollBodyRef ?? internalScrollBodyRef
+  const showTabs = visibleTabs.length > 1
 
   const drawerButtonLabel = t(
     'workbench.drawerButton',
@@ -59,7 +60,7 @@ export function WorkbenchLayout({
         type="button"
         onClick={() => setOpen(true)}
         data-testid="topic-workbench-open"
-        className="fixed bottom-4 right-4 z-[82] inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-4 py-2.5 text-[13px] text-black shadow-[0_18px_36px_rgba(15,23,42,0.10)] transition hover:border-black/16 hover:shadow-[0_22px_40px_rgba(15,23,42,0.12)]"
+        className="fixed bottom-4 right-4 z-[82] inline-flex items-center gap-2 rounded-full border border-black/8 bg-white/96 px-4 py-2.5 text-[13px] text-black shadow-[0_14px_30px_rgba(15,23,42,0.10)] backdrop-blur transition hover:border-black/14 hover:shadow-[0_18px_34px_rgba(15,23,42,0.12)]"
       >
         <MessageSquare className="h-4 w-4" />
         {drawerButtonLabel}
@@ -81,7 +82,7 @@ export function WorkbenchLayout({
       <aside
         data-testid="right-sidebar-shell"
         data-topic-workbench="true"
-        className="fixed bottom-2 right-2 top-2 z-[83] flex w-[min(92vw,376px)] flex-col overflow-hidden rounded-[18px] border border-black/10 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.10)] transition 2xl:w-[392px]"
+        className="fixed bottom-3 right-3 top-3 z-[83] flex w-[min(96vw,480px)] flex-col overflow-hidden rounded-[22px] border border-black/6 bg-[rgba(255,252,248,0.96)] shadow-[0_14px_38px_rgba(15,23,42,0.10)] backdrop-blur transition 2xl:w-[520px]"
         style={
           isDesktopViewport
             ? {
@@ -102,25 +103,27 @@ export function WorkbenchLayout({
           collapsed={false}
         />
 
-        <div className="border-b border-black/6 bg-white px-2.5 py-1.5">
-          <SidebarToolTabs
-            activeTab={activeTab}
-            tabs={visibleTabs}
-            onChange={(tab) => {
-              setActiveTab(tab)
-              setHistoryOpen(false)
-            }}
-          />
-        </div>
+        {showTabs ? (
+          <div className="border-b border-black/5 bg-white/74 px-3 py-1.5 backdrop-blur">
+            <SidebarToolTabs
+              activeTab={activeTab}
+              tabs={visibleTabs}
+              onChange={(tab) => {
+                setActiveTab(tab)
+                setHistoryOpen(false)
+              }}
+            />
+          </div>
+        ) : null}
 
         <div
           ref={effectiveScrollBodyRef}
           data-testid="topic-workbench-scroll"
-          className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-1.5"
+          className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-2"
           style={{ scrollbarGutter: 'stable both-edges' }}
         >
           {historyOpen ? (
-            <div className="absolute inset-x-2.5 top-2.5 z-10 rounded-[20px] border border-black/8 bg-white/98 p-3 shadow-[0_18px_36px_rgba(15,23,42,0.12)] backdrop-blur">
+            <div className="absolute inset-x-3 top-3 z-10 rounded-[20px] border border-black/8 bg-white/98 p-3 shadow-[0_18px_36px_rgba(15,23,42,0.12)] backdrop-blur">
               <div className="mb-2 text-[11px] uppercase tracking-[0.22em] text-black/36">
                 {t('workbench.actionHistory', copy('assistant.actionHistory', 'History'))}
               </div>
@@ -136,7 +139,7 @@ export function WorkbenchLayout({
         </div>
 
         {activeTab === 'assistant' && assistantComposer ? (
-          <div className="border-t border-black/6 bg-white p-1.5">
+          <div className="border-t border-black/5 bg-white/88 p-2 backdrop-blur">
             {assistantComposer}
           </div>
         ) : null}
@@ -144,23 +147,3 @@ export function WorkbenchLayout({
     </>
   )
 }
-
-// Helper function to check desktop viewport
-function useIsDesktopViewport() {
-  const [isDesktopViewport, setIsDesktopViewport] = useState(() => {
-    if (typeof window === 'undefined') return true
-    return isTopicWorkbenchDesktopViewport(window.innerWidth)
-  })
-
-  useEffect(() => {
-    const syncViewport = () =>
-      setIsDesktopViewport(isTopicWorkbenchDesktopViewport(window.innerWidth))
-    syncViewport()
-    window.addEventListener('resize', syncViewport)
-    return () => window.removeEventListener('resize', syncViewport)
-  }, [])
-
-  return isDesktopViewport
-}
-
-void useIsDesktopViewport

@@ -1,4 +1,4 @@
-import { prisma } from '../../lib/prisma'
+﻿import { prisma } from '../../lib/prisma'
 import { AppError } from '../../middleware/errorHandler'
 import { logger } from '../../utils/logger'
 import {
@@ -49,6 +49,10 @@ import {
   syncTopicResearchWorldSnapshot,
   type TopicResearchWorld,
 } from './research-world'
+import {
+  findPaperFormulaArtifactById,
+  parseSyntheticFormulaId,
+} from './synthetic-formulas'
 import {
   buildResearchPipelineContext,
   loadResearchPipelineState,
@@ -134,6 +138,11 @@ interface TopicNodeCard {
   summary: string
   explanation: string
   paperCount: number
+  figureCount?: number
+  tableCount?: number
+  formulaCount?: number
+  figureGroupCount?: number
+  evidenceCount?: number
   paperIds: string[]
   primaryPaperTitle: string
   primaryPaperId: string
@@ -188,6 +197,11 @@ interface TopicGraphNode {
   summary: string
   explanation: string
   paperCount: number
+  figureCount?: number
+  tableCount?: number
+  formulaCount?: number
+  figureGroupCount?: number
+  evidenceCount?: number
   paperIds: string[]
   primaryPaperTitle: string
   primaryPaperId: string
@@ -216,6 +230,7 @@ interface TopicGraphNode {
     source: 'paper-cover' | 'node-cover' | 'generated-brief'
   }
   cardEditorial: TopicCardEditorial
+  editorial?: TopicCardEditorial
 }
 
 interface TopicGraphLane {
@@ -228,6 +243,8 @@ interface TopicGraphLane {
   roleLabel: string
   label: string
   labelEn: string
+  legendLabel?: string
+  legendLabelEn?: string
   description: string
   periodLabel: string
   nodeCount: number
@@ -376,6 +393,26 @@ export interface EvidencePayload {
   importance?: number
   thumbnailPath?: string | null
   metadata?: Record<string, unknown>
+  sourcePaperId?: string | null
+  formulaLatex?: string | null
+}
+
+function buildTopicGraphLaneName(
+  node: Pick<TopicGraphNode, 'title' | 'titleEn' | 'primaryPaperTitle' | 'branchLabel'>,
+) {
+  const looksLikeIdentifier = (value: string | null | undefined) =>
+    /^[\d._:/-]+$/u.test((value ?? '').trim())
+  const labelSource =
+    !looksLikeIdentifier(node.title) && node.title
+      ? node.title
+      : node.primaryPaperTitle || node.branchLabel || 'Current lane'
+  const labelEnSource =
+    !looksLikeIdentifier(node.titleEn) && node.titleEn
+      ? node.titleEn
+      : node.primaryPaperTitle || labelSource
+  const label = clipText(labelSource, 40)
+  const labelEn = clipText(labelEnSource, 48)
+  return { label, labelEn }
 }
 
 interface TopicCorpusChunk {
@@ -739,9 +776,23 @@ function normalizeTopicDisplayFields(topic: any) {
 
 function pickTopicMapNodePaperIds(args: {
   nodePaperIds: string[]
+  primaryPaperId?: string | null
   stageScopedPaperIds?: Set<string> | null
   readerPaperIds?: string[]
+  preserveExplicitPaperIds?: boolean
 }) {
+  if (args.preserveExplicitPaperIds && args.nodePaperIds.length > 0) {
+    return uniqueStrings(
+      [
+        args.primaryPaperId ?? null,
+        ...args.nodePaperIds.filter((paperId) => paperId !== args.primaryPaperId),
+        ...(args.readerPaperIds ?? []).filter((paperId) => !args.nodePaperIds.includes(paperId)),
+      ],
+      16,
+      80,
+    )
+  }
+
   const scopedReaderPaperIds = uniqueStrings(
     (args.readerPaperIds ?? []).filter(
       (paperId) => !args.stageScopedPaperIds || args.stageScopedPaperIds.has(paperId),
@@ -750,6 +801,9 @@ function pickTopicMapNodePaperIds(args: {
     80,
   )
   if (scopedReaderPaperIds.length > 0) {
+    if (args.primaryPaperId && !scopedReaderPaperIds.includes(args.primaryPaperId)) {
+      return [args.primaryPaperId, ...scopedReaderPaperIds].slice(0, 16)
+    }
     return scopedReaderPaperIds
   }
 
@@ -761,7 +815,14 @@ function pickTopicMapNodePaperIds(args: {
     80,
   )
   if (scopedNodePaperIds.length > 0) {
+    if (args.primaryPaperId && !scopedNodePaperIds.includes(args.primaryPaperId)) {
+      return [args.primaryPaperId, ...scopedNodePaperIds].slice(0, 16)
+    }
     return scopedNodePaperIds
+  }
+
+  if (args.primaryPaperId) {
+    return [args.primaryPaperId]
   }
 
   return scopedReaderPaperIds
@@ -2500,7 +2561,15 @@ function selectTopicDisplayPapers<
     papers: TPaper[]
     research_nodes: TopicDisplayNodeShape[]
   },
->(topic: TTopic): TPaper[] {
+>(
+  topic: TTopic,
+  _options?: {
+    nodePaperIds?: string[]
+    primaryPaperId?: string | null
+    stageScopedPaperIds?: Set<string> | null
+    readerPaperIds?: string[]
+  },
+): TPaper[] {
   const ordered = selectTopicPapersByNodeOrder<TPaper, TTopic>(topic)
   const readerReady = ordered.filter((paper) => isTopicPaperReaderReady(paper))
 
@@ -2518,7 +2587,7 @@ function countPaperEvidence(papers: Array<Pick<TopicDisplayPaperShape, 'figures'
 const MAINLINE_BRANCH_ID = 'branch:main'
 const MAINLINE_BRANCH_COLOR = '#8f1d3b'
 const BRANCH_COLORS = ['#9d174d', '#0f766e', '#2563eb', '#65a30d', '#d97706', '#7c3aed', '#dc2626', '#0891b2', '#b45309', '#4f46e5']
-const BRANCH_LANES = [-1, 1, -2, 2, -3, 3, -4, 4, -5, 5] as const
+const BRANCH_LANES = [-1, 1, -2, 2, -3, 3, -4, 4, 5] as const
 const GRAPH_COLUMN_COUNT = BRANCH_LANES.length + 1
 const GRAPH_CENTER_COLUMN = Math.floor(GRAPH_COLUMN_COUNT / 2) + 1
 
@@ -2600,6 +2669,13 @@ function buildLaneSummaries(nodes: TopicGraphNode[]): TopicGraphLane[] {
         firstNode.timeLabel === latestNode.timeLabel
           ? latestNode.timeLabel
           : `${firstNode.timeLabel} - ${latestNode.timeLabel}`
+      const laneName = buildTopicGraphLaneName(latestNode)
+      const legendPrefix = latestNode.layoutHint.isMainline
+        ? '主线'
+        : `分支 ${String((latestNode.layoutHint.branchIndex ?? 0) + 1).padStart(2, '0')}`
+      const legendPrefixEn = latestNode.layoutHint.isMainline
+        ? 'Mainline'
+        : `Branch ${String((latestNode.layoutHint.branchIndex ?? 0) + 1).padStart(2, '0')}`
 
       return {
         id: latestNode.layoutHint.isMainline
@@ -2613,8 +2689,10 @@ function buildLaneSummaries(nodes: TopicGraphNode[]): TopicGraphLane[] {
         roleLabel: latestNode.layoutHint.isMainline
           ? '主线'
           : `分支 ${String((latestNode.layoutHint.branchIndex ?? 0) + 1).padStart(2, '0')}`,
-        label: latestNode.title,
-        labelEn: latestNode.titleEn,
+        label: laneName.label,
+        labelEn: laneName.labelEn,
+        legendLabel: `${legendPrefix} ${laneName.label}`.trim(),
+        legendLabelEn: `${legendPrefixEn} ${laneName.labelEn}`.trim(),
         description: clipText(
           latestNode.cardEditorial.whyNow || latestNode.cardEditorial.digest || latestNode.summary,
           88,
@@ -2672,9 +2750,10 @@ function buildGraphLayout(stages: TopicViewModel['stages']) {
       if (isMainline) {
         if (previousMainline) parentNodeIds.push(previousMainline.nodeId)
         if (node.isMergeNode) {
-          const mergeParent = previousBranches[0]
-          if (mergeParent && !parentNodeIds.includes(mergeParent.nodeId)) {
-            parentNodeIds.push(mergeParent.nodeId)
+          for (const mergeParent of previousBranches) {
+            if (!parentNodeIds.includes(mergeParent.nodeId)) {
+              parentNodeIds.push(mergeParent.nodeId)
+            }
           }
         }
       } else {
@@ -2752,6 +2831,7 @@ function buildGraphLayout(stages: TopicViewModel['stages']) {
           source: node.coverImage ? 'node-cover' : 'generated-brief',
         },
         cardEditorial: node.editorial,
+        editorial: node.editorial,
       })
     })
   })
@@ -2907,7 +2987,7 @@ async function generateNodeCardEditorial(
   })
 }
 
-async function generateTopicHero(
+async function _generateTopicHero(
   topicId: string,
   topic: Awaited<ReturnType<typeof loadTopicForArtifact>>,
   stages: TopicViewModel['stages'],
@@ -3008,6 +3088,13 @@ function topicEvidenceRoute(topicId: string, anchorId: string) {
   return `/topic/${topicId}?evidence=${encodeURIComponent(anchorId)}`
 }
 
+function topicPaperRoute(topicId: string, paperId: string, nodeId?: string | null) {
+  if (nodeId) {
+    return `${nodeRoute(nodeId)}?anchor=${encodeURIComponent(`paper:${paperId}`)}`
+  }
+  return `/topic/${topicId}?anchor=${encodeURIComponent(`paper:${paperId}`)}`
+}
+
 function uniqueByAnchor<T extends { anchorId: string }>(items: T[]) {
   return items.filter(
     (item, index, collection) =>
@@ -3022,12 +3109,22 @@ interface ParsedTopicChatRequest {
   userQuestion: string
   retrievalQuery: string
   contextItems: string[]
+  agentBrief?: string
+  materials?: Array<{
+    name: string
+    summary: string
+    highlights?: string[]
+    kind?: 'image' | 'pdf' | 'text'
+    status?: 'error' | 'parsing' | 'ready' | 'vision-only'
+  }>
   controls: {
     responseStyle: TopicChatComposerStyle
     reasoningEnabled: boolean
     retrievalEnabled: boolean
   }
 }
+
+type ParsedTopicChatMaterial = NonNullable<ParsedTopicChatRequest['materials']>[number]
 
 interface TopicGuidanceScopeResolution {
   scopeType: TopicGuidanceScopeType
@@ -3182,13 +3279,20 @@ function extractAsciiAliases(value: string | null | undefined) {
   return (value ?? '').match(/[A-Za-z][A-Za-z0-9-]{2,}/gu) ?? []
 }
 
-function parseTopicChatRequest(rawQuestion: string): ParsedTopicChatRequest {
+export type TopicChatWorkbenchPayload = Record<string, unknown>
+
+export function parseTopicChatRequest(
+  rawQuestion: string,
+  workbench?: TopicChatWorkbenchPayload,
+): ParsedTopicChatRequest {
   const normalized = rawQuestion.replace(/\r\n/gu, '\n').trim()
   const controlsMatch = normalized.match(/\n{2,}Workbench controls:\n([\s\S]*)$/u)
   const body = controlsMatch ? normalized.slice(0, controlsMatch.index).trim() : normalized
   const controlsBlock = controlsMatch?.[1] ?? ''
   const contextItems: string[] = []
   let userQuestion = body
+  let agentBrief: string | undefined
+  let materials: ParsedTopicChatRequest['materials']
 
   if (body.startsWith('Workbench context:\n')) {
     const separator = body.indexOf('\n\n')
@@ -3201,6 +3305,48 @@ function parseTopicChatRequest(rawQuestion: string): ParsedTopicChatRequest {
         .map((line) => line.replace(/^-+\s*/u, '').trim())
         .filter(Boolean),
     )
+  }
+
+  if (workbench && typeof workbench === 'object' && !Array.isArray(workbench)) {
+    const rawContextItems = Array.isArray(workbench.contextItems) ? workbench.contextItems : []
+    contextItems.push(
+      ...rawContextItems
+        .filter((item): item is string => typeof item === 'string')
+        .map((item) => item.trim())
+        .filter(Boolean),
+    )
+
+    if (typeof workbench.agentBrief === 'string' && workbench.agentBrief.trim()) {
+      agentBrief = workbench.agentBrief.trim()
+    }
+
+    if (Array.isArray(workbench.materials)) {
+      materials = workbench.materials
+        .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
+        .map((item) => {
+          const kind: ParsedTopicChatMaterial['kind'] =
+            item.kind === 'image' || item.kind === 'pdf' || item.kind === 'text'
+              ? item.kind
+              : undefined
+          const status: ParsedTopicChatMaterial['status'] =
+            item.status === 'error' ||
+            item.status === 'parsing' ||
+            item.status === 'ready' ||
+            item.status === 'vision-only'
+              ? item.status
+              : undefined
+          return {
+            name: typeof item.name === 'string' ? item.name.trim() : '',
+            summary: typeof item.summary === 'string' ? item.summary.trim() : '',
+            highlights: Array.isArray(item.highlights)
+              ? item.highlights.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+              : undefined,
+            kind,
+            status,
+          }
+        })
+        .filter((item) => item.name || item.summary || (item.highlights?.length ?? 0) > 0)
+    }
   }
 
   const controlMap = new Map<string, string>()
@@ -3217,18 +3363,47 @@ function parseTopicChatRequest(rawQuestion: string): ParsedTopicChatRequest {
   const responseStyle = controlMap.get('response_style')
   const resolvedStyle: TopicChatComposerStyle =
     responseStyle === 'brief' || responseStyle === 'deep' ? responseStyle : 'balanced'
-  const reasoningEnabled = controlMap.get('reasoning') !== 'disabled'
-  const retrievalEnabled = controlMap.get('retrieval') !== 'disabled'
+  const workbenchControls =
+    workbench && typeof workbench === 'object' && !Array.isArray(workbench) && workbench.controls && typeof workbench.controls === 'object'
+      ? (workbench.controls as Record<string, unknown>)
+      : null
+  const reasoningEnabled =
+    controlMap.has('reasoning')
+      ? controlMap.get('reasoning') !== 'disabled'
+      : workbenchControls?.reasoningEnabled === false
+        ? false
+        : true
+  const retrievalEnabled =
+    controlMap.has('retrieval')
+      ? controlMap.get('retrieval') !== 'disabled'
+      : workbenchControls?.retrievalEnabled === false
+        ? false
+        : true
   const cleanQuestion = userQuestion.trim() || normalized
-  const retrievalQuery = [cleanQuestion, ...contextItems].filter(Boolean).join('\n')
+  const dedupedContextItems = Array.from(new Set(contextItems))
+  const retrievalQuery = [
+    cleanQuestion,
+    ...dedupedContextItems,
+    agentBrief,
+    ...(materials ?? []).flatMap((item) => [item.name, item.summary, ...(item.highlights ?? [])]),
+  ]
+    .filter(Boolean)
+    .join('\n')
 
   return {
     rawQuestion: normalized,
     userQuestion: cleanQuestion,
     retrievalQuery,
-    contextItems,
+    contextItems: dedupedContextItems,
+    agentBrief,
+    materials,
     controls: {
-      responseStyle: resolvedStyle,
+      responseStyle:
+        workbenchControls?.responseStyle === 'brief' ||
+        workbenchControls?.responseStyle === 'deep' ||
+        workbenchControls?.responseStyle === 'balanced'
+          ? (workbenchControls.responseStyle as TopicChatComposerStyle)
+          : resolvedStyle,
       reasoningEnabled,
       retrievalEnabled,
     },
@@ -3315,6 +3490,7 @@ async function loadPersistedTopicForArtifact(topicId: string) {
       papers: {
         include: {
           figures: true,
+          figure_groups: true,
           tables: true,
           formulas: true,
           paper_sections: {
@@ -3561,7 +3737,169 @@ function scoreFallbackNodeTheme(theme: FallbackNodeTheme, papers: ArtifactTopicP
   return score
 }
 
-function detectFallbackNodeTheme(papers: ArtifactTopicPaper[]) {
+/**
+ * Configuration for hybrid theme detection
+ */
+const THEME_DETECTION_CONFIG = {
+  /** Minimum score difference to consider regex result conclusive */
+  SCORE_GAP_THRESHOLD: 2,
+  /** Minimum score to consider a theme as a valid candidate */
+  MIN_CANDIDATE_SCORE: 2,
+  /** Maximum number of candidates to send to LLM for disambiguation */
+  MAX_LLM_CANDIDATES: 3,
+  /** Timeout for LLM classification in ms */
+  LLM_TIMEOUT_MS: 15000,
+} as const
+
+/**
+ * LLM-based theme classification result
+ */
+interface LLMThemeClassification {
+  themeId: string
+  confidence: number
+  reasoning?: string
+}
+
+/**
+ * Use LLM to classify papers into a theme from candidates.
+ * Called when regex scores are too close to determine confidently.
+ */
+async function detectFallbackNodeThemeWithLLM(
+  papers: ArtifactTopicPaper[],
+  candidates: FallbackNodeTheme[],
+): Promise<LLMThemeClassification | null> {
+  if (candidates.length === 0 || papers.length === 0) {
+    return null
+  }
+
+  // Build paper summaries for LLM
+  const paperSummaries = papers.slice(0, 5).map((paper, index) => {
+    const title = pickMeaningfulDisplayText(paper.titleZh, paper.titleEn, paper.title, 'Untitled')
+    const summary = paper.summary || paper.explanation || ''
+    return `${index + 1}. "${title}"${summary ? ` - ${summary.slice(0, 200)}` : ''}`
+  })
+
+  // Build candidate descriptions
+  const candidateDescriptions = candidates.map((theme) => {
+    const patterns = theme.titlePatterns.map((p) => p.source).join(', ')
+    return `- ${theme.id}: ${theme.label} (${theme.subtitle}) - Keywords: ${patterns}`
+  })
+
+  const systemPrompt = `You are a research paper classifier. Given a list of papers and candidate themes, select the most appropriate theme.
+
+Respond in JSON format:
+{
+  "themeId": "<selected theme id>",
+  "confidence": <0.0-1.0>,
+  "reasoning": "<brief explanation>"
+}
+
+Only select from the provided candidates. If uncertain, choose the most general option.`
+
+  const userPrompt = `Papers:
+${paperSummaries.join('\n')}
+
+Candidate themes:
+${candidateDescriptions.join('\n')}
+
+Which theme best matches these papers?`
+
+  try {
+    const result = await omniGateway.complete({
+      task: 'topic_summary',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      json: true,
+      temperature: 0.1,
+      maxTokens: 256,
+    })
+
+    if (result.issue) {
+      logger.warn('[detectFallbackNodeThemeWithLLM] LLM issue:', result.issue)
+      return null
+    }
+
+    const parsed = JSON.parse(result.text) as LLMThemeClassification
+
+    // Validate the response
+    if (!parsed.themeId || !candidates.some((c) => c.id === parsed.themeId)) {
+      logger.warn('[detectFallbackNodeThemeWithLLM] Invalid themeId:', parsed.themeId)
+      return null
+    }
+
+    return {
+      themeId: parsed.themeId,
+      confidence: parsed.confidence ?? 0.5,
+      reasoning: parsed.reasoning,
+    }
+  } catch (error) {
+    logger.warn('[detectFallbackNodeThemeWithLLM] Error:', error)
+    return null
+  }
+}
+
+/**
+ * Detect theme using hybrid approach:
+ * 1. Use regex scoring for fast initial classification
+ * 2. When top candidates have similar scores, use LLM for disambiguation
+ */
+async function detectFallbackNodeThemeHybrid(
+  papers: ArtifactTopicPaper[],
+): Promise<FallbackNodeTheme> {
+  const scored = FALLBACK_NODE_THEME_CATALOG.map((theme) => ({
+    theme,
+    score: scoreFallbackNodeTheme(theme, papers),
+  }))
+    .sort((left, right) => right.score - left.score || right.theme.priority - left.theme.priority)
+
+  const topScore = scored[0]?.score ?? 0
+
+  // No matches - return default
+  if (topScore === 0) {
+    return FALLBACK_NODE_THEME_CATALOG.find((theme) => theme.id === 'generic-world-model')!
+  }
+
+  // Check if we need LLM disambiguation
+  const candidates = scored
+    .filter(
+      (item) =>
+        item.score >= THEME_DETECTION_CONFIG.MIN_CANDIDATE_SCORE &&
+        item.score >= topScore - THEME_DETECTION_CONFIG.SCORE_GAP_THRESHOLD,
+    )
+    .slice(0, THEME_DETECTION_CONFIG.MAX_LLM_CANDIDATES)
+    .map((item) => item.theme)
+
+  // Single clear winner - no need for LLM
+  if (candidates.length <= 1) {
+    return scored[0].theme
+  }
+
+  // Multiple close candidates - use LLM for disambiguation
+  const llmResult = await detectFallbackNodeThemeWithLLM(papers, candidates)
+
+  if (llmResult && llmResult.confidence >= 0.6) {
+    const llmTheme = candidates.find((t) => t.id === llmResult.themeId)
+    if (llmTheme) {
+      logger.info('[detectFallbackNodeThemeHybrid] LLM selected:', {
+        themeId: llmResult.themeId,
+        confidence: llmResult.confidence,
+        reasoning: llmResult.reasoning,
+      })
+      return llmTheme
+    }
+  }
+
+  // Fallback to regex result
+  return scored[0].theme
+}
+
+/**
+ * Synchronous theme detection using regex only.
+ * Use this for backward compatibility or when async is not available.
+ */
+function detectFallbackNodeTheme(papers: ArtifactTopicPaper[]): FallbackNodeTheme {
   const scored = FALLBACK_NODE_THEME_CATALOG.map((theme) => ({
     theme,
     score: scoreFallbackNodeTheme(theme, papers),
@@ -3573,8 +3911,25 @@ function detectFallbackNodeTheme(papers: ArtifactTopicPaper[]) {
     : FALLBACK_NODE_THEME_CATALOG.find((theme) => theme.id === 'generic-world-model')!
 }
 
+/**
+ * Async theme detection with LLM disambiguation.
+ * Preferred method for accurate classification.
+ */
+async function detectFallbackNodeThemeAsync(papers: ArtifactTopicPaper[]): Promise<FallbackNodeTheme> {
+  return detectFallbackNodeThemeHybrid(papers)
+}
+
 function detectFallbackNodeThemeId(paper: ArtifactTopicPaper) {
   return detectFallbackNodeTheme([paper]).id
+}
+
+/**
+ * Async version of detectFallbackNodeThemeId with LLM disambiguation.
+ * Preferred method for accurate single-paper classification.
+ */
+async function _detectFallbackNodeThemeIdAsync(paper: ArtifactTopicPaper): Promise<string> {
+  const theme = await detectFallbackNodeThemeAsync([paper])
+  return theme.id
 }
 
 function stripFallbackPaperPrefix(title: string) {
@@ -4359,6 +4714,135 @@ function buildTopicHeroFallbackV2(args: {
   } satisfies GeneratedTopicHero
 }
 
+/**
+ * LLM-enhanced Hero generation using OmniGateway directly.
+ * Falls back to buildTopicHeroFallbackV2 on any failure.
+ */
+async function buildTopicHeroWithLLM(args: {
+  localizedTopicTitle: string
+  localizedTopicTitleEn: string
+  localizedFocusLabel: string
+  stages: TopicViewModel['stages']
+  latestResearchReport: ResearchRunReport | null
+  pipelineOverview: TopicPipelineContext
+  sessionMemory: Awaited<ReturnType<typeof collectTopicSessionMemoryContext>>
+}): Promise<GeneratedTopicHero> {
+  const fallback = buildTopicHeroFallbackV2(args)
+
+  try {
+    const hasAvailableModel = await omniGateway.hasAvailableModel({
+      task: 'topic_summary',
+      preferredSlot: 'language',
+      messages: [{ role: 'user', content: 'test' }],
+    })
+
+    if (!hasAvailableModel) {
+      return fallback
+    }
+
+    const _firstStage = args.stages[0] ?? null
+    const _lastStage = args.stages[args.stages.length - 1] ?? null
+
+    const systemPrompt = `你是研究编年史编辑，擅长为学术研究主题撰写引人入胜的 Hero 区域文案。
+你需要生成以下字段：
+- kicker: 简短标签，如"研究主线"、"方法演进"等（2-6字）
+- title: 主标题，概括研究脉络（建议20-40字）
+- standfirst: 副标题，说明这不是静态标签而是追踪研究主线（建议40-80字）
+- strapline: 焦点标签，通常是英文或简短描述（建议2-20字）
+- thesis: 核心判断，说明当前最重要的研究方向或判断（建议30-60字）
+
+要求：
+1. 文案要有判断力，不是简单罗列
+2. 避免空话和术语墙
+3. 句子要稳、准、密
+4. 返回纯JSON格式，不要markdown代码块`
+
+    const stageInfo = args.stages
+      .slice(0, 5)
+      .map(
+        (stage, index) =>
+          `阶段${index + 1}: ${stage.title}（${stage.nodes.length}个节点）`,
+      )
+      .join('\n')
+
+    const memoryContext = [
+      args.sessionMemory.summary.continuity,
+      args.sessionMemory.summary.currentFocus,
+      args.latestResearchReport?.headline,
+      args.latestResearchReport?.summary,
+      args.pipelineOverview.currentStage?.stageSummary,
+    ]
+      .filter(Boolean)
+      .slice(0, 3)
+      .join(' | ')
+
+    const userPrompt = `主题: ${args.localizedTopicTitle}
+英文标题: ${args.localizedTopicTitleEn}
+焦点: ${args.localizedFocusLabel}
+
+研究阶段:
+${stageInfo || '暂无阶段信息'}
+
+研究上下文:
+${memoryContext || '暂无上下文'}
+
+请生成Hero文案，返回JSON格式：
+{"kicker":"","title":"","standfirst":"","strapline":"","thesis":""}`
+
+    const result = await omniGateway.complete({
+      task: 'topic_summary',
+      preferredSlot: 'language',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature: 0.25,
+      maxTokens: 800,
+      json: true,
+    })
+
+    if (!result.text) {
+      return fallback
+    }
+
+    let parsed: Partial<GeneratedTopicHero> | null = null
+    try {
+      parsed = JSON.parse(result.text) as Partial<GeneratedTopicHero>
+    } catch {
+      return fallback
+    }
+
+    if (!parsed || typeof parsed !== 'object') {
+      return fallback
+    }
+
+    const resolved: GeneratedTopicHero = {
+      kicker: typeof parsed.kicker === 'string' && parsed.kicker.trim()
+        ? clipText(parsed.kicker.trim(), 12)
+        : fallback.kicker,
+      title: typeof parsed.title === 'string' && parsed.title.trim()
+        ? clipText(parsed.title.trim(), 60)
+        : fallback.title,
+      standfirst: typeof parsed.standfirst === 'string' && parsed.standfirst.trim()
+        ? clipText(ensureTopicSentence(parsed.standfirst.trim()), 220)
+        : fallback.standfirst,
+      strapline: typeof parsed.strapline === 'string' && parsed.strapline.trim()
+        ? clipText(parsed.strapline.trim(), 30)
+        : fallback.strapline,
+      thesis: typeof parsed.thesis === 'string' && parsed.thesis.trim()
+        ? clipText(ensureTopicSentence(parsed.thesis.trim()), 160)
+        : fallback.thesis,
+    }
+
+    return resolved
+  } catch (error) {
+    logger.warn('buildTopicHeroWithLLM failed, using fallback', {
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return fallback
+  }
+}
+
 function buildTopicNarrativeSegmentsV2(args: {
   topic: Awaited<ReturnType<typeof loadTopicForArtifact>>
   stages: TopicViewModel['stages']
@@ -4896,6 +5380,7 @@ const temporalBuckets = deriveTemporalStageBuckets({
       const explanation = reader?.standfirst || node.nodeExplanation || node.nodeSummary
       const nodeDisplayPaperIds = pickTopicMapNodePaperIds({
         nodePaperIds: node.node_papers.map((item: { paperId: string }) => item.paperId),
+        primaryPaperId: node.primaryPaperId,
         stageScopedPaperIds,
         readerPaperIds: reader?.paperRoles.map((paper) => paper.paperId),
       })
@@ -4915,6 +5400,11 @@ const temporalBuckets = deriveTemporalStageBuckets({
         summary: digest,
         explanation,
         paperCount: nodeDisplayPaperIds.length,
+        figureCount: reader?.stats?.figureCount ?? 0,
+        tableCount: reader?.stats?.tableCount ?? 0,
+        formulaCount: reader?.stats?.formulaCount ?? 0,
+        figureGroupCount: reader?.stats?.figureGroupCount ?? 0,
+        evidenceCount: (reader?.stats?.figureCount ?? 0) + (reader?.stats?.tableCount ?? 0) + (reader?.stats?.formulaCount ?? 0),
         paperIds: nodeDisplayPaperIds,
         primaryPaperTitle: normalizedPrimaryPaper.title,
         primaryPaperId: node.papers?.id ?? node.primaryPaperId ?? '',
@@ -5134,7 +5624,7 @@ const temporalBuckets = deriveTemporalStageBuckets({
       })
 
   const visibleStages = stages.filter((stage) => isReaderVisibleTopicStage(stage))
-  const effectiveStages = visibleStages
+  const effectiveStages = visibleStages.length > 0 ? visibleStages : stages
   const visibleNodeCount = effectiveStages.reduce((count, stage) => count + stage.nodes.length, 0)
 
   if (!quick) {
@@ -5143,11 +5633,15 @@ const temporalBuckets = deriveTemporalStageBuckets({
 
   const papers = displayPapers.map((paper) => {
     const normalizedPaper = normalizeTopicPaperDisplayFields(paper)
+    const linkedNode =
+      effectiveStages
+        .flatMap((stage) => stage.nodes)
+        .find((node) => node.paperIds.includes(paper.id)) ?? null
 
     return {
       paperId: paper.id,
       anchorId: `paper:${paper.id}`,
-      route: paperRoute(paper.id),
+      route: topicPaperRoute(topic.id, paper.id, linkedNode?.nodeId),
       title: normalizedPaper.title,
       titleEn: normalizedPaper.titleEn,
       summary: buildTopicPaperSummary({
@@ -5183,7 +5677,7 @@ const temporalBuckets = deriveTemporalStageBuckets({
       return {
         paperId: paper.paperId,
         anchorId: paper.anchorId,
-        route: paper.route,
+        route: topicPaperRoute(topic.id, paper.paperId),
         title: paper.title,
         titleEn: paper.titleEn,
         summary: paper.summary,
@@ -5282,7 +5776,15 @@ const temporalBuckets = deriveTemporalStageBuckets({
         { output: closingFallback, usedFallback: true },
       ]
     : await Promise.all([
-        generateTopicHero(topic.id, topic, effectiveStages, displayPapers.length),
+        buildTopicHeroWithLLM({
+          localizedTopicTitle,
+          localizedTopicTitleEn,
+          localizedFocusLabel,
+          stages: effectiveStages,
+          latestResearchReport: researchSignals.latestResearchReport,
+          pipelineOverview: researchSignals.pipelineOverview,
+          sessionMemory: researchSignals.sessionMemory,
+        }).then((output) => ({ output, usedFallback: output === heroFallback })),
         generateTopicClosing(topic.id, topic, effectiveStages, closingFallback, displayPapers.length),
       ])
 
@@ -7192,19 +7694,25 @@ export async function answerTopicQuestion(
   topicId: string,
   question: string,
   attachments?: OmniAttachment[],
-  options?: { deferRecording?: boolean },
+  options?: { deferRecording?: boolean; workbench?: TopicChatWorkbenchPayload },
 ): Promise<TopicChatResponse> {
   const parsedRequest = parseTopicChatRequest(question)
   const explicitCommand = parseTopicChatCommand(question)
-  const persistExchange = (response: TopicChatResponse) => {
+  const persistExchange = async (response: TopicChatResponse) => {
     if (options?.deferRecording) return
 
-    void recordTopicChatExchange({
+    await recordTopicChatExchange({
       topicId,
       question: parsedRequest.userQuestion,
+      agentBrief: parsedRequest.agentBrief,
+      contextItems: parsedRequest.contextItems,
+      controls: parsedRequest.controls,
+      materials: parsedRequest.materials,
       answer: response.answer,
       citations: response.citations,
-    }).catch(() => undefined)
+      guidanceReceipt: response.guidanceReceipt,
+      workbenchAction: response.workbenchAction,
+    })
   }
   const topicCatalogSource = await loadTopicChatCatalogSource(topicId)
   const catalog = buildTopicChatCatalog(topicCatalogSource)
@@ -7215,7 +7723,7 @@ export async function answerTopicQuestion(
     )
 
     if (directResponse) {
-      persistExchange(directResponse)
+      await persistExchange(directResponse)
       return directResponse
     }
   }
@@ -7252,7 +7760,7 @@ export async function answerTopicQuestion(
       citations: scopeResolution.citations,
       authorContext,
     })
-    persistExchange(response)
+    await persistExchange(response)
     return response
   }
 
@@ -7267,7 +7775,7 @@ export async function answerTopicQuestion(
 
   if (groundedSelection.length === 0) {
     response = buildFallbackChatResponse(parsedRequest.userQuestion, [], authorContext)
-    persistExchange(response)
+    await persistExchange(response)
     return response
   }
 
@@ -7311,7 +7819,7 @@ export async function answerTopicQuestion(
       model: 'backend-fallback',
       slot: request.task === 'topic_chat_vision' ? 'multimodal' : 'language',
     })
-    persistExchange(response)
+    await persistExchange(response)
     return response
   }
 
@@ -7324,7 +7832,7 @@ export async function answerTopicQuestion(
       authorContext,
       result.issue,
     )
-    persistExchange(response)
+    await persistExchange(response)
     return response
   }
 
@@ -7342,7 +7850,7 @@ export async function answerTopicQuestion(
       authorContext,
       result.issue,
     )
-    persistExchange(response)
+    await persistExchange(response)
     return response
   }
 
@@ -7357,7 +7865,7 @@ export async function answerTopicQuestion(
     notice: result.issue,
   }
 
-  persistExchange(response)
+  await persistExchange(response)
 
   return response
 }
@@ -7403,6 +7911,7 @@ export async function getEvidenceByAnchorId(anchorId: string): Promise<EvidenceP
       where: { id: entityId },
       include: {
         figures: true,
+        figure_groups: true,
         tables: true,
         formulas: true,
         paper_sections: true,
@@ -7521,6 +8030,75 @@ export async function getEvidenceByAnchorId(anchorId: string): Promise<EvidenceP
   }
 
   if (type === 'formula') {
+    const syntheticMeta = parseSyntheticFormulaId(entityId)
+    if (syntheticMeta) {
+      const sourceTable =
+        syntheticMeta.sourceKind === 'table'
+          ? await prisma.tables.findUnique({
+              where: { id: syntheticMeta.sourceId },
+              include: { papers: true },
+            })
+          : null
+      const sourceSection =
+        syntheticMeta.sourceKind === 'section'
+          ? await prisma.paper_sections.findUnique({
+              where: { id: syntheticMeta.sourceId },
+              include: { papers: true },
+            })
+          : null
+      const sourcePaperId = sourceTable?.paperId ?? sourceSection?.paperId ?? null
+      const sourcePaper = sourcePaperId
+        ? await prisma.papers.findUnique({
+            where: { id: sourcePaperId },
+            include: {
+              formulas: true,
+              tables: true,
+              paper_sections: true,
+            },
+          })
+        : null
+
+      if (sourcePaper) {
+        const artifact = findPaperFormulaArtifactById(sourcePaper, entityId)
+        if (artifact) {
+          const linkedNode = await prisma.research_nodes.findFirst({
+            where: {
+              OR: [
+                { primaryPaperId: sourcePaper.id },
+                { node_papers: { some: { paperId: sourcePaper.id } } },
+              ],
+            },
+            orderBy: [{ stageIndex: 'asc' }, { createdAt: 'asc' }],
+          })
+
+          return {
+            anchorId,
+            type: 'formula',
+            route: linkedNode
+              ? `${nodeRoute(linkedNode.id)}?evidence=${encodeURIComponent(anchorId)}`
+              : paperRoute(sourcePaper.id, undefined, anchorId),
+            title: `Formula ${artifact.number ?? syntheticMeta.ordinal}`,
+            label: `${sourcePaper.titleZh || sourcePaper.title || ''} / Formula ${artifact.number ?? syntheticMeta.ordinal}`,
+            quote: clipText(artifact.rawText || artifact.latex || ''),
+            content: `${artifact.latex ?? ''}\n\n${artifact.rawText}`.trim(),
+            sourcePaperId: sourcePaper.id,
+            formulaLatex: artifact.latex,
+            whyItMatters: '这个公式由表格或章节中的数学表达式回收生成，用来保持节点文章里的论证锚点不丢失。',
+            placementHint: 'inline-formula',
+            importance: 0.72,
+            metadata: {
+              topicId: sourcePaper.topicId,
+              paperId: sourcePaper.id,
+              synthetic: true,
+              sourceKind: artifact.sourceKind,
+              sourceId: artifact.sourceId,
+              page: artifact.page,
+            },
+          }
+        }
+      }
+    }
+
     const formula = await prisma.formulas.findUnique({
       where: { id: entityId },
       include: {
@@ -7537,6 +8115,8 @@ export async function getEvidenceByAnchorId(anchorId: string): Promise<EvidenceP
       label: `${formula.papers?.titleZh || formula.papers?.title || ''} / Formula ${formula.number}`,
       quote: clipText(formula.rawText || formula.latex),
       content: `${formula.latex}\n\n${formula.rawText}`,
+      sourcePaperId: formula.paperId,
+      formulaLatex: formula.latex,
       whyItMatters: '这个公式说明方法真正依赖的目标、约束或更新方式，需要解释它在论证中的位置。',
       placementHint: 'inline-formula',
       importance: 0.78,
@@ -7554,6 +8134,8 @@ throw new AppError(404, 'Evidence not found.')
 export const __testing = {
   loadTopicForArtifact,
   buildGraphLayout,
+  buildTopicGraphLaneName,
+  buildLaneSummaries,
   BRANCH_LANES,
   MAINLINE_BRANCH_COLOR,
   parseTopicChatRequest,

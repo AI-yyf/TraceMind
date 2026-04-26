@@ -36,6 +36,7 @@ test('artifact index persists reader article summaries and prioritizes local ent
       figureCount: 1,
       tableCount: 0,
       formulaCount: 0,
+      figureGroupCount: 0,
     },
     standfirst: 'The node article rewrote the local thesis around planning fidelity.',
     paperRoles: [
@@ -43,7 +44,7 @@ test('artifact index persists reader article summaries and prioritizes local ent
         paperId: 'paper-1',
         title: 'Paper 1',
         titleEn: 'Paper 1',
-        route: '/paper/paper-1',
+        route: '/node/node-1?anchor=paper%3Apaper-1',
         summary: 'Paper summary',
         publishedAt: '2025-01-01T00:00:00.000Z',
         role: 'Anchor',
@@ -51,6 +52,7 @@ test('artifact index persists reader article summaries and prioritizes local ent
         figuresCount: 1,
         tablesCount: 0,
         formulasCount: 0,
+        figureGroupsCount: 0,
         coverImage: null,
       },
     ],
@@ -99,6 +101,7 @@ test('artifact index persists reader article summaries and prioritizes local ent
       figureCount: 0,
       tableCount: 0,
       formulaCount: 0,
+      figureGroupCount: 0,
       relatedNodeCount: 1,
     },
     relatedNodes: [

@@ -2,12 +2,17 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ArrowLeft, ArrowRight, Loader2, PlusCircle, Trash2 } from 'lucide-react'
 
+import { ConfirmDialog } from '@/components/UI'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useI18n } from '@/i18n'
 import { formatDateTimeByLanguage } from '@/i18n/locale'
 import { getLanguageMetadata, type LanguageCode } from '@/i18n/types'
 import type { TopicLocalizationPayload } from '@/types/alpha'
-import { buildApiUrl } from '@/utils/api'
+import { apiGet, apiPatch, buildApiUrl, ApiError } from '@/utils/api'
+import {
+  assertTopicManagerTopicCollectionContract,
+  assertTopicStageConfigResponseContract,
+} from '@/utils/contracts'
 import { getTopicLocalizedPair } from '@/utils/topicLocalization'
 import { isRegressionSeedTopic } from '@/utils/topicPresentation'
 
@@ -95,20 +100,32 @@ export function TopicManagerPage() {
   const navigate = useNavigate()
   const { t, preference } = useI18n()
   const [topics, setTopics] = useState<ManagedTopic[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [savingStageTopicId, setSavingStageTopicId] = useState<string | null>(null)
   const [stageWindowDrafts, setStageWindowDrafts] = useState<Record<string, string>>({})
+  const [confirmState, setConfirmState] = useState<{
+    isOpen: boolean
+    title: string
+    message: string
+    onConfirm: () => void
+  }>({ isOpen: false, title: '', message: '', onConfirm: () => {} })
 
   useDocumentTitle(t('manage.title'))
 
   useEffect(() => {
     let alive = true
 
-    fetch(buildApiUrl('/api/topics'))
-      .then((response) => response.json())
-      .then((payload: { data?: ManagedTopic[] }) => {
+    setLoading(true)
+    setError(null)
+
+    apiGet<unknown>('/api/topics')
+      .then((payload) => {
         if (!alive) return
 
-        const nextTopics = (payload.data ?? []).filter((topic) => !isRegressionSeedTopic(topic))
+        assertTopicManagerTopicCollectionContract(payload)
+
+        const nextTopics = payload.filter((topic) => !isRegressionSeedTopic(topic))
         setTopics(nextTopics)
         setStageWindowDrafts(
           Object.fromEntries(
@@ -116,40 +133,48 @@ export function TopicManagerPage() {
           ),
         )
       })
-      .catch(() => undefined)
+      .catch((nextError) => {
+        if (!alive) return
+        const message =
+          nextError instanceof ApiError
+            ? nextError.message
+            : nextError instanceof Error
+              ? nextError.message
+              : t('manage.empty', 'No topics yet.')
+        setTopics([])
+        setError(message)
+      })
+      .finally(() => {
+        if (!alive) return
+        setLoading(false)
+      })
 
     return () => {
       alive = false
     }
-  }, [])
+  }, [t])
 
   async function removeTopic(id: string) {
-    const confirmed = window.confirm(t('manage.confirmDelete'))
-    if (!confirmed) return
-
-    await fetch(buildApiUrl(`/api/topics/${id}`), {
-      method: 'DELETE',
+    setConfirmState({
+      isOpen: true,
+      title: t('manage.deleteConfirmTitle', '删除确认'),
+      message: t('manage.deleteConfirmMessage', '确定要删除这个主题吗？此操作无法撤销。'),
+      onConfirm: async () => {
+        setConfirmState((prev) => ({ ...prev, isOpen: false }))
+        await fetch(buildApiUrl(`/api/topics/${id}`), {
+          method: 'DELETE',
+        })
+        setTopics((current) => current.filter((item) => item.id !== id))
+      },
     })
-    setTopics((current) => current.filter((item) => item.id !== id))
   }
 
   async function updateStageCadence(topicId: string, windowMonths: number) {
     setSavingStageTopicId(topicId)
 
     try {
-      const response = await fetch(buildApiUrl(`/api/topics/${topicId}/stage-config`), {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ windowMonths }),
-      })
-
-      if (!response.ok) {
-        throw new Error('stage-config-save-failed')
-      }
-
-      const payload = (await response.json()) as {
-        data?: { windowMonths?: number; updatedAt?: string | null }
-      }
+      const payload = await apiPatch<unknown>(`/api/topics/${topicId}/stage-config`, { windowMonths })
+      assertTopicStageConfigResponseContract(payload)
 
       setTopics((current) =>
         current.map((topic) =>
@@ -157,8 +182,8 @@ export function TopicManagerPage() {
             ? {
                 ...topic,
                 stageConfig: {
-                  windowMonths: payload.data?.windowMonths ?? windowMonths,
-                  updatedAt: payload.data?.updatedAt ?? new Date().toISOString(),
+                  windowMonths: payload.windowMonths,
+                  updatedAt: payload.updatedAt ?? new Date().toISOString(),
                 },
               }
             : topic,
@@ -166,7 +191,7 @@ export function TopicManagerPage() {
       )
       setStageWindowDrafts((current) => ({
         ...current,
-        [topicId]: String(payload.data?.windowMonths ?? windowMonths),
+        [topicId]: String(payload.windowMonths),
       }))
     } finally {
       setSavingStageTopicId(null)
@@ -227,7 +252,15 @@ export function TopicManagerPage() {
         </section>
 
         <section className="mt-8 grid gap-4">
-          {topics.length === 0 ? (
+          {loading ? (
+            <div className="rounded-[28px] border border-dashed border-black/10 bg-[var(--surface-soft)] px-6 py-10 text-sm leading-7 text-black/54">
+              {t('common.loading', 'Loading...')}
+            </div>
+          ) : error ? (
+            <div className="rounded-[28px] border border-red-200 bg-red-50/70 px-6 py-10 text-sm leading-7 text-red-700">
+              {error}
+            </div>
+          ) : topics.length === 0 ? (
             <div className="rounded-[28px] border border-dashed border-black/10 bg-[var(--surface-soft)] px-6 py-10 text-sm leading-7 text-black/54">
               {t('manage.empty')}
             </div>
@@ -411,6 +444,15 @@ export function TopicManagerPage() {
           )}
         </section>
       </div>
+
+      <ConfirmDialog
+        isOpen={confirmState.isOpen}
+        title={confirmState.title}
+        message={confirmState.message}
+        variant="danger"
+        onConfirm={confirmState.onConfirm}
+        onCancel={() => setConfirmState((prev) => ({ ...prev, isOpen: false }))}
+      />
     </main>
   )
 }

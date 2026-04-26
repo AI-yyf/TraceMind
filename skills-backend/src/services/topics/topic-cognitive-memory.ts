@@ -83,7 +83,7 @@ function createEntry(
   }
 }
 
-function uniqueEntries(entries: Array<TopicCognitiveMemoryEntry | null | undefined>, limit = 6) {
+function uniqueEntries(entries: Array<TopicCognitiveMemoryEntry | null | undefined>, limit = 100) {
   const seen = new Set<string>()
   const output: TopicCognitiveMemoryEntry[] = []
 
@@ -132,7 +132,7 @@ export function buildTopicCognitiveMemory(args: {
     report: args.report,
     world: args.world ?? null,
   }
-  const compactGuidance = compactTopicGuidanceContext(args.guidance, 6)
+  const compactGuidance = compactTopicGuidanceContext(args.guidance, 50)
   const projectMemories = uniqueEntries(
     [
       createEntry(
@@ -177,7 +177,7 @@ export function buildTopicCognitiveMemory(args: {
       ),
       createEntry('project', 'World Thesis', args.world?.summary.thesis ?? '', 'world', args.world?.updatedAt ?? null),
     ],
-    8,
+    100,
   )
 
   const feedbackMemories = uniqueEntries(
@@ -212,7 +212,7 @@ export function buildTopicCognitiveMemory(args: {
         createEntry('feedback', 'World Critique', critique.summary, 'world', args.world?.updatedAt ?? null),
       ),
     ],
-    8,
+    100,
   )
 
   const recalledEvents =
@@ -256,7 +256,7 @@ export function buildTopicCognitiveMemory(args: {
         createEntry('reference', item.title, item.detail, 'world', args.world?.updatedAt ?? null),
       ),
     ],
-    8,
+    100,
   )
 
   return {
@@ -291,10 +291,10 @@ export async function collectTopicCognitiveMemory(args: {
     args.question
       ? retrieveTopicSessionMemoryContext(args.topicId, {
           query: args.question,
-          recentLimit: args.recentLimit ?? 6,
+          recentLimit: args.recentLimit ?? 50,
         })
       : collectTopicSessionMemoryContext(args.topicId, {
-          recentLimit: args.recentLimit ?? 6,
+          recentLimit: args.recentLimit ?? 50,
         }),
     args.includeWorld ? syncTopicResearchWorldSnapshot(args.topicId) : Promise.resolve(null),
   ])

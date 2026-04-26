@@ -9,8 +9,9 @@ declare global {
       typesetClear?: (elements?: HTMLElement[]) => void
       startup?: {
         promise?: Promise<unknown>
+        defaultReady?: () => void
       }
-    }
+    } & Record<string, unknown>
   }
 }
 

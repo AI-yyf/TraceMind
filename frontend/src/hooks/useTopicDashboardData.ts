@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import type { TopicDashboard as TopicDashboardData } from '@/types/article'
 import { ApiError, apiGet } from '@/utils/api'
+import { assertTopicDashboardContract } from '@/utils/contracts'
 import { withOptionalStageWindowQuery } from '@/utils/stageWindow'
 
 export type TopicDashboardLoadState =
@@ -35,12 +36,13 @@ export function useTopicDashboardData(
     let alive = true
     setState({ status: 'loading', data: null, error: null })
 
-    apiGet<TopicDashboardData>(
+    apiGet<unknown>(
       withOptionalStageWindowQuery(`/api/topics/${topicId}/dashboard`, stageWindowMonths),
     )
       .then((response) => {
         if (!alive) return
         if (response) {
+          assertTopicDashboardContract(response)
           setState({ status: 'ready', data: response, error: null })
           return
         }
@@ -56,7 +58,12 @@ export function useTopicDashboardData(
         setState({
           status: 'error',
           data: null,
-          error: error instanceof ApiError ? error.message : fallbackErrorMessage,
+          error:
+            error instanceof ApiError
+              ? error.message
+              : error instanceof Error
+                ? error.message
+                : fallbackErrorMessage,
         })
       })
 

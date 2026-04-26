@@ -3,6 +3,8 @@ import test from 'node:test'
 
 import { prisma } from '../lib/prisma'
 import { __testing as pdfRouteTesting } from '../routes/pdf'
+import { PdfExtractFromUrlSchema } from '../routes/schemas'
+import { __testing as pdfExtractorTesting } from '../services/pdf-extractor'
 import type { PDFExtractionResult } from '../services/pdf-extractor'
 
 function createTestId(prefix: string) {
@@ -89,6 +91,7 @@ test('persistExtractionResult stores extracted paper sections alongside evidence
     ],
     tables: [],
     formulas: [],
+    figureGroups: [],
     metadata: {
       title: paper.title,
       author: 'Codex Test',
@@ -117,6 +120,113 @@ test('persistExtractionResult stores extracted paper sections alongside evidence
     assert.equal(sections[0]?.sourceSectionTitle, 'Abstract')
     assert.deepEqual(JSON.parse(sections[0]?.paragraphs ?? '[]').length > 0, true)
     assert.equal(figures.length, 1)
+  } finally {
+    await prisma.topics.delete({
+      where: { id: topic.id },
+    })
+  }
+})
+
+test('persistExtractionResult stores text-recovered tables and formulas for downstream grounding', async () => {
+  const topic = await prisma.topics.create({
+    data: {
+      id: createTestId('pdf-recovered-topic'),
+      nameZh: 'PDF Recovered Topic',
+      nameEn: 'PDF Recovered Topic',
+      language: 'zh',
+      status: 'active',
+      updatedAt: new Date(),
+    },
+  })
+
+  const paper = await prisma.papers.create({
+    data: {
+      id: createTestId('pdf-recovered-paper'),
+      topicId: topic.id,
+      title: 'Recovered Grounding Paper',
+      titleZh: 'Recovered Grounding Paper',
+      titleEn: 'Recovered Grounding Paper',
+      authors: JSON.stringify(['Codex Test']),
+      published: new Date('2025-04-01T00:00:00.000Z'),
+      summary: 'A paper used to validate recovered table and formula persistence.',
+      explanation: 'The route should persist text-recovered assets for downstream reader and editorial flows.',
+      figurePaths: '[]',
+      tablePaths: '[]',
+      formulaPaths: '[]',
+      tags: JSON.stringify(['pdf', 'recovery']),
+      status: 'candidate',
+      updatedAt: new Date(),
+    },
+  })
+
+  const extraction = pdfExtractorTesting.normalizeExtractionResultPayload(
+    {
+      paperId: paper.id,
+      paperTitle: paper.title,
+      pageCount: 1,
+      abstract: 'Recovered text should still become structured grounding evidence.',
+      fullText: `
+Table 1: Benchmark comparison
+Method    Score
+Ours      0.91
+Baseline  0.82
+
+Eq. (1)
+J(theta) = E[r_t] + lambda KL(q || p)
+`,
+      pages: [
+        {
+          pageNumber: 1,
+          text: `
+Table 1: Benchmark comparison
+Method    Score
+Ours      0.91
+Baseline  0.82
+
+Eq. (1)
+J(theta) = E[r_t] + lambda KL(q || p)
+`,
+          blocks: [],
+        },
+      ],
+      figures: [],
+      tables: [],
+      formulas: [],
+      figureGroups: [],
+      metadata: {
+        title: paper.title,
+        author: 'Codex Test',
+        subject: '',
+        creator: '',
+        producer: '',
+      },
+    },
+    paper.id,
+    paper.title,
+  )
+
+  try {
+    await pdfRouteTesting.persistExtractionResult({
+      paperId: paper.id,
+      result: extraction,
+      pdfPath: '/uploads/recovered-paper.pdf',
+    })
+
+    const [tables, formulas] = await Promise.all([
+      prisma.tables.findMany({
+        where: { paperId: paper.id },
+        orderBy: { number: 'asc' },
+      }),
+      prisma.formulas.findMany({
+        where: { paperId: paper.id },
+        orderBy: { page: 'asc' },
+      }),
+    ])
+
+    assert.equal(tables.length >= 1, true)
+    assert.equal(formulas.length >= 1, true)
+    assert.equal(tables[0]?.caption.includes('Table 1'), true)
+    assert.match(formulas[0]?.latex ?? '', /J\(theta\)/u)
   } finally {
     await prisma.topics.delete({
       where: { id: topic.id },
@@ -159,6 +269,7 @@ test('pdf route drops front-matter and html-like noise from extracted paper sect
     figures: [],
     tables: [],
     formulas: [],
+    figureGroups: [],
     metadata: {
       title: 'Noisy Thesis Style PDF',
       author: 'Codex Test',
@@ -188,5 +299,17 @@ test('pdf route flags html landing-page text as low-value content', () => {
       'Introduction to grounded node articles.',
     ]),
     ['Introduction to grounded node articles.'],
+  )
+})
+
+test('pdf extract schema accepts canonical arxiv paper ids', () => {
+  assert.doesNotThrow(() =>
+    PdfExtractFromUrlSchema.parse({
+      body: {
+        paperId: '1706.03762',
+        paperTitle: 'Attention Is All You Need',
+        pdfUrl: 'https://arxiv.org/pdf/1706.03762.pdf',
+      },
+    }),
   )
 })

@@ -1,6 +1,6 @@
 import { createContext } from 'react'
 
-import type { ContextPill, TopicWorkbenchTab } from '@/types/alpha'
+import type { ContextPill, TopicResearchView, TopicWorkbenchTab } from '@/types/alpha'
 
 export type WorkbenchStyle = 'brief' | 'balanced' | 'deep'
 export type TopicSurfaceModePreference = 'graph' | 'dashboard'
@@ -19,6 +19,7 @@ export type ReadingTrailEntry = {
 export type TopicWorkbenchState = {
   open: boolean
   activeTab: TopicWorkbenchTab
+  researchView: TopicResearchView
   historyOpen: boolean
   searchEnabled: boolean
   thinkingEnabled: boolean

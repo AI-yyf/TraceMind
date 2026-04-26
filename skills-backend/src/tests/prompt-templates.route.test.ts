@@ -86,6 +86,157 @@ type PromptStudioBundle = {
   }
 }
 
+const TEST_SCOPE = `prompt-templates-route-${process.pid}-${Date.now().toString(36)}`
+const TOPIC_ID = `${TEST_SCOPE}-topic`
+const PAPER_ID = `${TEST_SCOPE}-paper-1`
+const NODE_ID = `${TOPIC_ID}:stage-0:${PAPER_ID}`
+
+async function ensureExternalAgentSubjectSeed() {
+  await prisma.$transaction([
+    prisma.node_papers.deleteMany({
+      where: {
+        research_nodes: { topicId: TOPIC_ID },
+      },
+    }),
+    prisma.research_nodes.deleteMany({
+      where: { topicId: TOPIC_ID },
+    }),
+    prisma.topic_stages.deleteMany({
+      where: { topicId: TOPIC_ID },
+    }),
+    prisma.papers.deleteMany({
+      where: { topicId: TOPIC_ID },
+    }),
+    prisma.system_configs.deleteMany({
+      where: {
+        OR: [
+          { key: { startsWith: `topic:session-memory:v1:${TOPIC_ID}` } },
+          { key: { startsWith: `alpha:topic-artifact:${TOPIC_ID}:` } },
+          { key: { startsWith: `topic:guidance-ledger:v1:${TOPIC_ID}` } },
+          { key: { startsWith: `topic-research-world:v1:${TOPIC_ID}` } },
+          { key: { startsWith: `generation-judgments:v1:${TOPIC_ID}` } },
+        ],
+      },
+    }),
+  ])
+
+  await prisma.topics.upsert({
+    where: { id: TOPIC_ID },
+    update: {
+      nameZh: '外部代理测试主题',
+      nameEn: 'External Agent Route Test Topic',
+      focusLabel: '测试论文主题映射',
+      summary: '用于验证 external agent job 路由如何将论文主体映射到主题页或节点页。',
+      description: '测试专用主题，确保 prompt-templates 路由不依赖共享数据库中的 topic-1 / paper-1。',
+      language: 'zh',
+      status: 'active',
+      updatedAt: new Date(),
+    },
+    create: {
+      id: TOPIC_ID,
+      nameZh: '外部代理测试主题',
+      nameEn: 'External Agent Route Test Topic',
+      focusLabel: '测试论文主题映射',
+      summary: '用于验证 external agent job 路由如何将论文主体映射到主题页或节点页。',
+      description: '测试专用主题，确保 prompt-templates 路由不依赖共享数据库中的 topic-1 / paper-1。',
+      language: 'zh',
+      status: 'active',
+      updatedAt: new Date(),
+    },
+  })
+
+  await prisma.topic_stages.createMany({
+    data: [
+      {
+        id: `${TEST_SCOPE}-stage-1`,
+        topicId: TOPIC_ID,
+        order: 1,
+        name: '测试阶段',
+        description: '用于 external agent job 的测试阶段。',
+      },
+    ],
+  })
+
+  await prisma.papers.upsert({
+    where: { id: PAPER_ID },
+    update: {
+      topicId: TOPIC_ID,
+      title: 'External Agent Paper Fixture',
+      titleZh: '外部代理测试论文',
+      titleEn: 'External Agent Paper Fixture',
+      authors: JSON.stringify(['Test Author']),
+      published: new Date('2024-01-01T00:00:00.000Z'),
+      summary: '用于验证论文主体会被映射到节点或主题阅读面。',
+      explanation: '测试专用论文，不依赖共享开发数据库。',
+      figurePaths: JSON.stringify([]),
+      tablePaths: JSON.stringify([]),
+      tags: JSON.stringify(['test']),
+      status: 'published',
+      contentMode: 'editorial',
+      updatedAt: new Date(),
+    },
+    create: {
+      id: PAPER_ID,
+      topicId: TOPIC_ID,
+      title: 'External Agent Paper Fixture',
+      titleZh: '外部代理测试论文',
+      titleEn: 'External Agent Paper Fixture',
+      authors: JSON.stringify(['Test Author']),
+      published: new Date('2024-01-01T00:00:00.000Z'),
+      summary: '用于验证论文主体会被映射到节点或主题阅读面。',
+      explanation: '测试专用论文，不依赖共享开发数据库。',
+      figurePaths: JSON.stringify([]),
+      tablePaths: JSON.stringify([]),
+      tags: JSON.stringify(['test']),
+      status: 'published',
+      contentMode: 'editorial',
+      updatedAt: new Date(),
+    },
+  })
+
+  await prisma.research_nodes.upsert({
+    where: { id: NODE_ID },
+    update: {
+      topicId: TOPIC_ID,
+      stageIndex: 1,
+      nodeLabel: '测试节点',
+      nodeSubtitle: '论文映射验证',
+      nodeSummary: '用于验证 paper subject 会优先落在节点阅读面。',
+      nodeExplanation: '测试专用节点。',
+      primaryPaperId: PAPER_ID,
+      isMergeNode: false,
+      provisional: false,
+      status: 'canonical',
+      updatedAt: new Date(),
+    },
+    create: {
+      id: NODE_ID,
+      topicId: TOPIC_ID,
+      stageIndex: 1,
+      nodeLabel: '测试节点',
+      nodeSubtitle: '论文映射验证',
+      nodeSummary: '用于验证 paper subject 会优先落在节点阅读面。',
+      nodeExplanation: '测试专用节点。',
+      primaryPaperId: PAPER_ID,
+      isMergeNode: false,
+      provisional: false,
+      status: 'canonical',
+      updatedAt: new Date(),
+    },
+  })
+
+  await prisma.node_papers.createMany({
+    data: [
+      {
+        id: `${TEST_SCOPE}-node-paper-1`,
+        nodeId: NODE_ID,
+        paperId: PAPER_ID,
+        order: 0,
+      },
+    ],
+  })
+}
+
 async function withServer(run: (origin: string) => Promise<void>) {
   const app = createApp()
   const server = createServer(app)
@@ -427,6 +578,7 @@ test('POST /api/prompt-templates/reset preserves other non-default language over
 })
 
 test('POST /api/prompt-templates/external-agents/job returns a topic-grounded scaffold package', async () => {
+  await ensureExternalAgentSubjectSeed()
   await withServer(async (origin) => {
     const response = await fetch(`${origin}/api/prompt-templates/external-agents/job`, {
       method: 'POST',
@@ -434,7 +586,7 @@ test('POST /api/prompt-templates/external-agents/job returns a topic-grounded sc
       body: JSON.stringify({
         templateId: 'topic.chat',
         subjectType: 'topic',
-        topicId: 'topic-1',
+        topicId: TOPIC_ID,
         outputContract: {
           type: 'json-object',
           required: ['answer'],
@@ -493,13 +645,100 @@ test('POST /api/prompt-templates/external-agents/job returns a topic-grounded sc
     assert.equal(payload.data.modelTarget.slot, 'language')
     assert.equal(['configured', 'missing'].includes(payload.data.modelTarget.apiKeyStatus), true)
     assert.equal(payload.data.subject.type, 'topic')
-    assert.equal(payload.data.subject.id, 'topic-1')
-    assert.equal(payload.data.subject.topicId, 'topic-1')
+    assert.equal(payload.data.subject.id, TOPIC_ID)
+    assert.equal(payload.data.subject.topicId, TOPIC_ID)
     assert.ok(Array.isArray(payload.data.memoryContext.pipeline.recentHistory))
     assert.equal(typeof payload.data.memoryContext.sessionMemory.summary.currentFocus, 'string')
     assert.equal(payload.data.outputContract.required[0], 'answer')
     assert.ok(payload.data.scaffold.assets.some((asset) => asset.id === 'promptGuide'))
     assert.ok(payload.data.scaffold.workflow.length >= 3)
     assert.equal(payload.data.savedPath, undefined)
+  })
+})
+
+test('POST /api/prompt-templates/external-agents/job maps paper subjects onto node or topic reading surfaces', async () => {
+  await ensureExternalAgentSubjectSeed()
+  await withServer(async (origin) => {
+    const response = await fetch(`${origin}/api/prompt-templates/external-agents/job`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        templateId: 'topic.chat',
+        subjectType: 'paper',
+        subjectId: PAPER_ID,
+        topicId: TOPIC_ID,
+      }),
+    })
+
+    assert.equal(response.status, 200)
+
+    const payload = (await response.json()) as {
+      success: boolean
+      data: {
+        subject: {
+          type: string
+          id: string | null
+          topicId: string | null
+          route: string | null
+          snapshot?: {
+            topic?: {
+              topicId?: string
+            }
+          }
+        }
+        sourceSubject?: {
+          type: string
+          id: string | null
+          topicId: string | null
+          route: string | null
+        }
+      }
+    }
+
+    assert.equal(payload.success, true)
+    assert.ok(['node', 'topic'].includes(payload.data.subject.type))
+    assert.ok(payload.data.subject.id)
+    assert.equal(payload.data.subject.topicId, TOPIC_ID)
+    if (payload.data.subject.type === 'node') {
+      assert.equal(payload.data.subject.snapshot?.topic?.topicId, TOPIC_ID)
+    }
+    assert.ok(payload.data.subject.route)
+    assert.ok(!payload.data.subject.route?.startsWith('/paper/'))
+    assert.match(payload.data.subject.route ?? '', new RegExp(`anchor=paper%3A${PAPER_ID}`, 'u'))
+    assert.match(payload.data.subject.route ?? '', /^\/(?:node|topic)\//u)
+    assert.equal(payload.data.sourceSubject?.type, 'paper')
+    assert.equal(payload.data.sourceSubject?.id, PAPER_ID)
+    assert.equal(payload.data.sourceSubject?.topicId, TOPIC_ID)
+    assert.ok(payload.data.sourceSubject?.route)
+    assert.match(
+      payload.data.sourceSubject?.route ?? '',
+      new RegExp(`anchor=paper%3A${PAPER_ID}`, 'u'),
+    )
+  })
+})
+
+test('POST /api/prompt-templates/external-agents/job rejects mismatched topicId for paper subjects', async () => {
+  await ensureExternalAgentSubjectSeed()
+  await withServer(async (origin) => {
+    const response = await fetch(`${origin}/api/prompt-templates/external-agents/job`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        templateId: 'topic.chat',
+        subjectType: 'paper',
+        subjectId: PAPER_ID,
+        topicId: 'topic-does-not-match',
+      }),
+    })
+
+    assert.equal(response.status, 400)
+
+    const payload = (await response.json()) as {
+      success: boolean
+      error?: string
+      message?: string
+    }
+
+    assert.match(`${payload.error ?? ''} ${payload.message ?? ''}`, /topicid does not match the paper topic/i)
   })
 })

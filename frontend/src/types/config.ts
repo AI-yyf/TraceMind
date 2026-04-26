@@ -1,15 +1,186 @@
-/**
- * 模型提供商类型
- */
-export type ModelProvider = 'openai' | 'anthropic' | 'google' | 'azure' | 'local' | 'custom'
+// ========== 统一模型配置导入（来自 backend shared module） ==========
+
+import type {
+  ProviderId,
+} from '../../../skills-backend/shared/model-config'
+
+// ========== Category 配置类型 ==========
 
 /**
- * 模型能力标签
+ * 任务分类标识（8 种内置 Category）
+ * 用于 Oh My OpenCode 的 task() 工具分类调度
+ */
+export type CategoryId =
+  | 'visual-engineering'
+  | 'ultrabrain'
+  | 'deep'
+  | 'artistry'
+  | 'quick'
+  | 'unspecified-low'
+  | 'unspecified-high'
+  | 'writing'
+
+/**
+ * Category 中文标签映射
+ */
+export const CATEGORY_LABELS: Record<CategoryId, string> = {
+  'visual-engineering': '视觉工程',
+  'ultrabrain': '深度推理',
+  'deep': '深度研究',
+  'artistry': '艺术创意',
+  'quick': '快速任务',
+  'unspecified-low': '通用低',
+  'unspecified-high': '通用高',
+  'writing': '文档写作',
+}
+
+/**
+ * Category 英文标签映射
+ */
+export const CATEGORY_LABELS_EN: Record<CategoryId, string> = {
+  'visual-engineering': 'Visual Engineering',
+  'ultrabrain': 'Ultrabrain',
+  'deep': 'Deep Research',
+  'artistry': 'Artistry',
+  'quick': 'Quick Tasks',
+  'unspecified-low': 'Unspecified Low',
+  'unspecified-high': 'Unspecified High',
+  'writing': 'Writing',
+}
+
+/**
+ * Category 描述映射
+ */
+export const CATEGORY_DESCRIPTIONS: Record<CategoryId, string> = {
+  'visual-engineering': '前端、UI/UX、设计、动画',
+  'ultrabrain': '深度逻辑推理、复杂架构决策',
+  'deep': '自主问题解决、彻底研究',
+  'artistry': '创意/非传统方法',
+  'quick': '简单任务、typo 修复、单文件更改',
+  'unspecified-low': '通用任务、低努力',
+  'unspecified-high': '通用任务、高努力',
+  'writing': '文档、散文、技术写作',
+}
+
+/**
+ * Category 默认模型映射（参考 configuration.md）
+ */
+export const CATEGORY_DEFAULT_MODELS: Record<CategoryId, { model: string; variant?: string }> = {
+  'visual-engineering': { model: 'google/gemini-3.1-pro', variant: 'high' },
+  'ultrabrain': { model: 'openai/gpt-5.4', variant: 'xhigh' },
+  'deep': { model: 'openai/gpt-5.4', variant: 'medium' },
+  'artistry': { model: 'google/gemini-3.1-pro', variant: 'high' },
+  'quick': { model: 'openai/gpt-5.4-mini' },
+  'unspecified-low': { model: 'anthropic/claude-sonnet-4-6' },
+  'unspecified-high': { model: 'anthropic/claude-opus-4-6', variant: 'max' },
+  'writing': { model: 'google/gemini-3-flash' },
+}
+
+/**
+ * 模型变体类型
+ */
+export type ModelVariant = 'max' | 'high' | 'medium' | 'low' | 'xhigh'
+
+/**
+ * Category 配置选项
+ */
+export interface CategoryConfigOptions {
+  /** 模型标识 (provider/model 格式) */
+  model?: string
+  /** 备用模型列表 */
+  fallback_models?: string[]
+  /** 模型变体 */
+  variant?: ModelVariant
+  /** 温度参数 */
+  temperature?: number
+  /** Top-p 参数 */
+  top_p?: number
+  /** 最大 token 数 */
+  maxTokens?: number
+  /** 描述（用于 task() 工具提示） */
+  description?: string
+  /** OpenAI reasoning effort */
+  reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+  /** Anthropic extended thinking */
+  thinking?: { type: 'enabled' | 'disabled'; budgetTokens?: number }
+}
+
+/**
+ * Category 配置记录
+ */
+export interface CategoryConfigRecord extends CategoryConfigOptions {
+  /** Category ID */
+  id: CategoryId
+  /** 中文标签 */
+  label: string
+  /** 英文标签 */
+  labelEn: string
+  /** 描述 */
+  description: string
+  /** 是否使用默认配置 */
+  useDefault: boolean
+}
+
+/**
+ * 用户 Category 配置
+ */
+export interface UserCategoryConfig {
+  categories: Partial<Record<CategoryId, CategoryConfigOptions>>
+}
+
+/**
+ * 所有内置 Category 列表
+ */
+export const ALL_CATEGORIES: CategoryId[] = [
+  'visual-engineering',
+  'ultrabrain',
+  'deep',
+  'artistry',
+  'quick',
+  'unspecified-low',
+  'unspecified-high',
+  'writing',
+]
+
+// ========== 类型别名（向后兼容） ==========
+
+/**
+ * 模型提供商类型（向后兼容别名）
+ * @deprecated 使用 ProviderId 替代。旧值映射：
+ * - 'openai' → 'openai'
+ * - 'anthropic' → 'anthropic'
+ * - 'google' → 'google'
+ * - 'azure' → 'openai_compatible'
+ * - 'local' → 'openai_compatible'
+ * - 'custom' → 'openai_compatible'
+ */
+export type ModelProvider = ProviderId
+
+/**
+ * 模型能力标签（向后兼容别名）
+ * @deprecated 使用 ProviderCapability 替代。旧值映射（通过 mapLegacyCapability）：
+ * - 'vision' → { image, pdf, chart, formula: true }
+ * - 'text' → { text: true }
+ * - 'code' → { text, toolCalling: true }
+ * - 'math' → { text, formula: true }
+ * - 'analysis' → { text, jsonMode: true }
  */
 export type ModelCapability = 'vision' | 'text' | 'code' | 'math' | 'analysis'
 
 /**
  * 自定义模型配置
+ * @deprecated 建议使用 ProviderModelConfig 替代，此接口保留向后兼容
+ *
+ * 与 ProviderModelConfig 的映射关系：
+ * - id → 可映射到 options 中的自定义标识
+ * - name → UI 显示名称，不在 ProviderModelConfig 中
+ * - provider → ProviderModelConfig.provider
+ * - model → ProviderModelConfig.model
+ * - apiKey → ProviderModelConfig.apiKey
+ * - baseUrl → ProviderModelConfig.baseUrl
+ * - parameters → ProviderModelConfig.options (部分字段映射)
+ * - capabilities → ProviderCapability 的布尔字段组合
+ * - enabled → UI 状态，不在 ProviderModelConfig 中
  */
 export interface CustomModelConfig {
   /** 模型唯一标识 */
@@ -17,7 +188,7 @@ export interface CustomModelConfig {
   /** 模型名称（显示用） */
   name: string
   /** 提供商类型 */
-  provider: ModelProvider
+  provider: ProviderId
   /** 模型标识 */
   model: string
   /** API配置 */
@@ -30,9 +201,9 @@ export interface CustomModelConfig {
     topP?: number
     frequencyPenalty?: number
     presencePenalty?: number
-    [key: string]: any
+    [key: string]: unknown
   }
-  /** 模型用途标签 */
+  /** 模型用途标签（映射到 ProviderCapability） */
   capabilities: ModelCapability[]
   /** 是否启用 */
   enabled: boolean
@@ -73,13 +244,18 @@ export interface MultiModalConfig {
 
 /**
  * API 配置类型（兼容旧版）
- * @deprecated 使用 MultiModalConfig 替代
+ * @deprecated 使用 ProviderId 替代。映射关系：
+ * - 'openai' → 'openai' (ProviderId)
+ * - 'anthropic' → 'anthropic' (ProviderId)
+ * - 'custom' → 'openai_compatible' (ProviderId)
  */
 export type ApiProvider = 'openai' | 'anthropic' | 'custom'
 
 /**
  * 多模态能力配置（兼容旧版）
- * @deprecated 使用 MultiModalConfig 替代
+ * @deprecated 使用 ProviderCapability 替代。ProviderCapability 提供更细粒度的能力描述：
+ * - enableVision → ProviderCapability.image
+ * - 其他字段已迁移至 ProviderModelConfig.options
  */
 export interface MultimodalConfig {
   /** 是否启用视觉理解 */
@@ -98,7 +274,15 @@ export interface MultimodalConfig {
 
 /**
  * API 配置类型（兼容旧版）
- * @deprecated 使用 CustomModelConfig 替代
+ * @deprecated 使用 ProviderModelConfig 替代。字段映射：
+ * - provider → ProviderModelConfig.provider (使用 ProviderId)
+ * - baseUrl → ProviderModelConfig.baseUrl
+ * - apiKey → ProviderModelConfig.apiKey
+ * - model → ProviderModelConfig.model
+ * - enabled → UI 状态管理，不在 ProviderModelConfig 中
+ * - multimodal → ProviderCapability 布尔字段组合
+ * - organizationId → ProviderModelConfig.providerOptions.organizationId
+ * - customHeaders → ProviderModelConfig.providerOptions.customHeaders
  */
 export interface ApiConfig {
   /** API 提供商 */
@@ -299,7 +483,7 @@ export const DEFAULT_MULTIMODAL_CONFIG: MultiModalConfig = {
     {
       id: 'local-llava',
       name: '本地 LLaVA 模型',
-      provider: 'local',
+      provider: 'openai_compatible',
       model: 'llava-v1.5-13b',
       baseUrl: 'http://localhost:8000',
       apiKey: '',
@@ -595,3 +779,53 @@ export interface TopicResearchStatus {
   /** 错误信息 */
   error?: string
 }
+
+// ========== 统一模型配置类型重导出 ==========
+
+/**
+ * 重导出 backend shared module 的统一类型
+ * 这些类型是前后端共享的标准类型定义
+ */
+export type {
+  ProviderId,
+  ProviderCapability,
+  ProviderModelConfig,
+  ProviderModelRef,
+  ProviderModelOptions,
+  UserModelConfig,
+  SanitizedUserModelConfig,
+  SanitizedProviderModelConfig,
+  ProviderCatalogEntry,
+  ProviderCatalogModel,
+  ModelPreset,
+  OmniTask,
+  ResearchRoleId,
+  ModelSlot,
+  TaskRouteTarget,
+  OmniMessage,
+  OmniAttachment,
+  OmniCompleteRequest,
+  OmniCompletionResult,
+  ThinkingMode,
+  CitationMode,
+  ParserMode,
+  ProviderAdapter,
+  ProviderUiHints,
+  ProviderConfigField,
+  ConfigHistoryEntry,
+  ConfigVersionInfo,
+} from '../../../skills-backend/shared/model-config'
+
+/**
+ * 重导出常量和辅助函数
+ */
+export {
+  PROVIDER_LABELS,
+  OMNI_TASK_LABELS,
+  RESEARCH_ROLE_LABELS,
+  TEXT_ONLY_CAPABILITY,
+  MULTIMODAL_FULL_CAPABILITY,
+  ANTHROPIC_NATIVE_CAPABILITY,
+  LEGACY_PROVIDER_MAP,
+  DEFAULT_MODEL_PRESETS,
+} from '../../../skills-backend/shared/model-config'

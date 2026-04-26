@@ -1,4 +1,4 @@
-import type { ModelSlot, OmniTask, ResearchRoleId, TaskRouteTarget } from './types'
+import type { ModelSlot, OmniTask, ResearchRoleId, TaskRouteTarget, CategoryId } from './types'
 
 export type ResearchRoleDefinition = {
   id: ResearchRoleId
@@ -6,6 +6,7 @@ export type ResearchRoleDefinition = {
   description: string
   preferredSlot: ModelSlot
   defaultTasks: OmniTask[]
+  defaultCategory?: CategoryId
 }
 
 export const RESEARCH_ROLE_DEFINITIONS: ResearchRoleDefinition[] = [
@@ -15,6 +16,7 @@ export const RESEARCH_ROLE_DEFINITIONS: ResearchRoleDefinition[] = [
     description: 'Grounded sidebar conversation, follow-up questions, and current-topic discussion.',
     preferredSlot: 'language',
     defaultTasks: ['general_chat', 'topic_chat', 'topic_chat_vision'],
+    defaultCategory: 'unspecified-low',
   },
   {
     id: 'topic_architect',
@@ -22,6 +24,7 @@ export const RESEARCH_ROLE_DEFINITIONS: ResearchRoleDefinition[] = [
     description: 'Topic creation, structure planning, stage naming, and map-level synthesis.',
     preferredSlot: 'language',
     defaultTasks: ['topic_summary'],
+    defaultCategory: 'deep',
   },
   {
     id: 'research_judge',
@@ -29,6 +32,7 @@ export const RESEARCH_ROLE_DEFINITIONS: ResearchRoleDefinition[] = [
     description: 'Thesis formation, agenda setting, contradiction tracking, and research memory compaction.',
     preferredSlot: 'language',
     defaultTasks: [],
+    defaultCategory: 'ultrabrain',
   },
   {
     id: 'node_writer',
@@ -36,6 +40,7 @@ export const RESEARCH_ROLE_DEFINITIONS: ResearchRoleDefinition[] = [
     description: 'Continuous node-level article flow, synthesis, and explanatory framing.',
     preferredSlot: 'language',
     defaultTasks: [],
+    defaultCategory: 'writing',
   },
   {
     id: 'paper_writer',
@@ -43,6 +48,7 @@ export const RESEARCH_ROLE_DEFINITIONS: ResearchRoleDefinition[] = [
     description: 'Paper story rendering, method explanation, and contribution framing.',
     preferredSlot: 'language',
     defaultTasks: [],
+    defaultCategory: 'writing',
   },
   {
     id: 'critic',
@@ -50,6 +56,7 @@ export const RESEARCH_ROLE_DEFINITIONS: ResearchRoleDefinition[] = [
     description: 'Reviewer-style critique, objections, blind spots, and counterarguments.',
     preferredSlot: 'language',
     defaultTasks: [],
+    defaultCategory: 'deep',
   },
   {
     id: 'localizer',
@@ -57,6 +64,7 @@ export const RESEARCH_ROLE_DEFINITIONS: ResearchRoleDefinition[] = [
     description: 'Multilingual rewriting, language patches, and interface-facing localization work.',
     preferredSlot: 'language',
     defaultTasks: [],
+    defaultCategory: 'quick',
   },
   {
     id: 'vision_reader',
@@ -70,6 +78,7 @@ export const RESEARCH_ROLE_DEFINITIONS: ResearchRoleDefinition[] = [
       'table_extraction',
       'evidence_explainer',
     ],
+    defaultCategory: 'visual-engineering',
   },
 ]
 
@@ -152,4 +161,39 @@ export function inferResearchRoleForTemplate(templateId: string): ResearchRoleId
   }
 
   return 'research_judge'
+}
+
+/**
+ * 获取 Role 的默认 Category
+ */
+export function getDefaultCategoryForRole(role: ResearchRoleId): CategoryId | undefined {
+  return getResearchRoleDefinition(role)?.defaultCategory
+}
+
+/**
+ * 根据 OmniTask 推断合适的 Category
+ */
+export function inferCategoryForTask(task: OmniTask): CategoryId {
+  switch (task) {
+    case 'general_chat':
+      return 'unspecified-low'
+    case 'topic_chat':
+      return 'unspecified-low'
+    case 'topic_chat_vision':
+      return 'visual-engineering'
+    case 'topic_summary':
+      return 'deep'
+    case 'document_parse':
+      return 'visual-engineering'
+    case 'figure_analysis':
+      return 'visual-engineering'
+    case 'formula_recognition':
+      return 'visual-engineering'
+    case 'table_extraction':
+      return 'quick'
+    case 'evidence_explainer':
+      return 'deep'
+    default:
+      return 'unspecified-low'
+  }
 }

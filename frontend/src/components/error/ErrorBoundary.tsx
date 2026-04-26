@@ -3,6 +3,13 @@ import { AlertTriangle, ArrowLeft, Home, RefreshCw } from 'lucide-react'
 
 import { getTranslation } from '@/i18n/translations'
 import { isLanguageSupported, type LanguageCode } from '@/i18n/types'
+import { logger } from '@/utils/logger'
+import {
+  APP_STATE_STORAGE_KEYS,
+  readLocalStorageJson,
+  readSessionStorageJson,
+  writeSessionStorageJson,
+} from '@/utils/appStateStorage'
 
 interface ErrorBoundaryProps {
   children: ReactNode
@@ -22,20 +29,12 @@ interface ErrorBoundaryState {
   retryCount: number
 }
 
-const STORAGE_KEY = 'arxiv-chronicle-language-preference'
-
 function resolveLanguage(): LanguageCode {
   if (typeof window === 'undefined') return 'zh'
 
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (!raw) return 'zh'
-    const parsed = JSON.parse(raw) as { primary?: string }
-    if (parsed.primary && isLanguageSupported(parsed.primary)) {
-      return parsed.primary
-    }
-  } catch {
-    // Ignore malformed language preference storage.
+  const parsed = readLocalStorageJson<{ primary?: string }>(APP_STATE_STORAGE_KEYS.languagePreference)
+  if (parsed?.primary && isLanguageSupported(parsed.primary)) {
+    return parsed.primary
   }
 
   return 'zh'
@@ -66,9 +65,9 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     this.setState({ errorInfo })
     onError?.(error, errorInfo)
 
-    const prefix = name ? `[ErrorBoundary: ${name}]` : '[ErrorBoundary]'
-    console.error(`${prefix} render error:`, error)
-    console.error(`${prefix} component stack:`, errorInfo.componentStack)
+    const prefix = name ? `ErrorBoundary:${name}` : 'ErrorBoundary'
+    logger.error(prefix, 'render error', error)
+    logger.error(prefix, 'component stack', errorInfo.componentStack)
 
     this.reportError(error, errorInfo)
   }
@@ -83,13 +82,9 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       url: typeof window !== 'undefined' ? window.location.href : '',
     }
 
-    try {
-      const existing = JSON.parse(sessionStorage.getItem('error_reports') || '[]')
-      existing.push(report)
-      sessionStorage.setItem('error_reports', JSON.stringify(existing.slice(-20)))
-    } catch {
-      // Ignore storage failures.
-    }
+    const existing = readSessionStorageJson<unknown[]>(APP_STATE_STORAGE_KEYS.errorReports)
+    const next = Array.isArray(existing) ? [...existing, report] : [report]
+    writeSessionStorageJson(APP_STATE_STORAGE_KEYS.errorReports, next.slice(-20))
   }
 
   handleRetry = (): void => {

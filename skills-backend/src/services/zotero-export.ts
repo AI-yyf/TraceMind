@@ -1,7 +1,7 @@
 /**
  * Zotero Web API v3 Export Service for TraceMind
  * Exports papers from topics/nodes to Zotero library
- * 
+ *
  * API Reference: https://www.zotero.org/support/dev/web_api/v3/basics
  */
 
@@ -62,6 +62,7 @@ export interface ExportResult {
   exportedCount: number
   errors: string[]
   collectionKey?: string
+  aborted?: boolean
 }
 
 // ============================================================================
@@ -91,10 +92,10 @@ function parseAuthors(authorsStr: string): Array<{
 
   // Split by semicolon, comma+space patterns that aren't "Last, First"
   const authors: Array<{ creatorType: string; firstName: string; lastName: string }> = []
-  
+
   // Try splitting by semicolon first
   let authorList = authorsStr.split(';').map(a => a.trim()).filter(Boolean)
-  
+
   // If no semicolons, try comma (but handle "Last, First" format)
   if (authorList.length === 1 && authorsStr.includes(',')) {
     // Check if it looks like "Last, First; Last2, First2" pattern
@@ -110,7 +111,7 @@ function parseAuthors(authorsStr: string): Array<{
 
   for (const author of authorList) {
     if (!author) continue
-    
+
     // Check for "Last, First" format
     const commaMatch = author.match(/^([^,]+),\s*(.+)$/)
     if (commaMatch) {
@@ -171,7 +172,7 @@ function extractDOI(doiOrUrl: string | null | undefined): string | undefined {
   if (!doiOrUrl) return undefined
 
   const trimmed = doiOrUrl.trim()
-  
+
   // Already a DOI
   if (/^10\.\d{4,}/.test(trimmed)) {
     return trimmed
@@ -198,7 +199,7 @@ function extractDOI(doiOrUrl: string | null | undefined): string | undefined {
  */
 function formatDate(date: Date | null | undefined): string | undefined {
   if (!date) return undefined
-  
+
   try {
     const d = new Date(date)
     const year = d.getFullYear()
@@ -252,9 +253,10 @@ async function zoteroRequest(
   options: {
     method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
     body?: unknown
+    signal?: AbortSignal
   } = {}
 ): Promise<{ data: unknown; status: number; headers: Headers }> {
-  const { method = 'GET', body } = options
+  const { method = 'GET', body, signal } = options
   const url = `${ZOTERO_API_BASE}/users/${config.userId}${endpoint}`
 
   const headers: Record<string, string> = {
@@ -268,20 +270,26 @@ async function zoteroRequest(
   const maxRetries = 3
 
   while (retryCount < maxRetries) {
+    // Check abort before each retry
+    if (signal?.aborted) {
+      throw new DOMException('Export aborted', 'AbortError')
+    }
+
     try {
       const response = await fetch(url, {
         method,
         headers,
-        body: body ? JSON.stringify(body) : undefined
+        body: body ? JSON.stringify(body) : undefined,
+        signal
       })
 
       // Handle rate limiting
       if (response.status === 429) {
         const retryAfter = response.headers.get('Retry-After')
-        const delayMs = retryAfter 
-          ? parseInt(retryAfter, 10) * 1000 
+        const delayMs = retryAfter
+          ? parseInt(retryAfter, 10) * 1000
           : RATE_LIMIT_DELAY_MS * (retryCount + 1) * 2
-        
+
         console.log(`[Zotero] Rate limited, waiting ${delayMs}ms before retry...`)
         await sleep(delayMs)
         retryCount++
@@ -297,9 +305,14 @@ async function zoteroRequest(
       const data = response.status === 204 ? null : await response.json()
       return { data, status: response.status, headers: response.headers }
     } catch (error) {
+      // Propagate abort errors immediately
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw error
+      }
+
       lastError = error instanceof Error ? error : new Error(String(error))
       retryCount++
-      
+
       if (retryCount < maxRetries) {
         await sleep(RATE_LIMIT_DELAY_MS * retryCount)
       }
@@ -313,11 +326,12 @@ async function zoteroRequest(
  * Test Zotero API connection
  */
 export async function testZoteroConnection(
-  config: ZoteroConfig
+  config: ZoteroConfig,
+  signal?: AbortSignal
 ): Promise<{ success: boolean; username?: string; error?: string }> {
   try {
-    const { data } = await zoteroRequest(config, '')
-    
+    const { data } = await zoteroRequest(config, '', { signal })
+
     if (data && typeof data === 'object') {
       const userData = data as { username?: string }
       return {
@@ -325,7 +339,7 @@ export async function testZoteroConnection(
         username: userData.username
       }
     }
-    
+
     return { success: true }
   } catch (error) {
     return {
@@ -339,9 +353,10 @@ export async function testZoteroConnection(
  * Get all collections from Zotero library
  */
 export async function getZoteroCollections(
-  config: ZoteroConfig
+  config: ZoteroConfig,
+  signal?: AbortSignal
 ): Promise<ZoteroCollection[]> {
-  const { data } = await zoteroRequest(config, '/collections')
+  const { data } = await zoteroRequest(config, '/collections', { signal })
   return data as ZoteroCollection[]
 }
 
@@ -350,9 +365,10 @@ export async function getZoteroCollections(
  */
 export async function findZoteroCollection(
   config: ZoteroConfig,
-  name: string
+  name: string,
+  signal?: AbortSignal
 ): Promise<ZoteroCollection | null> {
-  const collections = await getZoteroCollections(config)
+  const collections = await getZoteroCollections(config, signal)
   return collections.find(c => c.data.name === name) || null
 }
 
@@ -362,27 +378,29 @@ export async function findZoteroCollection(
 export async function createZoteroCollection(
   config: ZoteroConfig,
   name: string,
-  parentKey?: string
+  parentKey?: string,
+  signal?: AbortSignal
 ): Promise<{ key: string } | null> {
   try {
     const collectionData: {
       name: string
       parentCollection?: string
     } = { name }
-    
+
     if (parentKey) {
       collectionData.parentCollection = parentKey
     }
 
     const { data } = await zoteroRequest(config, '/collections', {
       method: 'POST',
-      body: [collectionData]
+      body: [collectionData],
+      signal
     })
 
     // Response is an array of created items
     if (data && Array.isArray(data) && data.length > 0) {
       const result = data[0] as { successful?: Record<string, unknown>; success?: Record<string, unknown> }
-      
+
       // Handle successful response format
       if (result.successful) {
         const keys = Object.keys(result.successful)
@@ -390,7 +408,7 @@ export async function createZoteroCollection(
           return { key: keys[0] }
         }
       }
-      
+
       if (result.success) {
         const keys = Object.keys(result.success)
         if (keys.length > 0) {
@@ -401,6 +419,10 @@ export async function createZoteroCollection(
 
     return null
   } catch (error) {
+    // Don't log abort errors as failures
+    if (error instanceof Error && error.name === 'AbortError') {
+      return null
+    }
     console.error('[Zotero] Failed to create collection:', error)
     return null
   }
@@ -411,8 +433,10 @@ export async function createZoteroCollection(
  */
 async function batchCreateItems(
   config: ZoteroConfig,
-  items: ZoteroItem[]
-): Promise<{ success: number; errors: string[] }> {
+  items: ZoteroItem[],
+  signal?: AbortSignal,
+  onProgress?: (current: number, total: number) => void
+): Promise<{ success: number; errors: string[]; aborted?: boolean }> {
   if (items.length === 0) {
     return { success: 0, errors: [] }
   }
@@ -426,11 +450,18 @@ async function batchCreateItems(
     chunks.push(items.slice(i, i + MAX_ITEMS_PER_REQUEST))
   }
 
-  for (const chunk of chunks) {
+  for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+    // Check abort before each chunk
+    if (signal?.aborted) {
+      return { success: successCount, errors, aborted: true }
+    }
+
+    const chunk = chunks[chunkIndex]
     try {
       const { data } = await zoteroRequest(config, '/items', {
         method: 'POST',
-        body: chunk
+        body: chunk,
+        signal
       })
 
       if (data && typeof data === 'object') {
@@ -451,11 +482,22 @@ async function batchCreateItems(
         }
       }
 
+      // Report progress
+      if (onProgress) {
+        const currentProgress = Math.min(chunkIndex * MAX_ITEMS_PER_REQUEST + chunk.length, items.length)
+        onProgress(currentProgress, items.length)
+      }
+
       // Rate limiting between batches
       if (chunks.length > 1) {
         await sleep(RATE_LIMIT_DELAY_MS)
       }
     } catch (error) {
+      // Handle abort gracefully
+      if (error instanceof Error && error.name === 'AbortError') {
+        return { success: successCount, errors, aborted: true }
+      }
+
       const errorMsg = error instanceof Error ? error.message : String(error)
       errors.push(`Batch failed: ${errorMsg}`)
     }
@@ -470,16 +512,27 @@ async function batchCreateItems(
 export async function exportPapersToZotero(
   config: ZoteroConfig,
   papers: Array<PaperData>,
-  options?: { collectionName?: string; collectionKey?: string }
+  options?: { collectionName?: string; collectionKey?: string; signal?: AbortSignal; onProgress?: (current: number, total: number) => void }
 ): Promise<ExportResult> {
   const errors: string[] = []
   let collectionKey = options?.collectionKey
+  const signal = options?.signal
 
   try {
+    // Check abort early
+    if (signal?.aborted) {
+      return {
+        success: false,
+        exportedCount: 0,
+        errors: [],
+        aborted: true
+      }
+    }
+
     // Create or find collection if name provided
     if (options?.collectionName && !collectionKey) {
       const existingCollection = await findZoteroCollection(config, options.collectionName)
-      
+
       if (existingCollection) {
         collectionKey = existingCollection.key
       } else {
@@ -492,23 +545,44 @@ export async function exportPapersToZotero(
       }
     }
 
+    // Check abort before converting papers
+    if (signal?.aborted) {
+      return {
+        success: false,
+        exportedCount: 0,
+        errors,
+        aborted: true
+      }
+    }
+
     // Convert papers to Zotero items
-    const zoteroItems: ZoteroItem[] = papers.map(paper => 
+    const zoteroItems: ZoteroItem[] = papers.map(paper =>
       paperToZoteroItem(paper, collectionKey)
     )
 
-    // Batch create items
-    const result = await batchCreateItems(config, zoteroItems)
-    
+    // Batch create items with abort support
+    const result = await batchCreateItems(config, zoteroItems, signal, options?.onProgress)
+
     errors.push(...result.errors)
 
     return {
       success: result.success > 0,
       exportedCount: result.success,
       errors,
-      collectionKey
+      collectionKey,
+      aborted: result.aborted
     }
   } catch (error) {
+    // Handle abort error gracefully
+    if (error instanceof Error && error.name === 'AbortError') {
+      return {
+        success: false,
+        exportedCount: 0,
+        errors: [],
+        aborted: true
+      }
+    }
+
     errors.push(error instanceof Error ? error.message : 'Unknown error during export')
     return {
       success: false,
@@ -530,9 +604,10 @@ export async function exportPrismaPapersToZotero(
     summary?: string | null
     arxivUrl?: string | null
     pdfUrl?: string | null
+    doi?: string | null
     tags?: string | null
   }>,
-  options?: { collectionName?: string; collectionKey?: string }
+  options?: { collectionName?: string; collectionKey?: string; signal?: AbortSignal; onProgress?: (current: number, total: number) => void }
 ): Promise<ExportResult> {
   const paperData: PaperData[] = papers.map(p => ({
     title: p.title,
@@ -552,17 +627,19 @@ export async function exportPrismaPapersToZotero(
  */
 export async function clearZoteroCollection(
   config: ZoteroConfig,
-  collectionKey: string
+  collectionKey: string,
+  signal?: AbortSignal
 ): Promise<{ success: boolean; deletedCount: number; error?: string }> {
   try {
     // Get items in collection
     const { data } = await zoteroRequest(
-      config, 
-      `/collections/${collectionKey}/items?limit=1000`
+      config,
+      `/collections/${collectionKey}/items?limit=1000`,
+      { signal }
     )
-    
+
     const items = data as Array<{ key: string }>
-    
+
     if (!items || items.length === 0) {
       return { success: true, deletedCount: 0 }
     }
@@ -572,16 +649,31 @@ export async function clearZoteroCollection(
     let deletedCount = 0
 
     for (let i = 0; i < keys.length; i += MAX_ITEMS_PER_REQUEST) {
+      // Check abort before each batch
+      if (signal?.aborted) {
+        return { success: true, deletedCount, error: 'Operation aborted' }
+      }
+
       const batch = keys.slice(i, i + MAX_ITEMS_PER_REQUEST)
       await zoteroRequest(config, '/items', {
         method: 'DELETE',
-        body: batch
+        body: batch,
+        signal
       })
       deletedCount += batch.length
     }
 
     return { success: true, deletedCount }
   } catch (error) {
+    // Handle abort gracefully
+    if (error instanceof Error && error.name === 'AbortError') {
+      return {
+        success: true,
+        deletedCount: 0,
+        error: 'Operation aborted'
+      }
+    }
+
     return {
       success: false,
       deletedCount: 0,

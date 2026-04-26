@@ -18,6 +18,11 @@ import {
   upsertTopicDisplayEntry,
 } from '../../../shared/topic-display'
 import { resolvePreferredTopicStageWindowMonths } from './topic-stage-config'
+import {
+  buildCanonicalOnlyNodeBlueprints,
+  getCanonicalPaperOverride,
+} from './canonical-topic-graph'
+import { resolvePaperAssetPath } from '../paper-links'
 
 type JsonRecord = Record<string, Record<string, unknown>>
 type TopicMemoryCollection = Record<string, Record<string, unknown>>
@@ -34,6 +39,10 @@ type MaterializedNodeSpec = {
   provisional: boolean
   isMergeNode: boolean
   status: string
+  branchId: string
+  sourceBranchIds: string[]
+  sourceProblemNodeIds: string[]
+  parentNodeIds: string[]
 }
 type MaterializedPaperSpec = {
   id: string
@@ -75,6 +84,7 @@ const paperCatalogPath = path.join(generatedRoot, 'paper-catalog.json')
 const paperAssetsPath = path.join(generatedRoot, 'paper-assets.json')
 const paperMetricsPath = path.join(generatedRoot, 'paper-metrics.json')
 const TOPIC_ARTIFACT_KEY_PREFIX = 'alpha:topic-artifact:'
+const LEGACY_SEED_TOPIC_IDS = ['topic-1', 'topic-2', 'topic-3', 'topic-4', 'topic-5'] as const
 
 const materializationQueue = new Map<string, Promise<boolean>>()
 
@@ -141,6 +151,37 @@ function parseJsonStringArray(value: unknown) {
   }
 }
 
+function parseNodeRuntimeMetadata(value: string | null | undefined) {
+  if (typeof value !== 'string' || !value.trim()) return {}
+
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>
+    return {
+      branchId:
+        typeof parsed.branchId === 'string' && parsed.branchId.trim().length > 0
+          ? parsed.branchId.trim()
+          : null,
+      sourceBranchIds: Array.isArray(parsed.sourceBranchIds)
+        ? parsed.sourceBranchIds.filter(
+            (entry): entry is string => typeof entry === 'string' && entry.trim().length > 0,
+          )
+        : [],
+      sourceProblemNodeIds: Array.isArray(parsed.sourceProblemNodeIds)
+        ? parsed.sourceProblemNodeIds.filter(
+            (entry): entry is string => typeof entry === 'string' && entry.trim().length > 0,
+          )
+        : [],
+      parentNodeIds: Array.isArray(parsed.parentNodeIds)
+        ? parsed.parentNodeIds.filter(
+            (entry): entry is string => typeof entry === 'string' && entry.trim().length > 0,
+          )
+        : [],
+    }
+  } catch {
+    return {}
+  }
+}
+
 function normalizePublishedDate(value: unknown, fallback = new Date('2016-01-01T00:00:00.000Z')) {
   if (value instanceof Date && !Number.isNaN(value.getTime())) return value
   if (typeof value === 'string' && value.trim()) {
@@ -190,6 +231,22 @@ function readPaperAssets() {
 
 function readPaperMetrics() {
   return readJsonFile<JsonRecord>(paperMetricsPath, {})
+}
+
+function resolvePreferredPaperCoverPath(paperId: string, assetPath: string | null | undefined) {
+  const publicPaperDir = path.join(repoRoot, 'generated-data', 'public', 'papers', paperId)
+  if (fs.existsSync(publicPaperDir)) {
+    const staticImage = fs
+      .readdirSync(publicPaperDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && /\.(png|jpe?g|webp)$/iu.test(entry.name))
+      .map((entry) => entry.name)
+      .sort((left, right) => left.localeCompare(right))[0]
+    if (staticImage) {
+      return `/papers/${paperId}/${staticImage}`
+    }
+  }
+
+  return resolvePaperAssetPath({ assetPath, paperId }) ?? null
 }
 
 function isConfiguredTopicId(topicId: string) {
@@ -248,6 +305,31 @@ function collectPaperIdsFromMemory(
   }
 }
 
+function shouldUseCanonicalOnlyStorage(topicDefinition: TopicDefinition) {
+  return topicDefinition.defaults.storageMode === 'canonical-only'
+}
+
+function collectCanonicalTopicPaperIds(topicDefinition: TopicDefinition) {
+  const paperIds = new Set<string>()
+
+  for (const paper of topicDefinition.papers) {
+    const normalized = paper.id.trim()
+    if (normalized) paperIds.add(normalized)
+  }
+
+  for (const paperId of topicDefinition.seedPapers) {
+    const normalized = paperId.trim()
+    if (normalized) paperIds.add(normalized)
+  }
+
+  const originPaperId = topicDefinition.origin.originPaperId.trim()
+  if (originPaperId) {
+    paperIds.add(originPaperId)
+  }
+
+  return paperIds
+}
+
 function collectConfiguredTopicPaperIds(topicDefinition: TopicDefinition, topicMemory: Record<string, unknown>) {
   const orderedIds: string[] = []
   const seen = new Set<string>()
@@ -257,6 +339,13 @@ function collectConfiguredTopicPaperIds(topicDefinition: TopicDefinition, topicM
     if (!normalized || seen.has(normalized)) return
     seen.add(normalized)
     orderedIds.push(normalized)
+  }
+
+  if (shouldUseCanonicalOnlyStorage(topicDefinition)) {
+    for (const paperId of collectCanonicalTopicPaperIds(topicDefinition)) {
+      push(paperId)
+    }
+    return orderedIds
   }
 
   const researchNodes = Array.isArray(topicMemory.researchNodes)
@@ -306,6 +395,10 @@ function buildFallbackNodeSpec(topicDefinition: TopicDefinition): MaterializedNo
     provisional: false,
     isMergeNode: false,
     status: 'canonical',
+    branchId: `branch:${topicDefinition.id}:mainline`,
+    sourceBranchIds: [`branch:${topicDefinition.id}:mainline`],
+    sourceProblemNodeIds: [`${topicDefinition.id}:origin-problem`],
+    parentNodeIds: [],
   }
 }
 
@@ -316,7 +409,14 @@ function buildNodeSpecs(args: {
   paperAssets: JsonRecord
 }) {
   const rawResearchNodes =
-    Array.isArray(args.topicMemory.researchNodes) && args.topicMemory.researchNodes.length > 0
+    shouldUseCanonicalOnlyStorage(args.topicDefinition)
+      ? buildCanonicalOnlyNodeBlueprints({
+          topicDefinition: args.topicDefinition,
+          orderedPaperIds: collectConfiguredTopicPaperIds(args.topicDefinition, args.topicMemory),
+          paperCatalog: args.paperCatalog,
+          paperAssets: args.paperAssets,
+        })
+      : Array.isArray(args.topicMemory.researchNodes) && args.topicMemory.researchNodes.length > 0
       ? (args.topicMemory.researchNodes as unknown[])
       : Array.isArray(args.topicMemory.stageLedger) && args.topicMemory.stageLedger.length > 0
         ? buildResearchNodesFromStageLedger(args.topicMemory.stageLedger as unknown as Record<string, unknown>)
@@ -325,7 +425,29 @@ function buildNodeSpecs(args: {
   const normalizedNodes =
     rawResearchNodes.length > 0 ? normalizeResearchNodes(rawResearchNodes) : [buildFallbackNodeSpec(args.topicDefinition)]
 
-  return normalizedNodes.map((node) => {
+  const allowedPaperIds = shouldUseCanonicalOnlyStorage(args.topicDefinition)
+    ? collectCanonicalTopicPaperIds(args.topicDefinition)
+    : null
+
+  const filteredNodes = allowedPaperIds
+    ? normalizedNodes.filter((node) => {
+        const source = node as Record<string, unknown>
+        const paperIds = [
+          ...(Array.isArray(source.paperIds) ? (source.paperIds as unknown[]) : []),
+          source.primaryPaperId,
+          source.paperId,
+        ]
+          .filter((paperId): paperId is string => typeof paperId === 'string' && paperId.trim().length > 0)
+          .map((paperId) => paperId.trim())
+
+        return paperIds.some((paperId) => allowedPaperIds.has(paperId))
+      })
+    : normalizedNodes
+
+  const effectiveNodes =
+    filteredNodes.length > 0 ? filteredNodes : [buildFallbackNodeSpec(args.topicDefinition)]
+
+  return effectiveNodes.map((node) => {
     const paperIds = Array.from(
       new Set(
         [
@@ -335,7 +457,9 @@ function buildNodeSpecs(args: {
           (node as Record<string, unknown>).primaryPaperId,
           (node as Record<string, unknown>).paperId,
         ]
-          .filter((paperId): paperId is string => typeof paperId === 'string' && paperId.trim().length > 0),
+          .filter((paperId): paperId is string => typeof paperId === 'string' && paperId.trim().length > 0)
+          .map((paperId) => paperId.trim())
+          .filter((paperId) => !allowedPaperIds || allowedPaperIds.has(paperId)),
       ),
     )
     const primaryPaperId =
@@ -410,6 +534,47 @@ function buildNodeSpecs(args: {
             : '',
           'canonical',
         ) || 'canonical',
+      branchId:
+        pickText(
+          typeof (node as Record<string, unknown>).branchId === 'string'
+            ? ((node as Record<string, unknown>).branchId as string)
+            : '',
+          `branch:${args.topicDefinition.id}:mainline`,
+        ) || `branch:${args.topicDefinition.id}:mainline`,
+      sourceBranchIds: Array.from(
+        new Set(
+          [
+            ...(Array.isArray((node as Record<string, unknown>).sourceBranchIds)
+              ? ((node as Record<string, unknown>).sourceBranchIds as unknown[])
+              : []),
+            typeof (node as Record<string, unknown>).branchId === 'string'
+              ? ((node as Record<string, unknown>).branchId as string)
+              : '',
+          ].filter((branchId): branchId is string => typeof branchId === 'string' && branchId.trim().length > 0),
+        ),
+      ),
+      sourceProblemNodeIds: Array.from(
+        new Set(
+          (Array.isArray((node as Record<string, unknown>).sourceProblemNodeIds)
+            ? ((node as Record<string, unknown>).sourceProblemNodeIds as unknown[])
+            : []
+          ).filter(
+            (problemNodeId): problemNodeId is string =>
+              typeof problemNodeId === 'string' && problemNodeId.trim().length > 0,
+          ),
+        ),
+      ),
+      parentNodeIds: Array.from(
+        new Set(
+          (Array.isArray((node as Record<string, unknown>).parentNodeIds)
+            ? ((node as Record<string, unknown>).parentNodeIds as unknown[])
+            : []
+          ).filter(
+            (parentNodeId): parentNodeId is string =>
+              typeof parentNodeId === 'string' && parentNodeId.trim().length > 0,
+          ),
+        ),
+      ),
     } satisfies MaterializedNodeSpec
   })
 }
@@ -423,7 +588,10 @@ function buildPaperSpecs(args: {
   paperMetrics: JsonRecord
 }) {
   return args.paperIds.map((paperId) => {
-    const paperRecord = args.paperCatalog[paperId] ?? {}
+    const paperRecord = {
+      ...(args.paperCatalog[paperId] ?? {}),
+      ...(getCanonicalPaperOverride(args.topicDefinition.id, paperId) ?? {}),
+    }
     const paperAssets = args.paperAssets[paperId] ?? {}
     const paperMetrics = args.paperMetrics[paperId] ?? {}
     const relatedNodes = args.nodeSpecs.filter((node) => node.paperIds.includes(paperId))
@@ -454,8 +622,14 @@ function buildPaperSpecs(args: {
             ? paperAssets.figurePaths.filter((value): value is string => typeof value === 'string')
             : []),
           typeof paperAssets.coverPath === 'string' ? (paperAssets.coverPath as string) : null,
-        ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0),
+        ]
+          .map((value) => resolvePaperAssetPath({ assetPath: value, paperId }) ?? null)
+          .filter((value): value is string => typeof value === 'string' && value.trim().length > 0),
       ),
+    )
+    const coverPath = resolvePreferredPaperCoverPath(
+      paperId,
+      typeof paperAssets.coverPath === 'string' ? (paperAssets.coverPath as string) : '',
     )
     const sectionParagraphs = uniqueStrings(
       [
@@ -513,10 +687,7 @@ function buildPaperSpecs(args: {
         typeof paperMetrics.citationCount === 'number' && Number.isFinite(paperMetrics.citationCount)
           ? (paperMetrics.citationCount as number)
           : null,
-      coverPath:
-        pickText(
-          typeof paperAssets.coverPath === 'string' ? (paperAssets.coverPath as string) : '',
-        ) || null,
+      coverPath,
       figurePaths,
       tags: uniqueStrings(
         [
@@ -723,18 +894,32 @@ async function materializeConfiguredTopic(topicId: string) {
       continue
     }
 
+    const forceConfiguredMetadata =
+      shouldUseCanonicalOnlyStorage(topicDefinition) ||
+      Boolean(getCanonicalPaperOverride(topicDefinition.id, paper.id))
+
     const nextData = {
       topicId,
-      title: pickText(existingPaper?.title, paper.title) || paper.title,
-      titleZh: pickText(existingPaper?.titleZh, paper.titleZh, paper.title) || paper.title,
-      titleEn: pickText(existingPaper?.titleEn, paper.titleEn, paper.title) || paper.title,
+      title: forceConfiguredMetadata
+        ? pickText(paper.title, existingPaper?.title) || paper.title
+        : pickText(existingPaper?.title, paper.title) || paper.title,
+      titleZh: forceConfiguredMetadata
+        ? pickText(paper.titleZh, paper.title, existingPaper?.titleZh) || paper.title
+        : pickText(existingPaper?.titleZh, paper.titleZh, paper.title) || paper.title,
+      titleEn: forceConfiguredMetadata
+        ? pickText(paper.titleEn, paper.title, existingPaper?.titleEn) || paper.title
+        : pickText(existingPaper?.titleEn, paper.titleEn, paper.title) || paper.title,
       authors:
         existingPaper && parseJsonStringArray(existingPaper.authors).length > 0
           ? existingPaper.authors
           : JSON.stringify(paper.authors),
-      published: existingPaper?.published ?? paper.published,
-      summary: pickText(existingPaper?.summary, paper.summary) || paper.summary,
-      explanation: pickText(existingPaper?.explanation, paper.explanation, paper.summary) || paper.summary,
+      published: forceConfiguredMetadata ? paper.published : existingPaper?.published ?? paper.published,
+      summary: forceConfiguredMetadata
+        ? pickText(paper.summary, existingPaper?.summary) || paper.summary
+        : pickText(existingPaper?.summary, paper.summary) || paper.summary,
+      explanation: forceConfiguredMetadata
+        ? pickText(paper.explanation, paper.summary, existingPaper?.explanation) || paper.summary
+        : pickText(existingPaper?.explanation, paper.explanation, paper.summary) || paper.summary,
       arxivUrl: pickText(existingPaper?.arxivUrl, paper.arxivUrl ?? '') || null,
       pdfUrl: pickText(existingPaper?.pdfUrl, paper.pdfUrl ?? '') || null,
       citationCount: existingPaper?.citationCount ?? paper.citationCount,
@@ -850,7 +1035,10 @@ async function materializeConfiguredTopic(topicId: string) {
       nodeSummary: pickText(existingNode?.nodeSummary, node.nodeSummary) || node.nodeSummary,
       nodeExplanation:
         pickText(existingNode?.nodeExplanation, node.nodeExplanation, node.nodeSummary) || node.nodeSummary,
-      nodeCoverImage: pickText(existingNode?.nodeCoverImage, node.coverImage ?? '') || null,
+      nodeCoverImage: resolvePreferredPaperCoverPath(
+        primaryPaperId,
+        pickText(existingNode?.nodeCoverImage, node.coverImage ?? '') || '',
+      ),
       status: existingNode?.status ?? node.status,
       isMergeNode: existingNode?.isMergeNode ?? node.isMergeNode,
       provisional: existingNode?.provisional ?? node.provisional,
@@ -861,6 +1049,10 @@ async function materializeConfiguredTopic(topicId: string) {
           JSON.stringify({
             materializedFrom: 'topic-config-sync',
             paperIds: validPaperIds,
+            branchId: node.branchId,
+            sourceBranchIds: node.sourceBranchIds,
+            sourceProblemNodeIds: node.sourceProblemNodeIds,
+            parentNodeIds: node.parentNodeIds,
           }),
         ) || null,
     }
@@ -1014,6 +1206,7 @@ export async function syncConfiguredTopicWorkflowSnapshot(topicId: string) {
 
   const researchNodes = topic.research_nodes.map((node) => {
     const existing = existingNodeById.get(node.id)
+    const runtimeMetadata = parseNodeRuntimeMetadata(node.fullContent)
     const paperIds = node.node_papers.map((entry) => entry.paperId)
     const primaryPublishedAt =
       node.papers?.published?.toISOString() ??
@@ -1021,6 +1214,7 @@ export async function syncConfiguredTopicWorkflowSnapshot(topicId: string) {
       node.createdAt.toISOString()
     const branchId =
       pickText(
+        typeof runtimeMetadata.branchId === 'string' ? runtimeMetadata.branchId : '',
         typeof existing?.branchId === 'string' ? existing.branchId : '',
         Array.isArray(existing?.sourceBranchIds) && typeof existing.sourceBranchIds[0] === 'string'
           ? existing.sourceBranchIds[0]
@@ -1043,8 +1237,14 @@ export async function syncConfiguredTopicWorkflowSnapshot(topicId: string) {
       stageIndex: node.stageIndex,
       paperIds,
       primaryPaperId: node.primaryPaperId,
-      sourceBranchIds: [branchId],
-      sourceProblemNodeIds: [problemNodeId],
+      sourceBranchIds:
+        runtimeMetadata.sourceBranchIds && runtimeMetadata.sourceBranchIds.length > 0
+          ? runtimeMetadata.sourceBranchIds
+          : [branchId],
+      sourceProblemNodeIds:
+        runtimeMetadata.sourceProblemNodeIds && runtimeMetadata.sourceProblemNodeIds.length > 0
+          ? runtimeMetadata.sourceProblemNodeIds
+          : [problemNodeId],
       status: node.provisional ? 'provisional' : 'canonical',
       provisional: node.provisional,
       nodeLabel: node.nodeLabel,
@@ -1172,9 +1372,12 @@ export async function syncConfiguredTopicWorkflowSnapshot(topicId: string) {
     const existingCatalog = paperCatalog[paper.id] ?? {}
     const figurePaths = Array.from(
       new Set([
-        ...parseJsonStringArray(paper.figurePaths),
+        ...parseJsonStringArray(paper.figurePaths).map((imagePath) =>
+          resolvePaperAssetPath({ assetPath: imagePath, paperId: paper.id }) ?? imagePath,
+        ),
         ...paper.figures
           .map((figure) => figure.imagePath)
+          .map((imagePath) => resolvePaperAssetPath({ assetPath: imagePath, paperId: paper.id }) ?? imagePath)
           .filter((imagePath): imagePath is string => typeof imagePath === 'string' && imagePath.trim().length > 0),
       ]),
     )
@@ -1193,7 +1396,7 @@ export async function syncConfiguredTopicWorkflowSnapshot(topicId: string) {
     }
     paperAssets[paper.id] = {
       ...(paperAssets[paper.id] ?? {}),
-      coverPath: paper.coverPath,
+      coverPath: resolvePaperAssetPath({ assetPath: paper.coverPath, paperId: paper.id }) ?? paper.coverPath,
       figurePaths,
     }
     paperMetrics[paper.id] = {
@@ -1235,6 +1438,110 @@ export function parseConfiguredTopicIdFromNodeId(nodeId: string) {
   return candidate && isConfiguredTopicId(candidate) ? candidate : null
 }
 
+function buildLegacyTopicConfigKeyFilters(topicIds: string[]) {
+  return topicIds.flatMap((topicId) => [
+    { key: { startsWith: `topic-stage-config:v1:${topicId}` } },
+    { key: { startsWith: `${TOPIC_ARTIFACT_KEY_PREFIX}${topicId}:` } },
+    { key: { startsWith: `alpha:reader-artifact:${topicId}:` } },
+    { key: { startsWith: `generation-artifact-index:v1:${topicId}` } },
+    { key: { startsWith: `topic:guidance-ledger:v1:${topicId}` } },
+    { key: { startsWith: `topic:session-memory:v1:${topicId}` } },
+    { key: { startsWith: `topic-research-world:v1:${topicId}` } },
+    { key: { startsWith: `generation-judgments:v1:${topicId}` } },
+  ])
+}
+
+export async function pruneLegacySeedTopics(topicIds: readonly string[] = LEGACY_SEED_TOPIC_IDS) {
+  const scopedTopicIds = Array.from(new Set(topicIds.map((topicId) => topicId.trim()).filter(Boolean)))
+  if (scopedTopicIds.length === 0) return []
+
+  const legacyTopics = await prisma.topics.findMany({
+    where: {
+      id: {
+        in: scopedTopicIds,
+      },
+    },
+    select: {
+      id: true,
+      papers: {
+        select: { id: true },
+      },
+      research_nodes: {
+        select: { id: true },
+      },
+    },
+  })
+
+  if (legacyTopics.length === 0) return []
+
+  const legacyTopicIds = legacyTopics.map((topic) => topic.id)
+  const legacyPaperIds = Array.from(
+    new Set(legacyTopics.flatMap((topic) => topic.papers.map((paper) => paper.id))),
+  )
+  const legacyNodeIds = Array.from(
+    new Set(legacyTopics.flatMap((topic) => topic.research_nodes.map((node) => node.id))),
+  )
+
+  await prisma.$transaction([
+    prisma.topic_guidance_ledgers.deleteMany({
+      where: {
+        topicId: {
+          in: legacyTopicIds,
+        },
+      },
+    }),
+    prisma.topic_session_memories.deleteMany({
+      where: {
+        topicId: {
+          in: legacyTopicIds,
+        },
+      },
+    }),
+    prisma.research_pipeline_states.deleteMany({
+      where: {
+        topicId: {
+          in: legacyTopicIds,
+        },
+      },
+    }),
+    prisma.research_world_snapshots.deleteMany({
+      where: {
+        topicId: {
+          in: legacyTopicIds,
+        },
+      },
+    }),
+    prisma.topics.deleteMany({
+      where: {
+        id: {
+          in: legacyTopicIds,
+        },
+      },
+    }),
+  ])
+
+  const configKeyFilters = buildLegacyTopicConfigKeyFilters(legacyTopicIds)
+  if (configKeyFilters.length > 0) {
+    await prisma.system_configs.deleteMany({
+      where: {
+        OR: [
+          ...configKeyFilters,
+          ...legacyPaperIds.map((paperId) => ({ key: { contains: paperId } })),
+          ...legacyNodeIds.map((nodeId) => ({ key: { contains: nodeId } })),
+        ],
+      },
+    })
+  }
+
+  logger.info('Pruned legacy seeded topics before canonical topic materialization.', {
+    topicIds: legacyTopicIds,
+    paperCount: legacyPaperIds.length,
+    nodeCount: legacyNodeIds.length,
+  })
+
+  return legacyTopicIds
+}
+
 export async function ensureConfiguredTopicMaterialized(topicId: string) {
   if (!isConfiguredTopicId(topicId)) return false
 
@@ -1249,6 +1556,8 @@ export async function ensureConfiguredTopicMaterialized(topicId: string) {
 }
 
 export async function ensureConfiguredTopicsMaterialized(topicIds?: string[]) {
+  await pruneLegacySeedTopics()
+
   const ids = topicIds && topicIds.length > 0
     ? Array.from(new Set(topicIds.filter((topicId) => isConfiguredTopicId(topicId))))
     : loadTopicDefinitions().map((topic) => topic.id)
@@ -1274,4 +1583,6 @@ export const __testing = {
   buildNodeSpecs,
   buildPaperSpecs,
   parseConfiguredTopicIdFromNodeId,
+  LEGACY_SEED_TOPIC_IDS,
+  buildLegacyTopicConfigKeyFilters,
 }

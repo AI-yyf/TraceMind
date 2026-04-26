@@ -11,14 +11,52 @@ import {
 } from './schema'
 
 const currentDir = __dirname
-const topicsDir = path.join(currentDir, 'topics')
+
+function isTopicConfigRoot(rootDir: string) {
+  const defaultsPath = path.join(rootDir, 'defaults.json')
+  const capabilitiesPath = path.join(rootDir, 'capabilities.json')
+  const topicsPath = path.join(rootDir, 'topics')
+
+  return (
+    fs.existsSync(defaultsPath) &&
+    fs.existsSync(capabilitiesPath) &&
+    fs.existsSync(topicsPath) &&
+    fs.statSync(topicsPath).isDirectory()
+  )
+}
+
+function resolveTopicConfigRoot(candidateRoots?: string[]) {
+  const configuredRoot = process.env.TOPIC_CONFIG_ROOT?.trim()
+  const candidates = (
+    candidateRoots ?? [
+      configuredRoot ? path.resolve(configuredRoot) : null,
+      currentDir,
+      path.resolve(currentDir, '../../topic-config'),
+      path.resolve(currentDir, '../topic-config'),
+      path.resolve(process.cwd(), 'topic-config'),
+    ]
+  )
+    .map((candidate) => (candidate ? path.resolve(candidate) : null))
+    .filter((candidate): candidate is string => Boolean(candidate))
+
+  for (const candidate of candidates) {
+    if (isTopicConfigRoot(candidate)) {
+      return candidate
+    }
+  }
+
+  return currentDir
+}
+
+const topicConfigRoot = resolveTopicConfigRoot()
+const topicsDir = path.join(topicConfigRoot, 'topics')
 
 function readJson<T>(fileName: string): T {
-  return JSON.parse(fs.readFileSync(path.join(currentDir, fileName), 'utf8')) as T
+  return JSON.parse(fs.readFileSync(path.join(topicConfigRoot, fileName), 'utf8')) as T
 }
 
 export function getTopicConfigRoot() {
-  return currentDir
+  return topicConfigRoot
 }
 
 export function loadTopicDefaults(): TopicDefaults {
@@ -71,4 +109,9 @@ export function getTopicDefinition(topicId: string): TopicDefinition {
     throw new Error(`Unknown topic id: ${topicId}`)
   }
   return topic
+}
+
+export const __testing = {
+  isTopicConfigRoot,
+  resolveTopicConfigRoot,
 }

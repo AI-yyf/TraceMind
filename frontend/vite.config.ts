@@ -17,10 +17,12 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),
-        '@generated': path.resolve(__dirname, './generated'),
+        '@generated': path.resolve(__dirname, '../generated-data/app-data'),
+        '@shared': path.resolve(__dirname, '../skills-backend/shared'),
       },
     },
     server: {
+      host: '0.0.0.0',
       port: 5173,
       proxy: {
         '/health': {
@@ -70,6 +72,9 @@ export default defineConfig(({ mode }) => {
     test: {
       include: ['src/**/*.{test,spec}.{ts,tsx}'],
       exclude: ['e2e/**', 'playwright.config.ts', 'dist/**', 'output/**'],
+      environment: 'jsdom',
+      globals: true,
+      setupFiles: ['./src/test/setup.ts'],
     },
   }
 })

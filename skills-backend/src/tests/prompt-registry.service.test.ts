@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  DEFAULT_RESEARCH_ARTIFACT_REBUILD_LIMIT,
+  DEFAULT_RESEARCH_STAGE_PAPER_LIMIT,
   getBuiltInPromptDefinitions,
   getGenerationRuntimeConfig,
   getPromptStudioBundle,
@@ -39,11 +41,18 @@ test('generation runtime exposes a default expert charter and refinement control
   assert.equal(typeof runtime.editorialPolicies.zh.identity, 'string')
   assert.equal(runtime.editorialPolicies.zh.identity.length > 0, true)
   assert.equal(runtime.selfRefinePasses >= 0, true)
+  assert.equal(runtime.selfRefinePasses >= 2, true)
+  assert.equal(runtime.nodeArticlePasses >= 5, true)
+  assert.equal(runtime.researchOrchestrationPasses >= 4, true)
   assert.equal(runtime.languageTemperature >= 0, true)
   assert.equal(runtime.multimodalTemperature >= 0, true)
   assert.equal(runtime.researchReportPasses >= 1, true)
   assert.equal(runtime.researchCycleDelayMs >= 250, true)
   assert.equal(runtime.researchStageStallLimit >= 1, true)
+  assert.equal(DEFAULT_RESEARCH_STAGE_PAPER_LIMIT, 20)
+  assert.equal(DEFAULT_RESEARCH_ARTIFACT_REBUILD_LIMIT, 20)
+  assert.equal(runtime.researchStagePaperLimit >= 1, true)
+  assert.equal(runtime.researchArtifactRebuildLimit >= 1, true)
   assert.equal(runtime.topicSessionMemoryRecallLimit >= 1, true)
   assert.equal(runtime.topicSessionMemoryRecallLookbackLimit >= runtime.topicSessionMemoryRecallLimit, true)
   assert.equal(runtime.topicSessionMemoryRecallRecencyBias >= 0, true)

@@ -9,6 +9,11 @@ import {
 
 import type { ContextPill } from '@/types/alpha'
 import {
+  APP_STATE_STORAGE_KEYS,
+  readSessionStorageItem,
+  writeSessionStorageItem,
+} from '@/utils/appStateStorage'
+import {
   ReadingWorkspaceContext,
   type ReadingTrailEntry,
   type ReadingWorkspaceContextValue,
@@ -27,17 +32,58 @@ export type {
   WorkbenchStyle,
 } from './readingWorkspaceShared'
 
-const storageKey = 'reading-workspace:v1'
-
 const defaultTopicWorkbenchState = (): TopicWorkbenchState => ({
   open: false,
   activeTab: 'assistant',
+  researchView: 'search',
   historyOpen: false,
   searchEnabled: true,
   thinkingEnabled: true,
   style: 'balanced',
   contextPills: [],
 })
+
+function normalizeTopicWorkbenchState(
+  record: Partial<TopicWorkbenchState> | null | undefined,
+): TopicWorkbenchState {
+  const legacyActiveTab: string =
+    typeof record?.activeTab === 'string' ? record.activeTab : ''
+  const storedResearchView: string =
+    typeof record?.researchView === 'string' ? record.researchView : ''
+  const researchView =
+    storedResearchView === 'references' || storedResearchView === 'resources'
+      ? storedResearchView
+      : legacyActiveTab === 'references'
+        ? 'references'
+        : legacyActiveTab === 'resources'
+          ? 'resources'
+          : 'search'
+  const activeTab: TopicWorkbenchState['activeTab'] =
+    legacyActiveTab === 'research' ||
+    legacyActiveTab === 'similar' ||
+    legacyActiveTab === 'resources' ||
+    legacyActiveTab === 'references'
+      ? legacyActiveTab === 'research'
+        ? 'research'
+        : 'research'
+      : 'assistant'
+
+  return {
+    ...defaultTopicWorkbenchState(),
+    ...record,
+    activeTab,
+    researchView,
+    contextPills: Array.isArray(record?.contextPills)
+      ? record.contextPills.filter(
+          (pill): pill is ContextPill =>
+            Boolean(pill) &&
+            typeof pill.id === 'string' &&
+            typeof pill.kind === 'string' &&
+            typeof pill.label === 'string',
+        )
+      : [],
+  }
+}
 
 const defaultTopicSurfaceState = (): TopicSurfaceState => ({
   mode: 'graph',
@@ -64,6 +110,7 @@ function areTopicWorkbenchStatesEqual(left: TopicWorkbenchState, right: TopicWor
   return (
     left.open === right.open &&
     left.activeTab === right.activeTab &&
+    left.researchView === right.researchView &&
     left.historyOpen === right.historyOpen &&
     left.searchEnabled === right.searchEnabled &&
     left.thinkingEnabled === right.thinkingEnabled &&
@@ -104,22 +151,7 @@ function parseWorkspaceState(value: string | null): ReadingWorkspaceState {
           ? Object.fromEntries(
               Object.entries(parsed.workbenchByTopic).map(([topicId, rawState]) => {
                 const record = rawState as Partial<TopicWorkbenchState> | null | undefined
-                return [
-                  topicId,
-                  {
-                    ...defaultTopicWorkbenchState(),
-                    ...record,
-                    contextPills: Array.isArray(record?.contextPills)
-                      ? record.contextPills.filter(
-                          (pill): pill is ContextPill =>
-                            Boolean(pill) &&
-                            typeof pill.id === 'string' &&
-                            typeof pill.kind === 'string' &&
-                            typeof pill.label === 'string',
-                        )
-                      : [],
-                  },
-                ]
+                return [topicId, normalizeTopicWorkbenchState(record)]
               }),
             )
           : {},
@@ -172,7 +204,7 @@ export function ReadingWorkspaceProvider({ children }: PropsWithChildren) {
       }
     }
 
-    return parseWorkspaceState(window.sessionStorage.getItem(storageKey))
+    return parseWorkspaceState(readSessionStorageItem(APP_STATE_STORAGE_KEYS.readingWorkspace))
   })
   const stateRef = useRef(state)
 
@@ -182,7 +214,7 @@ export function ReadingWorkspaceProvider({ children }: PropsWithChildren) {
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    window.sessionStorage.setItem(storageKey, JSON.stringify(state))
+    writeSessionStorageItem(APP_STATE_STORAGE_KEYS.readingWorkspace, JSON.stringify(state))
   }, [state])
 
   const rememberTrail = useCallback((entry: Omit<ReadingTrailEntry, 'updatedAt'>) => {
@@ -222,13 +254,14 @@ export function ReadingWorkspaceProvider({ children }: PropsWithChildren) {
   >((topicId, patch) => {
     setState((current) => {
       const previous = current.workbenchByTopic[topicId] ?? defaultTopicWorkbenchState()
-      const next =
+      const next = normalizeTopicWorkbenchState(
         typeof patch === 'function'
           ? patch(previous)
           : {
               ...previous,
               ...patch,
-            }
+            },
+      )
 
       if (areTopicWorkbenchStatesEqual(previous, next)) {
         return current

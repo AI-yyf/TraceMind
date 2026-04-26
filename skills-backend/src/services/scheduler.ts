@@ -21,6 +21,7 @@ export interface TaskConfig {
     maxIterations?: number
     durationHours?: number
     cycleDelayMs?: number
+    stageDurationDays?: number
     stageRounds?: Array<{
       stageIndex: number
       rounds: number

@@ -36,7 +36,52 @@ export function ResearchWorldCard({
   const { copy } = useProductCopy()
   const { t } = useI18n()
 
-  if (!world) return null
+  if (!world) {
+    return (
+      <section
+        data-testid="topic-research-world-card"
+        className="rounded-[18px] border border-black/8 bg-[linear-gradient(180deg,#fffefb_0%,#f3efe7_100%)] px-3 py-3 shadow-[0_12px_26px_rgba(15,23,42,0.05)]"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-[10px] uppercase tracking-[0.22em] text-black/34">
+            {t('workbench.worldEyebrow', copy('assistant.worldEyebrow', 'Research world'))}
+          </div>
+          <div className="rounded-full bg-black/[0.04] px-2.5 py-1 text-[10px] text-black/54">
+            forming
+          </div>
+        </div>
+
+        <h3 className="mt-2 text-[14px] font-semibold leading-6 text-black">
+          {t('workbench.worldFallbackTitle', 'The world model is still rehydrating.')}
+        </h3>
+
+        <p className="mt-1.5 text-[11px] leading-6 text-black/60">
+          {t(
+            'workbench.worldFallbackDek',
+            copy(
+              'assistant.worldDek',
+              'Stages, nodes, and open tensions will reappear here once the backend restores the topic-level research memory.',
+            ),
+          )}
+        </p>
+
+        <div className="mt-2 grid grid-cols-3 gap-2">
+          <StatCell
+            label={t('workbench.worldStageCount', copy('assistant.worldStageCount', 'Stages'))}
+            value={0}
+          />
+          <StatCell
+            label={t('workbench.worldNodeCount', copy('assistant.worldNodeCount', 'Nodes'))}
+            value={0}
+          />
+          <StatCell
+            label={t('workbench.worldPaperCount', copy('assistant.worldPaperCount', 'Papers'))}
+            value={0}
+          />
+        </div>
+      </section>
+    )
+  }
 
   const claims = uniqueStrings(world.claims.slice(0, 2).map((claim) => claim.statement), 2, 150)
   const agenda = world.agenda.slice(0, 3)

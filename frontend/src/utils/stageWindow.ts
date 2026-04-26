@@ -3,6 +3,15 @@ export const MIN_STAGE_WINDOW_MONTHS = 1
 export const MAX_STAGE_WINDOW_MONTHS = 24
 export const STAGE_WINDOW_PRESETS = [1, 3, 6, 12, 24]
 
+export const WEEKS_TO_MONTHS = 4
+export function weeksToMonths(weeks: number): number {
+  return weeks / WEEKS_TO_MONTHS
+}
+
+export function monthsToWeeks(months: number): number {
+  return Math.round(months * WEEKS_TO_MONTHS)
+}
+
 export function normalizeStageWindowMonths(value: number | null | undefined) {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return DEFAULT_STAGE_WINDOW_MONTHS

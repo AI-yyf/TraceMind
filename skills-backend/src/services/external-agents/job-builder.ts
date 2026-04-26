@@ -27,13 +27,14 @@ import { loadTopicResearchReport } from '../topics/research-report'
 import { collectTopicSessionMemoryContext } from '../topics/topic-session-memory'
 import { collectTopicCognitiveMemory } from '../topics/topic-cognitive-memory'
 
-export type ExternalAgentSubjectType = 'generic' | 'topic' | 'node' | 'paper'
+export type ExternalAgentJobSubjectInputType = 'generic' | 'topic' | 'node' | 'paper'
+export type ExternalAgentSubjectType = 'generic' | 'topic' | 'node'
 
 export interface ExternalAgentJobBuildInput {
   templateId: PromptTemplateId
   language?: PromptLanguage
   topicId?: string
-  subjectType?: ExternalAgentSubjectType
+  subjectType?: ExternalAgentJobSubjectInputType
   subjectId?: string
   input?: unknown
   memoryContext?: unknown
@@ -51,6 +52,12 @@ type SubjectResolution = {
     route: string | null
     summary: string
     snapshot: unknown
+  }
+  sourceSubject?: {
+    type: ExternalAgentJobSubjectInputType
+    id: string | null
+    topicId: string | null
+    route: string | null
   }
   input: unknown
   memoryContext: unknown
@@ -83,6 +90,7 @@ export interface ExternalAgentJobPackage {
     apiKeyStatus: 'configured' | 'missing'
   }
   subject: SubjectResolution['subject']
+  sourceSubject?: SubjectResolution['sourceSubject']
   input: unknown
   memoryContext: unknown
   outputContract: unknown
@@ -104,6 +112,25 @@ function clipText(value: string | null | undefined, maxLength = 220) {
   if (!normalized) return ''
   if (normalized.length <= maxLength) return normalized
   return `${normalized.slice(0, Math.max(0, maxLength - 3))}...`
+}
+
+function appendReadingAnchor(baseRoute: string, anchorId: string) {
+  const [pathname, search = ''] = baseRoute.split('?')
+  const params = new URLSearchParams(search)
+  params.set('anchor', anchorId)
+  const nextSearch = params.toString()
+  return nextSearch ? `${pathname}?${nextSearch}` : pathname
+}
+
+function buildPaperSubjectRoute(paperViewModel: Awaited<ReturnType<typeof getPaperViewModel>>) {
+  const anchorId = `paper:${paperViewModel.paperId}`
+  const relatedNodeRoute = paperViewModel.relatedNodes.find((node) => node.route.trim())?.route?.trim()
+  if (relatedNodeRoute) {
+    return appendReadingAnchor(relatedNodeRoute, anchorId)
+  }
+
+  const topicRoute = paperViewModel.topic.route?.trim() || `/topic/${paperViewModel.topic.topicId}`
+  return appendReadingAnchor(topicRoute, anchorId)
 }
 
 function buildDefaultOutputContract(templateId: PromptTemplateId) {
@@ -327,8 +354,39 @@ async function buildPaperMemoryContext(paperId: string, topicId: string) {
   }
 }
 
+async function resolvePaperReadingSubject(
+  paperViewModel: Awaited<ReturnType<typeof getPaperViewModel>>,
+  topicId: string,
+): Promise<SubjectResolution['subject']> {
+  const relatedNodeId = paperViewModel.relatedNodes.find((node) => node.route.trim())?.nodeId?.trim()
+
+  if (relatedNodeId) {
+    const nodeViewModel = await getNodeViewModel(relatedNodeId)
+    return {
+      type: 'node',
+      id: nodeViewModel.nodeId,
+      topicId,
+      title: nodeViewModel.title,
+      route: appendReadingAnchor(`/node/${nodeViewModel.nodeId}`, `paper:${paperViewModel.paperId}`),
+      summary: clipText(nodeViewModel.summary, 260),
+      snapshot: nodeViewModel,
+    }
+  }
+
+  const topicSnapshot = await loadTopicSubjectSnapshot(topicId)
+  return {
+    type: 'topic',
+    id: topicId,
+    topicId,
+    title: topicSnapshot.title,
+    route: appendReadingAnchor(`/topic/${topicId}`, `paper:${paperViewModel.paperId}`),
+    summary: clipText(topicSnapshot.summary, 260),
+    snapshot: topicSnapshot,
+  }
+}
+
 async function resolveSubjectContext(
-  subjectType: ExternalAgentSubjectType,
+  subjectType: ExternalAgentJobSubjectInputType,
   topicId: string | undefined,
   subjectId: string | undefined,
   input: unknown,
@@ -344,6 +402,12 @@ async function resolveSubjectContext(
         route: null,
         summary: 'A frontend-configurable prompt and runtime package without a bound topic artifact.',
         snapshot: null,
+      },
+      sourceSubject: {
+        type: 'generic',
+        id: null,
+        topicId: topicId ?? null,
+        route: null,
       },
       input: input ?? {},
       memoryContext: memoryContext ?? null,
@@ -366,6 +430,12 @@ async function resolveSubjectContext(
         route: `/topic/${resolvedTopicId}`,
         summary: clipText(topicSnapshot.summary, 260),
         snapshot: topicSnapshot,
+      },
+      sourceSubject: {
+        type: 'topic',
+        id: resolvedTopicId,
+        topicId: resolvedTopicId,
+        route: `/topic/${resolvedTopicId}`,
       },
       input: input ?? topicSnapshot,
       memoryContext: memoryContext ?? (await buildTopicMemoryContext(resolvedTopicId, topicSnapshot)),
@@ -390,6 +460,12 @@ async function resolveSubjectContext(
         summary: clipText(nodeViewModel.summary, 260),
         snapshot: nodeViewModel,
       },
+      sourceSubject: {
+        type: 'node',
+        id: subjectId,
+        topicId: resolvedTopicId,
+        route: `/node/${subjectId}`,
+      },
       input: input ?? nodeViewModel,
       memoryContext: memoryContext ?? (await buildNodeMemoryContext(subjectId, resolvedTopicId)),
     }
@@ -400,17 +476,19 @@ async function resolveSubjectContext(
   }
 
   const paperViewModel = await getPaperViewModel(subjectId)
-  const resolvedTopicId = topicId ?? paperViewModel.topic.topicId
+  const resolvedTopicId = paperViewModel.topic.topicId
+  if (topicId && topicId !== resolvedTopicId) {
+    throw new AppError(400, 'Paper subject topicId does not match the paper topic.')
+  }
+  const readingSubject = await resolvePaperReadingSubject(paperViewModel, resolvedTopicId)
 
   return {
-    subject: {
+    subject: readingSubject,
+    sourceSubject: {
       type: 'paper',
       id: subjectId,
       topicId: resolvedTopicId,
-      title: paperViewModel.title,
-      route: `/paper/${subjectId}`,
-      summary: clipText(paperViewModel.summary, 260),
-      snapshot: paperViewModel,
+      route: buildPaperSubjectRoute(paperViewModel),
     },
     input: input ?? paperViewModel,
     memoryContext: memoryContext ?? (await buildPaperMemoryContext(subjectId, resolvedTopicId)),
@@ -422,9 +500,12 @@ async function persistJobPackage(
   jobPackage: ExternalAgentJobPackage,
   fileName?: string,
 ) {
+  const subjectIdentity =
+    jobPackage.sourceSubject?.type === 'paper'
+      ? `paper-${jobPackage.sourceSubject.id ?? jobPackage.jobId}`
+      : `${jobPackage.subject.type}-${jobPackage.subject.id ?? jobPackage.jobId}`
   const baseName = sanitizeFileName(
-    fileName ??
-      `${jobPackage.template.id}-${jobPackage.subject.type}-${jobPackage.subject.id ?? jobPackage.jobId}`,
+    fileName ?? `${jobPackage.template.id}-${subjectIdentity}`,
   )
   const outPath = path.join(bundle.externalAgents.rootDir, 'jobs', `${baseName}.json`)
   await fs.mkdir(path.dirname(outPath), { recursive: true })
@@ -481,6 +562,7 @@ export async function buildExternalAgentJobPackage(
       apiKeyStatus: slotConfig?.apiKeyStatus ?? 'missing',
     },
     subject: subject.subject,
+    sourceSubject: subject.sourceSubject,
     input: subject.input,
     memoryContext: subject.memoryContext,
     outputContract: input.outputContract ?? buildDefaultOutputContract(template.id),

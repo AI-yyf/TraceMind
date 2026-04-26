@@ -1,39 +1,22 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowUpRight, Loader2, MessageSquarePlus, Plus, Search } from 'lucide-react'
+import { ArrowUpRight, FolderPlus, Loader2, MessageSquarePlus, Plus, Search } from 'lucide-react'
 
 import { useProductCopy } from '@/hooks/useProductCopy'
 import { useI18n } from '@/i18n'
 import type { SearchResponse, SearchResultItem } from '@/types/alpha'
 import { apiGet } from '@/utils/api'
+import {
+  getTopicSearchRecentStorageKey,
+  readRecentSearchTerms,
+  rememberRecentSearchTerm,
+} from '@/utils/appStateStorage'
 import { cn } from '@/utils/cn'
+import { assertSearchResponseContract } from '@/utils/contracts'
 
 const searchKinds = ['topic', 'node', 'paper', 'section', 'figure', 'table', 'formula'] as const
 
-const recentKey = (topicId: string) => `topic-search:recent:${topicId}`
-
 function formatStageLabel(stageLabel: string | undefined, stageIndex: number, fallback: string) {
   return stageLabel ?? fallback.replace('{stage}', String(stageIndex))
-}
-
-function readRecentQueries(topicId: string) {
-  if (typeof window === 'undefined') return [] as string[]
-
-  try {
-    const raw = window.localStorage.getItem(recentKey(topicId))
-    if (!raw) return []
-    const parsed = JSON.parse(raw) as string[]
-    return Array.isArray(parsed) ? parsed.filter(Boolean).slice(0, 8) : []
-  } catch {
-    return []
-  }
-}
-
-function rememberRecentQuery(topicId: string, query: string, current: string[]) {
-  const trimmed = query.trim()
-  if (trimmed.length < 2 || typeof window === 'undefined') return current
-  const next = [trimmed, ...current.filter((item) => item !== trimmed)].slice(0, 8)
-  window.localStorage.setItem(recentKey(topicId), JSON.stringify(next))
-  return next
 }
 
 export function SearchPanel({
@@ -42,12 +25,14 @@ export function SearchPanel({
   onOpenResult,
   onAddContext,
   onAskAboutResult,
+  onAddToNode,
 }: {
   topicId: string
   stageWindowMonths?: number
   onOpenResult: (item: SearchResultItem) => void
   onAddContext: (item: SearchResultItem) => void
   onAskAboutResult: (item: SearchResultItem) => void
+  onAddToNode?: (item: SearchResultItem) => void
 }) {
   const { copy } = useProductCopy()
   const { t } = useI18n()
@@ -56,12 +41,20 @@ export function SearchPanel({
       copy(copyId, t(key, fallback)),
     [copy, t],
   )
+  const backendUnavailableMessage = searchText(
+    'workbench.searchBackendUnavailable',
+    'workbench.searchBackendUnavailable',
+    'Backend topic search results are unavailable right now.',
+  )
   const [query, setQuery] = useState('')
   const [selectedKinds, setSelectedKinds] = useState<string[]>([])
   const [selectedStages, setSelectedStages] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<SearchResponse | null>(null)
-  const [recentQueries, setRecentQueries] = useState<string[]>(() => readRecentQueries(topicId))
+  const [error, setError] = useState<string | null>(null)
+  const [recentQueries, setRecentQueries] = useState<string[]>(() =>
+    readRecentSearchTerms(getTopicSearchRecentStorageKey(topicId)),
+  )
   const kindLabels = useMemo(
     () => ({
       topic: t('workbench.searchKindTopic', 'Topic'),
@@ -138,7 +131,7 @@ export function SearchPanel({
   )
 
   useEffect(() => {
-    setRecentQueries(readRecentQueries(topicId))
+    setRecentQueries(readRecentSearchTerms(getTopicSearchRecentStorageKey(topicId)))
   }, [topicId])
 
   useEffect(() => {
@@ -155,26 +148,36 @@ export function SearchPanel({
     const trimmed = query.trim()
     if (!trimmed) {
       setResult(null)
+      setError(null)
       return
     }
 
     const timer = window.setTimeout(async () => {
       setLoading(true)
       try {
-        const payload = await apiGet<SearchResponse>(
+        const payload = await apiGet<unknown>(
           `/api/search?q=${encodeURIComponent(trimmed)}&scope=topic&topicId=${encodeURIComponent(topicId)}${typesParam}${stagesParam}${stageWindowParam}&limit=28`,
         )
+        assertSearchResponseContract(payload, 'topic')
         setResult(payload)
-        setRecentQueries((current) => rememberRecentQuery(topicId, trimmed, current))
-      } catch {
+        setError(null)
+        setRecentQueries((current) =>
+          rememberRecentSearchTerm(getTopicSearchRecentStorageKey(topicId), trimmed, current),
+        )
+      } catch (nextError) {
         setResult(null)
+        setError(
+          nextError instanceof Error
+            ? nextError.message
+            : backendUnavailableMessage,
+        )
       } finally {
         setLoading(false)
       }
     }, 180)
 
     return () => window.clearTimeout(timer)
-  }, [query, stageWindowParam, stagesParam, topicId, typesParam])
+  }, [backendUnavailableMessage, query, stageWindowParam, stagesParam, topicId, typesParam])
 
   return (
     <div data-testid="topic-search-panel" className="flex h-full flex-col gap-4">
@@ -311,6 +314,15 @@ export function SearchPanel({
       </div>
 
       <div className="min-h-0 space-y-4 overflow-y-auto pr-1">
+        {query.trim() && error ? (
+          <div
+            data-testid="topic-search-error"
+            className="rounded-[22px] border border-red-200 bg-red-50 px-4 py-4 text-[13px] leading-6 text-red-700"
+          >
+            {error}
+          </div>
+        ) : null}
+
         {query.trim() && result && flatItems.length === 0 ? (
           <div className="rounded-[22px] bg-[var(--surface-soft)] px-4 py-4 text-[13px] leading-6 text-black/56">
             {searchText(
@@ -410,30 +422,42 @@ export function SearchPanel({
                     </div>
                   ) : null}
 
-                  <div className="mt-4 flex flex-wrap items-center gap-3 text-[12px]">
-                    <button
-                      type="button"
-                      onClick={() => onOpenResult(item)}
-                      className="inline-flex items-center gap-1.5 text-black/72 transition hover:text-black"
-                    >
-                      {searchText('search.openAction', 'workbench.searchOpenAction', 'Open Result')}
-                      <ArrowUpRight className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onAddContext(item)}
-                      className="text-black/56 transition hover:text-black"
-                    >
-                      {searchText('search.contextAction', 'workbench.searchContextAction', 'Add Context')}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onAskAboutResult(item)}
-                      className="inline-flex items-center gap-1.5 text-black/56 transition hover:text-black"
-                    >
-                      {searchText('search.followUpAction', 'workbench.searchFollowUpAction', 'Ask Follow-Up')}
-                      <MessageSquarePlus className="h-3.5 w-3.5" />
-                    </button>
+                  <div className="mt-4">
+                    <div className="flex flex-wrap items-center gap-3 text-[12px]">
+                      <button
+                        type="button"
+                        onClick={() => onOpenResult(item)}
+                        className="inline-flex items-center gap-1.5 text-black/72 transition hover:text-black"
+                      >
+                        {searchText('search.openAction', 'workbench.searchOpenAction', 'Open Result')}
+                        <ArrowUpRight className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onAddContext(item)}
+                        className="text-black/56 transition hover:text-black"
+                      >
+                        {searchText('search.contextAction', 'workbench.searchContextAction', 'Add Context')}
+                      </button>
+                      {item.kind === 'paper' && onAddToNode ? (
+                        <button
+                          type="button"
+                          onClick={() => onAddToNode(item)}
+                          className="inline-flex items-center gap-1.5 text-black/56 transition hover:text-black"
+                        >
+                          {searchText('search.addToNodeAction', 'workbench.searchAddToNode', 'Add to Node')}
+                          <FolderPlus className="h-3.5 w-3.5" />
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => onAskAboutResult(item)}
+                        className="inline-flex items-center gap-1.5 text-black/56 transition hover:text-black"
+                      >
+                        {searchText('search.followUpAction', 'workbench.searchFollowUpAction', 'Ask Follow-Up')}
+                        <MessageSquarePlus className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
                 </article>
               ))}

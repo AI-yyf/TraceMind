@@ -215,6 +215,46 @@ export async function deleteSession(key: string): Promise<void> {
   await client.del(key)
 }
 
+export async function clearSessionsByPattern(pattern: string): Promise<number> {
+  const client = await getClient()
+  const keys = await client.keys(pattern)
+
+  if (keys.length === 0) return 0
+
+  for (const key of keys) {
+    await client.del(key)
+  }
+
+  return keys.length
+}
+
+export async function clearResearchSessionsByTopic(topicId?: string | null): Promise<number> {
+  const sessions = await getAllSessions<Record<string, unknown>>('research:session:*')
+
+  if (!topicId) {
+    let cleared = 0
+    for (const key of sessions.keys()) {
+      await deleteSession(key)
+      cleared += 1
+    }
+    return cleared
+  }
+
+  let cleared = 0
+  for (const [key, session] of sessions.entries()) {
+    const rawTopicIds = session.topicIds
+    const matches =
+      (typeof rawTopicIds === 'string' && rawTopicIds.includes(topicId)) ||
+      (Array.isArray(rawTopicIds) && rawTopicIds.some((value) => value === topicId))
+
+    if (!matches) continue
+    await deleteSession(key)
+    cleared += 1
+  }
+
+  return cleared
+}
+
 /**
  * Get all sessions matching a pattern
  * @param pattern - Key pattern (e.g., "session:*")

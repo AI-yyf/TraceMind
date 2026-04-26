@@ -21,6 +21,62 @@ type RecoveredTable =
       cells: string[]
     }
 
+function stringifyStructuredCell(value: unknown): string {
+  if (typeof value === 'string') return value.trim()
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  if (value == null) return ''
+
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
+}
+
+function parseStructuredTable(evidence: EvidenceExplanation): ParsedTable | null {
+  if (evidence.type !== 'table') return null
+
+  const headers = (evidence.tableHeaders ?? [])
+    .map((header: string) => header.trim())
+    .filter(Boolean)
+  const rawRows = Array.isArray(evidence.tableRows) ? evidence.tableRows : []
+  const rows = rawRows
+    .map((row: unknown) => {
+      if (Array.isArray(row)) {
+        return row.map((cell) => stringifyStructuredCell(cell)).filter((cell) => cell.length > 0)
+      }
+
+      if (row && typeof row === 'object') {
+        const record = row as Record<string, unknown>
+        if (headers.length > 0) {
+          return headers.map((header: string) => stringifyStructuredCell(record[header]))
+        }
+
+        return Object.values(record).map((cell) => stringifyStructuredCell(cell))
+      }
+
+      const cell = stringifyStructuredCell(row)
+      return cell ? [cell] : []
+    })
+    .filter((row) => row.length > 0)
+
+  const width = Math.max(headers.length, ...rows.map((row) => row.length), 0)
+  if (width < 2 || rows.length === 0) return null
+
+  const normalizedHeaders =
+    headers.length > 0
+      ? Array.from({ length: width }, (_: unknown, index: number) => headers[index] ?? `Column ${index + 1}`)
+      : rows[0]?.map((_, index) => `Column ${index + 1}`) ?? []
+  const normalizedRows = rows.map((row: string[]) =>
+    Array.from({ length: width }, (_, index) => row[index] ?? ''),
+  )
+
+  return {
+    headers: normalizedHeaders,
+    rows: normalizedRows,
+  }
+}
+
 function extractTableSource(content: string, quote: string) {
   const normalized = content.replace(/\r\n/gu, '\n').trim()
   if (!normalized) return ''
@@ -90,7 +146,7 @@ function extractTableBlocks(tableSource: string) {
 function looksLikeTextualTableLabel(block: string) {
   const normalized = block.trim()
   if (!normalized) return false
-  if (/^[\d.%+\-–—/=:;,()]+(?:\s+[\d.%+\-–—/=:;,()]+)*$/u.test(normalized)) return false
+  if (/^[\d.%+\-闂傚倸鍊烽懗鍫曞磻閵娾晛纾块柡灞诲劚缁犱即鏌熺紒銏犳灈闁?=:;,()]+(?:\s+[\d.%+\-闂傚倸鍊烽懗鍫曞磻閵娾晛纾块柡灞诲劚缁犱即鏌熺紒銏犳灈闁?=:;,()]+)*$/u.test(normalized)) return false
   return /[A-Za-z\u4E00-\u9FFF]/u.test(normalized)
 }
 
@@ -217,6 +273,30 @@ function normalizeEvidenceSentence(value: string) {
   return value.replace(/\s+/gu, ' ').trim()
 }
 
+function shouldHideWhyItMatters(
+  evidence: EvidenceExplanation,
+  whyItMatters: string,
+  isInline: boolean,
+) {
+  const normalized = normalizeEvidenceSentence(whyItMatters)
+  if (!normalized) return true
+
+  const lowSignalPatterns = [
+    /read the original figure directly/iu,
+    /used for result comparison/iu,
+    /gives the key result/iu,
+    /provides the method constraint/iu,
+    /suggestion to inspect the original figure/iu,
+  ]
+
+  if (lowSignalPatterns.some((pattern) => pattern.test(normalized))) {
+    return true
+  }
+
+  if (isInline && normalized.length > 64) return true
+  if (evidence.type === 'figure' && normalized.length > 56) return true
+  return false
+}
 function buildVisibleEvidenceBody(args: {
   evidence: EvidenceExplanation
   bodyText: string
@@ -226,6 +306,9 @@ function buildVisibleEvidenceBody(args: {
 }) {
   const explanation = normalizeEvidenceSentence(args.evidence.explanation ?? '')
   if (explanation) {
+    if (/visual checkpoint|comparison into a table|objective, constraint, or update rule/i.test(explanation)) {
+      return ''
+    }
     return clipEvidenceText(explanation, args.isInline ? 320 : 420)
   }
 
@@ -267,11 +350,17 @@ export function ReadingEvidenceBlock({
   whyItMattersLabel: string
   variant?: 'panel' | 'article-inline'
 }) {
-  const imageUrl = resolveApiAssetUrl(evidence.thumbnailPath ?? evidence.imagePath)
+  const isInline = variant === 'article-inline'
+  const imageUrl = resolveApiAssetUrl(
+    isInline ? evidence.imagePath ?? evidence.thumbnailPath : evidence.thumbnailPath ?? evidence.imagePath,
+  )
   const tableSource =
     evidence.type === 'table' ? extractTableSource(evidence.content, evidence.quote) : ''
+  const structuredTable = evidence.type === 'table' ? parseStructuredTable(evidence) : null
   const parsedTable =
-    evidence.type === 'table' ? parseEvidenceTable(evidence.content, evidence.quote) : null
+    evidence.type === 'table'
+      ? structuredTable ?? parseEvidenceTable(evidence.content, evidence.quote)
+      : null
   const recoveredTable =
     evidence.type === 'table' && !parsedTable
       ? recoverLinearizedTable(evidence.content, evidence.quote)
@@ -280,7 +369,6 @@ export function ReadingEvidenceBlock({
     evidence.type === 'table'
       ? clipEvidenceText(stripEvidenceBody(evidence.content, evidence.quote, tableSource))
       : clipEvidenceText(evidence.content)
-  const isInline = variant === 'article-inline'
   const visibleBodyText = buildVisibleEvidenceBody({
     evidence,
     bodyText,
@@ -295,17 +383,25 @@ export function ReadingEvidenceBlock({
       className={`transition ${
         isInline
           ? highlighted
-            ? 'scroll-mt-24 border-y border-[#d1aa5c]/55 bg-[#fff8ec]/70 px-0 py-6'
-            : 'border-y border-black/8 px-0 py-6'
+            ? 'scroll-mt-24 my-10 border-l-2 border-black/18 pl-4 py-2'
+            : 'my-10 py-2'
           : highlighted
             ? 'scroll-mt-20 rounded-[28px] border border-[#d1aa5c]/65 bg-[#fff8ec] px-5 py-5 shadow-[0_18px_38px_rgba(15,23,42,0.10)]'
             : 'rounded-[28px] border border-black/8 bg-[var(--surface-soft)]/55 px-5 py-5'
       }`}
     >
-      <div className={`text-[11px] uppercase tracking-[0.22em] text-black/38 ${isInline ? 'px-1' : ''}`}>
+      <div
+        className={`text-[11px] uppercase tracking-[0.22em] text-black/38 ${
+          isInline ? 'px-1 text-center' : ''
+        }`}
+      >
         {evidence.label}
       </div>
-      <h3 className={`mt-2 font-semibold text-black ${isInline ? 'px-1 text-[18px] leading-8' : 'text-[20px] leading-7'}`}>
+      <h3
+        className={`mt-2 font-semibold text-black ${
+          isInline ? 'px-1 text-center text-[13px] leading-6' : 'text-[20px] leading-7'
+        }`}
+      >
         {evidence.title}
       </h3>
 
@@ -313,8 +409,10 @@ export function ReadingEvidenceBlock({
         <img
           src={imageUrl}
           alt={evidence.title}
-          className={`mt-5 w-full object-contain bg-white ${
-            isInline ? 'max-h-[520px] rounded-[20px] border border-black/8 p-3' : 'max-h-[460px] rounded-[24px] p-4'
+          className={`mt-5 block max-w-full object-contain bg-white ${
+            isInline
+              ? 'mx-auto max-h-[360px] max-w-[72%] rounded-[4px]'
+              : 'w-full max-h-[460px] rounded-[24px] p-4'
           }`}
           loading="lazy"
         />
@@ -324,7 +422,9 @@ export function ReadingEvidenceBlock({
         <MathFormula
           expression={evidence.formulaLatex}
           className={`mt-5 overflow-x-auto bg-white ${
-            isInline ? 'rounded-[18px] border border-black/8 px-4 py-4' : 'rounded-[24px] px-5 py-5'
+            isInline
+              ? 'mx-auto max-w-[76%] px-0 py-3 text-center'
+              : 'rounded-[24px] px-5 py-5'
           }`}
         />
       ) : null}
@@ -332,7 +432,7 @@ export function ReadingEvidenceBlock({
       {evidence.type === 'table' ? (
         <div
           className={`mt-5 overflow-hidden border border-black/8 bg-white ${
-            isInline ? 'rounded-[18px]' : 'rounded-[24px]'
+            isInline ? 'mx-auto max-w-[82%] rounded-[6px]' : 'rounded-[24px]'
           }`}
         >
           {parsedTable ? (
@@ -371,9 +471,9 @@ export function ReadingEvidenceBlock({
             </div>
           ) : recoveredTable?.kind === 'pairs' ? (
             <dl className="divide-y divide-black/6">
-              {recoveredTable.entries.map((entry) => (
+              {recoveredTable.entries.map((entry, index) => (
                 <div
-                  key={`${evidence.anchorId}-${entry.label}-${entry.value}`}
+                  key={`${evidence.anchorId}-${entry.label}-${entry.value}-${index}`}
                   className="grid gap-2 px-4 py-3 md:grid-cols-[minmax(0,180px)_minmax(0,1fr)] md:items-start"
                 >
                   <dt className="text-[12px] font-medium leading-6 text-black">{entry.label}</dt>
@@ -406,19 +506,31 @@ export function ReadingEvidenceBlock({
       ) : null}
 
       {evidence.quote ? (
-        <figcaption className={`mt-4 text-[14px] leading-7 text-black/58 ${isInline ? 'px-1' : ''}`}>
+        <figcaption
+          className={`mt-4 text-[13px] leading-7 text-black/56 ${
+            isInline ? 'mx-auto max-w-[640px] px-1 text-center italic text-black/46' : ''
+          }`}
+        >
           {evidence.quote}
         </figcaption>
       ) : null}
 
       {visibleBodyText ? (
-        <div className={`mt-4 whitespace-pre-line text-[15px] leading-8 text-black/68 ${isInline ? 'px-1' : ''}`}>
+        <div
+          className={`mt-3 whitespace-pre-line text-[14px] leading-7 text-black/62 ${
+            isInline ? 'mx-auto max-w-[640px] px-1 text-left' : ''
+          }`}
+        >
           {visibleBodyText}
         </div>
       ) : null}
 
-      {evidence.whyItMatters ? (
-        <p className={`mt-4 text-[14px] leading-7 text-black/62 ${isInline ? 'px-1' : ''}`}>
+      {evidence.whyItMatters && !shouldHideWhyItMatters(evidence, evidence.whyItMatters, isInline) ? (
+        <p
+          className={`mt-3 text-[13px] leading-7 text-black/58 ${
+            isInline ? 'mx-auto max-w-[640px] px-1 text-left' : ''
+          }`}
+        >
           <strong className="font-medium text-black">{whyItMattersLabel}</strong>
           {evidence.whyItMatters}
         </p>

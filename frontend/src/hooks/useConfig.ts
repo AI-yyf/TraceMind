@@ -3,17 +3,20 @@ import type { AppConfig, ResearchSessionConfig, ResearchProgress } from '@/types
 import { DEFAULT_CONFIG } from '@/types/config'
 import { useWebSocket } from './useWebSocket'
 import { buildApiUrl } from '@/utils/api'
-
-const STORAGE_KEY = 'arxiv-chronicle-config'
+import {
+  APP_STATE_STORAGE_KEYS,
+  readLocalStorageJson,
+  writeLocalStorageJson,
+} from '@/utils/appStateStorage'
+import { assertResearchSessionStartResponseContract } from '@/utils/contracts'
 
 /**
  * 加载配置
  */
 function loadConfig(): AppConfig {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY)
-    if (stored) {
-      const parsed = JSON.parse(stored)
+    const parsed = readLocalStorageJson<Partial<AppConfig>>(APP_STATE_STORAGE_KEYS.config)
+    if (parsed) {
       // 合并默认配置和存储的配置
       return {
         ...DEFAULT_CONFIG,
@@ -31,7 +34,7 @@ function loadConfig(): AppConfig {
       }
     }
   } catch {
-    console.error('Failed to load config from localStorage')
+    // Config load failed - return default
   }
   return DEFAULT_CONFIG
 }
@@ -41,12 +44,12 @@ function loadConfig(): AppConfig {
  */
 function saveConfig(config: AppConfig) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    writeLocalStorageJson(APP_STATE_STORAGE_KEYS.config, {
       ...config,
       updatedAt: new Date().toISOString(),
-    }))
+    })
   } catch {
-    console.error('Failed to save config to localStorage')
+    // Config save failed - silent fallback
   }
 }
 
@@ -157,16 +160,20 @@ export function useResearchSession() {
       if (sid === sessionIdRef.current) {
         setProgress(prev => {
           if (!prev) return null
-          // 转换日志格式
-          const newLogs = data.logs.map(log => ({
+          // 兼容alpha-reader格式（无logs数组）
+          const newLogs = data.logs?.map(log => ({
             timestamp: log.timestamp,
             level: log.level as 'info' | 'warn' | 'error' | 'success',
             message: log.message,
-          }))
+          })) ?? [{
+            timestamp: data.timestamp ?? new Date().toISOString(),
+            level: 'info' as const,
+            message: data.message ?? `${data.stage ?? 'unknown'}: ${data.status ?? 'progress'}`,
+          }]
           return {
             ...prev,
-            currentStage: data.stage,
-            progress: data.progress,
+            currentStage: data.stage ?? prev.currentStage,
+            progress: data.progress ?? data.percent ?? prev.progress,
             logs: [...prev.logs, ...newLogs],
           }
         })
@@ -178,11 +185,10 @@ export function useResearchSession() {
         setProgress(prev => prev ? { ...prev, status: 'completed' as const } : null)
       }
     },
-    onError: (sid, error) => {
+    onError: (sid, _error) => {
       if (sid === sessionIdRef.current) {
         setIsRunning(false)
         setProgress(prev => prev ? { ...prev, status: 'error' as const } : null)
-        console.error('Research session error:', error)
       }
     },
   })
@@ -209,8 +215,9 @@ export function useResearchSession() {
         throw new Error('Failed to start research session')
       }
 
-      const result = await response.json()
-      const sessionId = result.data.sessionId
+      const result = await response.json() as unknown
+      assertResearchSessionStartResponseContract(result)
+      const sessionId = result.sessionId
       sessionIdRef.current = sessionId
 
       setIsRunning(true)
@@ -242,7 +249,6 @@ export function useResearchSession() {
 
       return sessionId
     } catch (error) {
-      console.error('Failed to start research:', error)
       setIsRunning(false)
       throw error
     }

@@ -9,16 +9,68 @@ type PaperRouteResolutionArgs = {
   topicId?: string | null
 }
 
+function splitRouteParts(route: string) {
+  const [pathname, search = ''] = route.split('?')
+  return {
+    pathname,
+    params: new URLSearchParams(search),
+  }
+}
+
+function canAttachReadingAnchor(route: string) {
+  const { pathname } = splitRouteParts(route)
+  return pathname.startsWith('/node/') || pathname.startsWith('/topic/')
+}
+
 export function buildNodeAnchorRoute(baseRoute: string, anchorId: string) {
-  const [pathname, search = ''] = baseRoute.split('?')
-  const params = new URLSearchParams(search)
+  const { pathname, params } = splitRouteParts(baseRoute)
   params.set('anchor', anchorId)
   const nextSearch = params.toString()
   return nextSearch ? `${pathname}?${nextSearch}` : pathname
 }
 
-export function buildPaperAnchorRoute(baseRoute: string, paperId: string, anchorId?: string | null) {
+export function buildPaperAnchorRoute(
+  baseRoute: string,
+  paperId: string,
+  anchorId?: string | null,
+) {
   return buildNodeAnchorRoute(baseRoute, anchorId?.trim() || `paper:${paperId}`)
+}
+
+export function normalizeResolvedReadingRouteForPaper({
+  paperId,
+  route,
+  anchorId,
+}: Pick<PaperRouteResolutionArgs, 'paperId' | 'route' | 'anchorId'>) {
+  const normalizedRoute = route?.trim()
+  if (!normalizedRoute) return null
+
+  if (!canAttachReadingAnchor(normalizedRoute)) return null
+
+  const { params } = splitRouteParts(normalizedRoute)
+  if (params.has('anchor')) {
+    return normalizedRoute
+  }
+
+  return buildPaperAnchorRoute(normalizedRoute, paperId, anchorId)
+}
+
+export function canonicalizePaperLikeRoute({
+  paperId,
+  route,
+  anchorId,
+  nodeRoute,
+  relatedNodes,
+  topicId,
+}: PaperRouteResolutionArgs) {
+  return resolvePrimaryReadingRouteForPaper({
+    paperId,
+    route,
+    anchorId,
+    nodeRoute,
+    relatedNodes,
+    topicId,
+  })
 }
 
 export function resolvePrimaryReadingRouteForPaper({
@@ -34,14 +86,19 @@ export function resolvePrimaryReadingRouteForPaper({
     return buildPaperAnchorRoute(preferredNodeRoute, paperId, anchorId)
   }
 
-  const normalizedRoute = route?.trim()
-  if (normalizedRoute && !normalizedRoute.startsWith('/paper/')) {
+  const normalizedRoute = normalizeResolvedReadingRouteForPaper({
+    paperId,
+    route,
+    anchorId,
+  })
+  if (normalizedRoute) {
     return normalizedRoute
   }
 
   if (topicId) {
-    return buildNodeAnchorRoute(`/topic/${topicId}`, anchorId?.trim() || `paper:${paperId}`)
+    return buildPaperAnchorRoute(`/topic/${topicId}`, paperId, anchorId)
   }
 
-  return normalizedRoute || `/paper/${paperId}`
+  console.warn(`Cannot resolve route for paper ${paperId}: no node or topic association`)
+  return '/'
 }

@@ -220,7 +220,7 @@ export const DEFAULT_CONFIG: SystemConfig = {
     minCandidatesThreshold: 5
   },
   nodeMerge: {
-    maxPapersPerNode: 10,
+    maxPapersPerNode: 20, // Aligned with DEFAULT_MAX_PAPERS_PER_NODE in topic-research-config.ts
     maxTimeSpanMonths: 12,
     enableCrossBranchMerge: true,
     enableSameBranchMerge: true,
@@ -235,7 +235,7 @@ export const DEFAULT_CONFIG: SystemConfig = {
   },
   display: {
     maxNodesPerStage: 20,
-    maxPapersPerNode: 10,
+    maxPapersPerNode: 20, // Aligned with DEFAULT_MAX_PAPERS_PER_NODE in topic-research-config.ts
     enableLazyLoad: true,
     cacheExpiryMinutes: 60
   },

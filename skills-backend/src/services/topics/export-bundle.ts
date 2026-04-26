@@ -1,8 +1,6 @@
 import {
   getNodeViewModel,
-  getPaperViewModel,
   type NodeViewModel,
-  type PaperViewModel,
 } from './alpha-reader'
 import { getTopicViewModel, type TopicViewModel, type TopicStageEditorial } from './alpha-topic'
 import {
@@ -38,14 +36,12 @@ export interface TopicExportStageDossier {
   stageThesis: string
   editorial: TopicStageEditorial
   nodeCount: number
-  paperCount: number
   nodeIds: string[]
-  paperIds: string[]
   pipeline: PipelineContextSummary
 }
 
 export interface TopicExportBundle {
-  schemaVersion: 'topic-export-bundle-v1'
+  schemaVersion: 'topic-export-bundle-v2'
   exportedAt: string
   topic: TopicViewModel
   report: ResearchRunReport | null
@@ -58,11 +54,10 @@ export interface TopicExportBundle {
   sessionMemory: TopicSessionMemoryContext
   stageDossiers: TopicExportStageDossier[]
   nodeDossiers: NodeViewModel[]
-  paperDossiers: PaperViewModel[]
 }
 
 export interface TopicExportBundleBatch {
-  schemaVersion: 'topic-export-batch-v1'
+  schemaVersion: 'topic-export-batch-v2'
   exportedAt: string
   topicCount: number
   bundles: TopicExportBundle[]
@@ -82,7 +77,6 @@ function buildStageDossiers(topic: TopicViewModel, historyLimit = 6) {
     const stageDossiers: TopicExportStageDossier[] = topic.stages.map((stage) => {
       const timelineStage = timelineByStage.get(stage.stageIndex)
       const nodeIds = stage.nodes.map((node) => node.nodeId)
-      const paperIds = uniqueStrings(stage.nodes.flatMap((node) => node.paperIds))
 
       return {
         stageIndex: stage.stageIndex,
@@ -97,12 +91,10 @@ function buildStageDossiers(topic: TopicViewModel, historyLimit = 6) {
         stageThesis: timelineStage?.stageThesis ?? '',
         editorial: stage.editorial,
         nodeCount: nodeIds.length,
-        paperCount: paperIds.length,
         nodeIds,
-        paperIds,
         pipeline: buildResearchPipelineContext(pipelineState, {
           stageIndex: stage.stageIndex,
-          paperIds,
+          paperIds: uniqueStrings(stage.nodes.flatMap((node) => node.paperIds)),
           historyLimit,
         }),
       }
@@ -119,28 +111,18 @@ function buildStageDossiers(topic: TopicViewModel, historyLimit = 6) {
 export async function getTopicExportBundle(topicId: string): Promise<TopicExportBundle> {
   const topic = await getTopicViewModel(topicId)
   const orderedNodeIds = uniqueStrings(topic.stages.flatMap((stage) => stage.nodes.map((node) => node.nodeId)))
-  const orderedPaperIds = uniqueStrings(topic.papers.map((paper) => paper.paperId))
 
-  const [
-    { stageDossiers, overview },
-    report,
-    sessionMemory,
-    world,
-    guidance,
-    nodeDossiers,
-    paperDossiers,
-  ] = await Promise.all([
+  const [{ stageDossiers, overview }, report, sessionMemory, world, guidance, nodeDossiers] = await Promise.all([
     buildStageDossiers(topic)(),
     loadTopicResearchReport(topicId),
     collectTopicSessionMemoryContext(topicId, { recentLimit: 8 }),
     syncTopicResearchWorldSnapshot(topicId),
     loadTopicGuidanceLedger(topicId),
     Promise.all(orderedNodeIds.map((nodeId) => getNodeViewModel(nodeId))),
-    Promise.all(orderedPaperIds.map((paperId) => getPaperViewModel(paperId))),
   ])
 
   return {
-    schemaVersion: 'topic-export-bundle-v1',
+    schemaVersion: 'topic-export-bundle-v2',
     exportedAt: new Date().toISOString(),
     topic,
     report,
@@ -153,7 +135,6 @@ export async function getTopicExportBundle(topicId: string): Promise<TopicExport
     sessionMemory,
     stageDossiers,
     nodeDossiers,
-    paperDossiers,
   }
 }
 
@@ -162,7 +143,7 @@ export async function getTopicExportBundleBatch(topicIds: string[]): Promise<Top
   const bundles = await Promise.all(orderedTopicIds.map((topicId) => getTopicExportBundle(topicId)))
 
   return {
-    schemaVersion: 'topic-export-batch-v1',
+    schemaVersion: 'topic-export-batch-v2',
     exportedAt: new Date().toISOString(),
     topicCount: bundles.length,
     bundles,

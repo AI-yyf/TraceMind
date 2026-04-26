@@ -614,6 +614,21 @@ const curatedEntries = {
   'studio.agents.promptGuide': ['提示词指南', 'Prompt Guide'],
   'studio.agents.rootLabel': ['根目录', 'Root directory'],
   'studio.agents.superPromptLabel': ['超级提示词', 'Super Prompt'],
+
+  // PDF Extraction Quality Warnings
+  'pdf.quality.missingAssets': ['多页论文未提取到任何图表或公式', 'No figures, tables, or formulas survived extraction for a multi-page paper.'],
+  'pdf.quality.missingTableFormula': ['长论文未提取到表格或公式', 'Figures were extracted, but no tables or formulas were recovered from a long paper.'],
+  'pdf.quality.filteredAssets': ['低置信度资产已过滤', 'Low-confidence visual assets were filtered and may need fallback review.'],
+  'pdf.quality.vlmFallbackPages': ['部分页面需要视觉模型回退', 'Pages were rendered for vision fallback because extraction looked incomplete.'],
+  'pdf.quality.latentCoverageGap': ['检测到潜在覆盖缺口', 'Detected cues in text suggesting missing structured assets.'],
+  'pdf.quality.markerPrimary': ['使用 Marker 作为主要提取方法', 'Using Marker as primary extraction method.'],
+  'pdf.quality.pymupdfFallback': ['Marker 失败，回退到 PyMuPDF', 'Marker failed, falling back to PyMuPDF.'],
+  'pdf.quality.extractionComplete': ['PDF 提取完成', 'PDF extraction completed.'],
+  'pdf.quality.methodBreakdown': ['提取方法分布', 'Extraction method breakdown.'],
+  'pdf.quality.confidenceThreshold': ['置信度阈值', 'Confidence threshold'],
+  'pdf.quality.figureThreshold': ['图表置信度阈值', 'Figure confidence threshold'],
+  'pdf.quality.tableThreshold': ['表格置信度阈值', 'Table confidence threshold'],
+  'pdf.quality.formulaThreshold': ['公式置信度阈值', 'Formula confidence threshold'],
 } as const satisfies Record<string, readonly [string, string]>
 
 const translations: TranslationDictionary = Object.fromEntries(

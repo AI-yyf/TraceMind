@@ -50,9 +50,12 @@ frontend/node_modules/
 
 # Local AI / browser tooling artifacts
 .claude/
+.opencode/
 .playwright-cli/
 .playwright-mcp/
+.playwright-qareview/
 .sisyphus/
+.omx/
 
 # Local screenshots / visual checks
 *.png
@@ -62,16 +65,51 @@ fix-*.js
 fix-*.cjs
 tmp_*.py
 temp_decode.txt
+search.ps1
+_search1.ps1
+check-db.cjs
+check-topics.js
+screenshot-check.mjs
+topic-data.json
+AGENT_CONTEXT_FOR_NEXT_RALPH.md
+CONTEXT_FOR_RLM.md
+CONVERSATION.md
+CURRENT_STATE.md
+NOTES_AND_LEARNINGS.md
+PLAN.md
+PREVIOUS_STATE.md
+RLM_INSTRUCTIONS.md
+SUPERVISOR_LOG.md
+TODOS.md
 skills-backend/tmp-*.mjs
+skills-backend/temp-*.ts
+skills-backend/temp-*.js
+skills-backend/temp-*.cjs
 skills-backend/check-*.js
+skills-backend/check-*.ts
+skills-backend/check-*.cjs
 skills-backend/src/scripts/test-kimi-*.ts
 skills-backend/src/scripts/test-node-*.ts
 skills-backend/src/scripts/test-research-*.ts
 
 # Runtime / debug output
 output/
+frontend/output/
+frontend/dist/
+data/config-backups/
+skills-backend/data/config-backups/
 skills-backend/server.err
+skills-backend/dev.err
+skills-backend/dev-log.txt
+skills-backend/server-start.log
+skills-backend/final-test-report.json
+skills-backend/functional-test-evidence.json
+skills-backend/test-report-db.json
 skills-backend/uploads/
+skills-backend/scripts/__pycache__/
+frontend/generated/
+generated-data/public/
+generated-data/app-data/workflow/
 
 # Local external code dumps / experiments
 new/

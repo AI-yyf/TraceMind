@@ -1,10 +1,16 @@
 import assert from 'node:assert/strict'
+import crypto from 'node:crypto'
 import test from 'node:test'
 
 import { prisma } from '../lib/prisma'
 import type { StageTaskProgress } from '../services/enhanced-scheduler'
-import { __testing, enhancedTaskScheduler } from '../services/enhanced-scheduler'
+import {
+  __testing,
+  EnhancedTaskScheduler,
+  enhancedTaskScheduler,
+} from '../services/enhanced-scheduler'
 import type { ResearchRunReport } from '../services/topics/research-report'
+import { saveTopicResearchConfig } from '../services/topics/topic-research-config'
 
 function buildProgress(
   overrides: Partial<StageTaskProgress> = {},
@@ -29,6 +35,10 @@ function buildProgress(
     discoveredPapers: 0,
     admittedPapers: 0,
     generatedContents: 0,
+    figureCount: 0,
+    tableCount: 0,
+    formulaCount: 0,
+    figureGroupCount: 0,
     startedAt: '2026-04-02T12:18:02.833Z',
     deadlineAt: '2026-04-02T13:18:02.833Z',
     completedAt: '2026-04-02T12:26:56.246Z',
@@ -37,6 +47,9 @@ function buildProgress(
     currentStageStalls: 0,
     latestSummary: 'args.orchestration.nodeActions is not iterable',
     status: 'paused',
+    currentLensIndex: null,
+    lensRotationHistory: [],
+    lensStallCounts: {},
     ...overrides,
   }
 }
@@ -254,6 +267,78 @@ test('scheduler estimates total stage capacity from the topic timeline instead o
   assert.ok(totalStages >= 20)
 })
 
+test('scheduler surfaces a duration research blueprint that matches long-run paper and evidence targets', async () => {
+  const topicId = `scheduler-strategy-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+
+  await prisma.topics.create({
+    data: {
+      id: topicId,
+      nameZh: '长时研究策略测试主题',
+      nameEn: 'Long-run Strategy Test Topic',
+      language: 'zh',
+      status: 'active',
+      updatedAt: new Date(),
+    },
+  })
+
+  await saveTopicResearchConfig(topicId, {
+    maxCandidatesPerStage: 200,
+    discoveryQueryLimit: 500,
+    maxPapersPerNode: 20,
+    minPapersPerNode: 10,
+    targetCandidatesBeforeAdmission: 150,
+    highConfidenceThreshold: 0.75,
+  })
+
+  const scheduler = new EnhancedTaskScheduler()
+
+  try {
+    const state = await scheduler.getTopicResearchState(topicId)
+
+    assert.deepEqual(state.strategy.targets, {
+      stageCandidateBudget: 200,
+      discoveryQueryBudget: 500,
+      nodePaperTargetMin: 10,
+      nodePaperTargetMax: 20,
+      targetCandidatesBeforeAdmission: 200,
+      highConfidenceThreshold: 0.75,
+    })
+    assert.ok(
+      state.strategy.perspectives.some(
+        (item) =>
+          item.id === 'artifact-grounding' &&
+          /figures, tables, formulas/i.test(item.mission),
+      ),
+    )
+    assert.ok(
+      state.strategy.qualityBars.some((line) =>
+        /10-20 useful papers/i.test(line),
+      ),
+    )
+    assert.ok(
+      state.strategy.qualityBars.some((line) =>
+        /publishable research articles/i.test(line),
+      ),
+    )
+  } finally {
+    await scheduler.stopTopicResearchSession(topicId).catch(() => {})
+    await prisma.system_configs.deleteMany({
+      where: {
+        OR: [
+          { key: `topic:${topicId}:research-report` },
+          { key: `topic-research-config:v1:${topicId}` },
+          { key: `topic:session-memory:v1:${topicId}` },
+          { key: `task-progress:topic-research:${topicId}` },
+          { key: `task:topic-research:${topicId}` },
+        ],
+      },
+    })
+    await prisma.topics.delete({
+      where: { id: topicId },
+    })
+  }
+})
+
 test('scheduler stop clears stale active session handles so a new duration run can start immediately', async () => {
   const topicId = `scheduler-stop-${Date.now()}`
   const taskId = `topic-research:${topicId}`
@@ -341,6 +426,106 @@ test('scheduler stop clears stale active session handles so a new duration run c
           { key: `topic:session-memory:v1:${topicId}` },
         ],
       },
+    })
+  }
+})
+
+test('scheduler resumes interrupted duration sessions from persisted progress during initialization', async () => {
+  const topicId = `scheduler-resume-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const taskId = `topic-research:${topicId}`
+  const resumeSessionId = `resume-${Math.random().toString(36).slice(2, 8)}`
+  const deadlineAt = new Date(Date.now() + 60 * 60 * 1000).toISOString()
+
+  await prisma.topics.create({
+    data: {
+      id: topicId,
+      nameZh: '恢复测试主题',
+      nameEn: 'Resume Test Topic',
+      language: 'zh',
+      status: 'active',
+      updatedAt: new Date(),
+    },
+  })
+
+  const progress = buildProgress({
+    taskId,
+    topicId,
+    topicName: 'Resume Test Topic',
+    successfulRuns: 1,
+    failedRuns: 0,
+    totalRuns: 1,
+    lastRunAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+    lastRunResult: 'success',
+    completedAt: null,
+    deadlineAt,
+    activeSessionId: resumeSessionId,
+    latestSummary: 'The session should continue after restart recovery.',
+    status: 'active',
+  })
+
+  const task = {
+    id: taskId,
+    name: 'Resume Test Topic 30 天研究',
+    cronExpression: '0 3 * * *',
+    enabled: false,
+    topicId,
+    action: 'discover',
+    researchMode: 'duration',
+    options: {
+      stageDurationDays: 30,
+      durationHours: 30 * 24,
+      cycleDelayMs: 5_000,
+    },
+  }
+
+  await prisma.system_configs.createMany({
+    data: [
+      {
+        id: crypto.randomUUID(),
+        key: `task-progress:${taskId}`,
+        value: JSON.stringify(progress),
+        updatedAt: new Date(),
+      },
+      {
+        id: crypto.randomUUID(),
+        key: `task:${taskId}`,
+        value: JSON.stringify(task),
+        updatedAt: new Date(),
+      },
+    ],
+  })
+
+  const scheduler = new EnhancedTaskScheduler()
+
+  try {
+    const state = await scheduler.getTopicResearchState(topicId)
+    const schedulerState = scheduler as unknown as {
+      activeSessions: Map<
+        string,
+        {
+          sessionId: string
+        }
+      >
+    }
+
+    assert.equal(state.active, true)
+    assert.equal(state.progress?.status, 'active')
+    assert.equal(state.progress?.activeSessionId, resumeSessionId)
+    assert.equal(schedulerState.activeSessions.get(taskId)?.sessionId, resumeSessionId)
+  } finally {
+    await scheduler.stopTopicResearchSession(topicId)
+    await prisma.system_configs.deleteMany({
+      where: {
+        OR: [
+          { key: `task-progress:${taskId}` },
+          { key: `task:${taskId}` },
+          { key: `topic:${topicId}:research-report` },
+          { key: `topic:session-memory:v1:${topicId}` },
+        ],
+      },
+    })
+    await prisma.topics.delete({
+      where: { id: topicId },
     })
   }
 })
@@ -480,4 +665,133 @@ test('duration research decision resets the sweep after repeated stalls on the f
       completedStageCycles: 2,
     },
   )
+})
+
+// ============================================================================
+// Lens Rotation Tests
+// ============================================================================
+
+const TEST_LENSES = [
+  { id: 'core-mainline', label: 'Core Mainline', focus: 'problem' as const, prompts: ['core mechanism'] },
+  { id: 'method-design', label: 'Method Design', focus: 'method' as const, prompts: ['architecture'] },
+  { id: 'evidence-audit', label: 'Evidence Audit', focus: 'citation' as const, prompts: ['benchmark'] },
+  { id: 'boundary-failure', label: 'Boundary and Failure', focus: 'merge' as const, prompts: ['failure mode'] },
+]
+
+test('rotateResearchLens returns null when lens rotation is not enabled (currentLensIndex is null)', () => {
+  const progress = buildProgress({ currentLensIndex: null })
+  const result = __testing.rotateResearchLens(TEST_LENSES, progress, 'cycle-complete')
+  assert.equal(result, null)
+})
+
+test('rotateResearchLens rotates to next lens on cycle-complete', () => {
+  const progress = buildProgress({ currentLensIndex: 0 })
+  const result = __testing.rotateResearchLens(TEST_LENSES, progress, 'cycle-complete')
+
+  assert.ok(result)
+  assert.equal(result!.id, 'method-design')
+  assert.equal(progress.currentLensIndex, 1)
+  assert.equal(progress.lensRotationHistory.length, 1)
+  assert.equal(progress.lensRotationHistory[0].lensId, 'method-design')
+  assert.equal(progress.lensRotationHistory[0].reason, 'cycle-complete')
+})
+
+test('rotateResearchLens wraps around to first lens after reaching the end', () => {
+  const progress = buildProgress({ currentLensIndex: 3 }) // Last lens
+  const result = __testing.rotateResearchLens(TEST_LENSES, progress, 'cycle-complete')
+
+  assert.ok(result)
+  assert.equal(result!.id, 'core-mainline')
+  assert.equal(progress.currentLensIndex, 0)
+})
+
+test('rotateResearchLens skips lenses that have stalled too many times', () => {
+  const progress = buildProgress({
+    currentLensIndex: 0,
+    lensStallCounts: {
+      'method-design': __testing.LENS_STALL_SKIP_THRESHOLD, // Should be skipped
+    },
+  })
+
+  const result = __testing.rotateResearchLens(TEST_LENSES, progress, 'cycle-complete')
+
+  assert.ok(result)
+  assert.equal(result!.id, 'evidence-audit') // Skipped method-design
+  assert.equal(progress.currentLensIndex, 2)
+})
+
+test('rotateResearchLens resets stall counts when all lenses have stalled', () => {
+  const progress = buildProgress({
+    currentLensIndex: 0,
+    lensStallCounts: {
+      'core-mainline': __testing.LENS_STALL_SKIP_THRESHOLD,
+      'method-design': __testing.LENS_STALL_SKIP_THRESHOLD,
+      'evidence-audit': __testing.LENS_STALL_SKIP_THRESHOLD,
+      'boundary-failure': __testing.LENS_STALL_SKIP_THRESHOLD,
+    },
+  })
+
+  const result = __testing.rotateResearchLens(TEST_LENSES, progress, 'cycle-complete')
+
+  // All lenses are stalled, should reset and use first lens
+  assert.ok(result)
+  assert.equal(result!.id, 'core-mainline')
+  assert.deepEqual(progress.lensStallCounts, {})
+})
+
+test('getCurrentResearchLens returns null when rotation is not enabled', () => {
+  const progress = buildProgress({ currentLensIndex: null })
+  const result = __testing.getCurrentResearchLens(TEST_LENSES, progress)
+  assert.equal(result, null)
+})
+
+test('getCurrentResearchLens returns the current lens', () => {
+  const progress = buildProgress({ currentLensIndex: 1 })
+  const result = __testing.getCurrentResearchLens(TEST_LENSES, progress)
+
+  assert.ok(result)
+  assert.equal(result!.id, 'method-design')
+})
+
+test('getCurrentResearchLens handles out-of-bounds index gracefully', () => {
+  const progress = buildProgress({ currentLensIndex: 100 })
+  const result = __testing.getCurrentResearchLens(TEST_LENSES, progress)
+
+  assert.ok(result)
+  assert.equal(result!.id, 'boundary-failure') // Last lens
+})
+
+test('updateLensStallCount increments stall count when no progress', () => {
+  const progress = buildProgress({
+    currentLensIndex: 0,
+    lensStallCounts: {},
+  })
+  const lens = TEST_LENSES[0]
+
+  __testing.updateLensStallCount(lens, progress, false)
+
+  assert.equal(progress.lensStallCounts['core-mainline'], 1)
+})
+
+test('updateLensStallCount resets stall count when progress is made', () => {
+  const progress = buildProgress({
+    currentLensIndex: 0,
+    lensStallCounts: { 'core-mainline': 2 },
+  })
+  const lens = TEST_LENSES[0]
+
+  __testing.updateLensStallCount(lens, progress, true)
+
+  assert.equal(progress.lensStallCounts['core-mainline'], 0)
+})
+
+test('updateLensStallCount does nothing when lens is null', () => {
+  const progress = buildProgress({
+    currentLensIndex: 0,
+    lensStallCounts: {},
+  })
+
+  __testing.updateLensStallCount(null, progress, false)
+
+  assert.deepEqual(progress.lensStallCounts, {})
 })

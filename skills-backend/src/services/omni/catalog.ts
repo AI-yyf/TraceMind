@@ -389,7 +389,7 @@ export const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
       supportsCustomBaseUrl: true,
       supportsCustomHeaders: true,
       tone: 'china',
-      recommendedFor: ['Chinese reasoning', 'GLM-first multimodal pairing'],
+      recommendedFor: ['Default text agent pairing', 'Default multimodal choice', 'Chinese reasoning'],
     },
     models: [
       model('glm-5', 'GLM-5', 'language', textOnly, 'Strong Chinese reasoning.', true),
@@ -459,8 +459,8 @@ export const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
 export const MODEL_PRESETS: ModelPreset[] = [
   {
     id: 'china-hybrid',
-    label: 'China Hybrid',
-    description: 'Balanced GLM dual-stack for Chinese deployment.',
+    label: 'China Hybrid (Recommended)',
+    description: 'Default GLM-5 for text agents and GLM-4.6V for multimodal. Recommended pairing for Chinese deployment.',
     language: { provider: 'bigmodel', model: 'glm-5' },
     multimodal: { provider: 'bigmodel', model: 'glm-4.6v' },
   },

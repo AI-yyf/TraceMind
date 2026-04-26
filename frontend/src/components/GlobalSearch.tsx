@@ -13,11 +13,16 @@ import {
 } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
-import { useTopicRegistry } from '@/hooks'
+import { useGlobalSearchRecent } from '@/hooks'
 import { useProductCopy } from '@/hooks/useProductCopy'
 import { useI18n } from '@/i18n'
 import type { ContextPill, SearchResponse, SearchResultItem } from '@/types/alpha'
 import { apiGet } from '@/utils/api'
+import {
+  assertBackendTopicCollectionContract,
+  assertSearchResponseContract,
+  type BackendTopicListItem,
+} from '@/utils/contracts'
 import { cn } from '@/utils/cn'
 import { resolvePrimaryReadingRouteForPaper } from '@/utils/readingRoutes'
 import { isRegressionSeedTopic } from '@/utils/topicPresentation'
@@ -30,25 +35,13 @@ import {
 type GlobalSearchProps = {
   open: boolean
   onClose: () => void
+  focusDelayMs?: number
+  searchDebounceMs?: number
 }
 
 type QuickActionId = 'open' | 'add-context' | 'follow-up'
 
 const searchKinds = ['topic', 'node', 'paper', 'section', 'figure', 'table', 'formula'] as const
-const recentSearchStorageKey = 'global-search:recent'
-
-function readRecentSearches() {
-  if (typeof window === 'undefined') return [] as string[]
-
-  try {
-    const raw = window.localStorage.getItem(recentSearchStorageKey)
-    if (!raw) return []
-    const parsed = JSON.parse(raw) as string[]
-    return Array.isArray(parsed) ? parsed.filter(Boolean).slice(0, 8) : []
-  } catch {
-    return []
-  }
-}
 
 function buildContextPill(item: SearchResultItem): ContextPill {
   return {
@@ -132,16 +125,33 @@ function buildStageFacetsFromGroups(groups: SearchResponse['groups']) {
   return Array.from(facets.values()).sort((left, right) => left.label.localeCompare(right.label))
 }
 
-export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
+export function GlobalSearch({
+  open,
+  onClose,
+  focusDelayMs = 60,
+  searchDebounceMs = 180,
+}: GlobalSearchProps) {
   const navigate = useNavigate()
   const location = useLocation()
-  const { activeTopics } = useTopicRegistry()
   const { copy } = useProductCopy()
   const { t } = useI18n()
   const searchText = useCallback(
     (id: string, fallback: string) => copy(id, t(id, fallback)),
     [copy, t],
   )
+  const backendUnavailableMessage = searchText(
+    'search.backendUnavailable',
+    'Backend search results are unavailable right now.',
+  )
+  const starterTopicsUnavailableMessage = searchText(
+    'search.recommendUnavailable',
+    'Backend topics are unavailable, so suggested starting points cannot be shown.',
+  )
+  const starterTopicsEmptyMessage = searchText(
+    'search.recommendEmpty',
+    'Suggested starting points appear here once backend topics are available.',
+  )
+  const loadingMessage = searchText('common.loading', 'Loading...')
   const inputRef = useRef<HTMLInputElement>(null)
   const resultsRef = useRef<HTMLDivElement>(null)
   const [query, setQuery] = useState('')
@@ -151,7 +161,11 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
   const [loading, setLoading] = useState(false)
   const [selectedIndex, setSelectedIndex] = useState(-1)
   const [result, setResult] = useState<SearchResponse | null>(null)
-  const [recentSearches, setRecentSearches] = useState<string[]>(() => readRecentSearches())
+  const [error, setError] = useState<string | null>(null)
+  const { recentSearches, rememberRecentSearch } = useGlobalSearchRecent()
+  const [starterTopics, setStarterTopics] = useState<BackendTopicListItem[]>([])
+  const [starterTopicsReady, setStarterTopicsReady] = useState(false)
+  const [starterTopicsError, setStarterTopicsError] = useState<string | null>(null)
   const activeStageWindowMonths = useMemo(() => {
     const params = new URLSearchParams(location.search)
     const value = Number(params.get('stageMonths'))
@@ -312,32 +326,77 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
   )
 
   const starterQueries = useMemo(() => {
-    const liveTopics = activeTopics
-      .filter((topic) => !isRegressionSeedTopic(topic))
-      .flatMap((topic) => [
-        topic.nameZh,
-        topic.focusLabel,
-        topic.originPaper?.titleZh,
-        topic.originPaper?.title,
-      ])
-      .filter((value): value is string => Boolean(value && value.trim()))
-      .slice(0, 6)
-
-    const fallbacks = [
-      t('search.starterAutonomousDriving', 'autonomous driving'),
-      t('search.starterWorldModel', 'world model'),
-      t('search.starterEmbodiedAI', 'embodied intelligence'),
-      t('search.starterScientificReading', 'scientific reading'),
-    ]
-
-    return [...new Set([...liveTopics, ...fallbacks])].slice(0, 6)
-  }, [activeTopics, t])
+    return Array.from(
+      new Set(
+        starterTopics
+          .flatMap((topic) => [topic.nameZh, topic.nameEn, topic.focusLabel])
+          .filter((value): value is string => Boolean(value && value.trim())),
+      ),
+    ).slice(0, 6)
+  }, [starterTopics])
 
   useEffect(() => {
     if (!open) return
-    const timer = window.setTimeout(() => inputRef.current?.focus(), 60)
+
+    let alive = true
+    setStarterTopicsReady(false)
+
+    apiGet<unknown>('/api/topics')
+      .then((payload) => {
+        if (!alive) return
+        assertBackendTopicCollectionContract(payload)
+        const topics = payload
+        setStarterTopics(
+          topics.filter((topic) =>
+            !isRegressionSeedTopic({
+              nameZh: topic.nameZh,
+              summary: topic.focusLabel ?? '',
+            }),
+          ),
+        )
+        setStarterTopicsError(null)
+      })
+      .catch((error) => {
+        if (!alive) return
+        setStarterTopics([])
+        setStarterTopicsError(
+          error instanceof Error
+            ? error.message
+            : starterTopicsUnavailableMessage,
+        )
+      })
+      .finally(() => {
+        if (alive) setStarterTopicsReady(true)
+      })
+
+    return () => {
+      alive = false
+    }
+  }, [open, starterTopicsUnavailableMessage])
+
+  const starterQueryMessage = useMemo(() => {
+    if (starterQueries.length > 0) return null
+    if (starterTopicsError) {
+      return starterTopicsUnavailableMessage
+    }
+    if (!starterTopicsReady) {
+      return loadingMessage
+    }
+    return starterTopicsEmptyMessage
+  }, [
+    loadingMessage,
+    starterQueries.length,
+    starterTopicsEmptyMessage,
+    starterTopicsError,
+    starterTopicsReady,
+    starterTopicsUnavailableMessage,
+  ])
+
+  useEffect(() => {
+    if (!open) return
+    const timer = window.setTimeout(() => inputRef.current?.focus(), focusDelayMs)
     return () => window.clearTimeout(timer)
-  }, [open])
+  }, [focusDelayMs, open])
 
   useEffect(() => {
     if (!open) return
@@ -378,6 +437,7 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
     const trimmed = query.trim()
     if (!trimmed || !open) {
       setResult(null)
+      setError(null)
       if (!trimmed) {
         setSelectedStages((current) => (current.length === 0 ? current : []))
       }
@@ -394,19 +454,35 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
             ? `&stages=${selectedStages.map((stage) => encodeURIComponent(stage)).join(',')}`
             : ''
         const stageWindowParam = activeStageWindowMonths ? `&stageMonths=${activeStageWindowMonths}` : ''
-        const payload = await apiGet<SearchResponse>(
+        const payload = await apiGet<unknown>(
           `/api/search?q=${encodeURIComponent(trimmed)}&scope=global${types}${topics}${stages}${stageWindowParam}&limit=28`,
         )
+        assertSearchResponseContract(payload, 'global')
         setResult(payload)
-      } catch {
+        setError(null)
+      } catch (nextError) {
         setResult(null)
+        setError(
+          nextError instanceof Error
+            ? nextError.message
+            : backendUnavailableMessage,
+        )
       } finally {
         setLoading(false)
       }
-    }, 180)
+    }, searchDebounceMs)
 
     return () => window.clearTimeout(timer)
-  }, [activeStageWindowMonths, open, query, selectedKinds, selectedStages, selectedTopicId])
+  }, [
+    activeStageWindowMonths,
+    backendUnavailableMessage,
+    open,
+    query,
+    searchDebounceMs,
+    selectedKinds,
+    selectedStages,
+    selectedTopicId,
+  ])
 
   useEffect(() => {
     if (selectedIndex < 0) return
@@ -415,12 +491,7 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
   }, [selectedIndex])
 
   function rememberQuery(value: string) {
-    const trimmed = value.trim()
-    if (trimmed.length < 2 || typeof window === 'undefined') return
-
-    const next = [trimmed, ...recentSearches.filter((item) => item !== trimmed)].slice(0, 8)
-    setRecentSearches(next)
-    window.localStorage.setItem(recentSearchStorageKey, JSON.stringify(next))
+    rememberRecentSearch(value)
   }
 
   function scopedRoute(route: string) {
@@ -515,14 +586,14 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
     <>
       <button
         type="button"
-        className="fixed inset-0 z-[80] bg-white/84 backdrop-blur-sm"
+        className="fixed inset-0 z-[90] bg-white/84 backdrop-blur-sm"
         onClick={onClose}
         aria-label={searchText('search.close', 'Close Search')}
       />
 
       <div
         data-testid="global-search"
-        className="fixed inset-x-4 top-4 z-[90] mx-auto flex max-h-[min(860px,calc(100vh-2rem))] w-[min(92vw,72rem)] flex-col overflow-hidden rounded-[34px] border border-black/8 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.12)]"
+        className="fixed inset-x-4 top-4 z-[92] mx-auto flex max-h-[min(860px,calc(100vh-2rem))] w-[min(92vw,72rem)] flex-col overflow-hidden rounded-[34px] border border-black/8 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.12)]"
       >
         <div className="border-b border-black/8 px-5 py-5">
           <div className="flex items-start justify-between gap-4">
@@ -719,19 +790,25 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
                 <div className="text-[11px] uppercase tracking-[0.22em] text-black/36">
                   {searchText('search.recommendTitle', 'Suggested Starting Points')}
                 </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {starterQueries.map((item) => (
-                    <button
-                      key={item}
-                      type="button"
-                      onClick={() => setQuery(item)}
-                      className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-2 text-[11px] text-black/62 shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition hover:text-black"
-                    >
-                      <Sparkles className="h-3.5 w-3.5" />
-                      {item}
-                    </button>
-                  ))}
-                </div>
+                {starterQueries.length > 0 ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {starterQueries.map((item) => (
+                      <button
+                        key={item}
+                        type="button"
+                        onClick={() => setQuery(item)}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-2 text-[11px] text-black/62 shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition hover:text-black"
+                      >
+                        <Sparkles className="h-3.5 w-3.5" />
+                        {item}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-3 text-[12px] leading-6 text-black/46">
+                    {starterQueryMessage}
+                  </div>
+                )}
               </section>
 
               {result ? (
@@ -791,6 +868,15 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
               <div className="mb-4 flex items-center justify-between gap-3 text-[11px] uppercase tracking-[0.22em] text-black/36">
                 <span>{searchText('search.resultsLabel', 'Search Results')}</span>
                 <span>{flatItems.length}</span>
+              </div>
+            ) : null}
+
+            {query.trim() && error ? (
+              <div
+                data-testid="global-search-error"
+                className="mb-4 rounded-[22px] border border-red-200 bg-red-50 px-4 py-4 text-[14px] leading-7 text-red-700"
+              >
+                {error}
               </div>
             ) : null}
 

@@ -3,10 +3,12 @@ import path from 'node:path'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
+import { getTopicDefinition } from '../../topic-config'
 import { prisma } from '../lib/prisma'
 import {
   ensureConfiguredTopicMaterialized,
   ensureConfiguredTopicMaterializedForNode,
+  pruneLegacySeedTopics,
   syncConfiguredTopicWorkflowSnapshot,
   __testing as topicConfigSyncTesting,
 } from '../services/topics/topic-config-sync'
@@ -27,6 +29,55 @@ test('configured topic sync parses configured topic ids from canonical node ids'
     'autonomous-driving',
   )
   assert.equal(topicConfigSyncTesting.parseConfiguredTopicIdFromNodeId('unknown-topic:stage-0:paper-1'), null)
+})
+
+test('configured topic sync ignores workflow-only nodes and papers for canonical-only topics', () => {
+  const topicDefinition = getTopicDefinition('autonomous-driving')
+  const topicMemory = {
+    researchNodes: [
+      {
+        nodeId: 'autonomous-driving:stage-99:stale-paper',
+        stageIndex: 99,
+        paperIds: ['autonomous-driving-stale-paper'],
+        primaryPaperId: 'autonomous-driving-stale-paper',
+        paperId: 'autonomous-driving-stale-paper',
+      },
+    ],
+    publishedMainlinePaperIds: ['1604.07316', 'autonomous-driving-stale-paper'],
+    paperRelations: [
+      {
+        paperId: 'autonomous-driving-stale-paper',
+        nodeId: 'autonomous-driving:stage-99:stale-paper',
+      },
+    ],
+  }
+
+  const collectedPaperIds = topicConfigSyncTesting.collectConfiguredTopicPaperIds(topicDefinition, topicMemory)
+  const nodeSpecs = topicConfigSyncTesting.buildNodeSpecs({
+    topicDefinition,
+    topicMemory,
+    paperCatalog: {
+      '1604.07316': {
+        title: 'Origin paper',
+        summary: 'Origin summary',
+      },
+      'autonomous-driving-stale-paper': {
+        title: 'Stale paper',
+        summary: 'Stale summary',
+      },
+    },
+    paperAssets: {},
+  })
+
+  assert.ok(!collectedPaperIds.includes('autonomous-driving-stale-paper'))
+  assert.ok(
+    nodeSpecs.some((node) => node.nodeId === 'autonomous-driving:stage-0:1604.07316'),
+    'canonical origin node should still be present',
+  )
+  assert.ok(
+    nodeSpecs.every((node) => !node.paperIds.includes('autonomous-driving-stale-paper')),
+    'workflow-only papers should not survive canonical node synthesis',
+  )
 })
 
 test('configured topic stage config falls back to the topic-defined preferred window', async () => {
@@ -83,6 +134,53 @@ test('configured topic sync materializes autonomous-driving from topic config an
   assert.ok(topic.topic_stages.length >= 1)
   assert.ok(topic.papers.some((paper) => paper.id === '1604.07316'))
   assert.ok(topic.research_nodes.some((node) => node.id === 'autonomous-driving:stage-0:1604.07316'))
+})
+
+test('configured topic sync expands canonical-only autonomous-driving into branch and merge nodes', async () => {
+  const materialized = await ensureConfiguredTopicMaterialized('autonomous-driving')
+  assert.equal(materialized, true)
+
+  const topic = await prisma.topics.findUnique({
+    where: { id: 'autonomous-driving' },
+    include: {
+      topic_stages: {
+        orderBy: { order: 'asc' },
+      },
+      research_nodes: {
+        include: {
+          node_papers: {
+            orderBy: { order: 'asc' },
+          },
+        },
+        orderBy: [{ stageIndex: 'asc' }, { createdAt: 'asc' }],
+      },
+      papers: {
+        orderBy: { published: 'asc' },
+      },
+    },
+  })
+
+  assert.ok(topic)
+  assert.ok((topic?.papers.length ?? 0) >= 4)
+  assert.ok((topic?.research_nodes.length ?? 0) >= 4)
+  assert.ok((topic?.topic_stages.length ?? 0) >= 3)
+  assert.ok(topic?.research_nodes.some((node) => node.isMergeNode), 'expected a merge node for canonical autonomous-driving')
+  assert.ok(
+    topic?.research_nodes.some((node) => node.node_papers.length >= 3),
+    'expected at least one multi-paper canonical node',
+  )
+  assert.equal(
+    topic?.papers.find((paper) => paper.id === '1604.07316')?.title,
+    'End to End Learning for Self-Driving Cars',
+  )
+  assert.equal(
+    topic?.papers.find((paper) => paper.id === '1710.02410')?.title,
+    'Conditional Imitation Learning for End-to-End Autonomous Driving',
+  )
+  assert.equal(
+    topic?.papers.find((paper) => paper.id === '1912.12294')?.title,
+    'Learning by Cheating',
+  )
 })
 
 test('configured topic sync can materialize a topic by node id lookup', async () => {
@@ -200,6 +298,162 @@ test('configured topic sync removes stale stages, nodes, and topic-owned papers'
   assert.equal(new Set(topic?.topic_stages.map((stage) => stage.order)).size, topic?.topic_stages.length)
   assert.ok(!topic?.research_nodes.some((node) => node.id === staleNodeId))
   assert.ok(!topic?.papers.some((paper) => paper.id === stalePaperId))
+})
+
+test('configured topic sync prunes legacy seeded topics and their artifacts', async () => {
+  const legacyTopicId = 'topic-5'
+  const legacyPaperId = `${legacyTopicId}-paper`
+  const legacyNodeId = `${legacyTopicId}:stage-0:${legacyPaperId}`
+  const legacyConfigKey = `alpha:topic-artifact:${legacyTopicId}:window-6`
+
+  await prisma.topics.deleteMany({
+    where: { id: legacyTopicId },
+  })
+  await prisma.system_configs.deleteMany({
+    where: {
+      OR: [
+        { key: legacyConfigKey },
+        { key: `topic:guidance-ledger:v1:${legacyTopicId}` },
+        { key: `topic:session-memory:v1:${legacyTopicId}` },
+        { key: `topic-research-world:v1:${legacyTopicId}` },
+      ],
+    },
+  })
+
+  await prisma.topics.create({
+    data: {
+      id: legacyTopicId,
+      nameZh: 'Legacy Topic Five',
+      nameEn: 'Legacy Topic Five',
+      focusLabel: 'Legacy seeded topic',
+      summary: 'Legacy seeded topic that should be pruned.',
+      description: 'Legacy seeded topic that should be pruned.',
+      language: 'en',
+      status: 'active',
+      updatedAt: new Date(),
+    },
+  })
+  await prisma.topic_stages.create({
+    data: {
+      id: `${legacyTopicId}-stage-1`,
+      topicId: legacyTopicId,
+      order: 1,
+      name: 'Legacy stage',
+      description: 'Legacy stage',
+    },
+  })
+  await prisma.papers.create({
+    data: {
+      id: legacyPaperId,
+      topicId: legacyTopicId,
+      title: 'Legacy paper',
+      titleZh: 'Legacy paper',
+      titleEn: 'Legacy paper',
+      authors: JSON.stringify(['Legacy Author']),
+      published: new Date('2026-01-05T00:00:00.000Z'),
+      summary: 'Legacy paper summary',
+      explanation: 'Legacy paper explanation',
+      figurePaths: '[]',
+      tablePaths: '[]',
+      tags: '[]',
+      status: 'published',
+      contentMode: 'editorial',
+      updatedAt: new Date(),
+    },
+  })
+  await prisma.research_nodes.create({
+    data: {
+      id: legacyNodeId,
+      topicId: legacyTopicId,
+      stageIndex: 0,
+      nodeLabel: 'Legacy node',
+      nodeSummary: 'Legacy node summary',
+      nodeExplanation: 'Legacy node explanation',
+      status: 'canonical',
+      provisional: false,
+      isMergeNode: false,
+      updatedAt: new Date(),
+    },
+  })
+
+  await prisma.node_papers.create({
+    data: {
+      id: `${legacyNodeId}:paper-1`,
+      nodeId: legacyNodeId,
+      paperId: legacyPaperId,
+      order: 1,
+    },
+  })
+  await prisma.topic_guidance_ledgers.create({
+    data: {
+      id: `${legacyTopicId}-guidance`,
+      topicId: legacyTopicId,
+      directives: '[]',
+      updatedAt: new Date(),
+    },
+  })
+  await prisma.topic_session_memories.create({
+    data: {
+      id: `${legacyTopicId}-session-memory`,
+      topicId: legacyTopicId,
+      events: '[]',
+      summary: null,
+      updatedAt: new Date(),
+    },
+  })
+  await prisma.research_pipeline_states.create({
+    data: {
+      id: `${legacyTopicId}-pipeline`,
+      topicId: legacyTopicId,
+      state: '{}',
+      updatedAt: new Date(),
+    },
+  })
+  await prisma.research_world_snapshots.create({
+    data: {
+      id: `${legacyTopicId}-world`,
+      topicId: legacyTopicId,
+      world: '{}',
+      fingerprint: null,
+      updatedAt: new Date(),
+    },
+  })
+  await prisma.system_configs.createMany({
+    data: [
+      createConfigRecord(legacyConfigKey, '{}'),
+      createConfigRecord(`topic:guidance-ledger:v1:${legacyTopicId}`, '{}'),
+      createConfigRecord(`topic:session-memory:v1:${legacyTopicId}`, '{}'),
+      createConfigRecord(`topic-research-world:v1:${legacyTopicId}`, '{}'),
+    ],
+  })
+
+  const deletedTopicIds = await pruneLegacySeedTopics([legacyTopicId])
+  assert.deepEqual(deletedTopicIds, [legacyTopicId])
+
+  const [topic, guidance, sessionMemory, pipelineState, worldSnapshot, configs] = await Promise.all([
+    prisma.topics.findUnique({ where: { id: legacyTopicId } }),
+    prisma.topic_guidance_ledgers.findUnique({ where: { topicId: legacyTopicId } }),
+    prisma.topic_session_memories.findUnique({ where: { topicId: legacyTopicId } }),
+    prisma.research_pipeline_states.findUnique({ where: { topicId: legacyTopicId } }),
+    prisma.research_world_snapshots.findUnique({ where: { topicId: legacyTopicId } }),
+    prisma.system_configs.findMany({
+      where: {
+        OR: [
+          { key: legacyConfigKey },
+          { key: `topic:guidance-ledger:v1:${legacyTopicId}` },
+          { key: `topic:session-memory:v1:${legacyTopicId}` },
+          { key: `topic-research-world:v1:${legacyTopicId}` },
+        ],
+      },
+    }),
+  ])
+
+  assert.equal(topic, null)
+  assert.equal(guidance, null)
+  assert.equal(sessionMemory, null)
+  assert.equal(pipelineState, null)
+  assert.equal(worldSnapshot, null)
+  assert.equal(configs.length, 0)
 })
 
 test('configured topic sync can write the live configured topic state back into workflow artifacts', async () => {

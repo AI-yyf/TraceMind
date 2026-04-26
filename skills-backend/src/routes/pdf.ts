@@ -7,11 +7,18 @@ import { v4 as uuidv4 } from 'uuid'
 
 import { prisma } from '../lib/prisma'
 import { asyncHandler, AppError } from '../middleware/errorHandler'
+import { validate } from '../middleware/requestValidator'
+import { PdfExtractFromUrlSchema } from './schemas'
 import {
   downloadPdfBufferFromUrl,
   extractPDFWithPython,
   type PDFExtractionResult,
 } from '../services/pdf-extractor'
+import { enhanceExtractedFormulasWithVision } from '../services/formula-vision'
+import {
+  computeExtractionStats,
+  storeExtractionStats,
+} from '../services/extraction-stats'
 import { logger } from '../utils/logger'
 
 const router = Router()
@@ -85,7 +92,7 @@ async function loadPaperLookup(paperId: string) {
   return paper
 }
 
-async function resolvePdfExtractionRequest(body: {
+async function _resolvePdfExtractionRequest(body: {
   paperId?: string
   paperTitle?: string
   pdfUrl?: string
@@ -142,6 +149,31 @@ function buildFormulaRows(paperId: string, result: PDFExtractionResult) {
     latex: formula.latex,
     rawText: formula.rawText,
     page: formula.page,
+  }))
+}
+
+function buildFigureGroupRows(paperId: string, result: PDFExtractionResult) {
+  if (!Array.isArray(result.figureGroups) || result.figureGroups.length === 0) {
+    return []
+  }
+
+  return result.figureGroups.map((group) => ({
+    id: `fg-${paperId}-${group.groupId}`,
+    paperId,
+    groupId: group.groupId,
+    caption: group.caption || '',
+    page: group.subFigures.length > 0 ? group.subFigures[0].page : 0,
+    subFigures: JSON.stringify(
+      group.subFigures.map((sf) => ({
+        index: sf.index,
+        figureId: sf.figureId,
+        subId: sf.subId,
+        imagePath: sf.imagePath,
+        caption: sf.caption,
+        page: sf.page,
+        confidence: sf.confidence ?? null,
+      })),
+    ),
   }))
 }
 
@@ -362,14 +394,28 @@ async function persistExtractionResult(args: {
   result: PDFExtractionResult
   pdfUrl?: string
   pdfPath?: string
+  topicId?: string
 }) {
-  const { paperId, result, pdfUrl, pdfPath } = args
+  const { paperId, result, pdfUrl, pdfPath, topicId } = args
   const figureRows = buildFigureRows(paperId, result)
   const tableRows = buildTableRows(paperId, result)
   const formulaRows = buildFormulaRows(paperId, result)
   const sectionRows = buildPaperSectionRowsFromExtraction(paperId, result)
+  const figureGroupRows = buildFigureGroupRows(paperId, result)
   const figurePaths = figureRows.map((figure) => figure.imagePath).filter(Boolean)
+  const tablePaths = tableRows.map((table) => table.rawText ? `table_${table.number}` : null).filter(Boolean)
+  const formulaPaths = formulaRows.map((formula) => formula.rawText ? `formula_${formula.number}` : null).filter(Boolean)
   const coverPath = result.coverPath || figurePaths[0] || null
+
+  // Get topicId from paper if not provided
+  let effectiveTopicId = topicId
+  if (!effectiveTopicId) {
+    const paper = await prisma.papers.findUnique({
+      where: { id: paperId },
+      select: { topicId: true },
+    })
+    effectiveTopicId = paper?.topicId ?? undefined
+  }
 
   await prisma.$transaction(async (tx) => {
     await Promise.all([
@@ -377,6 +423,7 @@ async function persistExtractionResult(args: {
       tx.tables.deleteMany({ where: { paperId } }),
       tx.formulas.deleteMany({ where: { paperId } }),
       tx.paper_sections.deleteMany({ where: { paperId } }),
+      tx.figure_groups.deleteMany({ where: { paperId } }),
     ])
 
     if (figureRows.length > 0) {
@@ -395,6 +442,10 @@ async function persistExtractionResult(args: {
       await tx.paper_sections.createMany({ data: sectionRows })
     }
 
+    if (figureGroupRows.length > 0) {
+      await tx.figure_groups.createMany({ data: figureGroupRows })
+    }
+
     await tx.papers.update({
       where: { id: paperId },
       data: {
@@ -402,9 +453,20 @@ async function persistExtractionResult(args: {
         pdfPath: pdfPath ?? undefined,
         coverPath,
         figurePaths: JSON.stringify(figurePaths),
+        tablePaths: JSON.stringify(tablePaths),
+        formulaPaths: JSON.stringify(formulaPaths),
       },
     })
   })
+
+  // Store extraction stats for quality tracking
+  try {
+    const stats = computeExtractionStats(result)
+    await storeExtractionStats(stats, effectiveTopicId)
+  } catch (error) {
+    logger.warn('Failed to store extraction stats', { paperId, error })
+    // Don't fail the extraction if stats storage fails
+  }
 }
 
 const storage = multer.diskStorage({
@@ -457,12 +519,16 @@ router.post(
     })
 
     try {
-      const result = await extractPDFWithPython(
-        req.file.path,
-        outputDir,
-        paperId,
-        paperTitle,
-      )
+        const extracted = await extractPDFWithPython(
+          req.file.path,
+          outputDir,
+          paperId,
+          paperTitle,
+        )
+        const result = await enhanceExtractedFormulasWithVision({
+          result: extracted,
+          outputRoot: outputDir,
+        })
 
       await persistExtractionResult({
         paperId,
@@ -478,9 +544,11 @@ router.post(
           coverPath: result.coverPath,
           abstract: result.abstract,
           figureCount: result.figures.length,
+          figureGroupCount: result.figureGroups?.length ?? 0,
           tableCount: result.tables.length,
           formulaCount: result.formulas.length,
           figures: result.figures,
+          figureGroups: result.figureGroups,
           tables: result.tables,
           formulas: result.formulas,
         },
@@ -499,10 +567,10 @@ router.post(
 
 router.post(
   '/extract-from-url',
+  validate(PdfExtractFromUrlSchema),
   asyncHandler(async (req, res) => {
-    const { paperId, paperTitle, pdfUrl } = await resolvePdfExtractionRequest(
-      req.body ?? {},
-    )
+    const { paperId, paperTitle } = req.body
+    const pdfUrl = normalizePdfUrl(req.body.pdfUrl)
     const outputDir = getUploadRoot()
     const tempPath = path.join(outputDir, `${paperId}_temp.pdf`)
 
@@ -515,12 +583,16 @@ router.post(
       const pdfBuffer = await downloadPdfBufferFromUrl(pdfUrl)
       fs.writeFileSync(tempPath, pdfBuffer)
 
-      const result = await extractPDFWithPython(
+      const extracted = await extractPDFWithPython(
         tempPath,
         outputDir,
         paperId,
         paperTitle,
       )
+      const result = await enhanceExtractedFormulasWithVision({
+        result: extracted,
+        outputRoot: outputDir,
+      })
 
       await persistExtractionResult({
         paperId,
@@ -536,9 +608,11 @@ router.post(
           coverPath: result.coverPath,
           abstract: result.abstract,
           figureCount: result.figures.length,
+          figureGroupCount: result.figureGroups?.length ?? 0,
           tableCount: result.tables.length,
           formulaCount: result.formulas.length,
           figures: result.figures,
+          figureGroups: result.figureGroups,
           tables: result.tables,
           formulas: result.formulas,
         },
@@ -568,6 +642,7 @@ router.get(
       where: { id: paperId },
       include: {
         figures: true,
+        figure_groups: true,
         tables: true,
         formulas: true,
       },
@@ -583,10 +658,293 @@ router.get(
         paperId,
         coverPath: paper.coverPath,
         figures: paper.figures,
+        figureGroups: paper.figure_groups,
         tables: paper.tables,
         formulas: paper.formulas,
       },
     })
+  }),
+)
+
+// Re-extract PDF for an existing paper with improved extraction logic
+router.post(
+  '/re-extract/:paperId',
+  asyncHandler(async (req, res) => {
+    const { paperId } = req.params
+
+    const paper = await loadPaperLookup(paperId)
+    const pdfUrl = normalizePdfUrl(paper.pdfUrl)
+
+    if (!pdfUrl) {
+      throw new AppError(400, '论文没有可用的 PDF URL，无法重新提取')
+    }
+
+    const outputDir = getUploadRoot()
+    const tempPath = path.join(outputDir, `${paperId}_reextract_temp.pdf`)
+    const paperTitle = paper.titleZh?.trim() || paper.title.trim()
+
+    logger.info('Starting PDF re-extraction', {
+      paperId,
+      pdfUrl,
+    })
+
+    try {
+      const pdfBuffer = await downloadPdfBufferFromUrl(pdfUrl)
+      fs.writeFileSync(tempPath, pdfBuffer)
+
+      const extracted = await extractPDFWithPython(
+        tempPath,
+        outputDir,
+        paperId,
+        paperTitle,
+      )
+      const result = await enhanceExtractedFormulasWithVision({
+        result: extracted,
+        outputRoot: outputDir,
+      })
+
+      await persistExtractionResult({
+        paperId,
+        result,
+        pdfUrl,
+      })
+
+      logger.info('PDF re-extraction completed', {
+        paperId,
+        figureCount: result.figures.length,
+        tableCount: result.tables.length,
+        formulaCount: result.formulas.length,
+      })
+
+      res.json({
+        success: true,
+        data: {
+          paperId,
+          pageCount: result.pageCount,
+          coverPath: result.coverPath,
+          abstract: result.abstract,
+          figureCount: result.figures.length,
+          figureGroupCount: result.figureGroups?.length ?? 0,
+          tableCount: result.tables.length,
+          formulaCount: result.formulas.length,
+          figures: result.figures,
+          figureGroups: result.figureGroups,
+          tables: result.tables,
+          formulas: result.formulas,
+          extractionMethod: result.extractionMethod,
+        },
+      })
+    } catch (error) {
+      logger.error('PDF re-extraction failed', { paperId, pdfUrl, error })
+      throw new AppError(
+        500,
+        `PDF 重新提取失败: ${
+          error instanceof Error ? error.message : '未知错误'
+        }`,
+      )
+    } finally {
+      if (fs.existsSync(tempPath)) {
+        fs.unlinkSync(tempPath)
+      }
+    }
+  }),
+)
+
+// Quality metrics endpoint for extraction statistics
+router.get(
+  '/quality-metrics/:paperId',
+  asyncHandler(async (req, res) => {
+    const { paperId } = req.params
+
+    const paper = await prisma.papers.findUnique({
+      where: { id: paperId },
+      include: {
+        figures: {
+          select: {
+            id: true,
+            number: true,
+            caption: true,
+            page: true,
+          },
+        },
+        tables: {
+          select: {
+            id: true,
+            number: true,
+            caption: true,
+            page: true,
+          },
+        },
+        formulas: {
+          select: {
+            id: true,
+            number: true,
+            latex: true,
+            page: true,
+          },
+        },
+        figure_groups: {
+          select: {
+            id: true,
+            groupId: true,
+            caption: true,
+            subFigures: true,
+          },
+        },
+      },
+    })
+
+    if (!paper) {
+      throw new AppError(404, '论文不存在')
+    }
+
+    // Compute extraction method breakdown
+    const methodBreakdown = {
+      figures: computeMethodBreakdown(paper.figures),
+      tables: computeMethodBreakdown(paper.tables),
+      formulas: computeMethodBreakdown(paper.formulas),
+    }
+
+    // Compute quality metrics
+    const metrics = {
+      paperId,
+      paperTitle: paper.titleZh || paper.title,
+      pageCount: paper.pdfPath ? await estimatePageCount(paper.pdfPath) : 0,
+      assetCounts: {
+        figures: paper.figures.length,
+        tables: paper.tables.length,
+        formulas: paper.formulas.length,
+        figureGroups: paper.figure_groups.length,
+      },
+      methodBreakdown,
+      qualityScore: computeQualityScore({
+        figureCount: paper.figures.length,
+        tableCount: paper.tables.length,
+        formulaCount: paper.formulas.length,
+        methodBreakdown,
+      }),
+      lastExtracted: paper.updatedAt,
+    }
+
+    res.json({
+      success: true,
+      data: metrics,
+    })
+  }),
+)
+
+// Helper function to compute method breakdown
+function computeMethodBreakdown(_assets: Array<{ id: string }>): Array<{ method: string; count: number }> {
+  // Since we don't store extractionMethod in the database, return placeholder
+  // In a real implementation, this would query the extraction metadata
+  const methodMap = new Map<string, number>()
+  methodMap.set('marker', 0)
+  methodMap.set('pymupdf', 0)
+  methodMap.set('arxiv-source', 0)
+  methodMap.set('vlm-enhanced', 0)
+
+  // Return breakdown with counts
+  return Array.from(methodMap.entries())
+    .map(([method, count]) => ({ method, count }))
+    .filter((item) => item.count > 0 || methodMap.size > 0)
+}
+
+// Helper function to estimate page count from PDF
+async function estimatePageCount(pdfPath: string): Promise<number> {
+  try {
+    const stats = fs.statSync(pdfPath)
+    // Rough estimate: 50KB per page on average
+    return Math.max(1, Math.floor(stats.size / 50000))
+  } catch {
+    return 0
+  }
+}
+
+// Helper function to compute overall quality score
+function computeQualityScore(args: {
+  figureCount: number
+  tableCount: number
+  formulaCount: number
+  methodBreakdown: {
+    figures: Array<{ method: string; count: number }>
+    tables: Array<{ method: string; count: number }>
+    formulas: Array<{ method: string; count: number }>
+  }
+}): number {
+  const { figureCount, tableCount, formulaCount } = args
+
+  // Base score from asset coverage
+  let score = 0
+
+  // Figures: 0-40 points
+  if (figureCount >= 5) score += 40
+  else if (figureCount >= 3) score += 30
+  else if (figureCount >= 1) score += 20
+
+  // Tables: 0-30 points
+  if (tableCount >= 3) score += 30
+  else if (tableCount >= 1) score += 20
+
+  // Formulas: 0-30 points
+  if (formulaCount >= 5) score += 30
+  else if (formulaCount >= 3) score += 20
+  else if (formulaCount >= 1) score += 10
+
+  return Math.min(100, score)
+}
+
+// PDF proxy route for batch download (avoids CORS issues)
+router.get(
+  '/proxy/:paperId',
+  asyncHandler(async (req, res) => {
+    const { paperId } = req.params
+
+    const paper = await prisma.papers.findUnique({
+      where: { id: paperId },
+      select: {
+        id: true,
+        title: true,
+        titleZh: true,
+        pdfUrl: true,
+        pdfPath: true,
+      },
+    })
+
+    if (!paper) {
+      throw new AppError(404, '论文不存在')
+    }
+
+    // Try local PDF first
+    if (paper.pdfPath && fs.existsSync(paper.pdfPath)) {
+      const filename = `${(paper.titleZh || paper.title).replace(/[<>:"/\\|?*]/g, '_').slice(0, 100)}.pdf`
+      res.setHeader('Content-Type', 'application/pdf')
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`)
+      res.sendFile(path.resolve(paper.pdfPath))
+      return
+    }
+
+    // Fall back to URL download
+    const pdfUrl = normalizePdfUrl(paper.pdfUrl)
+    if (!pdfUrl) {
+      throw new AppError(400, '论文没有可用的 PDF')
+    }
+
+    logger.info('Proxying PDF download', { paperId, pdfUrl })
+
+    try {
+      const pdfBuffer = await downloadPdfBufferFromUrl(pdfUrl)
+      const filename = `${(paper.titleZh || paper.title).replace(/[<>:"/\\|?*]/g, '_').slice(0, 100)}.pdf`
+      res.setHeader('Content-Type', 'application/pdf')
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`)
+      res.setHeader('Content-Length', pdfBuffer.length)
+      res.send(pdfBuffer)
+    } catch (error) {
+      logger.error('PDF proxy download failed', { paperId, pdfUrl, error })
+      throw new AppError(
+        500,
+        `PDF 下载失败: ${error instanceof Error ? error.message : '未知错误'}`
+      )
+    }
   }),
 )
 

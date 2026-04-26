@@ -52,4 +52,13 @@ describe('translation registry', () => {
     expect(languageNames.es).toBe('Español')
     expect(languageNames.ru).toBe('Русский')
   })
+
+  it('overrides node and workbench labels with clean Chinese copy', () => {
+    expect(getTranslation('node.backTopic', 'zh')).toBe('返回主题')
+    expect(getTranslation('node.evidenceBoardEyebrow', 'zh')).toBe('证据面板')
+    expect(getTranslation('workbench.tabResearch', 'zh')).toBe('研究')
+    expect(getTranslation('node.workbenchFocus', 'zh')).toBe('聚焦')
+    expect(getTranslation('node.evidenceTypeFormula', 'zh')).toBe('公式')
+    expect(getTranslation('topic.workbenchResearchViewEvidence', 'zh')).toBe('证据')
+  })
 })

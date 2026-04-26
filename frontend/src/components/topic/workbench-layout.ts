@@ -1,6 +1,6 @@
 export const TOPIC_WORKBENCH_DESKTOP_BREAKPOINT = 1024
-export const TOPIC_WORKBENCH_DESKTOP_WIDTH = 392
-export const TOPIC_WORKBENCH_DESKTOP_GAP = 24
+export const TOPIC_WORKBENCH_DESKTOP_WIDTH = 520
+export const TOPIC_WORKBENCH_DESKTOP_GAP = 20
 // On ultra-wide desktops the overlay can stay open by default without stealing
 // meaningful space from the primary artifact. Narrower desktop layouts should
 // keep the drawer collapsed until the user asks for it.

@@ -1,85 +1,24 @@
 import { Router } from 'express'
-import { z } from 'zod'
 
-import { AppError, asyncHandler } from '../middleware/errorHandler'
+import { asyncHandler } from '../middleware/errorHandler'
+import { validate } from '../middleware/requestValidator'
+import { ModelConfigBodySchema } from './schemas'
 import {
   getModelCapabilitySummary,
   getSanitizedUserModelConfig,
   getUserModelConfigRecord,
   saveUserModelConfig,
 } from '../services/omni/config-store'
-import { RESEARCH_ROLE_IDS, allTaskRouteTargets } from '../services/omni/routing'
 import { omniGateway } from '../services/omni/gateway'
+import {
+  DEFAULT_TASK_ROUTING,
+  preferredSlotForRole,
+  resolveTaskRouteTarget,
+} from '../services/omni/routing'
+import type { OmniTask, ModelSlot, TaskRouteTarget } from '../services/omni/types'
 import type { UserModelConfig } from '../services/omni/types'
 
 const router = Router()
-
-const providerSchema = z.enum([
-  'nvidia',
-  'openai_compatible',
-  'openai',
-  'anthropic',
-  'google',
-  'dashscope',
-  'bigmodel',
-  'ark',
-  'hunyuan',
-  'deepseek',
-])
-
-const taskSchema = z.enum([
-  'general_chat',
-  'topic_chat',
-  'topic_chat_vision',
-  'topic_summary',
-  'document_parse',
-  'figure_analysis',
-  'formula_recognition',
-  'table_extraction',
-  'evidence_explainer',
-])
-
-const slotRefSchema = z
-  .object({
-    provider: providerSchema,
-    model: z.string().trim().min(1),
-  })
-  .strict()
-
-const slotOptionsSchema = z
-  .object({
-    thinking: z.enum(['on', 'off', 'auto']).optional(),
-    citations: z.enum(['native', 'backend']).optional(),
-    parser: z.enum(['native', 'backend']).optional(),
-    temperature: z.number().finite().optional(),
-    maxTokens: z.number().int().positive().optional(),
-  })
-  .strict()
-
-const slotConfigSchema = z
-  .object({
-    provider: providerSchema,
-    model: z.string().trim().min(1),
-    baseUrl: z.string().trim().optional(),
-    apiKeyRef: z.string().trim().optional(),
-    apiKey: z.string().trim().optional(),
-    providerOptions: z.record(z.unknown()).optional(),
-    options: slotOptionsSchema.optional(),
-  })
-  .strict()
-
-const researchRoleSchema = z.enum(RESEARCH_ROLE_IDS as [string, ...string[]])
-const taskRouteTargetSchema = z.enum(allTaskRouteTargets() as [string, ...string[]])
-
-const userModelConfigSchema = z
-  .object({
-    language: slotConfigSchema.nullable().optional(),
-    multimodal: slotConfigSchema.nullable().optional(),
-    roles: z.record(researchRoleSchema, slotConfigSchema.nullable()).optional(),
-    taskOverrides: z.record(taskSchema, slotRefSchema).optional(),
-    taskRouting: z.record(taskSchema, taskRouteTargetSchema).optional(),
-  })
-  .strict()
 
 const hasOwn = <T extends object>(value: T, key: keyof T) =>
   Object.prototype.hasOwnProperty.call(value, key)
@@ -119,14 +58,10 @@ router.get(
 
 router.post(
   '/',
+  validate(ModelConfigBodySchema),
   asyncHandler(async (req, res) => {
     const userId = resolveRequestUserId(req)
-    const parsedPayload = userModelConfigSchema.safeParse(req.body)
-    if (!parsedPayload.success) {
-      throw new AppError(400, parsedPayload.error.issues[0]?.message ?? 'Invalid model config payload.')
-    }
-
-    const incoming = parsedPayload.data as UserModelConfig
+    const incoming = req.body as UserModelConfig
     const previous = await getSanitizedUserModelConfig(userId)
     const saved = await saveUserModelConfig(incoming, userId)
     const capabilitySummary = await getModelCapabilitySummary(userId)
@@ -148,10 +83,21 @@ router.post(
         previous.multimodal?.model !== saved.multimodal?.model ||
         previous.multimodal?.baseUrl !== saved.multimodal?.baseUrl
       )
+    const validateSlotSafely = async (slot: 'language' | 'multimodal') => {
+      try {
+        return await omniGateway.validateSlot(slot, userId)
+      } catch (error) {
+        return {
+          slot,
+          ok: false,
+          issue: error instanceof Error ? error.message : 'Slot validation failed.',
+        }
+      }
+    }
     const validationIssues = (
       await Promise.all([
-        shouldValidateLanguage ? omniGateway.validateSlot('language', userId) : Promise.resolve(null),
-        shouldValidateMultimodal ? omniGateway.validateSlot('multimodal', userId) : Promise.resolve(null),
+        shouldValidateLanguage ? validateSlotSafely('language') : Promise.resolve(null),
+        shouldValidateMultimodal ? validateSlotSafely('multimodal') : Promise.resolve(null),
       ])
     ).filter(Boolean)
 
@@ -178,6 +124,61 @@ router.get(
     res.json({
       success: true,
       data: capabilitySummary,
+    })
+  }),
+)
+
+/**
+ * GET /api/model-configs/test-routing
+ * Integration test endpoint that verifies VLM tasks route to multimodal slot
+ * and LLM tasks route to language slot.
+ */
+router.get(
+  '/test-routing',
+  asyncHandler(async (_req, res) => {
+    const testCases: Array<{
+      task: OmniTask
+      expectedSlot: ModelSlot
+      description: string
+    }> = [
+      { task: 'figure_analysis', expectedSlot: 'multimodal', description: 'VLM: figure analysis must route to multimodal' },
+      { task: 'document_parse', expectedSlot: 'multimodal', description: 'VLM: document parsing must route to multimodal' },
+      { task: 'table_extraction', expectedSlot: 'multimodal', description: 'VLM: table extraction must route to multimodal' },
+      { task: 'formula_recognition', expectedSlot: 'multimodal', description: 'VLM: formula recognition must route to multimodal' },
+      { task: 'evidence_explainer', expectedSlot: 'multimodal', description: 'VLM: evidence explainer must route to multimodal' },
+      { task: 'topic_summary', expectedSlot: 'language', description: 'LLM: topic summary must route to language' },
+      { task: 'general_chat', expectedSlot: 'language', description: 'LLM: general chat must route to language' },
+      { task: 'topic_chat', expectedSlot: 'language', description: 'LLM: topic chat must route to language' },
+      { task: 'topic_chat_vision', expectedSlot: 'language', description: 'LLM: topic chat vision routes via workbench_chat (language preferred)' },
+    ]
+
+    const results = testCases.map((testCase) => {
+      const routedTarget: TaskRouteTarget = resolveTaskRouteTarget(testCase.task, null)
+      const defaultTarget = DEFAULT_TASK_ROUTING[testCase.task]
+      const resolvedSlot: ModelSlot = preferredSlotForRole(routedTarget as import('../services/omni/types').ResearchRoleId)
+
+      return {
+        task: testCase.task,
+        description: testCase.description,
+        expectedSlot: testCase.expectedSlot,
+        routedTarget,
+        defaultTarget,
+        resolvedSlot,
+        passed: resolvedSlot === testCase.expectedSlot,
+      }
+    })
+
+    const allPassed = results.every((r) => r.passed)
+
+    res.json({
+      success: true,
+      data: {
+        passed: allPassed,
+        totalTests: results.length,
+        passedTests: results.filter((r) => r.passed).length,
+        failedTests: results.filter((r) => !r.passed).length,
+        results,
+      },
     })
   }),
 )

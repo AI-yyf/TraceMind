@@ -28,24 +28,273 @@ import {
   collectTopicSessionMemoryContext,
 } from './topic-session-memory'
 import { collectTopicCognitiveMemory } from './topic-cognitive-memory'
-import { collectNodeRelatedPaperIds } from './node-paper-association'
-import { resolvePaperSourceLinks } from '../paper-links'
+import {
+  collectNodeRelatedPaperIds,
+  type AssociationNodeLike,
+} from './node-paper-association'
+import { resolvePaperAssetPath, resolvePaperSourceLinks } from '../paper-links'
 import {
   deriveTemporalStageBuckets,
   normalizeStageWindowMonths,
 } from './stage-buckets'
 import { loadTopicStageConfig } from './topic-stage-config'
-import { ensureConfiguredTopicMaterializedForNode } from './topic-config-sync'
+import {
+  ensureConfiguredTopicMaterializedForNode,
+  parseConfiguredTopicIdFromNodeId,
+} from './topic-config-sync'
+import { buildNodeArticleMarkdown } from './article-markdown'
 import { hasMeaningfulDisplayText, pickMeaningfulDisplayText } from './display-text'
+import { assertNodeViewModelContract } from './topic-contracts'
+import {
+  collectPaperFormulaArtifacts,
+  countPaperFormulaArtifacts,
+} from './synthetic-formulas'
 import { logger } from '../../utils/logger'
+import {
+  broadcastResearchProgress,
+  broadcastResearchComplete,
+  broadcastResearchError,
+} from '../../websocket/server'
+import type { ArticleProgressReporter } from './deep-article-generator'
+import { nodeEditorialAgent } from '../editorial/node-editorial-agent'
+import { DeepAnalysisPipeline, type DeepAnalysisResult, type DeepAnalysisPaper } from '../editorial'
+import type { PaperContext } from '../editorial/types'
+import type { PosterStylePaperAnalysis, PaperParagraph } from '../../../shared/editorial-types'
 
-type EvidenceType = 'figure' | 'table' | 'formula'
+type EvidenceType = 'figure' | 'table' | 'formula' | 'figureGroup'
 type GenerateNodeEnhancedArticle = typeof import('./deep-article-generator').generateNodeEnhancedArticle
+
+/**
+ * Bilingual text helper for i18n support in alpha-reader.
+ * Provides Chinese and English fallback text based on language preference.
+ */
+function bilingualText(
+  language: string | undefined | null,
+  zh: string,
+  en: string,
+): string {
+  const lang = (language ?? 'zh').toLowerCase()
+  return lang === 'zh' || lang.startsWith('zh') ? zh : en
+}
+
+/**
+ * Evidence statistics text with i18n support.
+ */
+function evidenceStatsText(
+  language: string | undefined | null,
+  figureCount: number,
+  tableCount: number,
+  formulaCount: number,
+): string {
+  return bilingualText(
+    language,
+    `证据情况：${figureCount} 张图，${tableCount} 张表，${formulaCount} 个公式。`,
+    `Evidence: ${figureCount} figures, ${tableCount} tables, ${formulaCount} formulas.`,
+  )
+}
+
+/**
+ * Fallback text for papers without complete content.
+ */
+function incompletePaperText(language: string | undefined | null): string {
+  return bilingualText(
+    language,
+    '当前仅完成题录级整理，后续还需要补齐摘要、正文与证据。',
+    'Only bibliographic data is available. Abstract, content, and evidence extraction pending.',
+  )
+}
+
+function noStableAbstractText(language: string | undefined | null): string {
+  return bilingualText(
+    language,
+    '当前数据库还没有稳定的摘要或正文段落，文章必须继续回到原文核对。',
+    'No stable abstract or content paragraphs available. Manual verification from source required.',
+  )
+}
+
+function incompletePaperNextRoundText(language: string | undefined | null): string {
+  return bilingualText(
+    language,
+    '当前仅完成题录级整理，后续还需要补齐摘要、正文与证据。',
+    'Only bibliographic data is available. Abstract, content, and evidence extraction pending next round.',
+  )
+}
+
+function directEvidenceText(language: string | undefined | null, figureCount: number, tableCount: number, formulaCount: number): string {
+  return bilingualText(
+    language,
+    `当前可直接落在正文里的证据包括：${figureCount} 张图、${tableCount} 张表和 ${formulaCount} 个公式。`,
+    `Direct evidence available: ${figureCount} figures, ${tableCount} tables, and ${formulaCount} formulas.`,
+  )
+}
+
+function noEvidenceExtractedText(language: string | undefined | null): string {
+  return bilingualText(
+    language,
+    '当前数据库还没有提取到图、表、公式，仍需回到原文 PDF 核对决定性证据。',
+    'No figures, tables, or formulas extracted yet. Manual verification from source PDF required for decisive evidence.',
+  )
+}
+
+function incompletePaperNextRoundExtractText(language: string | undefined | null): string {
+  return bilingualText(
+    language,
+    '当前仅完成题录级整理，下一轮需要补齐摘要、正文与证据抽取。',
+    'Only bibliographic data available. Abstract, content, and evidence extraction pending next round.',
+  )
+}
+
+// Fallback paper section i18n helpers
+function fallbackProblemTitle(language: string | undefined | null): string {
+  return bilingualText(language, '问题与入口', 'Problem & Entry')
+}
+
+function fallbackMethodTitle(language: string | undefined | null): string {
+  return bilingualText(language, '方法与结构', 'Method & Structure')
+}
+
+function fallbackEvidenceTitle(language: string | undefined | null): string {
+  return bilingualText(language, '证据与结果', 'Evidence & Results')
+}
+
+function fallbackBoundaryTitle(language: string | undefined | null): string {
+  return bilingualText(language, '边界与延伸', 'Boundary & Extension')
+}
+
+function fallbackMethodFormulaText(language: string | undefined | null): string {
+  return bilingualText(
+    language,
+    '从公式层面看，这篇工作把方法定义得更具体，适合和正文结构一起读。',
+    'From the formula perspective, this work defines the method more concretely, suitable for reading alongside the main text structure.',
+  )
+}
+
+function fallbackMethodNarrativeText(language: string | undefined | null): string {
+  return bilingualText(
+    language,
+    '这篇论文的方法主张主要体现在正文叙述与关键图示里，阅读时应把模块结构和任务目标一起理解。',
+    'The method claims are primarily in the narrative and key figures. Read with module structure and task objectives in mind.',
+  )
+}
+
+function fallbackEvidenceCoverageText(language: string | undefined | null, coverage: string): string {
+  return bilingualText(
+    language,
+    `目前保留下来的直接证据包括 ${coverage}，足以作为判断结果的第一入口。`,
+    `Direct evidence preserved includes ${coverage}, sufficient as first entry point for result judgment.`,
+  )
+}
+
+function fallbackNoEvidenceText(language: string | undefined | null): string {
+  return bilingualText(
+    language,
+    '这篇论文当前更适合先从正文理解论证逻辑，再回到原文核对实验与比较设置。',
+    'Better to understand the argument logic from the text first, then verify experiments and comparison settings from the source.',
+  )
+}
+
+function fallbackEvidenceCaptionText(language: string | undefined | null, captionSummary: string): string {
+  return bilingualText(
+    language,
+    `最值得优先查看的证据线索包括：${captionSummary}`,
+    `Priority evidence to examine: ${captionSummary}`,
+  )
+}
+
+function fallbackLowEvidenceText(language: string | undefined | null): string {
+  return bilingualText(
+    language,
+    '由于图表证据仍然偏少，这篇论文的结论更需要回到原文实验页继续核对比较对象、指标和设置。',
+    'With limited figure/table evidence, conclusions require verification of comparison objects, metrics, and settings from the source.',
+  )
+}
+
+function fallbackHasEvidenceText(language: string | undefined | null): string {
+  return bilingualText(
+    language,
+    '即便已经有局部图表证据，真正的判断仍然要放回节点内部，与前后论文并读。',
+    'Even with partial evidence, real judgment requires reading within the node context alongside related papers.',
+  )
+}
+
+function fallbackNodeContextText(language: string | undefined | null): string {
+  return bilingualText(
+    language,
+    '把这篇论文放进节点主线之后，才能更清楚看见它究竟推进了问题，还是只是换了一种表述方式。',
+    'Only after placing this paper in the node mainline can we see whether it advances the problem or merely reframes it.',
+  )
+}
+
+function paperFormulaArtifacts(paper: any) {
+  return collectPaperFormulaArtifacts(paper)
+}
+
+function paperEvidenceStats(paper: any) {
+  return {
+    figureCount: paper.figures.length,
+    tableCount: paper.tables.length,
+    formulaCount: countPaperFormulaArtifacts(paper),
+    figureGroupCount: paper.figure_groups?.length ?? 0,
+  }
+}
+
+type NodeEvidenceAudit = {
+  status: 'complete' | 'needs_vlm_audit'
+  warnings: Array<{
+    code: 'missing_table_formula_coverage' | 'missing_visual_evidence' | 'thin_multi_paper_evidence'
+    message: string
+    severity: 'warning' | 'critical'
+  }>
+  requiredAction: string | null
+}
+
+function buildNodeEvidenceAudit(stats: {
+  paperCount: number
+  figureCount: number
+  tableCount: number
+  formulaCount: number
+  figureGroupCount: number
+}): NodeEvidenceAudit {
+  const warnings: NodeEvidenceAudit['warnings'] = []
+
+  if (stats.paperCount > 0 && stats.figureCount === 0 && stats.tableCount === 0 && stats.formulaCount === 0) {
+    warnings.push({
+      code: 'missing_visual_evidence',
+      severity: 'critical',
+      message: 'No figure, table, or formula evidence is available for this node.',
+    })
+  }
+
+  if (stats.paperCount > 0 && stats.tableCount === 0 && stats.formulaCount === 0) {
+    warnings.push({
+      code: 'missing_table_formula_coverage',
+      severity: 'warning',
+      message: 'No table or formula evidence is available; run VLM-guided extraction audit before claiming full evidence coverage.',
+    })
+  }
+
+  if (stats.paperCount >= 3 && stats.figureCount + stats.tableCount + stats.formulaCount < stats.paperCount) {
+    warnings.push({
+      code: 'thin_multi_paper_evidence',
+      severity: 'warning',
+      message: 'The node contains multiple papers but fewer visual/formula evidence anchors than papers.',
+    })
+  }
+
+  return {
+    status: warnings.length > 0 ? 'needs_vlm_audit' : 'complete',
+    warnings,
+    requiredAction: warnings.length > 0
+      ? 'Run VLM-guided page/crop audit for missing tables, formulas, and weak visual evidence before final article claims are treated as complete.'
+      : null,
+  }
+}
 
 const READER_ARTIFACT_PREFIX = 'alpha:reader-artifact:'
 const readerArtifactBuildQueue = new Map<string, Promise<unknown>>()
-const NODE_READER_ARTIFACT_SCHEMA_VERSION = 'node-article-v5'
+const NODE_READER_ARTIFACT_SCHEMA_VERSION = 'node-article-v7'
 const PAPER_READER_ARTIFACT_SCHEMA_VERSION = 'paper-article-v3'
+const DEFAULT_NODE_DEFERRED_ARTIFACT_DELAY_MS = 160
 const ENHANCED_NODE_ARTICLE_TIMEOUT_MS = (() => {
   const configured = Number.parseInt(process.env.ENHANCED_NODE_ARTICLE_TIMEOUT_MS ?? '', 10)
   return Number.isFinite(configured) && configured > 0 ? configured : 180000
@@ -53,15 +302,16 @@ const ENHANCED_NODE_ARTICLE_TIMEOUT_MS = (() => {
 const HEURISTIC_NARRATIVE_RE =
   /heuristic fit|query overlap|lexical and temporal relevance|stage-aligned query overlap/iu
 const LOW_SIGNAL_NODE_COPY_PATTERNS = [
-  /本节点.+篇论文横跨/u,
-  /见证了.+三级跳/u,
-  /节点级判断不能只停在/u,
-  /一个好的节点应该/u,
+  /\bnode-level judgment\b/iu,
+  /\bgood node\b/iu,
+  /\bstill do not know\b/iu,
+  /\blacks enough visual evidence\b/iu,
   /如果读完这个节点后仍然不知道/u,
   /部分论文缺少足够的可视化或表格证据/u,
 ]
 const LOW_SIGNAL_SECTION_TITLE_PATTERNS = [
   /^(?:table of contents|contents|acknowledg(?:e)?ments?|declaration|dedication|copyright|references|bibliography|appendix)$/iu,
+  /^(?:topic placement|paper placement|category placement|node placement)$/iu,
 ]
 const LOW_SIGNAL_SECTION_BODY_PATTERNS = [
   /table of contents/iu,
@@ -72,6 +322,7 @@ const LOW_SIGNAL_SECTION_BODY_PATTERNS = [
   /i would like to dedicate this thesis/iu,
   /all rights reserved/iu,
   /personal use is permitted/iu,
+  /\b(?:currently\s+)?grouped into \d+ node\(s\)\b/iu,
   /ieee xplore/iu,
   /cookie|privacy notice|sign in|purchase pdf|download pdf/iu,
   /submitted in partial fulfillment|this thesis is submitted|doctor of philosophy|master of science/iu,
@@ -81,10 +332,11 @@ const LOW_SIGNAL_SECTION_BODY_PATTERNS = [
 ]
 const HTML_SECTION_NOISE_RE =
   /<(?:html|head|body|meta|script|div|span|title)\b|&nbsp;|document\.cookie/iu
-const GENERIC_FIGURE_LABEL_RE = /^(?:图|figure)\s*\d+[a-z]?(?:\s*[:.]?)$/iu
-const GENERIC_TABLE_LABEL_RE = /^(?:表|table)\s*\d+[a-z]?(?:\s*[:.]?)$/iu
-const GENERIC_FORMULA_LABEL_RE = /^(?:公式|formula)\s*\d+[a-z]?(?:\s*[:.]?)$/iu
+const GENERIC_FIGURE_LABEL_RE = /^(?:(?:figure|fig\.?|[\u56fe\u5716]|鍥\??))\s*\d+[a-z]?(?:\s*[:.]?)?$/iu
+const GENERIC_TABLE_LABEL_RE = /^(?:(?:table|tab\.?|[\u8868]|琛\??))\s*\d+[a-z]?(?:\s*[:.]?)?$/iu
+const GENERIC_FORMULA_LABEL_RE = /^(?:(?:formula|equation|eq\.?|[\u516c\u5f0f]|鍏紡))\s*\d+[a-z]?(?:\s*[:.]?)?$/iu
 const BODY_SECTION_TITLE_RE = /^(?:body section|section) \d+$/iu
+const DEFAULT_NODE_ARTIFACT_TIMEOUT_MS = 2_000
 
 type ReaderArtifactKind = 'paper' | 'node'
 type ReaderArtifactVariant = 'default' | 'enhanced'
@@ -216,7 +468,7 @@ export type ArticleFlowBlock =
     }
   | {
       id: string
-      type: 'figure' | 'table' | 'formula'
+      type: 'figure' | 'table' | 'formula' | 'figureGroup'
       evidence: EvidenceExplanation
     }
   | {
@@ -247,6 +499,8 @@ export interface EvidenceExplanation {
   imagePath?: string | null
   whyItMatters?: string
   formulaLatex?: string | null
+  tableHeaders?: string[]
+  tableRows?: unknown[]
   explanation?: string
   importance?: number
   placementHint?: string
@@ -281,6 +535,100 @@ export interface CrossPaperComparisonBlock {
   }>
 }
 
+type EnhancedNodeArticleFlowBlock = import('./deep-article-generator').NodeArticleFlowBlock
+type EnhancedPaperArticleBlock = Extract<EnhancedNodeArticleFlowBlock, { type: 'paper-article' }>
+type EnhancedPaperTransitionBlock = Extract<EnhancedNodeArticleFlowBlock, { type: 'paper-transition' }>
+type EnhancedPaperSubsectionKind = import('./deep-article-generator').PaperSubsectionKind
+
+export interface NodeResearchMethodEntry {
+  paperId: string
+  paperTitle: string
+  publishedAt?: string
+  title: string
+  titleEn?: string
+  summary: string
+  keyPoints: string[]
+}
+
+export interface NodeResearchEvolutionStep {
+  paperId: string
+  paperTitle: string
+  contribution: string
+  improvementOverPrevious?: string
+  fromPaperId?: string
+  fromPaperTitle?: string
+  toPaperId?: string
+  toPaperTitle?: string
+  transitionType?: EnhancedPaperTransitionBlock['transitionType']
+  anchorId?: string
+  evidenceAnchorIds?: string[]
+}
+
+export interface NodeResearchPaperBrief {
+  paperId: string
+  paperTitle: string
+  role: EnhancedPaperArticleBlock['role']
+  publishedAt?: string
+  summary: string
+  contribution: string
+  evidenceAnchorIds: string[]
+  keyFigureIds: string[]
+  keyTableIds: string[]
+  keyFormulaIds: string[]
+}
+
+export interface NodeResearchEvidenceChain {
+  paperId: string
+  paperTitle: string
+  subsectionKind: EnhancedPaperSubsectionKind
+  subsectionTitle: string
+  summary: string
+  evidenceAnchorIds: string[]
+}
+
+export interface NodeResearchViewModel {
+  evidence: {
+    featuredAnchorIds: string[]
+    supportingAnchorIds: string[]
+    featured: EvidenceExplanation[]
+    supporting: EvidenceExplanation[]
+    paperBriefs: NodeResearchPaperBrief[]
+    evidenceChains: NodeResearchEvidenceChain[]
+    coverage: {
+      totalEvidenceCount: number
+      renderableEvidenceCount: number
+      figureCount: number
+      tableCount: number
+      formulaCount: number
+      figureGroupCount: number
+      sectionCount: number
+      featuredCount: number
+      supportingCount: number
+    }
+  }
+  methods: {
+    entries: NodeResearchMethodEntry[]
+    evolution: NodeResearchEvolutionStep[]
+    dimensions: string[]
+  }
+  problems: {
+    items: Array<{
+      paperId: string
+      paperTitle: string
+      title: string
+      titleEn?: string
+      status: 'solved' | 'partial' | 'open'
+    }>
+    openQuestions: string[]
+  }
+  coreJudgment: {
+    content: string
+    contentEn: string
+    confidence: 'high' | 'medium' | 'low' | 'speculative'
+    quickTags: string[]
+  } | null
+}
+
 export interface PaperRole {
   paperId: string
   title: string
@@ -295,6 +643,7 @@ export interface PaperRole {
   figuresCount: number
   tablesCount: number
   formulasCount: number
+  figureGroupsCount: number
   coverImage: string | null
   originalUrl?: string
   pdfUrl?: string
@@ -324,6 +673,7 @@ export interface PaperViewModel {
     figureCount: number
     tableCount: number
     formulaCount: number
+    figureGroupCount: number
     relatedNodeCount: number
   }
   relatedNodes: Array<{
@@ -348,6 +698,8 @@ export interface PaperViewModel {
   references?: Array<{
     paperId: string
     title: string
+    titleEn?: string
+    route?: string
     publishedAt?: string
     authors?: string[]
     citationCount?: number | null
@@ -381,7 +733,9 @@ export interface NodeViewModel {
     figureCount: number
     tableCount: number
     formulaCount: number
+    figureGroupCount: number
   }
+  evidenceAudit?: NodeEvidenceAudit
   standfirst: string
   paperRoles: PaperRole[]
   comparisonBlocks: CrossPaperComparisonBlock[]
@@ -392,18 +746,22 @@ export interface NodeViewModel {
     sections: ArticleSection[]
     closing: string[]
   }
+  articleMarkdown?: string
   critique: ReviewerCritique
   evidence: EvidenceExplanation[]
-  /** 增强版文章流（8-Pass深度解析）- 可选，用于新格式 */
-  enhancedArticleFlow?: import('./deep-article-generator').NodeArticleFlowBlock[]
-  /** 核心判断（节点级别的一句话判断） */
+  /** 澧炲己鐗堟枃绔犳祦锛?-Pass娣卞害瑙ｆ瀽锛? 鍙€夛紝鐢ㄤ簬鏂版牸寮?*/
+  enhancedArticleFlow?: EnhancedNodeArticleFlowBlock[]
+  /** 鏍稿績鍒ゆ柇锛堣妭鐐圭骇鍒殑涓€鍙ヨ瘽鍒ゆ柇锛?*/
   coreJudgment?: {
     content: string
     contentEn: string
   }
+  researchView?: NodeResearchViewModel
   references?: Array<{
     paperId: string
     title: string
+    titleEn?: string
+    route?: string
     publishedAt?: string
     authors?: string[]
     citationCount?: number | null
@@ -436,7 +794,7 @@ function countDistinctNarrativeYears(value: string | null | undefined) {
 
 function countDistinctNarrativeYearMonths(value: string | null | undefined) {
   return new Set(
-    Array.from((value ?? '').matchAll(/\b((?:19|20)\d{2})[.\-/年]\s*(\d{1,2})/gu)).map(
+    Array.from((value ?? '').matchAll(/\b((?:19|20)\d{2})[.\-/\u5e74]\s*(\d{1,2})/gu)).map(
       (match) => `${match[1]}-${match[2].padStart(2, '0')}`,
     ),
   ).size
@@ -514,7 +872,7 @@ function looksLikeStaleNodeNarrative(
     return true
   }
 
-  if (actualPaperCount <= 1 && /横跨/u.test(normalized) && countDistinctNarrativeYears(normalized) >= 2) {
+  if (actualPaperCount <= 1 && /妯法/u.test(normalized) && countDistinctNarrativeYears(normalized) >= 2) {
     return true
   }
 
@@ -559,12 +917,12 @@ function stripFrontMatterLead(value: string) {
   if (abstractIndex > 0 && abstractIndex <= 240) {
     return normalized
       .slice(abstractIndex)
-      .replace(/^abstract\b\s*[—:\-]?\s*/iu, '')
+      .replace(/^abstract\b[^\p{L}\p{N}\u4e00-\u9fff]{0,12}/iu, '')
       .trim()
   }
 
   if (/^abstract\b/iu.test(normalized)) {
-    return normalized.replace(/^abstract\b\s*[—:\-]?\s*/iu, '').trim()
+    return normalized.replace(/^abstract\b[^\p{L}\p{N}\u4e00-\u9fff]{0,12}/iu, '').trim()
   }
 
   const figureCaptionIndex = normalized.search(/\bfig(?:ure)?\.?\s*\d+[a-z]?\b/iu)
@@ -584,12 +942,12 @@ function looksLikeTitleFragment(value: string | null | undefined) {
   const normalized = normalizeReaderNarrative(value)
   if (!normalized) return false
   if (normalized.length > 180) return false
-  if (/[.!?。！？:：;]/u.test(normalized)) return false
+  if (/[.!?銆傦紒锛?锛?]/u.test(normalized)) return false
 
   const tokens = normalized.split(/\s+/u).filter(Boolean)
   if (tokens.length < 3) return false
 
-  const capitalizedTokens = tokens.filter((token) => /^[A-Z][A-Za-z0-9'’:/\-]+$/u.test(token)).length
+  const capitalizedTokens = tokens.filter((token) => /^[A-Z][A-Za-z0-9'’/\-]+$/u.test(token)).length
   const ratio = capitalizedTokens / tokens.length
   return ratio >= 0.6
 }
@@ -598,7 +956,7 @@ function hasNarrativeSubstance(value: string | null | undefined) {
   const normalized = normalizeReaderNarrative(value)
   if (!normalized) return false
   if (normalized.length >= 140) return true
-  if (/[.!?。！？]/u.test(normalized) && /[a-z\u4e00-\u9fff]/u.test(normalized)) return true
+  if (/[.!?銆傦紒锛焆/u.test(normalized) && /[a-z\u4e00-\u9fff]/u.test(normalized)) return true
   return false
 }
 
@@ -608,7 +966,9 @@ function cleanExtractedParagraph(value: string | null | undefined) {
 
   const abstractBody =
     stripped.match(/\babstract\b[^A-Za-z0-9]{0,8}(.*)$/iu)?.[1]?.trim() ?? ''
-  const normalized = abstractBody.length >= 40 ? abstractBody : stripped
+  const normalized = (abstractBody.length >= 40 ? abstractBody : stripped)
+    .replace(/^[^\p{L}\p{N}\u4e00-\u9fff]+/u, '')
+    .trim()
   if (!hasMeaningfulDisplayText(normalized)) return ''
 
   if (looksLikeTitleFragment(normalized)) return ''
@@ -643,7 +1003,7 @@ function buildPaperContributionSeed(paper: any) {
     paper.titleZh,
     paper.titleEn,
     paper.title,
-    '这篇论文',
+    'This paper',
   )
   const sectionLead =
     getRenderablePaperSections(paper, 3)
@@ -655,16 +1015,18 @@ function buildPaperContributionSeed(paper: any) {
     pickMeaningfulNarrativeText(paper.summary, paper.explanation, paper.abstract),
     180,
   )
+  const { figureCount, tableCount, formulaCount } = paperEvidenceStats(paper)
+  const paperLanguage = paper.topic?.language
   const evidenceLine =
-    paper.figures.length + paper.tables.length + paper.formulas.length > 0
-      ? `当前可直接提取 ${paper.figures.length} 张图、${paper.tables.length} 张表和 ${paper.formulas.length} 个公式。`
-      : '当前数据库还没有提取到图、表、公式，需要结合原文继续核对关键证据。'
+    figureCount + tableCount + formulaCount > 0
+      ? bilingualText(paperLanguage, `当前抽取结果已经保留了 ${figureCount} 张图、${tableCount} 张表和 ${formulaCount} 个公式，可以直接作为论证证据。`, `Extraction results preserved ${figureCount} figures, ${tableCount} tables, and ${formulaCount} formulas, ready as argument evidence.`)
+      : bilingualText(paperLanguage, '当前数据库还没有提取到图、表、公式，节点页先依赖摘要和正文，后续仍需回到原文核对。', 'No figures, tables, or formulas extracted yet. Node page relies on abstract and text for now; source verification pending.')
 
   return clipText(
     [abstractLead, sectionLead, evidenceLine]
       .filter(Boolean)
       .join(' ')
-      .trim() || `《${paperTitle}》是这个节点当前最直接的论文入口。`,
+      .trim() || bilingualText(paper.topic?.language, `${paperTitle}目前更适合作为进入这个节点的单篇深读入口。`, `${paperTitle} currently serves best as a single-paper deep reading entry for this node.`),
     220,
   )
 }
@@ -673,16 +1035,18 @@ function buildNodeNarrativeSeed(args: {
   node: {
     nodeLabel: string
     nodeSubtitle?: string | null
+    topic?: { language?: string | null } | null
   }
   papers: any[]
 }) {
   const { node, papers } = args
+  const language = node.topic?.language
   const primaryPaper = papers[0] ?? null
   const primaryPaperTitle = pickMeaningfulDisplayText(
     primaryPaper?.titleZh,
     primaryPaper?.titleEn,
     primaryPaper?.title,
-    '代表论文',
+    'Representative paper',
   )
   const abstractLead = primaryPaper
     ? normalizePaperNarrativeText(
@@ -696,22 +1060,25 @@ function buildNodeNarrativeSeed(args: {
     : ''
   const paperCount = papers.length
   const evidenceCount = papers.reduce(
-    (count, paper) => count + paper.figures.length + paper.tables.length + paper.formulas.length,
+    (count, paper) => {
+      const { figureCount, tableCount, formulaCount } = paperEvidenceStats(paper)
+      return count + figureCount + tableCount + formulaCount
+    },
     0,
   )
 
   if (paperCount <= 1) {
     return {
       summary: clipText(
-        `当前阶段的「${node.nodeLabel}」节点只纳入《${primaryPaperTitle}》这一篇论文，因此它首先是一篇单篇深读入口，用来说明这条问题线到底从哪里起步。`,
+        bilingualText(language, `${node.nodeLabel}当前只纳入 1 篇论文：${primaryPaperTitle}，因此更适合写成围绕单篇论文展开的深读，而不是伪装成跨阶段综述。`, `${node.nodeLabel} currently includes only 1 paper: ${primaryPaperTitle}. Better written as a single-paper deep reading rather than a cross-stage survey.`),
         200,
       ),
       explanation: clipText(
         [
           abstractLead,
           evidenceCount > 0
-            ? `现有证据里已经抽出 ${evidenceCount} 个图、表或公式，可以围绕关键实验继续细读。`
-            : '目前还没有抽出图、表、公式，所以这篇文章更适合先讲清问题设定、方法机制和原文入口，再继续补证据。',
+            ? bilingualText(language, `当前证据层已经保留了 ${evidenceCount} 个图、表或公式，可以作为单篇深读的第一批锚点。`, `Evidence layer preserved ${evidenceCount} figures, tables, or formulas as initial anchors for deep reading.`)
+            : bilingualText(language, '当前数据库还没有提取到图、表、公式，节点页应先围绕摘要与正文组织论证，并持续回到原文补证。', 'No figures, tables, or formulas extracted. Node page should organize arguments around abstract and text, with ongoing source verification.'),
         ]
           .filter(Boolean)
           .join(' ')
@@ -720,7 +1087,7 @@ function buildNodeNarrativeSeed(args: {
       ),
       standfirst: clipText(
         [
-          `「${node.nodeLabel}」目前仍以《${primaryPaperTitle}》为单篇入口。`,
+          bilingualText(language, `${node.nodeLabel}当前应被视为"单篇深读入口"：${primaryPaperTitle}。`, `${node.nodeLabel} should be treated as a "single-paper deep reading entry": ${primaryPaperTitle}.`),
           abstractLead,
         ]
           .filter(Boolean)
@@ -728,7 +1095,7 @@ function buildNodeNarrativeSeed(args: {
           .trim(),
         280,
       ),
-      headline: `先把《${clipText(primaryPaperTitle, 36)}》在「${node.nodeLabel}」里真正推进了什么讲清楚。`,
+      headline: bilingualText(language, `先讲清 ${clipText(primaryPaperTitle, 36)} 在 ${node.nodeLabel} 里到底推进了什么`, `First clarify what ${clipText(primaryPaperTitle, 36)} actually advances in ${node.nodeLabel}`),
     }
   }
 
@@ -739,13 +1106,13 @@ function buildNodeNarrativeSeed(args: {
 
   return {
     summary: clipText(
-      `这一节点收拢了同一阶段里的 ${paperCount} 篇论文，围绕「${node.nodeLabel}」这一问题展开，而不是把论文标题机械并列。`,
+      `This node groups ${paperCount} papers around ${node.nodeLabel}, so the article should explain a real research line rather than list titles side by side.`,
       200,
     ),
     explanation: clipText(
       [
         earliestPaper
-          ? `最早的入口是《${earliestPaper.titleZh || earliestPaper.title}》，较新的补充来自《${latestPaper.titleZh || latestPaper.title}》。`
+          ? `The line begins with ${earliestPaper.titleZh || earliestPaper.title} and later work extends it through ${latestPaper.titleZh || latestPaper.title}.`
           : '',
         abstractLead,
       ]
@@ -755,12 +1122,221 @@ function buildNodeNarrativeSeed(args: {
       260,
     ),
     standfirst: clipText(
-      `这一节点把 ${paperCount} 篇论文压到同一条问题线上来读，目标是讲清谁先提出问题、谁补强证据、谁真正把方法推到了下一步。`,
+      `The goal of this node is to show who first framed the problem, who strengthened the evidence, and who actually moved the method forward.`,
       280,
     ),
-    headline: `把「${node.nodeLabel}」拆成一条可以顺着读完的阶段内研究线。`,
+    headline: `Turn ${node.nodeLabel} into one readable research mainline.`,
   }
 }
+
+// ─── DeepAnalysisPipeline Integration Helpers ─────────────────────────────────
+
+/**
+ * Check if a paper has sufficient data for deep analysis
+ * Requires: sections with content + at least some evidence (figures/tables/formulas)
+ */
+function hasSufficientDataForDeepAnalysis(paper: PaperContext): boolean {
+  // Must have at least 2 sections with meaningful content
+  const meaningfulSections = paper.sections.filter(
+    (s) => s.paragraphs && s.paragraphs.trim().length > 100
+  )
+  if (meaningfulSections.length < 2) return false
+
+  // Must have at least some evidence
+  const evidenceCount =
+    paper.figures.length + paper.tables.length + paper.formulas.length
+  if (evidenceCount < 1) return false
+
+  return true
+}
+
+/**
+ * Convert PaperContext to DeepAnalysisPaper format
+ */
+function buildDeepAnalysisPaper(paper: PaperContext): DeepAnalysisPaper {
+  return {
+    id: paper.id,
+    title: paper.titleZh || paper.title,
+    sections: paper.sections.map((s) => ({
+      id: s.id,
+      editorialTitle: s.editorialTitle || s.sourceSectionTitle,
+      sourceSectionTitle: s.sourceSectionTitle,
+      paragraphs: s.paragraphs || '',
+    })),
+    figures: paper.figures.map((f) => ({
+      id: f.id,
+      number: f.number,
+      caption: f.caption,
+      imagePath: f.imagePath || '',
+      analysis: f.analysis ?? null,
+    })),
+    tables: paper.tables.map((t) => ({
+      id: t.id,
+      number: t.number,
+      caption: t.caption,
+      rawText: t.rawText,
+      headers: t.headers || null,
+    })),
+    formulas: paper.formulas.map((f) => ({
+      id: f.id,
+      number: f.number,
+      latex: f.latex,
+      rawText: f.rawText ?? null,
+    })),
+  }
+}
+
+/**
+ * Convert DeepAnalysisResult to PosterStylePaperAnalysis format
+ * This bridges the three-pass deep analysis output to the frontend-expected format
+ */
+function convertDeepAnalysisToPosterStyle(
+  result: DeepAnalysisResult,
+  paper: PaperContext
+): PosterStylePaperAnalysis {
+  // Build paragraphs from section analyses
+  const paragraphs: PaperParagraph[] = []
+  let sortIndex = 0
+
+  // Add thesis paragraph from the first methodology section
+  // Core claim first: the thesis paragraph must start with a strong, arguable claim
+  const methodologySection = result.sections.find(
+    (s) => s.type === 'methodology' || s.type === 'experiment'
+  )
+  if (methodologySection) {
+    // Extract core thesis from key points, ensuring it's an arguable claim not a topic description
+    const coreThesisFromPoints = methodologySection.keyPoints.slice(0, 2).join(' ')
+    // Ensure the thesis starts with a claim, not a description
+    const thesisContent = coreThesisFromPoints || methodologySection.deepAnalysis.slice(0, 80)
+    paragraphs.push({
+      role: 'thesis',
+      content: thesisContent,
+      wordCount: thesisContent.length,
+      evidenceIds: methodologySection.evidenceReferences,
+      sortIndex: sortIndex++,
+    })
+  }
+
+  // Add evidence paragraphs BEFORE argument paragraphs (figure-dominant: evidence first)
+  // This ensures evidence references are placed prominently, not buried in text
+  for (const [figId, figAnalysis] of result.evidenceAnalysis.figures) {
+    if (figAnalysis.claims.length > 0) {
+      // Evidence paragraph: figure reference first, then analysis
+      const evidenceContent = figAnalysis.analysis || figAnalysis.claims.join('; ')
+      paragraphs.push({
+        role: 'evidence',
+        content: evidenceContent,
+        wordCount: evidenceContent.length,
+        evidenceIds: [figId],
+        sortIndex: sortIndex++,
+      })
+    }
+  }
+
+  for (const [tblId, tblAnalysis] of result.evidenceAnalysis.tables) {
+    if (tblAnalysis.claims.length > 0) {
+      const evidenceContent = tblAnalysis.analysis || tblAnalysis.claims.join('; ')
+      paragraphs.push({
+        role: 'evidence',
+        content: evidenceContent,
+        wordCount: evidenceContent.length,
+        evidenceIds: [tblId],
+        sortIndex: sortIndex++,
+      })
+    }
+  }
+
+  // Add argument paragraphs from each section
+  // Each paragraph must start with core claim, then evidence, then significance
+  for (const section of result.sections) {
+    // Skip if already used as thesis
+    if (section === methodologySection && sortIndex === 1) continue
+
+    // Split deep analysis into argument-sized chunks
+    // Ensure each chunk starts with a core claim (first sentence = claim)
+    const analysisChunks = splitAnalysisIntoChunks(section.deepAnalysis, 200)
+    for (const chunk of analysisChunks) {
+      paragraphs.push({
+        role: 'argument',
+        title: section.title,
+        content: chunk,
+        wordCount: chunk.length,
+        evidenceIds: section.evidenceReferences,
+        sortIndex: sortIndex++,
+      })
+    }
+  }
+
+  // Add insight paragraph from claims validation
+  // Closing must connect to broader research question, not just list weaknesses
+  const lowConfidenceClaims = result.claims.filter((c) => c.confidence < 0.7)
+  const highConfidenceClaims = result.claims.filter((c) => c.confidence >= 0.7)
+  const insightContent =
+    lowConfidenceClaims.length > 0
+      ? `审稿人可能质疑: ${lowConfidenceClaims.map((c) => c.claim).join('; ')}。下一步需要验证这些主张的边界条件。`
+      : highConfidenceClaims.length > 0
+        ? `核心主张置信度: ${(result.confidenceScore * 100).toFixed(0)}%。${highConfidenceClaims.slice(0, 2).map((c) => c.claim).join('；')}。`
+        : `整体置信度: ${(result.confidenceScore * 100).toFixed(0)}%`
+
+  paragraphs.push({
+    role: 'insight',
+    content: insightContent,
+    wordCount: insightContent.length,
+    evidenceIds: [],
+    sortIndex: sortIndex++,
+  })
+
+  // Build core thesis from first thesis paragraph or first section
+  // Must be an arguable claim, not a topic description
+  const coreThesis =
+    paragraphs.find((p) => p.role === 'thesis')?.content ||
+    result.sections[0]?.deepAnalysis.slice(0, 60) ||
+    paper.title.slice(0, 60)
+
+  // Build closing insight from insight paragraph or claims
+  // Must connect to broader research question
+  const closingInsight =
+    paragraphs.find((p) => p.role === 'insight')?.content ||
+    result.claims.slice(0, 3).map((c) => c.claim).join('; ') ||
+    '深度分析完成'
+
+  return {
+    coreThesis,
+    paragraphs,
+    closingInsight,
+    contentVersion: 'v2',
+  }
+}
+
+/**
+ * Split a long analysis text into argument-sized chunks
+ */
+function splitAnalysisIntoChunks(text: string, maxChunkSize: number): string[] {
+  if (!text || text.length <= maxChunkSize) {
+    return text ? [text] : []
+  }
+
+  const chunks: string[] = []
+  const sentences = text.split(/(?<=[。！？.!?])\s*/u)
+
+  let currentChunk = ''
+  for (const sentence of sentences) {
+    if (currentChunk.length + sentence.length > maxChunkSize && currentChunk.length > 0) {
+      chunks.push(currentChunk.trim())
+      currentChunk = sentence
+    } else {
+      currentChunk += sentence
+    }
+  }
+
+  if (currentChunk.trim().length > 0) {
+    chunks.push(currentChunk.trim())
+  }
+
+  return chunks
+}
+
+// ─── End DeepAnalysisPipeline Integration Helpers ─────────────────────────────
 
 function sanitizeNodeParagraphs(
   values: Array<string | null | undefined>,
@@ -793,7 +1369,18 @@ async function readReaderArtifact<T>(
   if (!record?.value) return null
 
   try {
-    return JSON.parse(record.value) as ReaderArtifactRecord<T>
+    const parsed = JSON.parse(record.value) as ReaderArtifactRecord<T>
+    if (
+      !parsed ||
+      parsed.kind !== kind ||
+      parsed.entityId !== entityId ||
+      typeof parsed.fingerprint !== 'string' ||
+      typeof parsed.updatedAt !== 'string' ||
+      !isReaderArtifactViewModelValid(kind, parsed.viewModel)
+    ) {
+      return null
+    }
+    return parsed
   } catch {
     return null
   }
@@ -805,6 +1392,7 @@ async function persistReaderArtifact<T>(
   fingerprint: string,
   viewModel: T,
   variant: ReaderArtifactVariant = 'default',
+  options?: { skipArtifactIndex?: boolean },
 ) {
   const payload: ReaderArtifactRecord<T> = {
     kind,
@@ -829,11 +1417,68 @@ await prisma.system_configs.upsert({
     return
   }
 
+  if (options?.skipArtifactIndex) {
+    return
+  }
+
   if (kind === 'node') {
     await upsertTopicArtifactIndexEntry(kind, viewModel as ReaderArtifactViewModel as NodeViewModel)
   } else {
     await upsertTopicArtifactIndexEntry(kind, viewModel as ReaderArtifactViewModel as PaperViewModel)
   }
+}
+
+function isReaderArtifactViewModelValid(
+  kind: ReaderArtifactKind,
+  viewModel: unknown,
+) {
+  if (kind !== 'node') return true
+
+  const serialized = safeSerializeReaderArtifactViewModel(viewModel)
+  if (serialized == null || hasLegacyReaderAssetPathLeak(serialized)) {
+    return false
+  }
+
+  try {
+    assertNodeViewModelContract(viewModel)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function safeSerializeReaderArtifactViewModel(viewModel: unknown) {
+  try {
+    return JSON.stringify(viewModel)
+  } catch {
+    return null
+  }
+}
+
+function hasLegacyReaderAssetPathLeak(serialized: string) {
+  return (
+    serialized.includes('images\\\\') ||
+    serialized.includes('"/uploads/images/') ||
+    serialized.includes('"imagePath":"images/') ||
+    serialized.includes('"thumbnailPath":"images/') ||
+    serialized.includes('"coverImage":"images/') ||
+    serialized.includes('"imagePath":"uploads/') ||
+    serialized.includes('"thumbnailPath":"uploads/') ||
+    serialized.includes('"coverImage":"uploads/') ||
+    serialized.includes('"imagePath":"papers/') ||
+    serialized.includes('"thumbnailPath":"papers/') ||
+    serialized.includes('"coverImage":"papers/')
+  )
+}
+
+async function dropReaderArtifact(
+  kind: ReaderArtifactKind,
+  entityId: string,
+  variant: ReaderArtifactVariant = 'default',
+) {
+  await prisma.system_configs.deleteMany({
+    where: { key: readerArtifactKey(kind, entityId, variant) },
+  })
 }
 
 async function loadReaderResearchPipelineContext(args: {
@@ -1072,17 +1717,14 @@ const node = await prisma.research_nodes.findUnique({
     effectiveStageWindowMonths,
   )
   const allowedPaperIds = collectNodeStageScopedPaperIds(node.id, temporalStageBuckets)
-
-  const relatedPaperIds = collectNodeRelatedPaperIds({
+  const resolvedNodePapers = resolveNodeReadablePaperIds({
     node,
-    stageTitle: [stage?.name, stage?.nameEn].filter(Boolean).join(' '),
     papers: topicPapers,
-    allowedPaperIds,
+    stageTitle: [stage?.name, stage?.nameEn].filter(Boolean).join(' '),
+    stageScopedPaperIds: allowedPaperIds,
   })
-  const linkedPaperIds = collectNodeLinkedPaperIds(node, allowedPaperIds)
-  const resolvedRelatedPaperIds = mergeNodePaperIdsByPriority(linkedPaperIds, relatedPaperIds)
   const relatedPaperMap = new Map(topicPapers.map((paper) => [paper.id, paper]))
-  const relatedPapers = resolvedRelatedPaperIds
+  const relatedPapers = resolvedNodePapers.resolvedPaperIds
     .map((paperId) => relatedPaperMap.get(paperId) ?? null)
     .filter((paper): paper is (typeof topicPapers)[number] => Boolean(paper))
   const researchPipeline = await loadReaderResearchPipelineContext({
@@ -1132,12 +1774,22 @@ interface ReaderArtifactDriver<T> {
   buildViewModel: (entityId: string, options?: { quick?: boolean; enhanced?: boolean }) => Promise<T>
 }
 
-const DEFERRED_READER_ARTIFACTS_DISABLED =
-  process.env.TOPIC_ARTIFACT_DISABLE_DEFERRED === '1' ||
-  process.argv.includes('--test') ||
-  process.execArgv.includes('--test') ||
-  process.env.NODE_TEST_CONTEXT === 'child-v8' ||
-  process.env.NODE_ENV === 'test'
+function deferredReaderArtifactsDisabled() {
+  if (process.env.TOPIC_ARTIFACT_DISABLE_DEFERRED === '1') {
+    return true
+  }
+
+  if (process.env.TOPIC_ARTIFACT_ALLOW_TEST_DEFERRED === '1') {
+    return false
+  }
+
+  return (
+    process.argv.includes('--test') ||
+    process.execArgv.includes('--test') ||
+    process.env.NODE_TEST_CONTEXT === 'child-v8' ||
+    process.env.NODE_ENV === 'test'
+  )
+}
 
 function readerArtifactQueueKey(
   kind: ReaderArtifactKind,
@@ -1192,35 +1844,59 @@ async function resolveReaderArtifact<T>(
   entityId: string,
   options?: { forceRebuild?: boolean; enhanced?: boolean },
 ) {
+  const resolvedVariant = driver.variant ?? 'default'
+  const shouldQueueDeferredBuild =
+    !deferredReaderArtifactsDisabled() &&
+    (resolvedVariant !== 'default' || driver.kind === 'node')
+
+  const scheduleDeferredBuild = () => {
+    if (!shouldQueueDeferredBuild) return
+
+    const launch = () =>
+      void queueReaderArtifactBuild(driver, entityId, { enhanced: options?.enhanced }).catch((error) => {
+        if (error instanceof AppError && error.statusCode === 404) {
+          return
+        }
+      })
+
+    if (driver.kind === 'node' && resolvedVariant === 'default') {
+      setTimeout(launch, DEFAULT_NODE_DEFERRED_ARTIFACT_DELAY_MS)
+      return
+    }
+
+    launch()
+  }
+
   if (options?.forceRebuild) {
     return queueReaderArtifactBuild(driver, entityId, { enhanced: options?.enhanced })
   }
 
   const fingerprintBeforeBuild = await driver.buildFingerprint(entityId)
   if (fingerprintBeforeBuild) {
-    const cached = await readReaderArtifact<T>(driver.kind, entityId, driver.variant ?? 'default')
-    if (cached?.fingerprint === fingerprintBeforeBuild) {
+    const cached = await readReaderArtifact<T>(driver.kind, entityId, resolvedVariant)
+    const cacheIsValid =
+      cached != null && isReaderArtifactViewModelValid(driver.kind, cached.viewModel)
+
+    if (cached?.fingerprint === fingerprintBeforeBuild && cacheIsValid) {
       return cached.viewModel
     }
 
-    if (cached) {
-      const quickViewModel = await persistQuickReaderArtifact(
-        driver.kind,
+    if (cached && !cacheIsValid) {
+      await dropReaderArtifact(driver.kind, entityId, resolvedVariant)
+    }
+
+      if (cached) {
+        const quickViewModel = await persistQuickReaderArtifact(
+          driver.kind,
         entityId,
         driver.buildFingerprint,
         driver.buildViewModel,
-        options?.enhanced,
-        driver.variant ?? 'default',
-      )
-      if (!DEFERRED_READER_ARTIFACTS_DISABLED) {
-        void queueReaderArtifactBuild(driver, entityId, { enhanced: options?.enhanced }).catch((error) => {
-          if (error instanceof AppError && error.statusCode === 404) {
-            return
-          }
-        })
+          options?.enhanced,
+          resolvedVariant,
+        )
+        scheduleDeferredBuild()
+        return quickViewModel
       }
-      return quickViewModel
-    }
   }
 
   const quickViewModel = await persistQuickReaderArtifact(
@@ -1229,15 +1905,9 @@ async function resolveReaderArtifact<T>(
     driver.buildFingerprint,
     driver.buildViewModel,
     options?.enhanced,
-    driver.variant ?? 'default',
+    resolvedVariant,
   )
-  if (!DEFERRED_READER_ARTIFACTS_DISABLED) {
-    void queueReaderArtifactBuild(driver, entityId, { enhanced: options?.enhanced }).catch((error) => {
-      if (error instanceof AppError && error.statusCode === 404) {
-        return
-      }
-    })
-  }
+  scheduleDeferredBuild()
   return quickViewModel
 }
 
@@ -1280,6 +1950,7 @@ async function persistQuickReaderArtifact<T>(
     buildDeferredArtifactFingerprint(fingerprint, entityId),
     viewModel,
     variant,
+    { skipArtifactIndex: true },
   )
 
   return viewModel
@@ -1327,7 +1998,7 @@ function splitParagraphs(value: string | null | undefined, maxParts = 5) {
   const compact = clipText(value ?? '', 820)
   return compact
     ? compact
-        .split(/(?<=[。！？?!])/u)
+        .split(/(?<=[銆傦紒锛?!])/u)
         .map((item) => item.trim())
         .filter(Boolean)
         .slice(0, maxParts)
@@ -1396,7 +2067,12 @@ function sanitizeStoredParagraphList(
 
   for (const value of values) {
     const normalized = cleanExtractedParagraph(value)
-    if (!normalized || looksLikeLowValueSectionBody(normalized) || seen.has(normalized)) {
+    if (
+      !normalized ||
+      looksLikeLowValueSectionBody(normalized) ||
+      looksLikeBoilerplatePaperParagraph(normalized) ||
+      seen.has(normalized)
+    ) {
       continue
     }
     seen.add(normalized)
@@ -1453,8 +2129,15 @@ function uniqueNarrativeParagraphs(values: Array<string | null | undefined>, max
   const output: string[] = []
 
   for (const value of values) {
-    const normalized = value?.replace(/\s+/gu, ' ').trim() ?? ''
-    if (!normalized || seen.has(normalized)) continue
+    const normalized = cleanExtractedParagraph(value)
+    if (
+      !normalized ||
+      looksLikeLowValueSectionBody(normalized) ||
+      looksLikeBoilerplatePaperParagraph(normalized) ||
+      seen.has(normalized)
+    ) {
+      continue
+    }
     seen.add(normalized)
     output.push(normalized)
     if (output.length >= maxParts) break
@@ -1463,53 +2146,70 @@ function uniqueNarrativeParagraphs(values: Array<string | null | undefined>, max
   return output
 }
 
+function looksLikeBoilerplatePaperParagraph(value: string | null | undefined) {
+  const normalized = normalizeReaderNarrative(value)
+  if (!normalized) return true
+  if (/^(?:source|url|doi)\s*:/iu.test(normalized)) return true
+  if (/^https?:\/\//iu.test(normalized)) return true
+  if (normalized.length <= 28 && !/[.!?:;]/u.test(normalized)) return true
+  if (
+    (normalized.match(/\b(?:figure|table|formula|appendix|chapter|section)\b/giu)?.length ?? 0) >= 3 &&
+    normalized.length < 120
+  ) {
+    return true
+  }
+  return false
+}
+
 function buildPaperEvidenceCoverageLine(paper: any) {
+  const { figureCount, tableCount, formulaCount } = paperEvidenceStats(paper)
   return [
-    paper.figures.length > 0 ? `${paper.figures.length} figure${paper.figures.length > 1 ? 's' : ''}` : '',
-    paper.tables.length > 0 ? `${paper.tables.length} table${paper.tables.length > 1 ? 's' : ''}` : '',
-    paper.formulas.length > 0 ? `${paper.formulas.length} formula${paper.formulas.length > 1 ? 's' : ''}` : '',
+    figureCount > 0 ? `${figureCount} figure${figureCount > 1 ? 's' : ''}` : '',
+    tableCount > 0 ? `${tableCount} table${tableCount > 1 ? 's' : ''}` : '',
+    formulaCount > 0 ? `${formulaCount} formula${formulaCount > 1 ? 's' : ''}` : '',
   ]
     .filter(Boolean)
     .join(', ')
 }
 
 function buildPaperEvidenceCaptionSummary(paper: any) {
+  const formulaArtifacts = paperFormulaArtifacts(paper)
   return [
     ...paper.figures.slice(0, 1).map((figure: any) => clipText(figure.caption, 120)),
     ...paper.tables.slice(0, 1).map((table: any) => clipText(table.caption || table.rawText, 120)),
-    ...paper.formulas.slice(0, 1).map((formula: any) => clipText(formula.rawText || formula.latex, 120)),
+    ...formulaArtifacts.slice(0, 1).map((formula: any) => clipText(formula.rawText || formula.latex, 120)),
   ]
     .filter(Boolean)
     .join(' ')
 }
 
-function buildFigureWhyItMatters(figure: any) {
+function buildFigureWhyItMattersEditorial(figure: any, language?: string | null) {
   const evidenceText = [figure.caption, figure.analysis].filter(Boolean).join(' ')
   if (/(?:architecture|framework|overview|pipeline|policy|encoder|decoder|occupancy)/iu.test(evidenceText)) {
-    return '这张图主要交代模型结构、状态表示或模块之间的连接方式。'
+    return bilingualText(language, '这张图把方法结构讲清楚了。', 'This figure clarifies the method architecture.')
   }
   if (/(?:trajectory|prediction|simulation|rollout|future|qualitative|scenario)/iu.test(evidenceText)) {
-    return '这张图主要展示预测或仿真输出，用来判断模型是否保留了驾驶场景的动态结构。'
+    return bilingualText(language, '这张图展示的是模型输出与场景表现。', 'This figure shows model outputs and scenario performance.')
   }
   return GENERIC_FIGURE_LABEL_RE.test((figure.caption ?? '').trim())
-    ? '这张图是论文里的关键配图，建议结合原文页码继续核对具体标注。'
-    : '这张图展示了论文声称成立的关键现象或比较结果。'
+    ? bilingualText(language, '这张图需要结合原论文查看细部标注。', 'This figure requires consulting the original paper for detailed annotations.')
+    : bilingualText(language, '这张图直接支撑正文里的核心判断。', 'This figure directly supports a core judgment in the text.')
 }
 
-function buildTableWhyItMatters(table: any) {
+function buildTableWhyItMattersEditorial(table: any, language?: string | null) {
   const evidenceText = [table.caption, table.rawText].filter(Boolean).join(' ')
   if (/(?:leaderboard|ablation|result|benchmark|mAP|ADE|FDE|IoU|score|accuracy|collision|miss rate)/iu.test(evidenceText)) {
-    return '这张表给出定量结果或消融设置，是判断方法是否真的优于基线的关键证据。'
+    return bilingualText(language, '这张表给出了最关键的结果比较。', 'This table provides the most critical result comparison.')
   }
-  return '这张表通常直接决定论文与基线之间的优劣是否成立。'
+  return bilingualText(language, '这张表适合用来做直接对照。', 'This table is suitable for direct comparison.')
 }
 
-function buildFormulaWhyItMatters(formula: any) {
+function buildFormulaWhyItMattersEditorial(formula: any, language?: string | null) {
   const evidenceText = [sanitizeFormulaLatex(formula.latex), formula.rawText].filter(Boolean).join(' ')
   if (/(?:loss|objective|min|max|likelihood|cost)/iu.test(evidenceText)) {
-    return '这个公式定义了训练目标或优化约束，决定方法究竟在学什么。'
+    return bilingualText(language, '这条公式定义了优化目标。', 'This formula defines the optimization objective.')
   }
-  return '这个公式说明了方法真正依赖的约束、目标或更新方式。'
+  return bilingualText(language, '这条公式说明了方法依赖的约束条件。', 'This formula explains the constraints the method depends on.')
 }
 
 function sanitizeFormulaLatex(value: string | null | undefined) {
@@ -1613,6 +2313,10 @@ function scoreEvidenceForArticle(item: EvidenceExplanation) {
   return score
 }
 
+function resolveEvidenceImportance(item: EvidenceExplanation) {
+  return Math.max(0, item.importance ?? scoreEvidenceForArticle(item))
+}
+
 function selectArticleEvidence(
   evidence: EvidenceExplanation[],
   limits?: {
@@ -1622,16 +2326,16 @@ function selectArticleEvidence(
     totalLimit?: number
   },
 ) {
-  const figureLimit = limits?.figureLimit ?? 2
-  const tableLimit = limits?.tableLimit ?? 2
-  const formulaLimit = limits?.formulaLimit ?? 1
-  const totalLimit = limits?.totalLimit ?? 5
+  const figureLimit = limits?.figureLimit ?? 10
+  const tableLimit = limits?.tableLimit ?? 10
+  const formulaLimit = limits?.formulaLimit ?? 10
+  const totalLimit = limits?.totalLimit ?? 10
 
   const ranked = evidence
     .filter(isRenderableEvidence)
     .map((item) => ({
       item,
-      score: item.importance ?? scoreEvidenceForArticle(item),
+      score: resolveEvidenceImportance(item),
     }))
     .sort((left, right) => right.score - left.score)
 
@@ -1660,109 +2364,206 @@ function selectArticleEvidence(
   return selected
 }
 
-function buildFallbackPaperSections(paper: any, evidence: EvidenceExplanation[]): ArticleSection[] {
+function buildFallbackPaperSections(paper: any, evidence: EvidenceExplanation[], language?: string | null): ArticleSection[] {
   const evidenceCoverage = buildPaperEvidenceCoverageLine(paper)
   const evidenceCaptionSummary = buildPaperEvidenceCaptionSummary(paper)
-  const links = resolvePaperSourceLinks({
-    arxivUrl: paper.arxivUrl,
-    pdfUrl: paper.pdfUrl,
-    pdfPath: paper.pdfPath,
-  })
 
   const sections: ArticleSection[] = [
     {
       id: 'paper-fallback-problem',
       kind: 'lead',
-      title: '问题与入口',
+      title: fallbackProblemTitle(language),
       body: uniqueNarrativeParagraphs([
         normalizePaperNarrativeText(paper.summary, 320),
         paper.explanation ? normalizePaperNarrativeText(paper.explanation, 320) : '',
-        links.originalUrl ? `Source: ${links.originalUrl}` : '',
       ]),
-      evidenceIds: buildSectionEvidenceIds(evidence, ['figure', 'table'], 2),
+      evidenceIds: buildSectionEvidenceIds(evidence, ['figure', 'table'], 3),
     },
     {
       id: 'paper-fallback-method',
       kind: 'paper-pass',
-      title: '方法与结构',
+      title: fallbackMethodTitle(language),
       body: uniqueNarrativeParagraphs([
         paper.explanation ? normalizePaperNarrativeText(paper.explanation, 320) : '',
-        paper.formulas.length > 0
-          ? `The extracted formulas help anchor the method definition in this paper.`
-          : 'The method description currently depends on summaries and extracted page text, so deeper section grounding is still missing.',
+        paperEvidenceStats(paper).formulaCount > 0
+          ? fallbackMethodFormulaText(language)
+          : fallbackMethodNarrativeText(language),
       ]),
-      evidenceIds: buildSectionEvidenceIds(evidence, ['formula', 'figure'], 2),
+      evidenceIds: buildSectionEvidenceIds(evidence, ['formula', 'figure'], 3),
     },
     {
       id: 'paper-fallback-evidence',
       kind: 'evidence',
-      title: '结果与证据',
+      title: fallbackEvidenceTitle(language),
       body: uniqueNarrativeParagraphs([
         evidenceCoverage
-          ? `Available evidence in this paper: ${evidenceCoverage}.`
-          : 'No renderable figures, tables, or formulas have been extracted yet, so the evidence chain is still thin.',
-        evidenceCaptionSummary ? `Visible evidence cues: ${evidenceCaptionSummary}` : '',
+          ? fallbackEvidenceCoverageText(language, evidenceCoverage)
+          : fallbackNoEvidenceText(language),
+        evidenceCaptionSummary ? fallbackEvidenceCaptionText(language, evidenceCaptionSummary) : '',
       ]),
-      evidenceIds: buildSectionEvidenceIds(evidence, ['figure', 'table', 'formula'], 3),
+      evidenceIds: buildSectionEvidenceIds(evidence, ['figure', 'table', 'formula'], 5),
     },
     {
       id: 'paper-fallback-boundary',
       kind: 'paper-pass',
-      title: '边界与未决问题',
+      title: fallbackBoundaryTitle(language),
       body: uniqueNarrativeParagraphs([
         paper.figures.length === 0 && paper.tables.length === 0
-          ? 'Because the paper still lacks extracted comparative figures or tables, the current reading surface cannot fully verify its claims against competing methods.'
-          : 'The paper now exposes local evidence, but cross-paper comparison still needs the node article to close the loop.',
-        'This fallback structure is used because stable native sections are still unavailable for the current PDF.',
+          ? fallbackLowEvidenceText(language)
+          : fallbackHasEvidenceText(language),
+        fallbackNodeContextText(language),
       ]),
-      evidenceIds: buildSectionEvidenceIds(evidence, ['section', 'figure', 'table', 'formula'], 2),
+      evidenceIds: buildSectionEvidenceIds(evidence, ['section', 'figure', 'table', 'formula'], 3),
     },
   ]
 
   return sections.filter((section) => section.body.length > 0)
 }
 
-function paperRoute(paperId: string, anchorId?: string, evidenceId?: string) {
-  const params = new URLSearchParams()
-  if (anchorId) params.set('anchor', anchorId)
-  if (evidenceId) params.set('evidence', evidenceId)
-  const query = params.toString()
-  return query ? `/paper/${paperId}?${query}` : `/paper/${paperId}`
+type ReaderRouteContext = {
+  nodeId?: string | null
+  topicId?: string | null
+  language?: string | null
 }
 
-function nodeRoute(nodeId: string) {
-  return `/node/${nodeId}`
+function buildAnchoredRoute(basePath: string, params?: Record<string, string | null | undefined>) {
+  const searchParams = new URLSearchParams()
+  for (const [key, value] of Object.entries(params ?? {})) {
+    if (!value) continue
+    searchParams.set(key, value)
+  }
+  const query = searchParams.toString()
+  return query ? `${basePath}?${query}` : basePath
+}
+
+function topicRoute(topicId: string, params?: Record<string, string | null | undefined>) {
+  return buildAnchoredRoute(`/topic/${topicId}`, params)
+}
+
+function nodeRoute(nodeId: string, params?: Record<string, string | null | undefined>) {
+  return buildAnchoredRoute(`/node/${nodeId}`, params)
+}
+
+function resolveLinkedNodeId(paper: any) {
+  const nodeCandidates = [
+    paper?.nodeId,
+    paper?.node?.id,
+    ...(Array.isArray(paper?.node_papers)
+      ? paper.node_papers.flatMap((entry: any) => [
+          entry?.nodeId,
+          entry?.node?.id,
+          entry?.research_nodes?.id,
+          entry?.researchNode?.id,
+        ])
+      : []),
+  ]
+
+  return (
+    nodeCandidates.find(
+      (candidate): candidate is string => typeof candidate === 'string' && candidate.trim().length > 0,
+    ) ?? null
+  )
+}
+
+function resolvePaperRouteContext(
+  paper: any,
+  preferred?: ReaderRouteContext,
+): ReaderRouteContext {
+  const nodeId = preferred?.nodeId ?? resolveLinkedNodeId(paper)
+  const topicId =
+    preferred?.topicId ??
+    paper?.topicId ??
+    paper?.topic?.id ??
+    paper?.topics?.id ??
+    null
+
+  if (nodeId) {
+    return {
+      nodeId,
+      topicId,
+    }
+  }
+
+  if (topicId) {
+    return {
+      nodeId: null,
+      topicId,
+    }
+  }
+
+  return {}
+}
+
+function paperRoute(
+  args: ReaderRouteContext & {
+    paperId: string
+    anchorId?: string
+    evidenceId?: string
+  },
+) {
+  if (args.nodeId) {
+    return nodeRoute(args.nodeId, {
+      anchor: args.evidenceId ? undefined : args.anchorId ?? `paper:${args.paperId}`,
+      evidence: args.evidenceId,
+    })
+  }
+
+  if (args.topicId) {
+    return topicRoute(args.topicId, {
+      anchor: args.evidenceId ? undefined : args.anchorId ?? `paper:${args.paperId}`,
+      evidence: args.evidenceId,
+    })
+  }
+
+  return '/'
+}
+
+function parseJsonUnknownArray(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value
+  if (typeof value !== 'string' || !value.trim()) return []
+
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
 }
 
 function paperRoleLabel(index: number, isPrimary: boolean) {
-  if (isPrimary) return '主线论文'
-  if (index === 1) return '补强论文'
-  if (index === 2) return '横向对照'
-  return '延展论文'
+  if (isPrimary) return 'Mainline paper'
+  if (index === 1) return 'Supporting paper'
+  if (index === 2) return 'Comparison paper'
+  return 'Extension paper'
 }
 
 function buildReviewerCritique(kind: 'paper' | 'node', bullets: string[]): ReviewerCritique {
   return {
-    title: '严厉审稿人会追问什么',
+    title: 'Reviewer questions to keep asking',
     summary:
       kind === 'node'
-        ? '这一节点是否真的已经被多篇论文共同坐实，关键取决于跨论文比较是否充分、证据是否互相支持，以及仍未解决的问题是否被正面写清。'
-        : '这篇论文是否站得住，不只取决于方法是否新，还取决于证据是否足够、比较是否公平、结论是否超出了实验真正支持的范围。',
+        ? 'A node only stands if multiple papers truly push the same line forward, the cross-paper comparison is fair, and the remaining open problems are stated clearly.'
+        : 'A paper only stands if its evidence is strong enough, the comparison setting is fair, and the conclusion does not overreach what the experiments actually support.',
     bullets,
   }
 }
 
-function buildSectionEvidenceIds(evidence: EvidenceExplanation[], kinds: Array<'section' | 'figure' | 'table' | 'formula'>, limit = 2) {
+function buildSectionEvidenceIds(evidence: EvidenceExplanation[], kinds: Array<'section' | 'figure' | 'table' | 'formula' | 'figureGroup'>, limit = 3) {
   return evidence.filter((item) => kinds.includes(item.type)).slice(0, limit).map((item) => item.anchorId)
 }
 
-function _buildPaperEvidence(paper: any): EvidenceExplanation[] {
+function _buildPaperEvidence(paper: any, routeContext?: ReaderRouteContext): EvidenceExplanation[] {
+  const resolvedRouteContext = resolvePaperRouteContext(paper, routeContext)
   const renderableSections = getRenderablePaperSections(paper)
   return [
     ...renderableSections.map((section: any) => ({
       anchorId: `section:${section.id}`,
       type: 'section' as const,
-      route: paperRoute(paper.id, `section:${section.id}`),
+      route: paperRoute({
+        ...resolvedRouteContext,
+        paperId: paper.id,
+        evidenceId: `section:${section.id}`,
+      }),
       title: section.renderTitle,
       label: `${paper.titleZh || paper.title} / ${section.renderTitle}`,
       quote: clipText(section.renderParagraphs.join('\n\n'), 220),
@@ -1770,12 +2571,16 @@ function _buildPaperEvidence(paper: any): EvidenceExplanation[] {
       page: null,
       sourcePaperId: paper.id,
       sourcePaperTitle: paper.titleZh || paper.title,
-      whyItMatters: '这一章节提供了论证链中的正文依据。',
+      whyItMatters: 'This section provides body evidence that the article can quote and interpret directly.',
     })),
     ...paper.figures.map((figure: any) => ({
       anchorId: `figure:${figure.id}`,
       type: 'figure' as const,
-      route: paperRoute(paper.id, undefined, `figure:${figure.id}`),
+      route: paperRoute({
+        ...resolvedRouteContext,
+        paperId: paper.id,
+        evidenceId: `figure:${figure.id}`,
+      }),
       title: `Figure ${figure.number}`,
       label: `${paper.titleZh || paper.title} / Figure ${figure.number}`,
       quote: clipText(figure.caption),
@@ -1783,13 +2588,18 @@ function _buildPaperEvidence(paper: any): EvidenceExplanation[] {
       page: figure.page ?? null,
       sourcePaperId: paper.id,
       sourcePaperTitle: paper.titleZh || paper.title,
-      imagePath: figure.imagePath,
-      whyItMatters: '这张图展示了论文声称成立的关键现象或比较结果。',
+      imagePath: resolvePaperAssetPath({ assetPath: figure.imagePath, paperId: paper.id }) ?? null,
+      thumbnailPath: resolvePaperAssetPath({ assetPath: figure.thumbnailPath, paperId: paper.id }) ?? null,
+      whyItMatters: 'This figure shows the key phenomenon or comparison result that the paper relies on.',
     })),
     ...paper.tables.map((table: any) => ({
       anchorId: `table:${table.id}`,
       type: 'table' as const,
-      route: paperRoute(paper.id, undefined, `table:${table.id}`),
+      route: paperRoute({
+        ...resolvedRouteContext,
+        paperId: paper.id,
+        evidenceId: `table:${table.id}`,
+      }),
       title: `Table ${table.number}`,
       label: `${paper.titleZh || paper.title} / Table ${table.number}`,
       quote: clipText(table.caption),
@@ -1797,14 +2607,18 @@ function _buildPaperEvidence(paper: any): EvidenceExplanation[] {
       page: table.page ?? null,
       sourcePaperId: paper.id,
       sourcePaperTitle: paper.titleZh || paper.title,
-      whyItMatters: '这张表通常直接决定论文与基线之间的优劣是否成立。',
+      whyItMatters: 'This table usually decides whether the claimed advantage over baselines actually holds.',
     })),
-    ...paper.formulas.map((formula: any) => {
+    ...paperFormulaArtifacts(paper).map((formula: any) => {
       const normalizedLatex = sanitizeFormulaLatex(formula.latex)
       return {
         anchorId: `formula:${formula.id}`,
         type: 'formula' as const,
-        route: paperRoute(paper.id, undefined, `formula:${formula.id}`),
+        route: paperRoute({
+          ...resolvedRouteContext,
+          paperId: paper.id,
+          evidenceId: `formula:${formula.id}`,
+        }),
         title: `Formula ${formula.number}`,
         label: `${paper.titleZh || paper.title} / Formula ${formula.number}`,
         quote: clipText(formula.rawText || normalizedLatex),
@@ -1813,18 +2627,86 @@ function _buildPaperEvidence(paper: any): EvidenceExplanation[] {
         sourcePaperId: paper.id,
         sourcePaperTitle: paper.titleZh || paper.title,
         formulaLatex: looksLikeFormulaLatexNoise(normalizedLatex) ? null : normalizedLatex,
-        whyItMatters: '这个公式说明了方法真正依赖的约束、目标或更新方式。',
+        whyItMatters: '这条公式交代了方法背后的真实约束、目标函数或更新规则。',
       }
     }),
   ]
 }
 
-function buildRenderablePaperEvidence(paper: any): EvidenceExplanation[] {
+function finalizePaperEvidence(
+  paper: any,
+  evidence: EvidenceExplanation[],
+  routeContext?: ReaderRouteContext,
+) {
+  const resolvedRouteContext = resolvePaperRouteContext(paper, routeContext)
+  const figureById = new Map<
+    string,
+    { imagePath?: string | null; thumbnailPath?: string | null }
+  >(paper.figures.map((figure: any) => [String(figure.id), figure]))
+  const tableById = new Map<
+    string,
+    { headers?: string | null; rows?: string | null }
+  >(paper.tables.map((table: any) => [String(table.id), table]))
+
+  return evidence.map((item) => {
+    const route =
+      item.type === 'section'
+        ? paperRoute({
+            ...resolvedRouteContext,
+            paperId: paper.id,
+            evidenceId: item.anchorId,
+          })
+        : item.type === 'figure' || item.type === 'table' || item.type === 'formula'
+          ? paperRoute({
+              ...resolvedRouteContext,
+              paperId: paper.id,
+              evidenceId: item.anchorId,
+            })
+          : paperRoute({
+              ...resolvedRouteContext,
+              paperId: paper.id,
+              anchorId: item.anchorId,
+            })
+
+    if (item.type === 'figure') {
+      const figure = figureById.get(item.anchorId.replace(/^figure:/u, ''))
+      return {
+        ...item,
+        route,
+        imagePath:
+          resolvePaperAssetPath({ assetPath: item.imagePath ?? figure?.imagePath ?? null, paperId: paper.id }) ??
+          null,
+        thumbnailPath:
+          resolvePaperAssetPath({
+            assetPath: item.thumbnailPath ?? figure?.thumbnailPath ?? null,
+            paperId: paper.id,
+          }) ?? null,
+      }
+    }
+
+    if (item.type === 'table') {
+      const table = tableById.get(item.anchorId.replace(/^table:/u, ''))
+      return {
+        ...item,
+        route,
+        tableHeaders: item.tableHeaders ?? parseJsonArray(table?.headers),
+        tableRows: item.tableRows ?? parseJsonUnknownArray(table?.rows),
+      }
+    }
+
+    return {
+      ...item,
+      route,
+    }
+  })
+}
+
+function buildRenderablePaperEvidence(paper: any, routeContext?: ReaderRouteContext): EvidenceExplanation[] {
   const renderableSections = getRenderablePaperSections(paper)
   const sectionEvidence = renderableSections.map((section: any) => ({
     anchorId: `section:${section.id}`,
     type: 'section' as const,
-    route: paperRoute(paper.id, `section:${section.id}`),
+    route: '',
     title: section.renderTitle,
     label: `${paper.titleZh || paper.title} / ${section.renderTitle}`,
     quote: clipText(section.renderParagraphs.join('\n\n'), 220),
@@ -1832,14 +2714,14 @@ function buildRenderablePaperEvidence(paper: any): EvidenceExplanation[] {
     page: null,
     sourcePaperId: paper.id,
     sourcePaperTitle: paper.titleZh || paper.title,
-    whyItMatters: '这一章节提供了论证链中的正文依据。',
+    whyItMatters: 'This section gives the article a grounded place in the original body text.',
     importance: 6,
   }))
 
   const figureEvidence = paper.figures.map((figure: any) => ({
     anchorId: `figure:${figure.id}`,
     type: 'figure' as const,
-    route: paperRoute(paper.id, undefined, `figure:${figure.id}`),
+    route: '',
     title: `Figure ${figure.number}`,
     label: `${paper.titleZh || paper.title} / Figure ${figure.number}`,
     quote: clipText(figure.caption),
@@ -1847,14 +2729,14 @@ function buildRenderablePaperEvidence(paper: any): EvidenceExplanation[] {
     page: figure.page ?? null,
     sourcePaperId: paper.id,
     sourcePaperTitle: paper.titleZh || paper.title,
-    imagePath: figure.imagePath,
-    whyItMatters: buildFigureWhyItMatters(figure),
+    imagePath: resolvePaperAssetPath({ assetPath: figure.imagePath, paperId: paper.id }) ?? null,
+    whyItMatters: buildFigureWhyItMattersEditorial(figure, paper.topic?.language),
   }))
 
   const tableEvidence = paper.tables.map((table: any) => ({
     anchorId: `table:${table.id}`,
     type: 'table' as const,
-    route: paperRoute(paper.id, undefined, `table:${table.id}`),
+    route: '',
     title: `Table ${table.number}`,
     label: `${paper.titleZh || paper.title} / Table ${table.number}`,
     quote: clipText(table.caption),
@@ -1862,16 +2744,16 @@ function buildRenderablePaperEvidence(paper: any): EvidenceExplanation[] {
     page: table.page ?? null,
     sourcePaperId: paper.id,
     sourcePaperTitle: paper.titleZh || paper.title,
-    whyItMatters: buildTableWhyItMatters(table),
+    whyItMatters: buildTableWhyItMattersEditorial(table, paper.topic?.language),
   }))
 
-  const formulaEvidence = paper.formulas.map((formula: any) => {
+  const formulaEvidence = paperFormulaArtifacts(paper).map((formula: any) => {
     const normalizedLatex = sanitizeFormulaLatex(formula.latex)
 
     return {
       anchorId: `formula:${formula.id}`,
       type: 'formula' as const,
-      route: paperRoute(paper.id, undefined, `formula:${formula.id}`),
+      route: '',
       title: `Formula ${formula.number}`,
       label: `${paper.titleZh || paper.title} / Formula ${formula.number}`,
       quote: clipText(formula.rawText || normalizedLatex),
@@ -1880,27 +2762,366 @@ function buildRenderablePaperEvidence(paper: any): EvidenceExplanation[] {
       sourcePaperId: paper.id,
       sourcePaperTitle: paper.titleZh || paper.title,
       formulaLatex: looksLikeFormulaLatexNoise(normalizedLatex) ? null : normalizedLatex,
-      whyItMatters: buildFormulaWhyItMatters(formula),
+      whyItMatters: buildFormulaWhyItMattersEditorial(formula, paper.topic?.language),
     }
   })
 
-  return [...sectionEvidence, ...figureEvidence, ...tableEvidence, ...formulaEvidence].map((item) => ({
-    ...item,
-    importance: item.importance ?? scoreEvidenceForArticle(item),
-  }))
+  return finalizePaperEvidence(
+    paper,
+    [...sectionEvidence, ...figureEvidence, ...tableEvidence, ...formulaEvidence].map((item) => ({
+      ...item,
+      importance: resolveEvidenceImportance(item),
+    })),
+    routeContext,
+  )
+}
+
+function inferResearchConfidence(
+  evidence: EvidenceExplanation[],
+): 'high' | 'medium' | 'low' | 'speculative' {
+  if (evidence.length === 0) return 'speculative'
+
+  const averageImportance =
+    evidence.reduce((sum, item) => sum + (item.importance ?? 5), 0) / evidence.length
+
+  if (averageImportance >= 8) return 'high'
+  if (averageImportance >= 5) return 'medium'
+  return 'low'
+}
+
+function inferProblemStatusFromResults(
+  problemContent: string,
+  resultsContent?: string,
+): 'solved' | 'partial' | 'open' {
+  const normalizedProblem = normalizeReaderNarrative(problemContent).toLowerCase()
+  if (/(?:宸茶В鍐硘鎴愬姛瑙ｅ喅|褰诲簳瑙ｅ喅|solved|successfully)/iu.test(normalizedProblem)) return 'solved'
+  if (/(?:閮ㄥ垎|鏀瑰杽|improved|partial|progress)/iu.test(normalizedProblem)) return 'partial'
+  if (!resultsContent) return 'open'
+
+  const normalizedResults = normalizeReaderNarrative(resultsContent).toLowerCase()
+  if (/(?:鎴愬姛|瀹炵幇|杈惧埌|solved|achieved|effectively)/iu.test(normalizedResults)) return 'solved'
+  if (/(?:閮ㄥ垎|鏀瑰杽|鎻愬崌|partial|improved|progress)/iu.test(normalizedResults)) return 'partial'
+  return 'open'
+}
+
+function extractResearchMethodDimensions(
+  entries: Array<{
+    summary: string
+    keyPoints: string[]
+  }>,
+) {
+  const dimensions = new Set<string>()
+
+  for (const entry of entries) {
+    for (const point of entry.keyPoints.slice(0, 3)) {
+      const trimmed = point.split(/[锛?锛?]/u)[0]?.trim() ?? ''
+      if (trimmed.length >= 2 && trimmed.length <= 18) {
+        dimensions.add(trimmed)
+      }
+    }
+  }
+
+  return Array.from(dimensions).slice(0, 6)
+}
+
+function stripResearchEvidenceMarkers(value: string) {
+  return value.replace(/\[\[(figure|table|formula):[a-zA-Z0-9_-]+\]\]/gu, ' ')
+}
+
+function normalizeResearchEvidenceAnchorIds(anchorIds: string[]) {
+  return Array.from(new Set(anchorIds.map((anchorId) => anchorId.trim()).filter(Boolean)))
+}
+
+function extractRenderableEvidenceAnchorIds(
+  subsections: EnhancedPaperArticleBlock['subsections'],
+) {
+  return normalizeResearchEvidenceAnchorIds(
+    subsections.flatMap((subsection) =>
+      subsection.evidenceIds.filter((anchorId) =>
+        anchorId.startsWith('figure:') ||
+        anchorId.startsWith('table:') ||
+        anchorId.startsWith('formula:'),
+      ),
+    ),
+  )
+}
+
+function buildResearchPaperBriefs(
+  papers: EnhancedPaperArticleBlock[],
+  evidenceAnchorsByPaperId: Map<string, string[]>,
+): NodeResearchPaperBrief[] {
+  return papers.map((paper) => {
+    const subsectionEvidenceAnchorIds = extractRenderableEvidenceAnchorIds(paper.subsections)
+    const fallbackEvidenceAnchorIds = evidenceAnchorsByPaperId.get(paper.paperId) ?? []
+    const evidenceAnchorIds = normalizeResearchEvidenceAnchorIds([
+      ...subsectionEvidenceAnchorIds,
+      ...fallbackEvidenceAnchorIds,
+    ])
+    const summarySource = [
+      paper.introduction,
+      ...paper.subsections
+        .filter((subsection) =>
+          subsection.kind === 'problem' ||
+          subsection.kind === 'method' ||
+          subsection.kind === 'results',
+        )
+        .map((subsection) => subsection.content)
+        .slice(0, 3),
+    ].join('\n')
+    const contributionSource =
+      paper.subsections.find((subsection) => subsection.kind === 'contribution')?.content ??
+      paper.conclusion
+
+    return {
+      paperId: paper.paperId,
+      paperTitle: paper.title,
+      role: paper.role,
+      publishedAt: paper.publishedAt,
+      summary: clipText(
+        normalizeReaderNarrative(stripResearchEvidenceMarkers(summarySource)),
+        240,
+      ),
+      contribution: clipText(
+        normalizeReaderNarrative(stripResearchEvidenceMarkers(contributionSource)),
+        180,
+      ),
+      evidenceAnchorIds,
+      keyFigureIds: evidenceAnchorIds.filter((anchorId) => anchorId.startsWith('figure:')).slice(0, 5),
+      keyTableIds: evidenceAnchorIds.filter((anchorId) => anchorId.startsWith('table:')).slice(0, 5),
+      keyFormulaIds: evidenceAnchorIds.filter((anchorId) => anchorId.startsWith('formula:')).slice(0, 5),
+    }
+  })
+}
+
+function buildResearchEvidenceChains(
+  papers: EnhancedPaperArticleBlock[],
+): NodeResearchEvidenceChain[] {
+  return papers.flatMap((paper) =>
+    paper.subsections
+      .map((subsection) => {
+        const evidenceAnchorIds = normalizeResearchEvidenceAnchorIds(
+          subsection.evidenceIds.filter((anchorId) =>
+            anchorId.startsWith('figure:') ||
+            anchorId.startsWith('table:') ||
+            anchorId.startsWith('formula:'),
+          ),
+        )
+
+        if (evidenceAnchorIds.length === 0) return null
+
+        return {
+          paperId: paper.paperId,
+          paperTitle: paper.title,
+          subsectionKind: subsection.kind,
+          subsectionTitle: subsection.title,
+          summary: clipText(
+            normalizeReaderNarrative(stripResearchEvidenceMarkers(subsection.content)),
+            180,
+          ),
+          evidenceAnchorIds,
+        } satisfies NodeResearchEvidenceChain
+      })
+      .filter((entry): entry is NodeResearchEvidenceChain => Boolean(entry)),
+  )
+}
+
+function buildResearchEvolution(
+  transitions: EnhancedPaperTransitionBlock[],
+  paperBriefs: NodeResearchPaperBrief[],
+): NodeResearchEvolutionStep[] {
+  const paperBriefMap = new Map(paperBriefs.map((brief) => [brief.paperId, brief] as const))
+
+  return transitions.map((transition) => {
+    const targetBrief = paperBriefMap.get(transition.toPaperId)
+    return {
+      paperId: transition.toPaperId,
+      paperTitle: transition.toPaperTitle,
+      contribution: clipText(normalizeReaderNarrative(transition.content), 180),
+      improvementOverPrevious: `${transition.fromPaperTitle} -> ${transition.toPaperTitle}`,
+      fromPaperId: transition.fromPaperId,
+      fromPaperTitle: transition.fromPaperTitle,
+      toPaperId: transition.toPaperId,
+      toPaperTitle: transition.toPaperTitle,
+      transitionType: transition.transitionType,
+      anchorId: targetBrief?.evidenceAnchorIds[0],
+      evidenceAnchorIds: targetBrief?.evidenceAnchorIds.slice(0, 4) ?? [],
+    }
+  })
+}
+
+function buildNodeResearchView(args: {
+  evidence: EvidenceExplanation[]
+  enhancedArticleFlow?: EnhancedNodeArticleFlowBlock[]
+  critique: ReviewerCritique
+  coreJudgment?: { content: string; contentEn: string }
+  papers?: any[]
+}) {
+  const sortedEvidence = [...args.evidence].sort(
+    (left, right) => resolveEvidenceImportance(right) - resolveEvidenceImportance(left),
+  )
+  const renderableEvidence = sortedEvidence
+    .filter(isRenderableEvidence)
+    .filter((item) => !looksLikeEvidenceNoise(item))
+  const paperCount = args.papers?.length || 1
+  const scaledFigureLimit = Math.max(10, paperCount * 3)
+  const scaledTableLimit = Math.max(10, paperCount * 2)
+  const scaledFormulaLimit = Math.max(10, paperCount * 2)
+  const scaledTotalLimit = Math.max(20, paperCount * 6)
+  const prioritizedEvidence = selectArticleEvidence(renderableEvidence, {
+    figureLimit: scaledFigureLimit,
+    tableLimit: scaledTableLimit,
+    formulaLimit: scaledFormulaLimit,
+    totalLimit: scaledTotalLimit,
+  })
+  const backupEvidence = renderableEvidence.filter((item) => resolveEvidenceImportance(item) > 0)
+  const perPaperCoverageEvidence = Array.from(
+    new Map(
+      backupEvidence
+        .filter((item) => typeof item.sourcePaperId === 'string' && item.sourcePaperId.trim().length > 0)
+        .map((item) => [item.sourcePaperId as string, item] as const),
+    ).values(),
+  )
+  const evidenceAnchorsByPaperId = new Map<string, string[]>()
+  for (const item of backupEvidence) {
+    const paperId = typeof item.sourcePaperId === 'string' ? item.sourcePaperId : ''
+    if (!paperId) continue
+    const current = evidenceAnchorsByPaperId.get(paperId) ?? []
+    if (!current.includes(item.anchorId)) {
+      current.push(item.anchorId)
+    }
+    evidenceAnchorsByPaperId.set(paperId, current)
+  }
+  const focusEvidenceLimit = Math.max(12, paperCount * 3)
+  const focusEvidence = Array.from(
+    new Map(
+      [...perPaperCoverageEvidence, ...prioritizedEvidence, ...backupEvidence].map(
+        (item) => [item.anchorId, item] as const,
+      ),
+    ).values(),
+  ).slice(0, focusEvidenceLimit)
+  const featuredAnchorIds = focusEvidence.slice(0, Math.max(2, paperCount)).map((item) => item.anchorId)
+  const supportingAnchorIds = focusEvidence.slice(Math.max(2, paperCount), focusEvidenceLimit).map((item) => item.anchorId)
+  const evidenceByAnchorId = new Map(sortedEvidence.map((item) => [item.anchorId, item] as const))
+  const featured = featuredAnchorIds
+    .map((anchorId) => evidenceByAnchorId.get(anchorId))
+    .filter((item): item is EvidenceExplanation => Boolean(item))
+  const supporting = supportingAnchorIds
+    .map((anchorId) => evidenceByAnchorId.get(anchorId))
+    .filter((item): item is EvidenceExplanation => Boolean(item))
+  const paperArticles =
+    args.enhancedArticleFlow?.filter(
+      (block): block is EnhancedPaperArticleBlock => block.type === 'paper-article',
+    ) ?? []
+  const paperTransitions =
+    args.enhancedArticleFlow?.filter(
+      (block): block is EnhancedPaperTransitionBlock => block.type === 'paper-transition',
+    ) ?? []
+  const paperBriefs = buildResearchPaperBriefs(paperArticles, evidenceAnchorsByPaperId)
+  const evidenceChains = buildResearchEvidenceChains(paperArticles)
+
+  const methodEntries =
+    paperArticles
+      .flatMap((block) =>
+        block.subsections
+          .filter((subsection) => subsection.kind === 'method')
+          .map((subsection) => ({
+            paperId: block.paperId,
+            paperTitle: block.title,
+            publishedAt: block.publishedAt,
+            title: subsection.title,
+            titleEn: subsection.titleEn,
+            summary: clipText(normalizeReaderNarrative(subsection.content), 180),
+            keyPoints: subsection.keyPoints.slice(0, 4),
+          })),
+      )
+  const evolution = buildResearchEvolution(paperTransitions, paperBriefs)
+
+  const problemItems =
+    paperArticles
+      .flatMap((block) => {
+        const resultSections = block.subsections.filter((subsection) => subsection.kind === 'results')
+        const resultsContent = resultSections.map((subsection) => subsection.content).join('\n')
+
+        return block.subsections
+          .filter((subsection) => subsection.kind === 'problem')
+          .map((subsection) => ({
+            paperId: block.paperId,
+            paperTitle: block.title,
+            title: subsection.title,
+            titleEn: subsection.titleEn,
+            status: inferProblemStatusFromResults(subsection.content, resultsContent),
+          }))
+      })
+
+  const openQuestions = args.critique.bullets
+    .filter((bullet) => /(?:future|open|need|remain|question|gap|boundary)/iu.test(bullet))
+    .slice(0, 5) ??
+    args.critique.bullets
+      .filter((bullet) => /(?:寮€鏀緗future|open|need|remain|缂哄彛|闂)/iu.test(bullet))
+      .slice(0, 5)
+
+  const quickTagSource =
+    methodEntries.flatMap((entry) => entry.keyPoints).slice(0, 6).length > 0
+      ? methodEntries.flatMap((entry) => entry.keyPoints)
+      : sortedEvidence.map((item) =>
+          item.type === 'section'
+            ? 'section' : item.type === 'figure' ? 'figure' : item.type === 'table' ? 'table' : 'formula',
+        )
+  const quickTags = Array.from(
+    new Set(quickTagSource.map((item) => normalizeReaderNarrative(item)).filter(Boolean)),
+  ).slice(0, 6)
+
+  return {
+    evidence: {
+      featuredAnchorIds,
+      supportingAnchorIds,
+      featured,
+      supporting,
+      paperBriefs,
+      evidenceChains,
+      coverage: {
+        totalEvidenceCount: sortedEvidence.length,
+        renderableEvidenceCount: renderableEvidence.length,
+        figureCount: sortedEvidence.filter((item) => item.type === 'figure').length,
+        tableCount: sortedEvidence.filter((item) => item.type === 'table').length,
+        formulaCount: sortedEvidence.filter((item) => item.type === 'formula').length,
+        figureGroupCount: sortedEvidence.filter((item) => item.type === 'figureGroup').length,
+        sectionCount: sortedEvidence.filter((item) => item.type === 'section').length,
+        featuredCount: featured.length,
+        supportingCount: supporting.length,
+      },
+    },
+    methods: {
+      entries: methodEntries,
+      evolution,
+      dimensions: extractResearchMethodDimensions(methodEntries),
+    },
+    problems: {
+      items: problemItems,
+      openQuestions,
+    },
+    coreJudgment: args.coreJudgment
+      ? {
+          ...args.coreJudgment,
+          confidence: inferResearchConfidence(args.evidence),
+          quickTags,
+        }
+      : null,
+  } satisfies NonNullable<NodeViewModel['researchView']>
 }
 
 function buildPaperCritique(paper: any): ReviewerCritique {
+  const { formulaCount } = paperEvidenceStats(paper)
   return buildReviewerCritique('paper', [
     paper.figures.length === 0
-      ? '关键可视化证据偏少，结论更像依赖叙述而不是直接证据。'
-      : '图像证据虽然存在，但仍需确认是否真正覆盖最关键的比较场景。',
+      ? 'Key visual evidence is still thin, so the conclusion risks leaning on narrative more than direct proof.'
+      : 'Even when figures exist, they still need to be checked against the most decisive comparison setting.',
     paper.tables.length === 0
-      ? '缺少系统对比表，方法优越性是否稳定仍然可疑。'
-      : '表格结果还需要继续追问统计显著性、公平设置和评价指标选择。',
-    paper.formulas.length === 0
-      ? '方法描述若缺少清晰公式或机制定义，复现边界会变得模糊。'
-      : '即使给出了公式，也仍要检查符号假设与推导跳步是否说清楚。',
+      ? 'Without a systematic comparison table, the claimed advantage over baselines remains fragile.'
+      : 'The table results still need scrutiny around significance, fairness, and metric choice.',
+    formulaCount === 0
+      ? 'When a method lacks a clear formula or mechanism definition, its reproducibility boundary becomes vague.'
+      : 'Even with formulas present, the assumptions and derivation steps still need to be checked carefully.',
   ])
 }
 
@@ -1908,12 +3129,12 @@ function buildNodeCritique(node: any, papers: any[]): ReviewerCritique {
   const paperCount = papers.length
   return buildReviewerCritique('node', [
     paperCount > 1
-      ? '节点内多篇论文虽然能形成主线，但是否真的彼此推进，仍要严格比较任务设定、评价指标和数据条件。'
-      : '如果节点目前主要由一篇论文支撑，那么“节点成立”本身仍然偏脆弱。',
+      ? 'Even when several papers form a visible line, we still need to check whether they genuinely push one another forward under comparable settings.'
+      : 'If the node is mainly supported by a single paper, the node itself is still structurally fragile.',
     papers.some((paper) => paper.figures.length === 0 && paper.tables.length === 0)
-      ? '部分论文缺少足够的可视化或表格证据，节点整体证据链不够均衡。'
-      : '即便每篇论文都有图表，也要警惕不同论文之间的证据并不总能直接横比。',
-    '节点总结不能只停在“这些论文都很重要”，还必须明确哪些问题已被推进，哪些问题其实只是被重新表述。',
+      ? 'Some papers still lack enough visual or tabular evidence, so the node-level evidence chain remains uneven.'
+      : 'Even when every paper has figures or tables, the evidence may still not be directly comparable across papers.',
+    'A node summary cannot stop at saying that these papers matter; it must say exactly which question was advanced and which question was merely reframed.',
   ])
 }
 
@@ -1955,7 +3176,7 @@ function sanitizeNodeComparisonOutput(args: {
     points:
       args.pass.points
         .map((point, index) => ({
-          label: normalizeReaderNarrative(point.label) || args.fallback.points[index]?.label || `比较点 ${index + 1}`,
+          label: normalizeReaderNarrative(point.label) || args.fallback.points[index]?.label || `姣旇緝鐐?${index + 1}`,
           detail: looksLikeStaleNodeNarrative(point.detail, args.paperCount)
             ? ''
             : clipText(point.detail, 220),
@@ -1963,7 +3184,7 @@ function sanitizeNodeComparisonOutput(args: {
         .filter((point) => point.detail).length > 0
         ? args.pass.points
             .map((point, index) => ({
-              label: normalizeReaderNarrative(point.label) || args.fallback.points[index]?.label || `比较点 ${index + 1}`,
+              label: normalizeReaderNarrative(point.label) || args.fallback.points[index]?.label || `姣旇緝鐐?${index + 1}`,
               detail: looksLikeStaleNodeNarrative(point.detail, args.paperCount)
                 ? ''
                 : clipText(point.detail, 220),
@@ -2082,10 +3303,10 @@ function buildNodeEditorialWriteback(args: {
   }
 }
 
-function buildPaperArticleSections(paper: any, evidence: EvidenceExplanation[]): ArticleSection[] {
+function buildPaperArticleSections(paper: any, evidence: EvidenceExplanation[], language?: string | null): ArticleSection[] {
   const renderableSections = getRenderablePaperSections(paper)
   if (renderableSections.length === 0) {
-    return buildFallbackPaperSections(paper, evidence)
+    return buildFallbackPaperSections(paper, evidence, language)
   }
 
   return renderableSections.map((section: any, index: number) => ({
@@ -2098,10 +3319,10 @@ function buildPaperArticleSections(paper: any, evidence: EvidenceExplanation[]):
     paperTitle: paper.titleZh || paper.title,
     evidenceIds:
       index === 0
-        ? buildSectionEvidenceIds(evidence, ['figure', 'table'], 2)
+        ? buildSectionEvidenceIds(evidence, ['figure', 'table'], 3)
         : index === 1
-          ? buildSectionEvidenceIds(evidence, ['formula', 'figure'], 2)
-          : buildSectionEvidenceIds(evidence, ['section', 'figure', 'table', 'formula'], 2),
+          ? buildSectionEvidenceIds(evidence, ['formula', 'figure'], 3)
+          : buildSectionEvidenceIds(evidence, ['section', 'figure', 'table', 'formula'], 3),
   }))
 }
 
@@ -2110,7 +3331,7 @@ function buildPaperSectionFlowBlocks(paper: any): ArticleFlowBlock[] {
   const evidence = buildRenderablePaperEvidence(paper)
   const sectionLimit = paper.paper_sections?.length > 6 ? 2 : 3
 
-  return buildPaperArticleSections(paper, evidence).slice(0, sectionLimit).map((section) => ({
+  return buildPaperArticleSections(paper, evidence, paper.topic?.language).slice(0, sectionLimit).map((section) => ({
     id: `paper-section-flow-${section.id}`,
     type: 'text' as const,
     title: section.title,
@@ -2121,7 +3342,12 @@ function buildPaperSectionFlowBlocks(paper: any): ArticleFlowBlock[] {
   }))
 }
 
-function buildPaperPass(paper: any, role: string, contribution: string): PaperRole {
+function buildPaperPass(
+  paper: any,
+  role: string,
+  contribution: string,
+  routeContext?: ReaderRouteContext,
+): PaperRole {
   const links = resolvePaperSourceLinks({
     arxivUrl: paper.arxivUrl,
     pdfUrl: paper.pdfUrl,
@@ -2135,7 +3361,10 @@ function buildPaperPass(paper: any, role: string, contribution: string): PaperRo
     paperId: paper.id,
     title: paper.titleZh || paper.title,
     titleEn: paper.titleEn ?? paper.title,
-    route: paperRoute(paper.id),
+    route: paperRoute({
+      ...resolvePaperRouteContext(paper, routeContext),
+      paperId: paper.id,
+    }),
     summary:
       normalizePaperNarrativeText(
         pickMeaningfulNarrativeText(paper.summary, paper.explanation, paper.abstract),
@@ -2148,8 +3377,9 @@ function buildPaperPass(paper: any, role: string, contribution: string): PaperRo
     citationCount: paper.citationCount ?? null,
     figuresCount: paper.figures.length,
     tablesCount: paper.tables.length,
-    formulasCount: paper.formulas.length,
-    coverImage: paper.coverPath,
+    formulasCount: paperEvidenceStats(paper).formulaCount,
+    figureGroupsCount: paper.figure_groups?.length ?? 0,
+    coverImage: resolvePaperAssetPath({ assetPath: paper.coverPath, paperId: paper.id }) ?? null,
     originalUrl: links.originalUrl,
     pdfUrl: links.pdfUrl,
   }
@@ -2163,28 +3393,31 @@ function _buildCrossPaperPass(papers: any[]): CrossPaperComparisonBlock[] {
   return [
     {
       id: 'cross-paper-1',
-      title: '多篇论文如何共同形成这个节点',
-      summary: '这个节点不是若干论文摘要的简单拼接，而是同一问题线在不同时间点上的推进、纠偏和补强。',
+      title: 'How multiple papers jointly form this node',
+      summary: 'A node is not a stitched pile of summaries. It is a research line being pushed, corrected, and extended over time.',
       papers: sorted.map((paper, index) => ({
         paperId: paper.id,
         title: paper.titleZh || paper.title,
-        route: paperRoute(paper.id),
+        route: paperRoute({
+          ...resolvePaperRouteContext(paper),
+          paperId: paper.id,
+        }),
         role: paperRoleLabel(index, index === 0),
       })),
       points: [
         {
-          label: '时间推进',
+          label: 'Temporal progression',
           detail: firstPaper
-            ? `最早的论文是《${firstPaper.titleZh || firstPaper.title}》，后续工作在它提出的问题或方法上继续推进。`
-            : '节点中的论文沿着同一问题线持续推进，越新的工作通常越强调修正、扩展或落地。',
+            ? `The earliest anchor is ${firstPaper.titleZh || firstPaper.title}, and later work keeps pushing the same problem or method.`
+            : 'The papers in this node should be read as a single line that later work keeps refining and extending.',
         },
         {
-          label: '证据关系',
-          detail: '节点内的论文并不一定都能在同一条件下直接比较，因此更适合被理解为推进链，而不是简单排行榜。',
+          label: 'Evidence relationship',
+          detail: 'The papers in one node are not always directly comparable under a single benchmark, so the node should read like a progression chain rather than a leaderboard.',
         },
         {
-          label: '仍未解决',
-          detail: '真正困难的部分通常不是有没有新方法，而是这些方法在更复杂场景下是否还能保持稳定优势。',
+          label: 'Still unresolved',
+          detail: 'The hard question is usually not whether a method is new, but whether the advantage survives under harder settings and broader constraints.',
         },
       ],
     },
@@ -2197,17 +3430,24 @@ function buildNodeSynthesisSections(
   evidence: EvidenceExplanation[],
   paperPasses: NodePaperPass[],
   synthesis: NodeSynthesisPass,
+  language?: string | null,
 ): ArticleSection[] {
+  const paperCount = papers.length
+  const effectiveLanguage = language ?? node.topic?.language ?? 'zh'
+  const leadEvidenceLimit = Math.max(3, Math.ceil(paperCount * 0.5))
   const lead = {
     id: 'node-lead',
     kind: 'lead' as const,
     title: synthesis.leadTitle,
     body: synthesis.lead,
-    evidenceIds: buildSectionEvidenceIds(evidence, ['figure', 'table'], 2),
+    evidenceIds: buildSectionEvidenceIds(evidence, ['figure', 'table'], leadEvidenceLimit),
   }
 
   const paperSections = papers.map((paper, index) => {
     const pass = paperPasses.find((item) => item.paperId === paper.id)
+    const paperEvidence = buildRenderablePaperEvidence(paper)
+    const paperEvidenceLimit = Math.max(3, Math.min(5, paperEvidence.filter((e: EvidenceExplanation) => ['figure', 'table', 'formula'].includes(e.type)).length))
+    const { figureCount, tableCount, formulaCount } = paperEvidenceStats(paper)
     return {
       id: `node-paper-${paper.id}`,
       kind: 'paper-pass' as const,
@@ -2215,33 +3455,33 @@ function buildNodeSynthesisSections(
       paperId: paper.id,
       paperTitle: paper.titleZh || paper.title,
       body: pass?.body ?? [
-        `${paperRoleLabel(index, index === 0)}：${normalizePaperNarrativeText(paper.summary, 180) || '当前仅拿到题录与链接，还没有可用摘要。'}`,
-        normalizePaperNarrativeText(paper.explanation ?? paper.summary, 200) ||
-          '当前数据库尚未抽到足够的摘要或正文段落，需要结合原文继续核对问题、方法和实验。',
-        `证据侧重点：${paper.figures.length} 张图、${paper.tables.length} 张表、${paper.formulas.length} 个公式。`,
+        `${paperRoleLabel(index, index === 0)}：${normalizePaperNarrativeText(paper.summary, 180) || incompletePaperText(effectiveLanguage)}`,
+        normalizePaperNarrativeText(paper.explanation ?? paper.summary, 200) || noStableAbstractText(effectiveLanguage),
+        evidenceStatsText(effectiveLanguage, figureCount, tableCount, formulaCount),
       ],
-      evidenceIds: buildSectionEvidenceIds(buildRenderablePaperEvidence(paper), ['figure', 'table', 'formula'], 2),
+      evidenceIds: buildSectionEvidenceIds(paperEvidence, ['figure', 'table', 'formula'], paperEvidenceLimit),
     }
   })
 
+  const closingEvidenceLimit = Math.max(5, Math.ceil(paperCount * 1.5))
   const closingEvidence = {
     id: 'node-evidence',
     kind: 'evidence' as const,
     title: synthesis.evidenceTitle,
     body: synthesis.evidence,
-    evidenceIds: buildSectionEvidenceIds(evidence, ['figure', 'table', 'formula'], 3),
+    evidenceIds: buildSectionEvidenceIds(evidence, ['figure', 'table', 'formula'], closingEvidenceLimit),
   }
 
   return [lead, ...paperSections, closingEvidence]
 }
 
 function buildTimeRangeLabel(values: string[]) {
-  if (values.length === 0) return '时间待定'
+  if (values.length === 0) return '鏃堕棿寰呭畾'
   const dates = values
     .map((value) => new Date(value))
     .filter((value) => !Number.isNaN(+value))
     .sort((left, right) => +left - +right)
-  if (dates.length === 0) return '时间待定'
+  if (dates.length === 0) return '鏃堕棿寰呭畾'
   const first = dates[0]
   const last = dates[dates.length - 1]
   const firstLabel = `${first.getFullYear()}.${`${first.getMonth() + 1}`.padStart(2, '0')}`
@@ -2250,9 +3490,9 @@ function buildTimeRangeLabel(values: string[]) {
 }
 
 function buildPreciseDateLabel(value: string | Date | null | undefined) {
-  if (!value) return '时间待定'
+  if (!value) return '鏃堕棿寰呭畾'
   const date = value instanceof Date ? value : new Date(value)
-  if (Number.isNaN(+date)) return '时间待定'
+  if (Number.isNaN(+date)) return '鏃堕棿寰呭畾'
   return `${date.getFullYear()}.${`${date.getMonth() + 1}`.padStart(2, '0')}.${`${date.getDate()}`.padStart(2, '0')}`
 }
 
@@ -2267,8 +3507,9 @@ function buildNodeStatsFromPaperRoles(paperRoles: PaperRole[]) {
       figureCount: acc.figureCount + paper.figuresCount,
       tableCount: acc.tableCount + paper.tablesCount,
       formulaCount: acc.formulaCount + paper.formulasCount,
+      figureGroupCount: acc.figureGroupCount + paper.figureGroupsCount,
     }),
-    { paperCount: 0, figureCount: 0, tableCount: 0, formulaCount: 0 },
+    { paperCount: 0, figureCount: 0, tableCount: 0, formulaCount: 0, figureGroupCount: 0 },
   )
 }
 
@@ -2278,6 +3519,8 @@ function buildNodeReferenceList(paperRoles: PaperRole[]) {
   return paperRoles.reduce<Array<{
     paperId: string
     title: string
+    titleEn?: string
+    route?: string
     publishedAt?: string
     authors?: string[]
     citationCount?: number | null
@@ -2289,6 +3532,8 @@ function buildNodeReferenceList(paperRoles: PaperRole[]) {
     entries.push({
       paperId: paper.paperId,
       title: paper.title,
+      titleEn: paper.titleEn,
+      route: paper.route,
       publishedAt: paper.publishedAt,
       authors: paper.authors,
       citationCount: paper.citationCount ?? null,
@@ -2505,6 +3750,7 @@ function collectNodeStageScopedPaperIds(
 
 function collectNodeLinkedPaperIds(
   node: {
+    id: string
     primaryPaperId?: string | null
     node_papers: Array<{
       paperId?: string | null
@@ -2525,6 +3771,46 @@ function collectNodeLinkedPaperIds(
       ].filter((paperId) => !allowedPaperIds || allowedPaperIds.has(paperId)),
     ),
   )
+}
+
+function shouldPreserveExplicitNodePaperSet(nodeId: string) {
+  return Boolean(parseConfiguredTopicIdFromNodeId(nodeId))
+}
+
+function resolveNodeReadablePaperIds(args: {
+  node: AssociationNodeLike & {
+    id: string
+  }
+  papers: any[]
+  stageTitle: string
+  stageScopedPaperIds?: Set<string> | null
+}) {
+  const preserveExplicitPaperSet = shouldPreserveExplicitNodePaperSet(args.node.id)
+  const linkedPaperIds = collectNodeLinkedPaperIds(
+    args.node,
+    preserveExplicitPaperSet ? null : args.stageScopedPaperIds,
+  )
+
+  if (preserveExplicitPaperSet) {
+    return {
+      preserveExplicitPaperSet,
+      linkedPaperIds,
+      resolvedPaperIds: linkedPaperIds,
+    }
+  }
+
+  const relatedPaperIds = collectNodeRelatedPaperIds({
+    node: args.node,
+    stageTitle: args.stageTitle,
+    papers: args.papers,
+    allowedPaperIds: args.stageScopedPaperIds,
+  })
+
+  return {
+    preserveExplicitPaperSet,
+    linkedPaperIds,
+    resolvedPaperIds: mergeNodePaperIdsByPriority(linkedPaperIds, relatedPaperIds),
+  }
 }
 
 function mergeNodePaperIdsByPriority(primaryPaperIds: string[], supplementalPaperIds: string[]) {
@@ -2639,6 +3925,14 @@ async function applyTemporalStageLabelsToNodeViewModel(
     }
   }
 
+  if (shouldPreserveExplicitNodePaperSet(viewModel.nodeId)) {
+    return {
+      ...viewModel,
+      stageWindowMonths: effectiveStageWindowMonths,
+      stageLabel,
+    }
+  }
+
   const stagePaperRoles = viewModel.paperRoles.filter(
     (paper) =>
       stageBuckets.paperAssignments.get(paper.paperId)?.bucketKey === nodeAssignment.bucketKey,
@@ -2746,17 +4040,22 @@ function buildPaperArticleFlow({
   critique: ReviewerCritique
   evidence: EvidenceExplanation[]
 }) {
+  const evidenceTypeCount = evidence.filter((e) => ['figure', 'table', 'formula'].includes(e.type)).length
+  const scaledFigureLimit = Math.max(5, Math.min(15, Math.ceil(evidenceTypeCount * 0.3)))
+  const scaledTableLimit = Math.max(3, Math.min(10, Math.ceil(evidenceTypeCount * 0.2)))
+  const scaledFormulaLimit = Math.max(2, Math.min(8, Math.ceil(evidenceTypeCount * 0.15)))
+  const scaledTotalLimit = Math.max(10, Math.min(30, Math.ceil(evidenceTypeCount * 0.5)))
   const selectedEvidence = selectArticleEvidence(evidence, {
-    figureLimit: 3,
-    tableLimit: 2,
-    formulaLimit: 1,
-    totalLimit: 6,
+    figureLimit: scaledFigureLimit,
+    tableLimit: scaledTableLimit,
+    formulaLimit: scaledFormulaLimit,
+    totalLimit: scaledTotalLimit,
   })
   const textBlocks: ArticleFlowBlock[] = [
     {
       id: 'paper-intro',
       type: 'text',
-      title: '这篇论文到底在解决什么',
+      title: '这篇论文究竟解决了什么',
       body: [story.standfirst],
       anchorId: 'paper:intro',
     },
@@ -2783,7 +4082,7 @@ function buildPaperArticleFlow({
     {
       id: 'paper-closing',
       type: 'closing',
-      title: '收束',
+      title: '结语',
       body: story.closing,
     },
   ] satisfies ArticleFlowBlock[]
@@ -2795,12 +4094,14 @@ function buildNodeArticleFlow({
   comparisonPass,
   synthesisPass,
   critique,
+  routeContext,
 }: {
   papers: any[]
   paperPasses: NodePaperPass[]
   comparisonPass: CrossPaperComparisonBlock | null
   synthesisPass: NodeSynthesisPass
   critique: ReviewerCritique
+  routeContext?: ReaderRouteContext
 }) {
   const flow: ArticleFlowBlock[] = [
     {
@@ -2814,12 +4115,17 @@ function buildNodeArticleFlow({
 
   papers.forEach((paper, index) => {
     const pass = paperPasses.find((item) => item.paperId === paper.id)
-    const paperEvidence = buildRenderablePaperEvidence(paper)
+    const paperEvidence = buildRenderablePaperEvidence(paper, routeContext)
+    const paperEvidenceTypeCount = paperEvidence.filter((e) => ['figure', 'table', 'formula'].includes(e.type)).length
+    const scaledFigLimit = Math.max(5, Math.min(15, Math.ceil(paperEvidenceTypeCount * 0.3)))
+    const scaledTblLimit = Math.max(3, Math.min(10, Math.ceil(paperEvidenceTypeCount * 0.2)))
+    const scaledFmlLimit = Math.max(2, Math.min(8, Math.ceil(paperEvidenceTypeCount * 0.15)))
+    const scaledTotalLimitPerPaper = Math.max(10, Math.min(30, Math.ceil(paperEvidenceTypeCount * 0.5)))
     const selectedEvidence = selectArticleEvidence(paperEvidence, {
-      figureLimit: 2,
-      tableLimit: 2,
-      formulaLimit: 1,
-      totalLimit: papers.length > 1 ? 4 : 6,
+      figureLimit: scaledFigLimit,
+      tableLimit: scaledTblLimit,
+      formulaLimit: scaledFmlLimit,
+      totalLimit: scaledTotalLimitPerPaper,
     })
     const links = resolvePaperSourceLinks({
       arxivUrl: paper.arxivUrl,
@@ -2835,11 +4141,12 @@ function buildNodeArticleFlow({
       role: pass?.role ?? paperRoleLabel(index, paper.id === papers[0]?.id),
       contribution:
         pass?.contribution ??
-        (
-          normalizePaperNarrativeText(paper.explanation ?? paper.summary, 140) ||
-          '当前只完成了题录级入库，还需要继续补摘要、正文和证据抽取。'
-        ),
-      route: paperRoute(paper.id),
+        (normalizePaperNarrativeText(paper.explanation ?? paper.summary, 140) ||
+          incompletePaperNextRoundText(routeContext?.language)),
+      route: paperRoute({
+        ...resolvePaperRouteContext(paper, routeContext),
+        paperId: paper.id,
+      }),
       publishedAt: paper.published.toISOString(),
       originalUrl: links.originalUrl,
       pdfUrl: links.pdfUrl,
@@ -2850,9 +4157,9 @@ function buildNodeArticleFlow({
       title: pass?.overviewTitle || `${paper.titleZh || paper.title} 在这个节点里推进了什么`,
       body:
         pass?.body ?? [
-          normalizePaperNarrativeText(paper.summary, 180) || '当前还没有拿到可用摘要，需要回到原文继续核对。',
+          normalizePaperNarrativeText(paper.summary, 180) || '当前还没有拿到可用摘要，需要继续回到原文核对。',
           normalizePaperNarrativeText(paper.explanation ?? paper.summary, 200) ||
-            '这一篇论文的细节仍主要依赖原文链接与后续 PDF 抽取，节点页暂不假装已经讲清。',
+            '这篇论文的细节仍主要依赖原文与后续 PDF 抽取，节点页暂时不能假装已经讲清。',
         ],
       paperId: paper.id,
       paperTitle: paper.titleZh || paper.title,
@@ -2911,6 +4218,7 @@ const loadedPaper = await prisma.papers.findUnique({
     include: {
       topics: true,
       figures: true,
+      figure_groups: true,
       tables: true,
       formulas: true,
       paper_sections: { orderBy: { order: 'asc' } },
@@ -2946,23 +4254,27 @@ const loadedPaper = await prisma.papers.findUnique({
   })
 
   const relatedNodes = paper.node_papers.map((entry: { node: { stageIndex: number; id: string; nodeLabel: string; nodeSubtitle: string | null; nodeSummary: string } }) => entry.node).sort((left: { stageIndex: number }, right: { stageIndex: number }) => left.stageIndex - right.stageIndex)
+  const paperRouteContext = resolvePaperRouteContext(paper, {
+    nodeId: relatedNodes[0]?.id ?? null,
+    topicId: paper.topicId,
+  })
   const researchPipelineContext = await loadReaderResearchPipelineContext({
     topicId: paper.topicId,
     paperIds: [paper.id],
     stageIndex: relatedNodes[0]?.stageIndex,
     historyLimit: 6,
   })
-  const evidence = buildRenderablePaperEvidence(paper)
+  const evidence = buildRenderablePaperEvidence(paper, paperRouteContext ?? undefined)
   const critiqueFallback = buildPaperCritique(paper)
   const storyFallback = {
     standfirst: clipText(`${paper.summary} ${paper.explanation ?? ''}`, 260),
-    sections: buildPaperArticleSections(paper, evidence).map((section) => ({
+    sections: buildPaperArticleSections(paper, evidence, loadedPaper.topics?.language).map((section) => ({
       title: section.title,
       body: section.body,
     })),
     closing: [
-      '读完这篇论文后，读者至少应该能回答三个问题：它到底解决了什么缺口、它靠什么证据说服读者，以及它最终还没有解决什么。',
-      '如果这些问题依然答不清，通常不是页面排版不够，而是论文本身的证据链、实验边界或论证结构还不够扎实。',
+      'After reading the paper, the reader should be able to answer what gap it closes, what evidence it relies on, and what it still leaves unresolved.',
+      'If those questions still feel blurry, the weakness usually lies in the evidence chain, the experimental boundary, or the reasoning structure rather than the page layout.',
     ],
   }
   const [story, generatedCritique] = quick
@@ -2985,7 +4297,7 @@ const loadedPaper = await prisma.papers.findUnique({
             explanation: paper.explanation ?? paper.summary,
             figuresCount: paper.figures.length,
             tablesCount: paper.tables.length,
-            formulasCount: paper.formulas.length,
+            formulasCount: paperEvidenceStats(paper).formulaCount,
           },
           {
             summary: critiqueFallback.summary,
@@ -2995,7 +4307,7 @@ const loadedPaper = await prisma.papers.findUnique({
         ),
       ])
 
-  const baseSections = buildPaperArticleSections(paper, evidence)
+  const baseSections = buildPaperArticleSections(paper, evidence, loadedPaper.topics?.language)
   const enrichedSections: ArticleSection[] = baseSections.map((section, index) => ({
     ...section,
     title: story.sections[index]?.title ?? section.title,
@@ -3030,7 +4342,7 @@ const loadedPaper = await prisma.papers.findUnique({
     publishedAt: paper.published.toISOString(),
     authors: parseJsonArray(paper.authors),
     citationCount: paper.citationCount ?? null,
-    coverImage: paper.coverPath,
+    coverImage: resolvePaperAssetPath({ assetPath: paper.coverPath, paperId: paper.id }) ?? null,
     ...resolvePaperSourceLinks({
       arxivUrl: paper.arxivUrl,
       pdfUrl: paper.pdfUrl,
@@ -3045,7 +4357,8 @@ const loadedPaper = await prisma.papers.findUnique({
       sectionCount: paper.paper_sections.length,
       figureCount: paper.figures.length,
       tableCount: paper.tables.length,
-      formulaCount: paper.formulas.length,
+      formulaCount: paperEvidenceStats(paper).formulaCount,
+      figureGroupCount: paper.figure_groups?.length ?? 0,
       relatedNodeCount: relatedNodes.length,
     },
     relatedNodes: relatedNodes.map((node: { id: string; nodeLabel: string; nodeSubtitle: string | null; nodeSummary: string; stageIndex: number }) => ({
@@ -3080,7 +4393,7 @@ const loadedPaper = await prisma.papers.findUnique({
 
 async function buildNodeViewModel(
   nodeId: string,
-  options?: { quick?: boolean; stageWindowMonths?: number; enhanced?: boolean },
+  options?: { quick?: boolean; stageWindowMonths?: number; enhanced?: boolean; forceRegenerate?: boolean },
 ): Promise<NodeViewModel> {
   const quick = options?.quick === true
   const enableEnhanced = options?.enhanced === true
@@ -3095,6 +4408,7 @@ const loadedNode = await prisma.research_nodes.findUnique({
       papers: {
         include: {
           figures: true,
+          figure_groups: true,
           tables: true,
           formulas: true,
           paper_sections: { orderBy: { order: 'asc' } },
@@ -3105,6 +4419,7 @@ const loadedNode = await prisma.research_nodes.findUnique({
           papers: {
             include: {
               figures: true,
+              figure_groups: true,
               tables: true,
               formulas: true,
               paper_sections: { orderBy: { order: 'asc' } },
@@ -3155,6 +4470,7 @@ const node = normalizeReaderNodeDisplayFields({
       where: { topicId: node.topicId },
       include: {
         figures: true,
+        figure_groups: true,
         tables: true,
         formulas: true,
         paper_sections: { orderBy: { order: 'asc' } },
@@ -3170,20 +4486,14 @@ const node = normalizeReaderNodeDisplayFields({
     effectiveStageWindowMonths,
   )
   const allowedPaperIds = collectNodeStageScopedPaperIds(node.id, temporalStageBuckets)
-  const linkedPaperIds = collectNodeLinkedPaperIds(node, allowedPaperIds)
-  const relatedPaperIds = collectNodeRelatedPaperIds({
+  const resolvedNodePapers = resolveNodeReadablePaperIds({
     node,
-    stageTitle: [stage?.name, stage?.nameEn].filter(Boolean).join(' '),
     papers: topicPapers,
-    allowedPaperIds,
+    stageTitle: [stage?.name, stage?.nameEn].filter(Boolean).join(' '),
+    stageScopedPaperIds: allowedPaperIds,
   })
-  const resolvedRelatedPaperIds = mergeNodePaperIdsByPriority(linkedPaperIds, relatedPaperIds)
   const paperById = new Map(topicPapers.map((paper) => [paper.id, paper]))
-  const resolvedPaperIds = Array.from(
-    new Set(
-      resolvedRelatedPaperIds.concat(node.primaryPaperId ? [node.primaryPaperId] : []),
-    ),
-  ).filter((paperId) => !allowedPaperIds || allowedPaperIds.has(paperId))
+  const resolvedPaperIds = resolvedNodePapers.resolvedPaperIds
   const papers = resolvedPaperIds
     .map((paperId) => paperById.get(paperId) ?? null)
     .filter((paper): paper is (typeof topicPapers)[number] => Boolean(paper))
@@ -3194,13 +4504,17 @@ const node = normalizeReaderNodeDisplayFields({
     stageIndex: node.stageIndex,
     historyLimit: 6,
   })
-  const evidence = papers.flatMap((paper) => buildRenderablePaperEvidence(paper))
+  const nodeRouteContext = {
+    nodeId: node.id,
+    topicId: node.topicId,
+  } satisfies ReaderRouteContext
+  const evidence = papers.flatMap((paper) => buildRenderablePaperEvidence(paper, nodeRouteContext))
   const stats = papers.reduce(
     (acc, paper) => ({
       paperCount: acc.paperCount + 1,
       figureCount: acc.figureCount + paper.figures.length,
       tableCount: acc.tableCount + paper.tables.length,
-      formulaCount: acc.formulaCount + paper.formulas.length,
+      formulaCount: acc.formulaCount + paperEvidenceStats(paper).formulaCount,
     }),
     { paperCount: 0, figureCount: 0, tableCount: 0, formulaCount: 0 },
   )
@@ -3208,6 +4522,7 @@ const node = normalizeReaderNodeDisplayFields({
     node,
     papers,
   })
+  const evidenceAudit = buildNodeEvidenceAudit(stats)
   const normalizedNodeContext = {
     ...node,
     nodeSummary: looksLikeStaleNodeNarrative(node.nodeSummary, papers.length)
@@ -3223,72 +4538,78 @@ const node = normalizeReaderNodeDisplayFields({
     paperId: paper.id,
     overviewTitle:
       paper.id === node.primaryPaperId
-        ? `${paper.title} 为什么构成节点主线`
-        : `${paper.title} 在这里补了什么`,
+        ? `${paper.title} anchors the node mainline`
+        : `${paper.title} extends the node`,
     role: paperRoleLabel(index, paper.id === node.primaryPaperId),
     contribution: buildPaperContributionSeed(paper),
     body: [
-      normalizePaperNarrativeText(paper.summary, 180) || '当前仅完成题录级整理，还没有拿到可用摘要。',
+      normalizePaperNarrativeText(paper.summary, 180) || 'Only title-level material is currently available for this paper.',
       getRenderablePaperSections(paper)[0]?.renderParagraphs[0] ??
         buildPaperContributionSeed(paper),
-      paper.figures.length + paper.tables.length + paper.formulas.length > 0
-        ? `当前可直接核对 ${paper.figures.length} 张图、${paper.tables.length} 张表和 ${paper.formulas.length} 个公式。`
-        : '当前数据库还没有提取到图、表、公式，需要结合原文 PDF 继续核对关键证据。',
+      (() => {
+        const { figureCount, tableCount, formulaCount } = paperEvidenceStats(paper)
+        return figureCount + tableCount + formulaCount > 0
+      })()
+        ? (() => {
+            const { figureCount, tableCount, formulaCount } = paperEvidenceStats(paper)
+            return directEvidenceText(node.topic?.language, figureCount, tableCount, formulaCount)
+          })()
+        : noEvidenceExtractedText(node.topic?.language),
     ],
   }))
   const fallbackComparisonPass: NodeComparisonPass =
     papers.length <= 1
       ? {
-          title: '单篇论文节点',
-          summary: '当前节点主要由一篇论文支撑，因此更像是进入单篇深读的入口，而不是稳定的跨论文汇流。',
+          title: 'Single-paper node',
+          summary: 'This node is mainly supported by one paper, so it should read like a disciplined close reading rather than a stable cross-paper convergence.',
           points: [
             {
-              label: '当前状态',
-              detail: '先把这篇论文的问题、方法、证据与边界讲清楚，再判断这个节点是否足够稳固。',
+              label: 'Current status',
+              detail: 'First explain the paper problem, method, evidence, and boundary clearly; only then decide whether the node itself is stable enough.',
             },
           ],
         }
       : {
-          title: '多篇论文如何共同形成这个节点',
-          summary: '这个节点不是摘要拼接，而是同一问题线在不同论文中的推进、补强与纠偏。',
+          title: 'How several papers jointly form the node',
+          summary: 'This node is not a stitched digest. It is a research line that keeps being advanced, corrected, and reinforced by several papers.',
           points: [
             {
-              label: '时间推进',
-              detail: '先看谁最早提出关键判断，再看后续论文如何补证据、改机制、扩边界。',
+              label: 'Temporal progression',
+              detail: 'First identify who framed the key judgment, then see how later papers strengthen evidence, refine mechanism, or expand scope.',
             },
             {
-              label: '证据关系',
-              detail: '这些论文未必处在完全相同的实验条件里，因此更适合被理解成推进链，而不是简单排行榜。',
+              label: 'Evidence relationship',
+              detail: 'These papers do not always live under identical settings, so they should be read as a progression chain rather than a direct leaderboard.',
             },
             {
-              label: '未解问题',
-              detail: '真正困难的部分通常不是有没有新方法，而是这些方法在更复杂场景里是否仍然成立。',
+              label: 'Open problem',
+              detail: 'The hard question is whether those methods still hold once the setting becomes more complex, constrained, or realistic.',
             },
           ],
         }
   const fallbackSynthesisPass: NodeSynthesisPass = {
     headline: nodeNarrativeSeed.headline,
     standfirst: nodeNarrativeSeed.standfirst,
-    leadTitle: '先把这个节点的问题、判断和边界说清楚',
+    leadTitle: 'Start by clarifying the node problem, judgment, and boundary',
     lead: [
       nodeNarrativeSeed.summary,
       nodeNarrativeSeed.explanation,
     ],
-    evidenceTitle: '再看图、表、公式怎样支撑节点判断',
+    evidenceTitle: 'Then check how figures, tables, and formulas support the node judgment',
     evidence: [
       stats.figureCount + stats.tableCount + stats.formulaCount > 0
-        ? `当前节点已抽取 ${stats.figureCount} 张图、${stats.tableCount} 张表和 ${stats.formulaCount} 个公式，可以围绕方法图、主结果表和关键公式继续精读。`
-        : '当前节点还没有抽取出图、表、公式，所以证据层暂时只能依赖论文摘要与原文链接；下一步最需要补的是方法图、主结果表和关键公式。',
+        ? `The node currently preserves ${stats.figureCount} figures, ${stats.tableCount} tables, and ${stats.formulaCount} formulas, which is enough to keep the evidence layer visible while reading.`
+        : 'The node still lacks extracted figures, tables, and formulas, so the next pass should prioritize the method figure, the main result table, and the key equation.',
       papers.length > 1
-        ? '真正的节点证据不是“论文很多”，而是这些论文能否围绕同一问题形成前后推进、互相补强或明确分歧。'
-        : '既然当前阶段只有一篇论文，阅读重点就不该是假装存在跨论文汇流，而是把这篇论文的问题、方法、实验和边界讲扎实。',
+        ? 'A node is only convincing when those papers can be read as one advancing line instead of a loose pile of relevant titles.'
+        : 'Because the current node still rests on a single paper, the article should stay honest and finish the paper-level close reading first.',
     ],
-    closingTitle: '最后回到这条研究线真正还没解决的问题',
+    closingTitle: 'Finally return to the questions this research line still leaves open',
     closing: [
       papers.length > 1
-        ? '真正还没解决的问题，是这些论文之间到底有没有形成稳定主线，以及哪些改进只是换了表述而没有真正提升闭环能力。'
-        : '真正还没解决的问题，是这篇论文提出的路线能不能在更多数据、更强约束和更完整的闭环评估里成立。',
-      '读完节点之后，读者至少应该能回答三件事：这篇或这些论文解决了什么、靠什么证据站住、还缺什么关键验证。',
+        ? 'The open issue is whether these papers really form a stable mainline, and which improvements are genuine rather than rhetorical reframings.'
+        : 'The open issue is whether the route proposed by this paper still holds under broader data, harder constraints, and a more complete closed-loop evaluation.',
+      'After finishing the node, the reader should at least be able to answer what problem was advanced, what evidence supports that claim, and what crucial verification is still missing.',
     ],
   }
   const rawPaperPasses = useFallbackReaderDraft
@@ -3365,10 +4686,9 @@ const node = normalizeReaderNodeDisplayFields({
       paper,
       pass?.role ?? paperRoleLabel(index, paper.id === node.primaryPaperId),
       pass?.contribution ??
-        (
-          normalizePaperNarrativeText(paper.explanation ?? paper.summary, 120) ||
-          '当前只完成了题录级入库，还需要继续补摘要、正文和证据抽取。'
-        ),
+        (normalizePaperNarrativeText(paper.explanation ?? paper.summary, 120) ||
+          incompletePaperNextRoundExtractText(node.topic?.language)),
+      nodeRouteContext,
     )
   })
   const comparisonBlock =
@@ -3380,19 +4700,23 @@ const node = normalizeReaderNodeDisplayFields({
           papers: papers.map((paper, index) => ({
             paperId: paper.id,
             title: paper.titleZh || paper.title,
-            route: paperRoute(paper.id),
+            route: paperRoute({
+              ...resolvePaperRouteContext(paper, nodeRouteContext),
+              paperId: paper.id,
+            }),
             role: paperPasses.find((item) => item.paperId === paper.id)?.role ?? paperRoleLabel(index, paper.id === node.primaryPaperId),
           })),
           points: comparisonPass.points,
         }
       : null
-  const nodeSections = buildNodeSynthesisSections(node, papers, evidence, paperPasses, synthesisPass)
+  const nodeSections = buildNodeSynthesisSections(node, papers, evidence, paperPasses, synthesisPass, node.topic?.language)
   const nodeFlow = buildNodeArticleFlow({
     papers,
     paperPasses,
     comparisonPass: comparisonBlock,
     synthesisPass,
     critique: generatedCritique,
+    routeContext: nodeRouteContext,
   })
   const primaryDate = [...papers]
     .map((paper) => paper.published)
@@ -3440,10 +4764,46 @@ const node = normalizeReaderNodeDisplayFields({
     }
   }
 
-  // 可选：生成增强版文章流（8-Pass深度解析）
+  // 可选：生成增强版文章流（Multi-Pass深度解析）
   let enhancedArticleFlow: import('./deep-article-generator.js').NodeArticleFlowBlock[] | undefined
   let coreJudgment: { content: string; contentEn: string } | undefined
   if (enableEnhanced && !quick) {
+    // First, try to load persisted fullArticleFlow from the database
+    // (skip if forceRegenerate is set, e.g. during rebuild)
+    const forceRegenerate = options?.forceRegenerate === true
+    const persistedFullArticleFlow = forceRegenerate ? null : loadedNode.fullArticleFlow
+    if (persistedFullArticleFlow) {
+      try {
+        const parsed = JSON.parse(persistedFullArticleFlow) as {
+          schemaVersion?: string
+          flow?: unknown[]
+          coreJudgment?: { content: string; contentEn: string }
+          generatedAt?: string
+        }
+        if (Array.isArray(parsed.flow) && parsed.flow.length > 0) {
+          enhancedArticleFlow = parsed.flow as import('./deep-article-generator.js').NodeArticleFlowBlock[]
+          coreJudgment = parsed.coreJudgment
+          logger.info('Loaded fullArticleFlow from database', {
+            nodeId,
+            flowLength: parsed.flow.length,
+            generatedAt: parsed.generatedAt,
+          })
+        }
+      } catch (parseErr) {
+        logger.warn('Failed to parse persisted fullArticleFlow, will regenerate', {
+          nodeId,
+          err: parseErr instanceof Error ? parseErr.message : String(parseErr),
+        })
+      }
+    }
+
+    // If no persisted flow, generate fresh
+    if (!enhancedArticleFlow) {
+    logger.info('Generating enhanced article flow', {
+      nodeId,
+      enableEnhanced,
+      quick,
+    })
     try {
       const deepArticleModule = await import('./deep-article-generator.js')
       const generateNodeEnhancedArticle =
@@ -3454,8 +4814,35 @@ const node = normalizeReaderNodeDisplayFields({
           'module.exports'
         ]?.generateNodeEnhancedArticle) as GenerateNodeEnhancedArticle | undefined
 
-      if (typeof generateNodeEnhancedArticle !== 'function') {
+if (typeof generateNodeEnhancedArticle !== 'function') {
         throw new Error('generateNodeEnhancedArticle export is unavailable.')
+      }
+
+      // 鍒涘缓WebSocket杩涘害鎶ュ憡鍣?
+      const progressReporter: ArticleProgressReporter = {
+        onStageStart: (stage: string, paperId?: string) => {
+          broadcastResearchProgress(nodeId, {
+            stage,
+            paperId,
+            status: 'started',
+            timestamp: new Date().toISOString(),
+          })
+        },
+        onStageComplete: (stage: string, _result: unknown) => {
+          broadcastResearchProgress(nodeId, {
+            stage,
+            status: 'completed',
+            timestamp: new Date().toISOString(),
+          })
+        },
+        onProgress: (percent: number, message: string) => {
+          broadcastResearchProgress(nodeId, {
+            percent,
+            message,
+            status: 'progress',
+            timestamp: new Date().toISOString(),
+          })
+        },
       }
 
       const result = await withReaderTimeout(generateNodeEnhancedArticle(nodeId, {
@@ -3467,10 +4854,18 @@ const node = normalizeReaderNodeDisplayFields({
           summary: p.summary,
           explanation: p.explanation ?? undefined,
           publishedAt: p.published?.toISOString(),
-          pdfUrl: p.pdfUrl ?? undefined,
-          originalUrl: p.arxivUrl ?? undefined,
+          pdfUrl: resolvePaperSourceLinks({
+            arxivUrl: p.arxivUrl,
+            pdfUrl: p.pdfUrl,
+            pdfPath: p.pdfPath,
+          }).pdfUrl ?? undefined,
+          originalUrl: resolvePaperSourceLinks({
+            arxivUrl: p.arxivUrl,
+            pdfUrl: p.pdfUrl,
+            pdfPath: p.pdfPath,
+          }).originalUrl ?? undefined,
           citationCount: p.citationCount,
-          coverImage: p.coverPath ?? undefined,
+          coverImage: resolvePaperAssetPath({ assetPath: p.coverPath, paperId: p.id }) ?? undefined,
 paper_sections: p.paper_sections.map((section: { id: string; editorialTitle: string | null; sourceSectionTitle: string; paragraphs: string }) => ({
             id: section.id,
             editorialTitle: section.editorialTitle,
@@ -3483,15 +4878,17 @@ paper_sections: p.paper_sections.map((section: { id: string; editorialTitle: str
             caption: figure.caption,
             analysis: figure.analysis,
             page: figure.page,
-            imagePath: figure.imagePath,
-            thumbnailPath: figure.thumbnailPath,
+            imagePath: resolvePaperAssetPath({ assetPath: figure.imagePath, paperId: p.id }) ?? null,
+            thumbnailPath: resolvePaperAssetPath({ assetPath: figure.thumbnailPath, paperId: p.id }) ?? null,
           })),
-          tables: p.tables.map((table: { id: string; number: number | string; caption: string; rawText: string; page: number }) => ({
+          tables: p.tables.map((table: { id: string; number: number | string; caption: string; rawText: string; page: number; headers?: string | null; rows?: string | null }) => ({
             id: table.id,
             number: table.number,
             caption: table.caption,
             rawText: table.rawText,
             page: table.page,
+            headers: parseJsonArray(table.headers),
+            rows: parseJsonUnknownArray(table.rows),
           })),
           formulas: p.formulas.map((formula: { id: string; number: number | string; latex: string; rawText: string | null; page: number }) => ({
             id: formula.id,
@@ -3500,26 +4897,331 @@ paper_sections: p.paper_sections.map((section: { id: string; editorialTitle: str
             rawText: formula.rawText,
             page: formula.page,
           })),
-          evidence: buildRenderablePaperEvidence(p),
+          evidence: buildRenderablePaperEvidence(p, nodeRouteContext),
         })),
         nodeContext: {
           title: node.nodeLabel,
           stageIndex: node.stageIndex,
-          summary: node.nodeSummary,
-          explanation: node.nodeExplanation ?? undefined,
+          summary: nodeSummary,
+          explanation: nodeExplanation ?? undefined,
         },
-      }), ENHANCED_NODE_ARTICLE_TIMEOUT_MS, `Enhanced article flow for node ${nodeId}`)
+      }, progressReporter), ENHANCED_NODE_ARTICLE_TIMEOUT_MS, `Enhanced article flow for node ${nodeId}`)
       enhancedArticleFlow = result.flow
       coreJudgment = result.coreJudgment
+
+      // Post-process: upgrade paper-article blocks to v2 poster-style format
+      // using the NodeEditorialAgent for each paper in the flow
+      if (Array.isArray(enhancedArticleFlow)) {
+        const paperById = new Map(papers.map((p, idx) => [p.id, { paper: p, index: idx }]))
+
+        // Build a NodeContext for the editorial agent
+        const editorialNodeContext: import('../editorial/types').NodeContext = {
+          id: node.id,
+          topicId: node.topicId,
+          stageIndex: node.stageIndex,
+          nodeLabel: node.nodeLabel,
+          nodeSubtitle: node.nodeSubtitle ?? undefined,
+          nodeSummary: nodeSummary,
+          nodeExplanation: nodeExplanation ?? undefined,
+          papers: papers.map((p, idx) => ({
+            id: p.id,
+            topicId: node.topicId,
+            title: p.titleEn || p.titleZh || p.title,
+            titleZh: p.titleZh || p.title,
+            titleEn: p.titleEn ?? undefined,
+            authors: typeof p.authors === 'string' ? p.authors : (Array.isArray(p.authors) ? p.authors.join(', ') : String(p.authors ?? '')),
+            published: p.published ?? new Date(),
+            summary: p.summary ?? '',
+            explanation: p.explanation ?? undefined,
+            arxivUrl: p.arxivUrl ?? undefined,
+            pdfUrl: p.pdfUrl ?? undefined,
+            figures: p.figures.map((fig: { id: string; number: number | string; caption: string; analysis: string | null; page: number; imagePath: string }) => ({
+              id: fig.id,
+              paperId: p.id,
+              number: typeof fig.number === 'number' ? fig.number : Number(fig.number),
+              caption: fig.caption,
+              page: fig.page,
+              imagePath: fig.imagePath,
+              analysis: fig.analysis ?? undefined,
+            })),
+            tables: p.tables.map((tbl: { id: string; number: number | string; caption: string; rawText: string; page: number; headers?: string | null; rows?: string | null }) => ({
+              id: tbl.id,
+              paperId: p.id,
+              number: typeof tbl.number === 'number' ? tbl.number : Number(tbl.number),
+              caption: tbl.caption,
+              page: tbl.page,
+              headers: tbl.headers ?? '',
+              rows: tbl.rows ?? '',
+              rawText: tbl.rawText,
+            })),
+            formulas: p.formulas.map((fml: { id: string; number: number | string; latex: string; rawText: string | null; page: number }) => ({
+              id: fml.id,
+              paperId: p.id,
+              number: typeof fml.number === 'number' ? String(fml.number) : fml.number,
+              latex: fml.latex,
+              rawText: fml.rawText ?? '',
+              page: fml.page,
+            })),
+            sections: p.paper_sections.map((sec: { id: string; editorialTitle: string | null; sourceSectionTitle: string; paragraphs: string }, secIdx: number) => ({
+              id: sec.id,
+              paperId: p.id,
+              sourceSectionTitle: sec.sourceSectionTitle,
+              editorialTitle: sec.editorialTitle ?? sec.sourceSectionTitle,
+              paragraphs: sec.paragraphs,
+              order: secIdx,
+            })),
+            nodePosition: idx + 1,
+          })),
+        }
+
+        for (let i = 0; i < enhancedArticleFlow.length; i++) {
+          const block = enhancedArticleFlow[i]
+          if (block.type !== 'paper-article') continue
+
+          const paperEntry = paperById.get(block.paperId)
+          if (!paperEntry) continue
+
+          const { paper: p, index: paperIdx } = paperEntry
+
+          // Build PaperContext for this paper
+          const paperContext: PaperContext = {
+            id: p.id,
+            topicId: node.topicId,
+            title: p.titleEn || p.titleZh || p.title,
+            titleZh: p.titleZh || p.title,
+            titleEn: p.titleEn ?? undefined,
+            authors: typeof p.authors === 'string' ? p.authors : (Array.isArray(p.authors) ? p.authors.join(', ') : String(p.authors ?? '')),
+            published: p.published ?? new Date(),
+            summary: p.summary ?? '',
+            explanation: p.explanation ?? undefined,
+            arxivUrl: p.arxivUrl ?? undefined,
+            pdfUrl: p.pdfUrl ?? undefined,
+            figures: p.figures.map((fig: { id: string; number: number | string; caption: string; analysis: string | null; page: number; imagePath: string }) => ({
+              id: fig.id,
+              paperId: p.id,
+              number: typeof fig.number === 'number' ? fig.number : Number(fig.number),
+              caption: fig.caption,
+              page: fig.page,
+              imagePath: fig.imagePath,
+              analysis: fig.analysis ?? undefined,
+            })),
+            figureGroups: (p.figure_groups ?? []).map((fg: { id: string; groupId: string; caption: string; page: number; subFigures: string }) => {
+              let subFigures: Array<{ index: string; imagePath: string; caption: string; confidence?: number }> = []
+              try {
+                subFigures = typeof fg.subFigures === 'string' ? JSON.parse(fg.subFigures) : fg.subFigures
+              } catch {
+                subFigures = []
+              }
+              return {
+                id: fg.id,
+                paperId: p.id,
+                parentNumber: fg.groupId.replace(/^fg-/, '').split('-').pop() ?? fg.groupId,
+                caption: fg.caption,
+                page: fg.page,
+                subFigures: subFigures.map((sf: { index: string; imagePath: string; caption: string; confidence?: number | null }) => ({
+                  index: sf.index,
+                  imagePath: sf.imagePath,
+                  caption: sf.caption,
+                  confidence: sf.confidence ?? undefined,
+                })),
+                confidence: 1.0,
+              }
+            }),
+            tables: p.tables.map((tbl: { id: string; number: number | string; caption: string; rawText: string; page: number; headers?: string | null; rows?: string | null }) => ({
+              id: tbl.id,
+              paperId: p.id,
+              number: typeof tbl.number === 'number' ? tbl.number : Number(tbl.number),
+              caption: tbl.caption,
+              page: tbl.page,
+              headers: tbl.headers ?? '',
+              rows: tbl.rows ?? '',
+              rawText: tbl.rawText,
+            })),
+            formulas: p.formulas.map((fml: { id: string; number: number | string; latex: string; rawText: string | null; page: number }) => ({
+              id: fml.id,
+              paperId: p.id,
+              number: typeof fml.number === 'number' ? String(fml.number) : fml.number,
+              latex: fml.latex,
+              rawText: fml.rawText ?? '',
+              page: fml.page,
+            })),
+            sections: p.paper_sections.map((sec: { id: string; editorialTitle: string | null; sourceSectionTitle: string; paragraphs: string }, secIdx: number) => ({
+              id: sec.id,
+              paperId: p.id,
+              sourceSectionTitle: sec.sourceSectionTitle,
+              editorialTitle: sec.editorialTitle ?? sec.sourceSectionTitle,
+              paragraphs: sec.paragraphs,
+              order: secIdx,
+            })),
+            nodePosition: paperIdx + 1,
+          }
+
+          try {
+            const allowPosterModelAssistance =
+              (process.env.ENHANCED_ARTICLE_GENERATION_MODE ?? '').trim().toLowerCase() ===
+              'model-assisted'
+            // ── DeepAnalysisPipeline: 三遍深度分析（优先路径） ──
+            // 当论文有完整数据（sections + 证据）时，使用三遍深度分析
+            // 否则回退到 NodeEditorialAgent 的单遍分析
+            let analysis: PosterStylePaperAnalysis | null = null
+            let usedDeepAnalysis = false
+
+            if (hasSufficientDataForDeepAnalysis(paperContext)) {
+              try {
+                const pipeline = new DeepAnalysisPipeline({
+                  enableVLMForEvidence: true,
+                  crossCheckEvidence: true,
+                  includeDerivations: true,
+                  language: 'zh',
+                })
+
+                const deepPaper = buildDeepAnalysisPaper(paperContext)
+                const deepResult = await pipeline.analyze(deepPaper)
+                analysis = convertDeepAnalysisToPosterStyle(deepResult, paperContext)
+                usedDeepAnalysis = true
+
+                logger.info('DeepAnalysisPipeline completed three-pass analysis', {
+                  nodeId,
+                  paperId: block.paperId,
+                  sectionCount: deepResult.sections.length,
+                  claimCount: deepResult.claims.length,
+                  confidenceScore: deepResult.confidenceScore,
+                })
+              } catch (deepErr) {
+                logger.warn('DeepAnalysisPipeline failed, falling back to NodeEditorialAgent', {
+                  nodeId,
+                  paperId: block.paperId,
+                  err: deepErr instanceof Error ? deepErr.message : String(deepErr),
+                })
+                // Fall through to NodeEditorialAgent below
+              }
+            }
+
+            // ── Fallback: NodeEditorialAgent 单遍分析 ──
+            if (!analysis && allowPosterModelAssistance) {
+              const editorialResult = await nodeEditorialAgent.generatePaperAnalysis(
+                paperContext,
+                editorialNodeContext,
+              )
+
+              if (editorialResult.isPosterStyle && editorialResult.paperAnalysis) {
+                analysis = editorialResult.paperAnalysis as PosterStylePaperAnalysis
+              }
+            }
+
+            if (analysis) {
+              // Upgrade the block to v2 format
+              const v2Block = {
+                ...block,
+                coreThesis: analysis.coreThesis,
+                coreThesisEn: analysis.coreThesisEn,
+                paragraphs: analysis.paragraphs,
+                closingInsight: analysis.closingInsight,
+                closingInsightEn: analysis.closingInsightEn,
+                contentVersion: 'v2' as const,
+              }
+              enhancedArticleFlow[i] = v2Block
+              logger.info('Upgraded paper-article block to v2 poster-style', {
+                nodeId,
+                paperId: block.paperId,
+                coreThesis: analysis.coreThesis.slice(0, 50),
+                deepAnalysis: usedDeepAnalysis,
+              })
+            } else {
+              logger.info('Editorial agent returned non-poster-style result, keeping v1 format', {
+                nodeId,
+                paperId: block.paperId,
+              })
+            }
+          } catch (editorialErr) {
+            // Graceful fallback: keep v1 format if poster-style generation fails
+            logger.warn('Poster-style generation failed, falling back to v1 format', {
+              nodeId,
+              paperId: block.paperId,
+              err: editorialErr instanceof Error ? editorialErr.message : String(editorialErr),
+            })
+          }
+        }
+      }
+
+      // Persist enhanced article flow to database so it survives restarts
+      if (Array.isArray(result.flow) && result.flow.length > 0) {
+        try {
+          const fullArticleFlowPayload = JSON.stringify({
+            schemaVersion: 'node-article-v6',
+            flow: result.flow,
+            coreJudgment: result.coreJudgment,
+            generatedAt: new Date().toISOString(),
+          })
+          await prisma.research_nodes.update({
+            where: { id: nodeId },
+            data: {
+              fullArticleFlow: fullArticleFlowPayload,
+              editorialPromptHash: `v6:${Date.now()}`,
+              updatedAt: new Date(),
+            },
+          })
+          logger.info('Persisted fullArticleFlow to database', {
+            nodeId,
+            flowLength: result.flow.length,
+          })
+        } catch (persistErr) {
+          logger.warn('Failed to persist fullArticleFlow to database', {
+            nodeId,
+            err: persistErr instanceof Error ? persistErr.message : String(persistErr),
+          })
+        }
+      }
+
+      // 广播完成消息
+      broadcastResearchComplete(nodeId, {
+        flow: result.flow,
+        coreJudgment: result.coreJudgment,
+        timestamp: new Date().toISOString(),
+      })
     } catch (err) {
       logger.warn('Failed to generate enhanced article flow', {
         nodeId,
         err,
         timeoutMs: ENHANCED_NODE_ARTICLE_TIMEOUT_MS,
       })
+      // 广播错误消息
+      broadcastResearchError(nodeId, err instanceof Error ? err.message : 'Enhanced article generation failed')
       // 失败时保持undefined，使用标准flow
     }
+    } // end if (!enhancedArticleFlow)
   }
+
+  const researchView = buildNodeResearchView({
+    evidence,
+    enhancedArticleFlow,
+    critique: generatedCritique,
+    coreJudgment,
+    papers,
+  })
+  const articleMarkdown = buildNodeArticleMarkdown({
+    language: node.topic.language,
+    standfirst: synthesisPass.standfirst,
+    summary: looksLikeStaleNodeNarrative(nodeSummary, papers.length)
+      ? editorialWriteback.summary
+      : nodeSummary,
+    explanation: looksLikeStaleNodeNarrative(nodeExplanation, papers.length)
+      ? editorialWriteback.explanation
+      : nodeExplanation,
+    paperRoles,
+    articleSections: nodeSections.map((section) => ({
+      title: section.title,
+      body: section.body,
+      paperId: section.paperId,
+      paperTitle: section.paperTitle,
+    })),
+    closing: synthesisPass.closing,
+    critique: generatedCritique,
+    evidence,
+    evidenceAudit,
+    coreJudgment,
+    enhancedArticleFlow,
+  })
 
   return {
     schemaVersion: NODE_READER_ARTIFACT_SCHEMA_VERSION,
@@ -3545,6 +5247,7 @@ paper_sections: p.paper_sections.map((section: { id: string; editorialTitle: str
     },
     stageWindowMonths: effectiveStageWindowMonths,
     stats,
+    evidenceAudit,
     standfirst: synthesisPass.standfirst,
     paperRoles,
     comparisonBlocks: comparisonBlock ? [comparisonBlock] : [],
@@ -3555,11 +5258,13 @@ paper_sections: p.paper_sections.map((section: { id: string; editorialTitle: str
       sections: nodeSections,
       closing: synthesisPass.closing,
     },
+    articleMarkdown,
     critique: generatedCritique,
     evidence,
     references: buildNodeReferenceList(paperRoles),
     enhancedArticleFlow,
     coreJudgment,
+    researchView,
   }
 }
 
@@ -3605,6 +5310,7 @@ export async function getNodeViewModel(
 
   if (!stageWindowRequest.matchesConfiguredWindow) {
     const directViewModel = await buildNodeViewModel(nodeId, {
+      quick: options?.enhanced !== true,
       stageWindowMonths: stageWindowRequest.effectiveStageWindowMonths,
       enhanced: options?.enhanced,
     })
@@ -3638,14 +5344,42 @@ export async function getNodeViewModel(
       readReaderArtifact<NodeViewModel>('node', nodeId, 'enhanced'),
       buildEnhancedNodeArtifactFingerprint(nodeId),
     ])
+    const enhancedCacheIsValid =
+      cached != null && isReaderArtifactViewModelValid('node', cached.viewModel)
 
     const hasEnhancedCache =
       cached?.fingerprint === fingerprint &&
+      enhancedCacheIsValid &&
       Array.isArray(cached.viewModel.enhancedArticleFlow) &&
       cached.viewModel.enhancedArticleFlow.length > 0
 
     if (hasEnhancedCache) {
-      viewModel = cached.viewModel
+      try {
+        const deepArticleModule = await import('./deep-article-generator.js')
+        const sanitizeNodeArticleFlow =
+          ((deepArticleModule as { sanitizeNodeArticleFlow?: unknown }).sanitizeNodeArticleFlow ??
+          (deepArticleModule as { default?: { sanitizeNodeArticleFlow?: unknown } }).default
+            ?.sanitizeNodeArticleFlow) as
+            | ((
+                flow:
+                  | import('./deep-article-generator.js').NodeArticleFlowBlock[]
+                  | null
+                  | undefined,
+              ) => import('./deep-article-generator.js').NodeArticleFlowBlock[])
+            | undefined
+
+        viewModel = sanitizeNodeArticleFlow
+          ? {
+              ...cached.viewModel,
+              enhancedArticleFlow: sanitizeNodeArticleFlow(cached.viewModel.enhancedArticleFlow),
+            }
+          : cached.viewModel
+      } catch {
+        viewModel = cached.viewModel
+      }
+    } else if (cached && !enhancedCacheIsValid) {
+      await dropReaderArtifact('node', nodeId, 'enhanced')
+      viewModel = await queueReaderArtifactBuild(enhancedNodeDriver, nodeId, { enhanced: true })
     } else if (cached?.fingerprint === fingerprint) {
       // Enhanced node requests should return the long-form article on the same request.
       // The enhanced builder now uses the fast grounded fallback path, so returning the
@@ -3655,7 +5389,22 @@ export async function getNodeViewModel(
       viewModel = await queueReaderArtifactBuild(enhancedNodeDriver, nodeId, { enhanced: true })
     }
   } else {
-    viewModel = await resolveReaderArtifact(nodeDriver, nodeId)
+    try {
+      viewModel = await withReaderTimeout(
+        resolveReaderArtifact(nodeDriver, nodeId),
+        DEFAULT_NODE_ARTIFACT_TIMEOUT_MS,
+        `Default node artifact hydration for ${nodeId}`,
+      )
+    } catch (error) {
+      logger.warn('Default node artifact hydration timed out; serving direct quick node view model.', {
+        nodeId,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      viewModel = await buildNodeViewModel(nodeId, {
+        quick: true,
+        stageWindowMonths: stageWindowRequest.configuredStageWindowMonths,
+      })
+    }
   }
 
   return applyTemporalStageLabelsToNodeViewModel(
@@ -3694,6 +5443,7 @@ export async function rebuildNodeViewModel(
         ...buildOptions,
         stageWindowMonths: stageWindowRequest.configuredStageWindowMonths,
         enhanced: options?.enhanced,
+        forceRegenerate: true,
       }),
   }
 
@@ -3729,6 +5479,7 @@ async function buildQuickNodeViewModelForTest(
 export interface WarmTopicReaderArtifactOptions {
   limit?: number
   mode?: ReaderArtifactWarmMode
+  includeEnhancedNodes?: boolean
   entityIds?: {
     nodeIds?: string[]
     paperIds?: string[]
@@ -3742,6 +5493,7 @@ export async function warmTopicReaderArtifacts(
   const runtime = await getGenerationRuntimeConfig()
   const limit = options.limit ?? runtime.researchArtifactRebuildLimit
   const mode = options.mode ?? 'full'
+  const includeEnhancedNodes = options.includeEnhancedNodes ?? mode !== 'quick'
   const shouldScopeNodes = Array.isArray(options.entityIds?.nodeIds)
   const shouldScopePapers = Array.isArray(options.entityIds?.paperIds)
   const scopedNodeIds = Array.from(
@@ -3792,6 +5544,9 @@ export async function warmTopicReaderArtifacts(
   if (mode === 'full') {
     await runInBatches(nodes, 2, async (node) => {
       await rebuildNodeViewModel(node.id)
+      if (includeEnhancedNodes) {
+        await rebuildNodeViewModel(node.id, { enhanced: true })
+      }
     })
 
     await runInBatches(papers, 2, async (paper) => {
@@ -3804,6 +5559,14 @@ export async function warmTopicReaderArtifacts(
         node.id,
         buildNodeArtifactFingerprint,
       )
+      if (includeEnhancedNodes) {
+        await syncPersistedReaderArtifactFingerprint<NodeViewModel>(
+          'node',
+          node.id,
+          buildEnhancedNodeArtifactFingerprint,
+          'enhanced',
+        )
+      }
     })
 
     await runInBatches(papers, 3, async (paper) => {
@@ -3838,6 +5601,12 @@ export async function warmTopicReaderArtifacts(
         buildFingerprint: buildNodeArtifactFingerprint,
         buildViewModel: buildNodeViewModel,
       }
+      const enhancedNodeDriver = {
+        kind: 'node' as const,
+        variant: 'enhanced' as const,
+        buildFingerprint: buildEnhancedNodeArtifactFingerprint,
+        buildViewModel: buildNodeViewModel,
+      }
       const paperDriver = {
         kind: 'paper' as const,
         buildFingerprint: buildPaperArtifactFingerprint,
@@ -3851,6 +5620,15 @@ export async function warmTopicReaderArtifacts(
           }
           console.error(`[AlphaReader] Deferred node rebuild failed for ${node.id}:`, error)
         })
+
+        if (includeEnhancedNodes) {
+          void queueReaderArtifactBuild(enhancedNodeDriver, node.id, { enhanced: true }).catch((error) => {
+            if (error instanceof AppError && error.statusCode === 404) {
+              return
+            }
+            console.error(`[AlphaReader] Deferred enhanced node rebuild failed for ${node.id}:`, error)
+          })
+        }
       }
 
       for (const paper of papers) {
@@ -3868,8 +5646,10 @@ export async function warmTopicReaderArtifacts(
     topicId,
     mode,
     warmedNodeCount: nodes.length,
+    warmedEnhancedNodeCount: mode === 'full' && includeEnhancedNodes ? nodes.length : 0,
     warmedPaperCount: papers.length,
     queuedNodeCount: mode === 'deferred' ? nodes.length : 0,
+    queuedEnhancedNodeCount: mode === 'deferred' && includeEnhancedNodes ? nodes.length : 0,
     queuedPaperCount: mode === 'deferred' ? papers.length : 0,
   }
 }
@@ -3877,6 +5657,7 @@ export async function warmTopicReaderArtifacts(
 export interface TopicReaderArtifactOrchestrationOptions {
   limit?: number
   mode?: ReaderArtifactWarmMode
+  includeEnhancedNodes?: boolean
   entityIds?: {
     nodeIds?: string[]
     paperIds?: string[]
@@ -3894,6 +5675,7 @@ export async function orchestrateTopicReaderArtifacts(
   const warmed = await warmTopicReaderArtifacts(topicId, {
     limit: options.limit,
     mode: options.mode,
+    includeEnhancedNodes: options.includeEnhancedNodes,
     entityIds: options.entityIds,
   })
 
@@ -3907,6 +5689,7 @@ export async function orchestrateTopicReaderArtifacts(
 export const __testing = {
   buildQuickPaperViewModelForTest,
   buildQuickNodeViewModelForTest,
+  paperRoute,
   looksLikeStaleNodeNarrative,
   extractNarrativePaperCountClaim,
   buildNodeNarrativeSeed,
@@ -3914,5 +5697,5 @@ export const __testing = {
   sanitizeStoredParagraphList,
   getRenderablePaperSections,
   selectArticleEvidence,
+  buildNodeEvidenceAudit,
 }
-

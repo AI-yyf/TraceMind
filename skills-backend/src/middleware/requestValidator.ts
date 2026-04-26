@@ -31,10 +31,18 @@ export const validate = (schema: z.ZodSchema) => {
         query: req.query,
         params: req.params
       })
-      
-      req.body = validated.body
-      req.query = validated.query
-      req.params = validated.params
+
+      if (typeof validated === 'object' && validated !== null) {
+        if ('body' in validated && validated.body !== undefined) {
+          req.body = validated.body
+        }
+        if ('query' in validated && validated.query !== undefined) {
+          req.query = validated.query
+        }
+        if ('params' in validated && validated.params !== undefined) {
+          req.params = validated.params
+        }
+      }
       
       next()
     } catch (error) {

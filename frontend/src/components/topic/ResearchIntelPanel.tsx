@@ -90,6 +90,7 @@ export function ResearchIntelPanel({
       'List the strongest open question and what evidence should settle it.',
     ),
   ]
+  const showSupportingCards = ready || Boolean(errorMessage)
 
   return (
     <section
@@ -129,7 +130,7 @@ export function ResearchIntelPanel({
           />
         ) : null}
 
-        {ready ? (
+        {showSupportingCards ? (
           children
         ) : !loading && !errorMessage ? (
           <div data-testid="topic-research-intel-empty" className="rounded-[16px] border border-black/8 bg-white px-3 py-3">

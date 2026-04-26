@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import { BarChart3, CheckCircle, Clock, Loader2, Pause, Play, RotateCcw, Target, Trash2, XCircle } from 'lucide-react'
 
+import { ConfirmDialog } from '@/components/UI'
 import { apiGet, buildApiUrl } from '@/utils/api'
+import {
+  assertTaskCronPresetsContract,
+  assertTaskDetailResponseContract,
+  assertTaskListContract,
+  assertTaskTopicsContract,
+} from '@/utils/contracts'
 
 interface StageProgress {
   taskId: string
@@ -56,6 +63,108 @@ interface CronPreset {
   description: string
 }
 
+type TaskApiResponse = {
+  id: string
+  name: string
+  cronExpression: string
+  enabled: boolean
+  topicId?: string
+  action: 'discover' | 'refresh' | 'sync'
+  options?: {
+    maxResults?: number
+    stageIndex?: number
+    maxIterations?: number
+    durationHours?: number
+    cycleDelayMs?: number
+    stageRounds?: Array<{ stageIndex: number; rounds: number }>
+  }
+  progress?: {
+    taskId: string
+    topicId: string
+    topicName: string
+    currentStage: number
+    totalStages: number
+    stageProgress: number
+    totalRuns: number
+    successfulRuns: number
+    failedRuns: number
+    lastRunAt: string | null
+    lastRunResult: 'success' | 'failed' | 'partial' | null
+    discoveredPapers: number
+    admittedPapers: number
+    status: 'active' | 'paused' | 'completed' | 'failed'
+  } | null
+}
+
+type TaskDetailApiResponse = {
+  task: TaskApiResponse
+  progress: TaskApiResponse['progress']
+  history: Array<{
+    id: string
+    taskId: string
+    runAt: string
+    duration: number
+    status: 'success' | 'failed' | 'partial'
+    stageIndex: number
+    papersDiscovered: number
+    papersPromoted?: number
+    papersAdmitted?: number
+    papersMerged?: number
+    error?: string
+    summary: string
+  }>
+}
+
+function mapStageProgress(progress: TaskApiResponse['progress']): StageProgress | null {
+  if (!progress) return null
+  return {
+    taskId: progress.taskId,
+    topicId: progress.topicId,
+    topicName: progress.topicName,
+    currentStage: progress.currentStage,
+    totalStages: progress.totalStages,
+    stageProgress: progress.stageProgress,
+    totalRuns: progress.totalRuns,
+    successfulRuns: progress.successfulRuns,
+    failedRuns: progress.failedRuns,
+    lastRunAt: progress.lastRunAt,
+    lastRunResult: progress.lastRunResult,
+    discoveredPapers: progress.discoveredPapers,
+    promotedPapers: progress.admittedPapers,
+    pendingPapers: 0,
+    status: progress.status,
+  }
+}
+
+function mapTask(task: TaskApiResponse): Task {
+  return {
+    id: task.id,
+    name: task.name,
+    cronExpression: task.cronExpression,
+    enabled: task.enabled,
+    topicId: task.topicId,
+    action: task.action,
+    options: task.options,
+    progress: mapStageProgress(task.progress),
+  }
+}
+
+function mapExecutionRecord(record: TaskDetailApiResponse['history'][number]): ExecutionRecord {
+  return {
+    id: record.id,
+    taskId: record.taskId,
+    runAt: record.runAt,
+    duration: record.duration,
+    status: record.status,
+    stageIndex: record.stageIndex,
+    papersDiscovered: record.papersDiscovered,
+    papersPromoted: record.papersPromoted ?? record.papersAdmitted ?? 0,
+    papersMerged: record.papersMerged ?? 0,
+    error: record.error,
+    summary: record.summary,
+  }
+}
+
 const actionLabels = {
   discover: '论文发现',
   refresh: '数据刷新',
@@ -94,12 +203,19 @@ export function TaskScheduler() {
     topicId: undefined,
     options: {},
   })
+  const [confirmState, setConfirmState] = useState<{
+    isOpen: boolean
+    title: string
+    message: string
+    onConfirm: () => void
+  }>({ isOpen: false, title: '', message: '', onConfirm: () => {} })
 
   const fetchTasks = useCallback(async () => {
     try {
       setLoading(true)
-      const data = await apiGet<Task[]>('/api/tasks')
-      setTasks(data)
+      const data = await apiGet<unknown>('/api/tasks')
+      assertTaskListContract(data)
+      setTasks(data.map(mapTask))
     } catch {
       setError('获取任务列表失败。')
     } finally {
@@ -109,32 +225,35 @@ export function TaskScheduler() {
 
   const fetchTopics = useCallback(async () => {
     try {
-      const data = await apiGet<{ id: string; nameZh: string }[]>('/api/tasks/topics')
+      const data = await apiGet<unknown>('/api/tasks/topics')
+      assertTaskTopicsContract(data)
       setTopics(data)
-    } catch (fetchError) {
-      console.error('Failed to fetch topics:', fetchError)
+    } catch {
+      // Topics fetch failed - silently continue
     }
   }, [])
 
   const fetchCronPresets = useCallback(async () => {
     try {
-      const data = await apiGet<CronPreset[]>('/api/tasks/cron-expressions')
+      const data = await apiGet<unknown>('/api/tasks/cron-expressions')
+      assertTaskCronPresetsContract(data)
       setCronPresets(data)
-    } catch (fetchError) {
-      console.error('Failed to fetch cron presets:', fetchError)
+    } catch {
+      // Cron presets fetch failed - silently continue
     }
   }, [])
 
   const fetchTaskDetail = useCallback(async (taskId: string) => {
     setLoadingDetail(true)
     try {
-      const data = await apiGet<{ task: Task; progress?: StageProgress; history?: ExecutionRecord[] }>(`/api/tasks/${taskId}`)
+      const data = await apiGet<unknown>(`/api/tasks/${taskId}`)
+      assertTaskDetailResponseContract(data)
       setTaskDetail({
-        progress: data.progress,
-        history: data.history,
+        progress: mapStageProgress(data.progress) ?? undefined,
+        history: data.history.map(mapExecutionRecord),
       })
-    } catch (fetchError) {
-      console.error('Failed to fetch task detail:', fetchError)
+    } catch {
+      // Task detail fetch failed - silently continue
     } finally {
       setLoadingDetail(false)
     }
@@ -198,18 +317,25 @@ export function TaskScheduler() {
   }
 
   async function handleDeleteTask(taskId: string) {
-    if (!confirm('确定要删除这个任务吗？')) return
-    try {
-      const response = await fetch(buildApiUrl(`/api/tasks/${taskId}`), { method: 'DELETE' })
-      if (!response.ok) throw new Error('delete_failed')
-      setTasks((current) => current.filter((task) => task.id !== taskId))
-      if (selectedTask?.id === taskId) {
-        setSelectedTask(null)
-        setTaskDetail(null)
-      }
-    } catch {
-      setError('删除任务失败。')
-    }
+    setConfirmState({
+      isOpen: true,
+      title: '删除确认',
+      message: '确定要删除这个任务吗？此操作无法撤销。',
+      onConfirm: async () => {
+        setConfirmState((prev) => ({ ...prev, isOpen: false }))
+        try {
+          const response = await fetch(buildApiUrl(`/api/tasks/${taskId}`), { method: 'DELETE' })
+          if (!response.ok) throw new Error('delete_failed')
+          setTasks((current) => current.filter((task) => task.id !== taskId))
+          if (selectedTask?.id === taskId) {
+            setSelectedTask(null)
+            setTaskDetail(null)
+          }
+        } catch {
+          setError('删除任务失败。')
+        }
+      },
+    })
   }
 
   async function handleRunTask(taskId: string, options?: { forceStage?: number }) {
@@ -231,15 +357,22 @@ export function TaskScheduler() {
   }
 
   async function handleResetTask(taskId: string) {
-    if (!confirm('确定要重置任务进度吗？')) return
-    try {
-      const response = await fetch(buildApiUrl(`/api/tasks/${taskId}/reset`), { method: 'POST' })
-      if (!response.ok) throw new Error('reset_failed')
-      await fetchTasks()
-      await fetchTaskDetail(taskId)
-    } catch {
-      setError('重置任务失败。')
-    }
+    setConfirmState({
+      isOpen: true,
+      title: '重置确认',
+      message: '确定要重置任务进度吗？此操作无法撤销。',
+      onConfirm: async () => {
+        setConfirmState((prev) => ({ ...prev, isOpen: false }))
+        try {
+          const response = await fetch(buildApiUrl(`/api/tasks/${taskId}/reset`), { method: 'POST' })
+          if (!response.ok) throw new Error('reset_failed')
+          await fetchTasks()
+          await fetchTaskDetail(taskId)
+        } catch {
+          setError('重置任务失败。')
+        }
+      },
+    })
   }
 
   async function handleJumpToStage(taskId: string, stageIndex: number) {
@@ -539,6 +672,15 @@ export function TaskScheduler() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={confirmState.isOpen}
+        title={confirmState.title}
+        message={confirmState.message}
+        variant="danger"
+        onConfirm={confirmState.onConfirm}
+        onCancel={() => setConfirmState((prev) => ({ ...prev, isOpen: false }))}
+      />
     </div>
   )
 }

@@ -2,7 +2,10 @@ import { Router } from 'express'
 
 import { prisma } from '../lib/prisma'
 import { asyncHandler, AppError } from '../middleware/errorHandler'
-import { getNodeViewModel } from '../services/topics/alpha-reader'
+import { validate } from '../middleware/requestValidator'
+import { CreateNodeSchema, UpdateNodeSchema } from './schemas'
+import { getNodeViewModel, rebuildNodeViewModel } from '../services/topics/alpha-reader'
+import { assertNodeViewModelContract } from '../services/topics/topic-contracts'
 import { logger } from '../utils/logger'
 
 const router = Router()
@@ -22,6 +25,22 @@ function normalizeFullContent(value: unknown) {
     return JSON.stringify(value)
   } catch {
     return undefined
+  }
+}
+
+function enforceRouteContract<T>(
+  value: T,
+  validator: (payload: unknown) => void,
+  context: string,
+) {
+  try {
+    validator(value)
+    return value
+  } catch (error) {
+    throw new AppError(
+      500,
+      `${context} ${error instanceof Error ? error.message : 'Unknown contract validation failure.'}`,
+    )
   }
 }
 
@@ -71,10 +90,38 @@ router.get('/', asyncHandler(async (req, res) => {
 router.get('/:nodeId/view-model', asyncHandler(async (req, res) => {
   const stageWindowMonths = readStageWindowMonths(req.query.stageMonths)
   const enhanced = req.query.enhanced === 'true'
-  const viewModel = await getNodeViewModel(req.params.nodeId, { stageWindowMonths, enhanced })
+  const viewModel = enforceRouteContract(
+    await getNodeViewModel(req.params.nodeId, { stageWindowMonths, enhanced }),
+    assertNodeViewModelContract,
+    'Node view model contract drifted before reaching the client.',
+  )
   res.json({
     success: true,
     data: viewModel
+  })
+}))
+
+router.post('/:nodeId/rebuild-article', asyncHandler(async (req, res) => {
+  const { nodeId } = req.params
+  const enhanced = req.query.enhanced !== 'false' // default to true
+
+  // Clear the persisted fullArticleFlow to force regeneration
+  await prisma.research_nodes.update({
+    where: { id: nodeId },
+    data: { fullArticleFlow: null },
+  })
+
+  const viewModel = enforceRouteContract(
+    await rebuildNodeViewModel(nodeId, { enhanced }),
+    assertNodeViewModelContract,
+    'Node view model contract drifted after rebuild.',
+  )
+
+  logger.info('Rebuilt node article', { nodeId, enhanced })
+
+  res.json({
+    success: true,
+    data: viewModel,
   })
 }))
 
@@ -90,6 +137,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
           papers: {
             include: {
               figures: true,
+              figure_groups: true,
               tables: true,
               formulas: true
             }
@@ -111,6 +159,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
     fullContent: node.fullContent as unknown,
     assets: {
       figures: node.node_papers.flatMap((item: { papers: { figures: unknown[] } }) => item.papers.figures),
+      figureGroups: node.node_papers.flatMap((item: { papers: { figure_groups: unknown[] } }) => item.papers.figure_groups),
       tables: node.node_papers.flatMap((item: { papers: { tables: unknown[] } }) => item.papers.tables),
       formulas: node.node_papers.flatMap((item: { papers: { formulas: unknown[] } }) => item.papers.formulas)
     }
@@ -122,7 +171,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
   })
 }))
 
-router.post('/', asyncHandler(async (req, res) => {
+router.post('/', validate(CreateNodeSchema), asyncHandler(async (req, res) => {
   const {
     topicId,
     stageIndex,
@@ -196,7 +245,7 @@ router.post('/', asyncHandler(async (req, res) => {
   })
 }))
 
-router.patch('/:id', asyncHandler(async (req, res) => {
+router.patch('/:id', validate(UpdateNodeSchema), asyncHandler(async (req, res) => {
   const { id } = req.params
   const {
     nodeLabel,

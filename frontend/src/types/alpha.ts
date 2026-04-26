@@ -1,3 +1,30 @@
+import type {
+  ProviderCapability,
+  ProviderId,
+  ProviderModelRef,
+  ResearchRoleId,
+  TaskRouteTarget,
+  ProviderModelConfig,
+  UserModelConfig,
+  SanitizedProviderModelConfig,
+  ProviderUiHints,
+  ProviderConfigField,
+} from './config'
+import type { MethodEvolutionStep, PaperRoleInNode, PaperSubsectionKind } from './article'
+
+export type {
+  ProviderCapability,
+  ProviderId,
+  ProviderModelRef,
+  ResearchRoleId,
+  TaskRouteTarget,
+  ProviderModelConfig,
+  UserModelConfig,
+  SanitizedProviderModelConfig,
+  ProviderUiHints,
+  ProviderConfigField,
+}
+
 export type TopicCardEditorial = {
   eyebrow: string
   digest: string
@@ -34,6 +61,11 @@ export type TopicNodeCard = {
   summary: string
   explanation: string
   paperCount: number
+  figureCount: number
+  tableCount: number
+  formulaCount: number
+  figureGroupCount: number
+  evidenceCount: number
   paperIds: string[]
   primaryPaperTitle: string
   primaryPaperId: string
@@ -130,8 +162,23 @@ export type TopicTimelineStage = {
   yearLabel: string
   dateLabel: string
   timeLabel: string
+  /** Formatted time label with specific format (e.g., "23.01", "23.01-03", "23.01.15-03.20") */
+  formattedTimeLabel?: string
+  /** Time label format type used for this stage */
+  timeLabelFormat?: 'year' | 'year-month' | 'month' | 'month-range' | 'date-range'
   stageThesis: string
   editorial: TopicStageEditorial
+}
+
+/** Supported stage time label formats for multi-timeline display */
+export type StageTimeLabelFormat = 'year' | 'year-month' | 'month' | 'month-range' | 'date-range'
+
+/** Helper type for stage time range information */
+export type StageTimeRange = {
+  startDate: Date
+  endDate: Date
+  format: StageTimeLabelFormat
+  formattedLabel: string
 }
 
 export type TopicGraphNode = TopicNodeCard & {
@@ -167,12 +214,32 @@ export type TopicGraphLane = {
   roleLabel: string
   label: string
   labelEn: string
+  legendLabel: string
+  legendLabelEn: string
   description: string
   periodLabel: string
   nodeCount: number
   stageCount: number
   latestNodeId: string
   latestAnchorId: string
+  /** Reference to parent timeline for multi-timeline support */
+  timelineId?: string
+}
+
+export type TopicGraphTimeline = {
+  timelineId: string
+  label: string
+  labelEn?: string
+  color: string
+  isPrimary: boolean
+  /** Lane index range this timeline covers [start, end] */
+  laneRange: [number, number]
+  /** Period label for this timeline (e.g., "2023.01-03") */
+  periodLabel: string
+  /** Sort order for timeline display */
+  order?: number
+  /** Description of this timeline's focus or scope */
+  description?: string
 }
 
 export type TopicViewModel = {
@@ -212,6 +279,8 @@ export type TopicViewModel = {
     columnCount: number
     lanes: TopicGraphLane[]
     nodes: TopicGraphNode[]
+    /** Multi-timeline support - groups lanes into timelines (max 10) */
+    timelines?: TopicGraphTimeline[]
   }
   /** Generation state - always provided by backend */
   generationState: {
@@ -246,6 +315,8 @@ export type TopicViewModel = {
     authors: string[]
     citationCount: number | null
     coverImage: string | null
+    originalUrl?: string
+    pdfUrl?: string
     figuresCount: number
     tablesCount: number
     formulasCount: number
@@ -266,6 +337,7 @@ export type TopicViewModel = {
     stageLabel: string
   }>
   narrativeArticle: string
+  articleMarkdown?: string
   closingEditorial: TopicClosingEditorial
   resources: Array<{
     id: string
@@ -402,6 +474,8 @@ export type EvidenceExplanation = {
   imagePath?: string | null
   whyItMatters?: string
   formulaLatex?: string | null
+  tableHeaders?: string[]
+  tableRows?: unknown[]
   explanation?: string
   importance?: number
   placementHint?: string
@@ -425,6 +499,22 @@ export type PaperRole = {
   coverImage: string | null
   originalUrl?: string
   pdfUrl?: string
+}
+
+export type WorkbenchReferenceEntry = {
+  paperId: string
+  title: string
+  titleEn?: string
+  publishedAt?: string
+  authors?: string[]
+  journal?: string
+  doi?: string
+  citationCount?: number | null
+  originalUrl?: string
+  pdfUrl?: string
+  route?: string
+  summary?: string
+  explanation?: string
 }
 
 export type PaperArticleViewModel = {
@@ -470,6 +560,7 @@ export type PaperArticleViewModel = {
     sections: ArticleSection[]
     closing: string[]
   }
+  articleMarkdown?: string
   critique: ReviewerCritique
   evidence: EvidenceExplanation[]
   references?: Array<{
@@ -481,6 +572,88 @@ export type PaperArticleViewModel = {
     originalUrl?: string
     pdfUrl?: string
   }>
+}
+
+export type NodeResearchPaperBrief = {
+  paperId: string
+  paperTitle: string
+  role: PaperRoleInNode
+  publishedAt?: string
+  summary: string
+  contribution: string
+  evidenceAnchorIds: string[]
+  keyFigureIds: string[]
+  keyTableIds: string[]
+  keyFormulaIds: string[]
+}
+
+export type NodeResearchEvidenceChain = {
+  paperId: string
+  paperTitle: string
+  subsectionKind: PaperSubsectionKind
+  subsectionTitle: string
+  summary: string
+  evidenceAnchorIds: string[]
+}
+
+export type NodeResearchMethodEvolution = MethodEvolutionStep & {
+  fromPaperId?: string
+  fromPaperTitle?: string
+  toPaperId?: string
+  toPaperTitle?: string
+  transitionType?: 'method-evolution' | 'problem-shift' | 'scale-up' | 'scope-broaden' | 'complementary'
+  anchorId?: string
+  evidenceAnchorIds?: string[]
+}
+
+export type NodeResearchView = {
+  evidence: {
+    featuredAnchorIds: string[]
+    supportingAnchorIds: string[]
+    featured: EvidenceExplanation[]
+    supporting: EvidenceExplanation[]
+    paperBriefs: NodeResearchPaperBrief[]
+    evidenceChains: NodeResearchEvidenceChain[]
+    coverage: {
+      totalEvidenceCount: number
+      renderableEvidenceCount: number
+      figureCount: number
+      tableCount: number
+      formulaCount: number
+      sectionCount: number
+      featuredCount: number
+      supportingCount: number
+    }
+  }
+  methods: {
+    entries: Array<{
+      paperId: string
+      paperTitle: string
+      publishedAt?: string
+      title: string
+      titleEn?: string
+      summary: string
+      keyPoints: string[]
+    }>
+    evolution: NodeResearchMethodEvolution[]
+    dimensions: string[]
+  }
+  problems: {
+    items: Array<{
+      paperId: string
+      paperTitle: string
+      title: string
+      titleEn?: string
+      status: 'solved' | 'partial' | 'open'
+    }>
+    openQuestions: string[]
+  }
+  coreJudgment: {
+    content: string
+    contentEn: string
+    confidence: 'high' | 'medium' | 'low' | 'speculative'
+    quickTags: string[]
+  } | null
 }
 
 export type NodeArticleViewModel = {
@@ -519,6 +692,7 @@ export type NodeArticleViewModel = {
     sections: ArticleSection[]
     closing: string[]
   }
+  articleMarkdown?: string
   critique: ReviewerCritique
   evidence: EvidenceExplanation[]
   /** 增强版文章流（8-Pass深度解析） */
@@ -528,19 +702,12 @@ export type NodeArticleViewModel = {
     content: string
     contentEn: string
   }
+  researchView: NodeResearchView
 }
 
 export type PaperViewModel = PaperArticleViewModel
 export type NodeViewModel = NodeArticleViewModel & {
-  references?: Array<{
-    paperId: string
-    title: string
-    publishedAt?: string
-    authors?: string[]
-    citationCount?: number | null
-    originalUrl?: string
-    pdfUrl?: string
-  }>
+  references: WorkbenchReferenceEntry[]
 }
 
 export type SearchResultKind =
@@ -710,6 +877,30 @@ export type PromptStudioBundle = {
   templates: PromptTemplateRecord[]
   productCopies: ProductCopyRecord[]
   runtime: GenerationRuntimeConfig
+  runtimeMeta?: {
+    key: string
+    revision: number
+    hash: string
+    updatedAt: string | null
+    source: string
+    actor: string | null
+    sizeBytes: number
+    topLevelKeys: string[]
+    legacy: boolean
+  }
+  runtimeHistory?: Array<{
+    key: string
+    revision: number
+    hash: string
+    updatedAt: string | null
+    source: string
+    actor: string | null
+    sizeBytes: number
+    topLevelKeys: string[]
+    legacy: boolean
+    previousHash: string | null
+    warnings: string[]
+  }>
   externalAgents: {
     rootDir: string
     readmePath: string
@@ -749,7 +940,9 @@ export type SearchResponse = {
   }
 }
 
-export type TopicWorkbenchTab = 'assistant' | 'notes' | 'similar' | 'resources'
+export type TopicResearchView = 'search' | 'references' | 'resources'
+
+export type TopicWorkbenchTab = 'assistant' | 'research'
 
 export type AssistantState =
   | 'empty'
@@ -806,7 +999,9 @@ export type TopicWorkbenchAction = {
     | 'export-highlights'
     | 'export-notes'
   summary: string
-  targetTab?: 'assistant' | 'notes'
+  targetTab?: 'assistant' | 'research'
+  targetResearchView?: TopicResearchView
+  targetRoute?: string
   durationHours?: number
 }
 
@@ -842,6 +1037,11 @@ export type ResearchTaskProgress = {
   discoveredPapers: number
   admittedPapers: number
   generatedContents: number
+  // Evidence counts
+  figureCount: number
+  tableCount: number
+  formulaCount: number
+  figureGroupCount: number
   startedAt: string | null
   deadlineAt: string | null
   completedAt: string | null
@@ -1139,9 +1339,7 @@ export type TopicExportStageDossier = {
   stageThesis: string
   editorial: TopicStageEditorial
   nodeCount: number
-  paperCount: number
   nodeIds: string[]
-  paperIds: string[]
   pipeline: ResearchPipelineContextSummary
 }
 
@@ -1159,7 +1357,6 @@ export type TopicResearchExportBundle = {
   sessionMemory: TopicSessionMemoryContext
   stageDossiers: TopicExportStageDossier[]
   nodeDossiers: NodeViewModel[]
-  paperDossiers: PaperViewModel[]
 }
 
 export type TopicResearchExportBatch = {
@@ -1178,6 +1375,7 @@ export type ResearchTaskConfig = {
   action: 'discover' | 'refresh' | 'sync'
   researchMode?: ResearchMode
   options?: {
+    stageDurationDays?: number
     durationHours?: number
     cycleDelayMs?: number
     stageIndex?: number
@@ -1248,6 +1446,31 @@ export type TopicSessionMemoryContext = {
   recentEvents: TopicSessionMemoryEvent[]
 }
 
+export type WorkbenchMaterialKind = 'image' | 'pdf' | 'text'
+
+export type WorkbenchMaterialStatus = 'parsing' | 'ready' | 'vision-only' | 'error'
+
+export type WorkbenchMaterialSummary = {
+  id: string
+  kind: WorkbenchMaterialKind
+  name: string
+  mimeType: string
+  summary: string
+  highlights?: string[]
+  status?: WorkbenchMaterialStatus
+}
+
+export type TopicChatWorkbenchPayload = {
+  controls?: {
+    responseStyle?: 'brief' | 'balanced' | 'deep'
+    reasoningEnabled?: boolean
+    retrievalEnabled?: boolean
+  }
+  contextItems?: string[]
+  agentBrief?: string
+  materials?: WorkbenchMaterialSummary[]
+}
+
 export type TopicCognitiveMemoryKind = 'project' | 'feedback' | 'reference'
 
 export type TopicCognitiveMemorySource =
@@ -1283,6 +1506,7 @@ export type StoredChatMessage = {
   suggestedActions?: SuggestedAction[]
   guidanceReceipt?: TopicGuidanceReceipt
   notice?: OmniIssue
+  workbench?: Pick<TopicChatWorkbenchPayload, 'agentBrief' | 'materials'>
   createdAt: string
 }
 
@@ -1309,24 +1533,18 @@ export type EvidencePayload = {
   label: string
   quote: string
   content: string
+  page?: number | null
+  sourcePaperId?: string
+  sourcePaperTitle?: string
+  imagePath?: string | null
   whyItMatters?: string
+  formulaLatex?: string | null
+  tableHeaders?: string[]
+  tableRows?: unknown[]
   placementHint?: string
   importance?: number
   thumbnailPath?: string | null
   metadata?: Record<string, unknown>
-}
-
-export type ProviderCapability = {
-  text: boolean
-  image: boolean
-  pdf: boolean
-  chart: boolean
-  formula: boolean
-  citationsNative: boolean
-  fileParserNative: boolean
-  toolCalling: boolean
-  jsonMode: boolean
-  streaming: boolean
 }
 
 export type ProviderAuthChoice = {
@@ -1338,16 +1556,6 @@ export type ProviderAuthChoice = {
   groupId: string
   groupLabel: string
   groupHint?: string
-}
-
-export type ProviderConfigField = {
-  key: string
-  label: string
-  description: string
-  type: 'string' | 'number' | 'boolean' | 'json'
-  placeholder?: string
-  defaultValue?: string | number | boolean | Record<string, string> | null
-  multiline?: boolean
 }
 
 export type ProviderConfigSchema = {
@@ -1363,13 +1571,6 @@ export type ProviderConfigSchema = {
       multiline?: boolean
     }
   >
-}
-
-export type ProviderUiHints = {
-  supportsCustomBaseUrl?: boolean
-  supportsCustomHeaders?: boolean
-  tone?: 'global' | 'china' | 'custom'
-  recommendedFor?: string[]
 }
 
 export type ProviderContract = {
@@ -1403,40 +1604,6 @@ export type ProviderContract = {
   >
 }
 
-export type ProviderId =
-  | 'nvidia'
-  | 'openai_compatible'
-  | 'openai'
-  | 'anthropic'
-  | 'google'
-  | 'dashscope'
-  | 'bigmodel'
-  | 'ark'
-  | 'hunyuan'
-  | 'deepseek'
-
-export type ProviderModelRef = {
-  provider: ProviderId
-  model: string
-}
-
-export type ResearchRoleId =
-  | 'workbench_chat'
-  | 'topic_architect'
-  | 'research_judge'
-  | 'node_writer'
-  | 'paper_writer'
-  | 'critic'
-  | 'localizer'
-  | 'vision_reader'
-
-export type TaskRouteTarget = 'language' | 'multimodal' | ResearchRoleId
-
-export type SanitizedProviderModelConfig = ProviderModelConfig & {
-  apiKeyStatus: 'configured' | 'missing'
-  apiKeyPreview?: string
-}
-
 export type OmniIssue = {
   code: 'missing_key' | 'invalid_key' | 'provider_error'
   title: string
@@ -1444,28 +1611,6 @@ export type OmniIssue = {
   provider?: ProviderId | 'backend'
   model?: string
   slot?: 'language' | 'multimodal'
-}
-
-export type ProviderModelConfig = ProviderModelRef & {
-  baseUrl?: string
-  apiKey?: string
-  apiKeyRef?: string
-  providerOptions?: Record<string, unknown>
-  options?: {
-    thinking?: 'on' | 'off' | 'auto'
-    citations?: 'native' | 'backend'
-    parser?: 'native' | 'backend'
-    temperature?: number
-    maxTokens?: number
-  }
-}
-
-export type UserModelConfig = {
-  language?: ProviderModelConfig | null
-  multimodal?: ProviderModelConfig | null
-  roles?: Partial<Record<ResearchRoleId, ProviderModelConfig | null>>
-  taskOverrides?: Partial<Record<string, ProviderModelRef>>
-  taskRouting?: Partial<Record<string, TaskRouteTarget>>
 }
 
 export type ModelConfigResponse = {

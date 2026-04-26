@@ -19,9 +19,7 @@ export function SidebarToolTabs({
 
   const labels: Record<TopicWorkbenchTab, string> = {
     assistant: workbenchText('assistant.tabAssistant', 'workbench.tabAssistant', 'Assistant'),
-    notes: workbenchText('assistant.tabNotes', 'workbench.tabNotes', 'Notes'),
-    similar: workbenchText('assistant.tabSimilar', 'workbench.tabSearch', 'Search'),
-    resources: workbenchText('assistant.tabResources', 'workbench.tabResources', 'Resources'),
+    research: workbenchText('assistant.tabResearch', 'workbench.tabResearch', 'Research'),
   }
   const visibleTabs =
     tabs && tabs.length > 0 ? tabs : (Object.keys(labels) as TopicWorkbenchTab[])
@@ -38,10 +36,10 @@ export function SidebarToolTabs({
           data-testid={`sidebar-tab-${tab}`}
           onClick={() => onChange(tab)}
           className={cn(
-            'rounded-full px-2.5 py-1 text-[10px] transition',
+            'rounded-full border px-2.5 py-1 text-[10px] transition',
             activeTab === tab
-              ? 'bg-black text-white'
-              : 'bg-[var(--surface-soft)] text-black/52 hover:text-black',
+              ? 'border-black/14 bg-black/[0.04] text-black/78'
+              : 'border-transparent bg-transparent text-black/46 hover:border-black/8 hover:bg-black/[0.02] hover:text-black/72',
           )}
         >
           {labels[tab]}

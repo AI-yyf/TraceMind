@@ -7,6 +7,7 @@ import {
   extractPDFWithPython,
   type PDFExtractionResult,
 } from './pdf-extractor'
+import { enhanceExtractedFormulasWithVision } from './formula-vision'
 
 type PaperGroundingLookup = {
   id: string
@@ -19,6 +20,7 @@ type PaperGroundingLookup = {
     figures: number
     tables: number
     formulas: number
+    figure_groups: number
   }
 }
 
@@ -42,6 +44,7 @@ export type PaperPdfGroundingResult =
         figures: number
         tables: number
         formulas: number
+        figureGroups: number
       }
     }
   | {
@@ -53,6 +56,7 @@ export type PaperPdfGroundingResult =
         figures: number
         tables: number
         formulas: number
+        figureGroups: number
       }
     }
 
@@ -172,7 +176,24 @@ function buildFormulaRows(paperId: string, result: PDFExtractionResult) {
     latex: formula.latex,
     rawText: formula.rawText,
     page: formula.page,
+    imagePath: formula.imagePath,  // Preserve image path for VLM formula recognition
   }))
+}
+
+function buildPersistedExtractionPathSummary(args: {
+  figureRows: Array<{ imagePath?: string | null }>
+  tableRows: Array<{ number: number; rawText?: string | null }>
+  formulaRows: Array<{ number: string; rawText?: string | null }>
+}) {
+  return {
+    figurePaths: args.figureRows.map((figure) => figure.imagePath).filter(Boolean),
+    tablePaths: args.tableRows
+      .map((table) => (table.rawText ? `table_${table.number}` : null))
+      .filter(Boolean),
+    formulaPaths: args.formulaRows
+      .map((formula) => (formula.rawText ? `formula_${formula.number}` : null))
+      .filter(Boolean),
+  }
 }
 
 function normalizeSectionText(value: string | null | undefined) {
@@ -351,6 +372,22 @@ export function buildPaperSectionRowsFromExtraction(
     })
   }
 
+  if (Array.isArray(result.sections) && result.sections.length > 0) {
+    for (const section of result.sections) {
+      if (rows.length >= 10) break
+
+      const sourceSectionTitle = normalizeSectionText(section.sourceSectionTitle)
+      const editorialTitle = normalizeSectionText(section.editorialTitle) || sourceSectionTitle
+      const paragraphs = sanitizeSectionParagraphs(section.paragraphs, 4)
+
+      pushSection(sourceSectionTitle, editorialTitle, paragraphs)
+    }
+
+    if (rows.length > 0) {
+      return rows.slice(0, 10)
+    }
+  }
+
   const abstractParagraphs = sanitizeSectionParagraphs(splitSectionParagraphs(result.abstract, 3), 3)
   if (abstractParagraphs.length > 0) {
     pushSection('Abstract', 'Abstract and entry', abstractParagraphs)
@@ -382,6 +419,31 @@ export function buildPaperSectionRowsFromExtraction(
   return rows.slice(0, 10)
 }
 
+function buildFigureGroupRows(paperId: string, result: PDFExtractionResult) {
+  if (!Array.isArray(result.figureGroups) || result.figureGroups.length === 0) {
+    return []
+  }
+
+  return result.figureGroups.map((group) => ({
+    id: `fg-${paperId}-${group.groupId}`,
+    paperId,
+    groupId: group.groupId,
+    caption: group.caption || '',
+    page: group.subFigures.length > 0 ? group.subFigures[0].page : 0,
+    subFigures: JSON.stringify(
+      group.subFigures.map((sf) => ({
+        index: sf.index,
+        figureId: sf.figureId,
+        subId: sf.subId,
+        imagePath: sf.imagePath,
+        caption: sf.caption,
+        page: sf.page,
+        confidence: sf.confidence ?? null,
+      })),
+    ),
+  }))
+}
+
 export async function persistExtractionResult(args: {
   paperId: string
   result: PDFExtractionResult
@@ -393,7 +455,12 @@ export async function persistExtractionResult(args: {
   const tableRows = buildTableRows(paperId, result)
   const formulaRows = buildFormulaRows(paperId, result)
   const sectionRows = buildPaperSectionRowsFromExtraction(paperId, result)
-  const figurePaths = figureRows.map((figure) => figure.imagePath).filter(Boolean)
+  const figureGroupRows = buildFigureGroupRows(paperId, result)
+  const { figurePaths, tablePaths, formulaPaths } = buildPersistedExtractionPathSummary({
+    figureRows,
+    tableRows,
+    formulaRows,
+  })
   // Smart figure selection: prioritize architecture/method diagrams over first figure
   const coverPath = pickRepresentativeFigureImage(result.figures) || null
 
@@ -403,6 +470,7 @@ export async function persistExtractionResult(args: {
       tx.tables.deleteMany({ where: { paperId } }),
       tx.formulas.deleteMany({ where: { paperId } }),
       tx.paper_sections.deleteMany({ where: { paperId } }),
+      tx.figure_groups.deleteMany({ where: { paperId } }),
     ])
 
     if (figureRows.length > 0) {
@@ -421,6 +489,10 @@ export async function persistExtractionResult(args: {
       await tx.paper_sections.createMany({ data: sectionRows })
     }
 
+    if (figureGroupRows.length > 0) {
+      await tx.figure_groups.createMany({ data: figureGroupRows })
+    }
+
     await tx.papers.update({
       where: { id: paperId },
       data: {
@@ -428,9 +500,15 @@ export async function persistExtractionResult(args: {
         pdfPath: pdfPath ?? undefined,
         coverPath,
         figurePaths: JSON.stringify(figurePaths),
+        tablePaths: JSON.stringify(tablePaths),
+        formulaPaths: JSON.stringify(formulaPaths),
       },
     })
   })
+}
+
+export const __testing = {
+  buildPersistedExtractionPathSummary,
 }
 
 async function loadPaperGroundingLookup(
@@ -451,6 +529,7 @@ async function loadPaperGroundingLookup(
           figures: true,
           tables: true,
           formulas: true,
+          figure_groups: true,
         },
       },
     },
@@ -474,6 +553,7 @@ export async function extractAndPersistPaperPdfFromUrl(args: {
     figures: lookup._count?.figures ?? 0,
     tables: lookup._count?.tables ?? 0,
     formulas: lookup._count?.formulas ?? 0,
+    figureGroups: lookup._count?.figure_groups ?? 0,
   }
   const existingEvidenceCount =
     existingCounts.sections + existingCounts.figures + existingCounts.tables + existingCounts.formulas
@@ -507,7 +587,11 @@ export async function extractAndPersistPaperPdfFromUrl(args: {
     const pdfBuffer = await downloadPdfBufferFromUrl(resolvedPdfUrl)
     fs.writeFileSync(tempPath, pdfBuffer)
 
-    const result = await extractPDFWithPython(tempPath, outputDir, lookup.id, paperTitle)
+    const extracted = await extractPDFWithPython(tempPath, outputDir, lookup.id, paperTitle)
+    const result = await enhanceExtractedFormulasWithVision({
+      result: extracted,
+      outputRoot: outputDir,
+    })
     const sectionRows = buildPaperSectionRowsFromExtraction(lookup.id, result)
 
     await persistExtractionResult({
@@ -526,6 +610,7 @@ export async function extractAndPersistPaperPdfFromUrl(args: {
         figures: result.figures.length,
         tables: result.tables.length,
         formulas: result.formulas.length,
+        figureGroups: result.figureGroups.length,
       },
     }
   } finally {

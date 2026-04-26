@@ -1,6 +1,11 @@
 import type { ReactNode } from 'react'
 
-import type { CitationRef, StoredChatMessage, SuggestedAction } from '@/types/alpha'
+import type {
+  CitationRef,
+  StoredChatMessage,
+  SuggestedAction,
+  WorkbenchMaterialSummary,
+} from '@/types/alpha'
 import { useI18n } from '@/i18n'
 import { AssistantMarkdown } from './AssistantMarkdown'
 
@@ -98,18 +103,46 @@ function guidanceWindowLabel(
   return t('workbench.guidanceWindowNone', 'No window')
 }
 
+function materialKindLabel(
+  material: WorkbenchMaterialSummary,
+  t: (key: string, fallback: string) => string,
+) {
+  if (material.kind === 'image') {
+    return t('workbench.materialKindImage', 'Image')
+  }
+  if (material.kind === 'pdf') {
+    return t('workbench.materialKindPdf', 'PDF')
+  }
+  return t('workbench.materialKindText', 'Text')
+}
+
+function materialStatusLabel(
+  material: WorkbenchMaterialSummary,
+  t: (key: string, fallback: string) => string,
+) {
+  if (material.status === 'vision-only') {
+    return t('workbench.materialStatusVisionOnly', 'Vision grounding')
+  }
+  if (material.status === 'error') {
+    return t('workbench.materialStatusError', 'Needs retry')
+  }
+  return t('workbench.materialStatusReady', 'Ready')
+}
+
 export function ConversationThread({
   messages,
   onOpenCitation,
   onAction,
   onUsePrompt,
   onSaveMessage,
+  onExportMessage,
 }: {
   messages: StoredChatMessage[]
   onOpenCitation: (citation: CitationRef) => void
   onAction: (action: SuggestedAction) => void
   onUsePrompt: (prompt: string) => void
   onSaveMessage?: (message: StoredChatMessage) => void
+  onExportMessage?: (message: StoredChatMessage, format: 'md' | 'json' | 'txt') => void
 }) {
   const { t } = useI18n()
 
@@ -118,6 +151,7 @@ export function ConversationThread({
       {messages.map((message) => {
         const assistant = message.role === 'assistant'
         const guidanceReceipt = assistant ? message.guidanceReceipt ?? null : null
+        const workbenchMeta = message.workbench ?? null
         const retainedJudgment = guidanceReceipt
           ? deriveRetainedJudgmentLine(message.content, guidanceReceipt.summary)
           : ''
@@ -146,6 +180,62 @@ export function ConversationThread({
                   <div className="font-medium">{message.notice.title}</div>
                   <p className="mt-1">{message.notice.message}</p>
                 </div>
+              ) : null}
+
+              {workbenchMeta?.agentBrief ? (
+                <MetaCard
+                  assistant={assistant}
+                  label={t('workbench.agentBriefLabel', 'Agent brief')}
+                >
+                  <p className="text-[11px] leading-5">{workbenchMeta.agentBrief}</p>
+                </MetaCard>
+              ) : null}
+
+              {workbenchMeta?.materials?.length ? (
+                <MetaCard
+                  assistant={assistant}
+                  label={t('workbench.materialsLabel', 'Materials sent')}
+                >
+                  <div className="space-y-2">
+                    {workbenchMeta.materials.map((material) => (
+                      <div
+                        key={material.id}
+                        className={`rounded-[12px] px-2.5 py-2 ${
+                          assistant ? 'bg-[var(--surface-soft)]' : 'bg-white/10'
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded-full border border-current/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em]">
+                            {materialKindLabel(material, t)}
+                          </span>
+                          <span className="text-[11px] font-medium">{material.name}</span>
+                          <span className="text-[10px] opacity-70">
+                            {materialStatusLabel(material, t)}
+                          </span>
+                        </div>
+                        {material.summary ? (
+                          <p className="mt-1 text-[11px] leading-5 opacity-82">
+                            {material.summary}
+                          </p>
+                        ) : null}
+                        {material.highlights?.length ? (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {material.highlights.slice(0, 3).map((highlight) => (
+                              <span
+                                key={`${material.id}:${highlight}`}
+                                className={`rounded-full px-2 py-0.5 text-[10px] ${
+                                  assistant ? 'bg-white text-black/62' : 'bg-white/12 text-white/82'
+                                }`}
+                              >
+                                {highlight}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </MetaCard>
               ) : null}
 
               {guidanceReceipt ? (
@@ -246,15 +336,42 @@ export function ConversationThread({
                 </div>
               ) : null}
 
-              {assistant && onSaveMessage ? (
+              {assistant && (onSaveMessage || onExportMessage) ? (
                 <div className="mt-2 flex flex-wrap gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => onSaveMessage(message)}
-                    className="rounded-full border border-black/10 bg-white px-2.5 py-1 text-[10px] text-black/58 transition hover:border-black/18 hover:text-black"
-                  >
-                    {t('workbench.saveMessage', 'Save to notes')}
-                  </button>
+                  {onSaveMessage ? (
+                    <button
+                      type="button"
+                      onClick={() => onSaveMessage(message)}
+                      className="rounded-full border border-black/10 bg-white px-2.5 py-1 text-[10px] text-black/58 transition hover:border-black/18 hover:text-black"
+                    >
+                      {t('workbench.saveMessage', 'Save to notes')}
+                    </button>
+                  ) : null}
+                  {onExportMessage ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => onExportMessage(message, 'md')}
+                        className="rounded-full border border-black/10 bg-white px-2.5 py-1 text-[10px] text-black/58 transition hover:border-black/18 hover:text-black"
+                      >
+                        {t('workbench.exportMarkdown', 'Export MD')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onExportMessage(message, 'json')}
+                        className="rounded-full border border-black/10 bg-white px-2.5 py-1 text-[10px] text-black/58 transition hover:border-black/18 hover:text-black"
+                      >
+                        {t('workbench.exportJson', 'Export JSON')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onExportMessage(message, 'txt')}
+                        className="rounded-full border border-black/10 bg-white px-2.5 py-1 text-[10px] text-black/58 transition hover:border-black/18 hover:text-black"
+                      >
+                        {t('workbench.exportText', 'Export TXT')}
+                      </button>
+                    </>
+                  ) : null}
                 </div>
               ) : null}
             </article>
@@ -275,6 +392,31 @@ function ReceiptRow({
   return (
     <div className="rounded-[12px] bg-[var(--surface-soft)] px-2.5 py-2">
       <div className="text-[10px] uppercase tracking-[0.16em] text-black/34">{label}</div>
+      <div className="mt-1">{children}</div>
+    </div>
+  )
+}
+
+function MetaCard({
+  assistant,
+  label,
+  children,
+}: {
+  assistant: boolean
+  label: string
+  children: ReactNode
+}) {
+  return (
+    <div
+      className={`mt-2 rounded-[14px] px-3 py-2 text-[11px] leading-5 ${
+        assistant
+          ? 'border border-black/8 bg-white text-black/68'
+          : 'border border-white/10 bg-black text-white/84'
+      }`}
+    >
+      <div className={`text-[10px] uppercase tracking-[0.16em] ${assistant ? 'text-black/36' : 'text-white/52'}`}>
+        {label}
+      </div>
       <div className="mt-1">{children}</div>
     </div>
   )

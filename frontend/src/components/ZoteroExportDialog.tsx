@@ -11,6 +11,7 @@ import {
   FolderOpen,
   KeyRound,
   Loader2,
+  Square,
   Upload,
   X,
 } from 'lucide-react'
@@ -18,20 +19,17 @@ import {
 import { useI18n } from '@/i18n'
 import { apiGet, apiPost } from '@/utils/api'
 import { cn } from '@/utils/cn'
+import {
+  assertZoteroCollectionsResponseContract,
+  assertZoteroConfigResponseContract,
+  assertZoteroExportResponseContract,
+  assertZoteroExportStatusResponseContract,
+  assertZoteroTestResponseContract,
+} from '@/utils/contracts'
 
 // ============================================================================
 // Types
 // ============================================================================
-
-interface ZoteroConfigResponse {
-  configured: boolean
-  config: {
-    userId: string | null
-    username: string | null
-    enabled: boolean
-    hasApiKey: boolean
-  } | null
-}
 
 interface ZoteroTestResponse {
   success: boolean
@@ -50,11 +48,6 @@ interface ZoteroCollection {
   key: string
   name: string
   parent: string | null
-}
-
-interface ZoteroCollectionsResponse {
-  success: boolean
-  collections: ZoteroCollection[]
 }
 
 interface ExportStatusResponse {
@@ -106,6 +99,11 @@ export const ZoteroExportDialog: React.FC<ZoteroExportDialogProps> = ({
   const [customCollectionName, setCustomCollectionName] = useState('')
   const [exportStatus, setExportStatus] = useState<ExportStatusResponse | null>(null)
 
+  // Abort control state
+  const [abortController, setAbortController] = useState<AbortController | null>(null)
+  const [exportProgress, setExportProgress] = useState<{ current: number; total: number } | null>(null)
+  const [wasCancelled, setWasCancelled] = useState(false)
+
   // Mode: 'config' | 'export'
   const [mode, setMode] = useState<'config' | 'export'>('config')
 
@@ -117,7 +115,8 @@ export const ZoteroExportDialog: React.FC<ZoteroExportDialogProps> = ({
       setLoading(true)
       setError(null)
       try {
-        const config = await apiGet<ZoteroConfigResponse>('/api/zotero/config')
+        const config = await apiGet<unknown>('/api/zotero/config')
+        assertZoteroConfigResponseContract(config)
         if (config.configured && config.config) {
           setIsConfigured(true)
           setSavedUsername(config.config.username)
@@ -141,11 +140,12 @@ export const ZoteroExportDialog: React.FC<ZoteroExportDialogProps> = ({
   useEffect(() => {
     if (!isOpen || !topicId || !isConfigured) return
 
-    async function loadExportStatus() {
-      try {
-        const status = await apiGet<ExportStatusResponse>(`/api/zotero/export/status/${topicId}`)
-        setExportStatus(status)
-      } catch {
+      async function loadExportStatus() {
+        try {
+          const status = await apiGet<unknown>(`/api/zotero/export/status/${topicId}`)
+          assertZoteroExportStatusResponseContract(status)
+          setExportStatus(status)
+        } catch {
         // Ignore - may not have been exported yet
       }
     }
@@ -157,11 +157,12 @@ export const ZoteroExportDialog: React.FC<ZoteroExportDialogProps> = ({
   useEffect(() => {
     if (!isOpen || mode !== 'export' || !isConfigured) return
 
-    async function loadCollections() {
-      try {
-        const result = await apiGet<ZoteroCollectionsResponse>('/api/zotero/collections')
-        setCollections(result.collections || [])
-      } catch (e) {
+      async function loadCollections() {
+        try {
+          const result = await apiGet<unknown>('/api/zotero/collections')
+          assertZoteroCollectionsResponseContract(result)
+          setCollections(result.collections || [])
+        } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to load collections')
       }
     }
@@ -181,6 +182,9 @@ export const ZoteroExportDialog: React.FC<ZoteroExportDialogProps> = ({
       setCollections([])
       setSelectedCollectionKey('')
       setCustomCollectionName('')
+      setAbortController(null)
+      setExportProgress(null)
+      setWasCancelled(false)
     }
   }, [isOpen])
 
@@ -198,10 +202,11 @@ export const ZoteroExportDialog: React.FC<ZoteroExportDialogProps> = ({
     setTestResult(null)
 
     try {
-      const result = await apiPost<ZoteroTestResponse, { userId: string; apiKey: string }>(
+      const result = await apiPost<unknown, { userId: string; apiKey: string }>(
         '/api/zotero/test',
         { userId, apiKey }
       )
+      assertZoteroTestResponseContract(result)
       setTestResult(result)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Connection test failed')
@@ -221,7 +226,7 @@ export const ZoteroExportDialog: React.FC<ZoteroExportDialogProps> = ({
     setError(null)
 
     try {
-      await apiPost<{ success: boolean }, { userId: string; apiKey: string; username?: string }>(
+      await apiPost<unknown, { userId: string; apiKey: string; username?: string }>(
         '/api/zotero/config',
         { userId, apiKey }
       )
@@ -230,7 +235,8 @@ export const ZoteroExportDialog: React.FC<ZoteroExportDialogProps> = ({
       setMode('export')
 
       // Reload config to get username
-      const config = await apiGet<ZoteroConfigResponse>('/api/zotero/config')
+      const config = await apiGet<unknown>('/api/zotero/config')
+      assertZoteroConfigResponseContract(config)
       if (config.config?.username) {
         setSavedUsername(config.config.username)
       }
@@ -246,6 +252,11 @@ export const ZoteroExportDialog: React.FC<ZoteroExportDialogProps> = ({
     setExporting(true)
     setError(null)
     setExportResult(null)
+    setWasCancelled(false)
+
+    // Create AbortController for cancellation support
+    const controller = new AbortController()
+    setAbortController(controller)
 
     const collectionName = customCollectionName || topicName || undefined
 
@@ -275,16 +286,26 @@ export const ZoteroExportDialog: React.FC<ZoteroExportDialogProps> = ({
       } else {
         setError(t('zotero.errors.noTarget', 'No papers to export'))
         setExporting(false)
+        setAbortController(null)
         return
       }
 
-      const result = await apiPost<ZoteroExportResponse, Record<string, unknown>>(
+      // Set initial progress based on expected papers
+      const totalPapers = paperIds?.length || 0
+      if (totalPapers > 0) {
+        setExportProgress({ current: 0, total: totalPapers })
+      }
+
+      const result = await apiPost<unknown, Record<string, unknown>>(
         endpoint,
-        payload
+        payload,
+        controller.signal
       )
+      assertZoteroExportResponseContract(result)
       setExportResult(result)
 
       if (result.success) {
+        setExportProgress({ current: result.exportedCount, total: result.exportedCount })
         setSuccess(
           t('zotero.success.exported', `Exported ${result.exportedCount} papers to Zotero`)
         )
@@ -292,9 +313,32 @@ export const ZoteroExportDialog: React.FC<ZoteroExportDialogProps> = ({
         setError(result.errors[0])
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Export failed')
+      // Handle abort gracefully - don't show error to user
+      if (e instanceof Error && e.name === 'AbortError') {
+        setWasCancelled(true)
+        // Result will be returned from backend with aborted status
+        setExportResult({
+          success: false,
+          exportedCount: exportProgress?.current || 0,
+          errors: [],
+        })
+        setSuccess(
+          t('zotero.success.cancelled', `Cancelled - exported ${exportProgress?.current || 0} papers`)
+        )
+      } else {
+        setError(e instanceof Error ? e.message : 'Export failed')
+      }
     } finally {
       setExporting(false)
+      setAbortController(null)
+    }
+  }
+
+  // Cancel export
+  function handleCancelExport() {
+    if (abortController) {
+      abortController.abort()
+      setWasCancelled(true)
     }
   }
 
@@ -565,38 +609,72 @@ export const ZoteroExportDialog: React.FC<ZoteroExportDialogProps> = ({
                 <div
                   className={cn(
                     'p-3 rounded-[12px] flex items-start gap-3',
-                    exportResult.success ? 'bg-green-50 border border-green-100' : 'bg-red-50 border border-red-100'
+                    exportResult.success ? 'bg-green-50 border border-green-100' :
+                    wasCancelled ? 'bg-yellow-50 border border-yellow-100' : 'bg-red-50 border border-red-100'
                   )}
                 >
                   {exportResult.success ? (
                     <CheckCircle2 className="w-5 h-5 text-green-500 shrink-0 mt-0.5" />
+                  ) : wasCancelled ? (
+                    <Square className="w-5 h-5 text-yellow-500 shrink-0 mt-0.5" />
                   ) : (
                     <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
                   )}
                   <div className="text-[13px]">
-                    {exportResult.success
-                      ? t('zotero.export.result', `Exported ${exportResult.exportedCount} papers successfully`)
-                      : exportResult.errors[0] || 'Export failed'}
+                    {wasCancelled
+                      ? t('zotero.export.cancelled', `Cancelled - exported ${exportResult.exportedCount} papers`)
+                      : exportResult.success
+                        ? t('zotero.export.result', `Exported ${exportResult.exportedCount} papers successfully`)
+                        : exportResult.errors[0] || 'Export failed'}
+                  </div>
+                </div>
+              )}
+
+              {/* Progress display during export */}
+              {exporting && exportProgress && (
+                <div className="p-3 rounded-[12px] bg-[#f59e0b]/5 border border-[#f59e0b]/20">
+                  <div className="flex items-center gap-3">
+                    <Loader2 className="w-5 h-5 animate-spin text-[#f59e0b]" />
+                    <div className="text-[13px] text-black/70">
+                      {t(
+                        'zotero.export.progress',
+                        `Exporting paper ${exportProgress.current}/${exportProgress.total}`
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
 
               {/* Export actions */}
               <div className="flex gap-3 pt-2">
-                <button
-                  onClick={handleExport}
-                  disabled={exporting}
-                  className={cn(
-                    'flex-1 px-4 py-2.5 rounded-[10px] text-[13px] font-medium',
-                    'bg-[#f59e0b] text-white hover:bg-[#f59e0b]/90',
-                    'disabled:opacity-50 disabled:cursor-not-allowed',
-                    'flex items-center justify-center gap-2'
-                  )}
-                >
-                  {exporting && <Loader2 className="w-4 h-4 animate-spin" />}
-                  <Upload className="w-4 h-4" />
-                  {t('zotero.actions.export', 'Export to Zotero')}
-                </button>
+                {exporting ? (
+                  <button
+                    onClick={handleCancelExport}
+                    className={cn(
+                      'flex-1 px-4 py-2.5 rounded-[10px] text-[13px] font-medium',
+                      'bg-red-500 text-white hover:bg-red-600',
+                      'flex items-center justify-center gap-2'
+                    )}
+                  >
+                    <Square className="w-4 h-4" />
+                    {t('zotero.actions.cancel', 'Cancel Export')}
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleExport}
+                    disabled={exporting}
+                    className={cn(
+                      'flex-1 px-4 py-2.5 rounded-[10px] text-[13px] font-medium',
+                      'bg-[#f59e0b] text-white hover:bg-[#f59e0b]/90',
+                      'disabled:opacity-50 disabled:cursor-not-allowed',
+                      'flex items-center justify-center gap-2'
+                    )}
+                  >
+                    {exporting && <Loader2 className="w-4 h-4 animate-spin" />}
+                    <Upload className="w-4 h-4" />
+                    {t('zotero.actions.export', 'Export to Zotero')}
+                  </button>
+                )}
 
                 <button
                   onClick={handleDeleteConfig}

@@ -1,7 +1,7 @@
 import { prisma } from '../../lib/prisma'
 
 const TOPIC_GUIDANCE_LEDGER_KEY_PREFIX = 'topic:guidance-ledger:v1:'
-const MAX_TOPIC_GUIDANCE_DIRECTIVES = 48
+const MAX_TOPIC_GUIDANCE_DIRECTIVES = 500
 
 export type TopicGuidanceMessageKind =
   | 'ask'

@@ -11,11 +11,13 @@ import {
   getNodeViewModel,
   orchestrateTopicReaderArtifacts,
   rebuildNodeViewModel,
+  warmTopicReaderArtifacts,
 } from '../services/topics/alpha-reader'
 import { deriveTemporalStageBuckets } from '../services/topics/stage-buckets'
 import { saveTopicStageConfig } from '../services/topics/topic-stage-config'
 import { saveTopicResearchReport } from '../services/topics/research-report'
 import { recordTopicGuidanceDirective } from '../services/topics/topic-guidance-ledger'
+import { ensureConfiguredTopicMaterialized } from '../services/topics/topic-config-sync'
 
 type ReaderFixture = {
   topicId: string
@@ -132,6 +134,31 @@ test('reader drops table-of-contents style section bodies from node articles', (
   assert.deepEqual(sections.map((section: { id: string }) => section.id), ['clean-1'])
 })
 
+test('reader drops topic placement utility sections from node articles', () => {
+  const sections = alphaReaderTesting.getRenderablePaperSections({
+    sections: [
+      {
+        id: 'placement-1',
+        sourceSectionTitle: 'Topic placement',
+        editorialTitle: 'Topic placement',
+        paragraphs: JSON.stringify([
+          'It is currently grouped into 2 node(s): DeepDriving: Learning Affordance for Direct Perception in Autonomous Driving · Learning by Cheating.',
+        ]),
+      },
+      {
+        id: 'clean-1',
+        sourceSectionTitle: 'Method',
+        editorialTitle: 'Method',
+        paragraphs: JSON.stringify([
+          'The planner supervision block teaches the policy to recover from trajectory drift under closed-loop control.',
+        ]),
+      },
+    ],
+  })
+
+  assert.deepEqual(sections.map((section: { id: string }) => section.id), ['clean-1'])
+})
+
 test('reader replaces generic body section titles with article-like labels', () => {
   const sections = alphaReaderTesting.getRenderablePaperSections({
     sections: [
@@ -170,7 +197,7 @@ test('reader selects only the strongest evidence blocks for the article flow', (
     {
       anchorId: 'figure:generic',
       type: 'figure',
-      route: '/paper/a?evidence=figure:generic',
+      route: '/node/node-a?evidence=figure%3Ageneric',
       title: 'Figure 1',
       label: 'Paper / Figure 1',
       quote: '图 1',
@@ -183,7 +210,7 @@ test('reader selects only the strongest evidence blocks for the article flow', (
     {
       anchorId: 'table:results',
       type: 'table',
-      route: '/paper/a?evidence=table:results',
+      route: '/node/node-a?evidence=table%3Aresults',
       title: 'Table 2',
       label: 'Paper / Table 2',
       quote: 'Ablation results on WOMD',
@@ -195,7 +222,7 @@ test('reader selects only the strongest evidence blocks for the article flow', (
     {
       anchorId: 'formula:loss',
       type: 'formula',
-      route: '/paper/a?evidence=formula:loss',
+      route: '/node/node-a?evidence=formula%3Aloss',
       title: 'Formula 1',
       label: 'Paper / Formula 1',
       quote: 'L = ||x - y||',
@@ -218,7 +245,7 @@ test('reader skips generic visual noise when selecting article evidence', () => 
     {
       anchorId: 'figure:generic',
       type: 'figure',
-      route: '/paper/a?evidence=figure:generic',
+      route: '/node/node-a?evidence=figure%3Ageneric',
       title: 'Figure 1',
       label: 'Paper / Figure 1',
       quote: 'Figure 1',
@@ -231,7 +258,7 @@ test('reader skips generic visual noise when selecting article evidence', () => 
     {
       anchorId: 'formula:noise',
       type: 'formula',
-      route: '/paper/a?evidence=formula:noise',
+      route: '/node/node-a?evidence=formula%3Anoise',
       title: 'Formula 1',
       label: 'Paper / Formula 1',
       quote: '#',
@@ -244,7 +271,7 @@ test('reader skips generic visual noise when selecting article evidence', () => 
     {
       anchorId: 'table:results',
       type: 'table',
-      route: '/paper/a?evidence=table:results',
+      route: '/node/node-a?evidence=table%3Aresults',
       title: 'Table 2',
       label: 'Paper / Table 2',
       quote: 'Closed-loop results',
@@ -256,6 +283,61 @@ test('reader skips generic visual noise when selecting article evidence', () => 
   ])
 
   assert.deepEqual(selected.map((item) => item.anchorId), ['table:results'])
+})
+
+test('paper route anchors onto node reading surfaces when node context exists', () => {
+  assert.equal(
+    alphaReaderTesting.paperRoute({
+      paperId: 'paper-node',
+      nodeId: 'node-1',
+    }),
+    '/node/node-1?anchor=paper%3Apaper-node',
+  )
+
+  assert.equal(
+    alphaReaderTesting.paperRoute({
+      paperId: 'paper-node',
+      nodeId: 'node-1',
+      evidenceId: 'figure:1',
+    }),
+    '/node/node-1?evidence=figure%3A1',
+  )
+})
+
+test('paper route anchors onto topic reading surfaces when only topic context exists', () => {
+  assert.equal(
+    alphaReaderTesting.paperRoute({
+      paperId: 'paper-topic',
+      topicId: 'topic-1',
+    }),
+    '/topic/topic-1?anchor=paper%3Apaper-topic',
+  )
+
+  assert.equal(
+    alphaReaderTesting.paperRoute({
+      paperId: 'paper-topic',
+      topicId: 'topic-1',
+      evidenceId: 'table:2',
+    }),
+    '/topic/topic-1?evidence=table%3A2',
+  )
+})
+
+test('paper route no longer fabricates node routes from paper ids without route context', () => {
+  assert.equal(
+    alphaReaderTesting.paperRoute({
+      paperId: 'paper-orphan',
+    }),
+    '/',
+  )
+
+  assert.equal(
+    alphaReaderTesting.paperRoute({
+      paperId: 'paper-orphan',
+      evidenceId: 'figure:missing',
+    }),
+    '/',
+  )
 })
 
 async function createStageScopedReaderFixture(): Promise<ReaderFixture> {
@@ -1840,11 +1922,296 @@ test('getNodeViewModel returns enhanced article flow when enhanced mode is reque
       'enhanced flow should include article-style paper blocks',
     )
     assert.ok(viewModel.coreJudgment?.content)
+    assert.ok(viewModel.researchView, 'node view model should expose a structured research view payload')
+    assert.ok(
+      viewModel.researchView!.evidence.featuredAnchorIds.length >= 1,
+      'research view should prioritize at least one featured evidence anchor',
+    )
+    assert.ok(
+      viewModel.researchView!.evidence.featured.some((entry) => entry.type !== 'section'),
+      'research view should prioritize renderable evidence payloads before section-only anchors',
+    )
+    assert.ok(
+      viewModel.researchView!.evidence.paperBriefs.length >= 1,
+      'research view should expose per-paper briefs for the node quick-grasp surface',
+    )
+    assert.ok(
+      viewModel.researchView!.evidence.evidenceChains.length >= 1,
+      'research view should expose evidence chains derived from enhanced article subsections',
+    )
+    assert.ok(
+      viewModel.researchView!.evidence.coverage.renderableEvidenceCount >=
+        viewModel.researchView!.evidence.coverage.figureCount +
+          viewModel.researchView!.evidence.coverage.tableCount +
+          viewModel.researchView!.evidence.coverage.formulaCount,
+      'research view coverage should count the renderable evidence exposed to the node view',
+    )
+    assert.ok(
+      viewModel.researchView!.methods.evolution.some((entry) => Boolean(entry.transitionType)),
+      'research view should preserve transition metadata from enhanced paper-to-paper links',
+    )
+    const researchEvidence = [
+      ...viewModel.researchView!.evidence.featured,
+      ...viewModel.researchView!.evidence.supporting,
+    ]
+    assert.ok(
+      researchEvidence.every((entry) => (entry.importance ?? 0) >= 0),
+      'research view evidence should only expose contract-safe non-negative importance scores',
+    )
+    assert.equal(
+      viewModel.researchView!.coreJudgment?.content,
+      viewModel.coreJudgment?.content ?? null,
+    )
   } finally {
     omniGateway.hasAvailableModel = originalHasAvailableModel
     await prisma.topics.delete({
       where: { id: fixture.topicId },
     })
+  }
+})
+
+test('getNodeViewModel rebuilds enhanced node artifacts after cache cleanup without hitting slow provider calls', async () => {
+  const originalHasAvailableModel = omniGateway.hasAvailableModel
+  const originalComplete = omniGateway.complete
+  let availabilityChecks = 0
+  let completionCalls = 0
+
+  omniGateway.hasAvailableModel = async () => {
+    availabilityChecks += 1
+    return true
+  }
+  omniGateway.complete = async () => {
+    completionCalls += 1
+    throw new Error('provider should not be called for grounded enhanced node rebuilds')
+  }
+
+  const fixture = await createStageScopedReaderFixture()
+  const defaultArtifactKey = `alpha:reader-artifact:node:${fixture.nodeId}`
+  const enhancedArtifactKey = `alpha:reader-artifact:node:enhanced:${fixture.nodeId}`
+
+  try {
+    await prisma.system_configs.deleteMany({
+      where: {
+        key: {
+          in: [defaultArtifactKey, enhancedArtifactKey],
+        },
+      },
+    })
+
+    const viewModel = await getNodeViewModel(fixture.nodeId, {
+      stageWindowMonths: 1,
+      enhanced: true,
+    })
+
+    assert.ok(Array.isArray(viewModel.enhancedArticleFlow))
+    assert.ok(viewModel.enhancedArticleFlow!.length > 0)
+    assert.equal(
+      viewModel.enhancedArticleFlow!.filter((block) => block.type === 'paper-article').length,
+      fixture.stagePaperIds.length,
+    )
+    assert.equal(availabilityChecks, 0)
+    assert.equal(completionCalls, 0)
+  } finally {
+    omniGateway.hasAvailableModel = originalHasAvailableModel
+    omniGateway.complete = originalComplete
+    await prisma.system_configs.deleteMany({
+      where: {
+        key: {
+          in: [defaultArtifactKey, enhancedArtifactKey],
+        },
+      },
+    })
+    await cleanupReaderFixture(fixture)
+  }
+})
+
+test('getNodeViewModel rebuilds default node artifacts after cache cleanup without queueing slow provider calls', async () => {
+  const originalHasAvailableModel = omniGateway.hasAvailableModel
+  const originalComplete = omniGateway.complete
+  let availabilityChecks = 0
+  let completionCalls = 0
+
+  omniGateway.hasAvailableModel = async () => {
+    availabilityChecks += 1
+    return true
+  }
+  omniGateway.complete = async () => {
+    completionCalls += 1
+    throw new Error('provider should not be called for default node cache hydration')
+  }
+
+  const fixture = await createStageScopedReaderFixture()
+  const defaultArtifactKey = `alpha:reader-artifact:node:${fixture.nodeId}`
+  const topicArtifactIndexKey = `generation-artifact-index:v1:${fixture.topicId}`
+
+  try {
+    await prisma.system_configs.deleteMany({
+      where: {
+        key: {
+          in: [defaultArtifactKey, topicArtifactIndexKey],
+        },
+      },
+    })
+
+    const viewModel = await getNodeViewModel(fixture.nodeId, {
+      stageWindowMonths: 1,
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    assert.ok(Array.isArray(viewModel.article.flow))
+    assert.ok(viewModel.article.flow.length > 0)
+    assert.equal(availabilityChecks, 0)
+    assert.equal(completionCalls, 0)
+
+    const artifactIndexRecord = await prisma.system_configs.findUnique({
+      where: { key: topicArtifactIndexKey },
+    })
+    assert.equal(
+      artifactIndexRecord,
+      null,
+      'quick default hydration should not block on topic artifact index writes',
+    )
+  } finally {
+    omniGateway.hasAvailableModel = originalHasAvailableModel
+    omniGateway.complete = originalComplete
+    await prisma.system_configs.deleteMany({
+      where: {
+        key: {
+          in: [defaultArtifactKey, topicArtifactIndexKey],
+        },
+      },
+    })
+    await cleanupReaderFixture(fixture)
+  }
+})
+
+test('getNodeViewModel falls back to a direct quick build when default artifact persistence stalls', async () => {
+  const fixture = await createStageScopedReaderFixture()
+  const originalUpsert = prisma.system_configs.upsert.bind(prisma.system_configs)
+
+  prisma.system_configs.upsert = (async (args: Parameters<typeof prisma.system_configs.upsert>[0]) => {
+    if (
+      typeof args?.where === 'object' &&
+      args?.where !== null &&
+      'key' in args.where &&
+      args.where.key === `alpha:reader-artifact:node:${fixture.nodeId}`
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 2_500))
+    }
+
+    return originalUpsert(args)
+  }) as unknown as typeof prisma.system_configs.upsert
+
+  try {
+    const started = Date.now()
+    const viewModel = await getNodeViewModel(fixture.nodeId, {
+      stageWindowMonths: 1,
+    })
+    const elapsedMs = Date.now() - started
+
+    assert.ok(Array.isArray(viewModel.article.flow))
+    assert.ok(viewModel.article.flow.length > 0)
+    assert.ok(
+      elapsedMs < 2_500,
+      `default node view model should bypass stalled artifact persistence, got ${elapsedMs}ms`,
+    )
+  } finally {
+    prisma.system_configs.upsert = originalUpsert as typeof prisma.system_configs.upsert
+    await cleanupReaderFixture(fixture)
+  }
+})
+
+test('getNodeViewModel schedules a deferred default node rebuild after publishing a quick snapshot', async () => {
+  const originalHasAvailableModel = omniGateway.hasAvailableModel
+  const originalComplete = omniGateway.complete
+  const originalAllowTestDeferred = process.env.TOPIC_ARTIFACT_ALLOW_TEST_DEFERRED
+  let completionCalls = 0
+
+  omniGateway.hasAvailableModel = async () => false
+  omniGateway.complete = async () => {
+    completionCalls += 1
+    throw new Error('provider should not be called for deferred grounded rebuilds')
+  }
+
+  const fixture = await createStageScopedReaderFixture()
+  const defaultArtifactKey = `alpha:reader-artifact:node:${fixture.nodeId}`
+  const topicArtifactIndexKey = `generation-artifact-index:v1:${fixture.topicId}`
+
+  try {
+    process.env.TOPIC_ARTIFACT_ALLOW_TEST_DEFERRED = '1'
+
+    await prisma.system_configs.deleteMany({
+      where: {
+        key: {
+          in: [defaultArtifactKey, topicArtifactIndexKey],
+        },
+      },
+    })
+
+    const initialViewModel = await getNodeViewModel(fixture.nodeId, {
+      stageWindowMonths: 1,
+    })
+
+    assert.ok(Array.isArray(initialViewModel.article.flow))
+    assert.ok(initialViewModel.article.flow.length > 0)
+
+    const initialRecord = await prisma.system_configs.findUnique({
+      where: { key: defaultArtifactKey },
+    })
+    assert.match(initialRecord?.value ?? '', /"fingerprint":"quick:/u)
+
+    let healedRecord = await prisma.system_configs.findUnique({
+      where: { key: defaultArtifactKey },
+    })
+    let artifactIndexRecord = await prisma.system_configs.findUnique({
+      where: { key: topicArtifactIndexKey },
+    })
+
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      const healedValue = healedRecord?.value ?? ''
+      if (!/"fingerprint":"quick:/u.test(healedValue) && artifactIndexRecord) {
+        break
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 400))
+      ;[healedRecord, artifactIndexRecord] = await Promise.all([
+        prisma.system_configs.findUnique({
+          where: { key: defaultArtifactKey },
+        }),
+        prisma.system_configs.findUnique({
+          where: { key: topicArtifactIndexKey },
+        }),
+      ])
+    }
+
+    assert.ok(healedRecord, 'default node artifact should still be persisted after deferred rebuild')
+    assert.doesNotMatch(
+      healedRecord?.value ?? '',
+      /"fingerprint":"quick:/u,
+      'deferred rebuild should replace the quick fingerprint with a stable artifact fingerprint',
+    )
+    assert.ok(
+      artifactIndexRecord,
+      'deferred rebuild should eventually publish the topic artifact index entry',
+    )
+    assert.equal(completionCalls, 0)
+  } finally {
+    if (originalAllowTestDeferred == null) {
+      delete process.env.TOPIC_ARTIFACT_ALLOW_TEST_DEFERRED
+    } else {
+      process.env.TOPIC_ARTIFACT_ALLOW_TEST_DEFERRED = originalAllowTestDeferred
+    }
+    omniGateway.hasAvailableModel = originalHasAvailableModel
+    omniGateway.complete = originalComplete
+    await prisma.system_configs.deleteMany({
+      where: {
+        key: {
+          in: [defaultArtifactKey, topicArtifactIndexKey],
+        },
+      },
+    })
+    await cleanupReaderFixture(fixture)
   }
 })
 
@@ -1886,6 +2253,14 @@ test('enhanced node reader artifacts use a dedicated cache record that survives 
       where: { key: defaultArtifactKey },
     })
     assert.ok(defaultRecord, 'default node cache should still persist separately')
+    const enhancedRecordAfterDefaultRebuild = await prisma.system_configs.findUnique({
+      where: { key: enhancedArtifactKey },
+    })
+    assert.equal(
+      enhancedRecordAfterDefaultRebuild?.value,
+      firstEnhancedRecord?.value,
+      'default node rebuilds should not overwrite the enhanced node cache payload',
+    )
 
     const secondEnhancedViewModel = await getNodeViewModel(fixture.nodeId, {
       stageWindowMonths: 1,
@@ -1898,11 +2273,6 @@ test('enhanced node reader artifacts use a dedicated cache record that survives 
       where: { key: enhancedArtifactKey },
     })
     assert.ok(secondEnhancedRecord, 'enhanced node cache should remain available after default rebuilds')
-    assert.equal(
-      secondEnhancedRecord?.value,
-      firstEnhancedRecord?.value,
-      'default node rebuilds should not overwrite the enhanced node cache payload',
-    )
   } finally {
     omniGateway.hasAvailableModel = originalHasAvailableModel
     await prisma.system_configs.deleteMany({
@@ -1910,6 +2280,157 @@ test('enhanced node reader artifacts use a dedicated cache record that survives 
         key: {
           in: [defaultArtifactKey, enhancedArtifactKey],
         },
+      },
+    })
+    await cleanupReaderFixture(fixture)
+  }
+})
+
+test('full artifact warming can prebuild enhanced node articles for long-running research topics', async () => {
+  const originalHasAvailableModel = omniGateway.hasAvailableModel
+  omniGateway.hasAvailableModel = async () => false
+
+  const fixture = await createStageScopedReaderFixture()
+  const enhancedArtifactKey = `alpha:reader-artifact:node:enhanced:${fixture.nodeId}`
+
+  try {
+    await prisma.system_configs.deleteMany({
+      where: {
+        key: {
+          in: [enhancedArtifactKey],
+        },
+      },
+    })
+    const nodeBeforeWarm = await prisma.research_nodes.update({
+      where: { id: fixture.nodeId },
+      data: {
+        fullArticleFlow: null,
+        editorialPromptHash: null,
+      },
+      select: {
+        updatedAt: true,
+      },
+    })
+
+    const warmed = await warmTopicReaderArtifacts(fixture.topicId, {
+      limit: 1,
+      mode: 'full',
+      includeEnhancedNodes: true,
+      entityIds: {
+        nodeIds: [fixture.nodeId],
+        paperIds: [],
+      },
+    })
+
+    assert.equal(warmed.warmedNodeCount, 1)
+    assert.equal(warmed.warmedEnhancedNodeCount, 1)
+    assert.equal(warmed.warmedPaperCount, 0)
+
+    const enhancedRecord = await prisma.system_configs.findUnique({
+      where: { key: enhancedArtifactKey },
+    })
+    assert.ok(enhancedRecord, 'full warming should persist an enhanced node cache record')
+
+    const persistedNode = await prisma.research_nodes.findUnique({
+      where: { id: fixture.nodeId },
+      select: {
+        fullArticleFlow: true,
+        updatedAt: true,
+      },
+    })
+    assert.ok(
+      persistedNode?.fullArticleFlow && persistedNode.fullArticleFlow.length > 0,
+      'full warming should also persist fullArticleFlow for the node',
+    )
+    assert.ok(
+      (persistedNode?.updatedAt?.getTime() ?? 0) >= nodeBeforeWarm.updatedAt.getTime(),
+      'full warming should refresh the node updatedAt when enhanced article flow is persisted',
+    )
+  } finally {
+    omniGateway.hasAvailableModel = originalHasAvailableModel
+    await prisma.system_configs.deleteMany({
+      where: {
+        key: {
+          in: [enhancedArtifactKey],
+        },
+      },
+    })
+    await cleanupReaderFixture(fixture)
+  }
+})
+
+test('getNodeViewModel rebuilds stale enhanced node artifacts when cached evidence drifts outside contract', async () => {
+  const originalHasAvailableModel = omniGateway.hasAvailableModel
+  omniGateway.hasAvailableModel = async () => false
+
+  const fixture = await createStageScopedReaderFixture()
+  const enhancedArtifactKey = `alpha:reader-artifact:node:enhanced:${fixture.nodeId}`
+
+  try {
+    const firstViewModel = await getNodeViewModel(fixture.nodeId, {
+      stageWindowMonths: 1,
+      enhanced: true,
+    })
+    assert.ok(Array.isArray(firstViewModel.enhancedArticleFlow))
+    assert.ok(firstViewModel.enhancedArticleFlow!.length > 0)
+
+    const firstRecord = await prisma.system_configs.findUnique({
+      where: { key: enhancedArtifactKey },
+    })
+    assert.ok(firstRecord, 'enhanced node cache should exist before we simulate drift')
+
+    const corruptedRecord = JSON.parse(firstRecord!.value) as {
+      kind: string
+      entityId: string
+      fingerprint: string
+      updatedAt: string
+      viewModel: {
+        researchView?: {
+          evidence?: {
+            supporting?: Array<{ importance?: number | null }>
+          }
+        }
+      }
+    }
+
+    if (!corruptedRecord.viewModel.researchView?.evidence?.supporting?.[0]) {
+      throw new Error('Fixture must expose supporting research evidence before cache drift simulation.')
+    }
+
+    corruptedRecord.viewModel.researchView.evidence.supporting[0].importance = -1
+
+    await prisma.system_configs.update({
+      where: { key: enhancedArtifactKey },
+      data: { value: JSON.stringify(corruptedRecord), updatedAt: new Date() },
+    })
+
+    const healedViewModel = await getNodeViewModel(fixture.nodeId, {
+      stageWindowMonths: 1,
+      enhanced: true,
+    })
+    const healedEvidence = [
+      ...healedViewModel.researchView!.evidence.featured,
+      ...healedViewModel.researchView!.evidence.supporting,
+    ]
+    assert.ok(
+      healedEvidence.every((entry) => (entry.importance ?? 0) >= 0),
+      'stale enhanced node cache should be rebuilt before invalid evidence reaches callers',
+    )
+
+    const healedRecord = await prisma.system_configs.findUnique({
+      where: { key: enhancedArtifactKey },
+    })
+    assert.ok(healedRecord, 'healed enhanced node cache should remain persisted')
+    assert.notEqual(
+      healedRecord?.value,
+      JSON.stringify(corruptedRecord),
+      'contract-invalid enhanced node cache should be replaced with a rebuilt payload',
+    )
+  } finally {
+    omniGateway.hasAvailableModel = originalHasAvailableModel
+    await prisma.system_configs.deleteMany({
+      where: {
+        key: enhancedArtifactKey,
       },
     })
     await cleanupReaderFixture(fixture)
@@ -1989,6 +2510,98 @@ test('getNodeViewModel expands stage-bounded recall when the requested window is
     omniGateway.hasAvailableModel = originalHasAvailableModel
     await cleanupReaderFixture(fixture)
   }
+})
+
+test('getNodeViewModel uses the quick grounded path for default widened stage windows', async () => {
+  const originalHasAvailableModel = omniGateway.hasAvailableModel
+  const originalComplete = omniGateway.complete
+  let availabilityChecks = 0
+  let completionCalls = 0
+
+  omniGateway.hasAvailableModel = async () => {
+    availabilityChecks += 1
+    return true
+  }
+  omniGateway.complete = async () => {
+    completionCalls += 1
+    throw new Error('provider should not be called for widened default stage windows')
+  }
+
+  const fixture = await createStageScopedReaderFixture()
+
+  try {
+    await saveTopicStageConfig(fixture.topicId, 1)
+
+    const viewModel = await getNodeViewModel(fixture.nodeId, {
+      stageWindowMonths: 3,
+    })
+
+    assert.equal(viewModel.stageWindowMonths, 3)
+    assert.equal(viewModel.stageLabel, '2025.01-2025.03')
+    assert.deepEqual(
+      viewModel.paperRoles.map((paper) => paper.paperId).sort(),
+      [...fixture.stagePaperIds, fixture.outOfStagePaperId].sort(),
+    )
+    assert.equal(availabilityChecks, 0)
+    assert.equal(completionCalls, 0)
+  } finally {
+    omniGateway.hasAvailableModel = originalHasAvailableModel
+    omniGateway.complete = originalComplete
+    await cleanupReaderFixture(fixture)
+  }
+})
+
+test('configured canonical merge nodes keep all explicitly linked papers and strip placement noise', async () => {
+  await ensureConfiguredTopicMaterialized('autonomous-driving')
+
+  const viewModel = await getNodeViewModel('autonomous-driving:stage-2:1912.12294', {
+    stageWindowMonths: 3,
+    enhanced: true,
+  })
+
+  const expectedPaperIds = ['1511.03791', '1710.02410', '1912.12294'].sort()
+  const referencePaperIds = Array.isArray(viewModel.references)
+    ? viewModel.references.map((paper) => paper.paperId).sort()
+    : []
+  const articleText = viewModel.article.flow
+    .flatMap((block) => {
+      if (block.type === 'text' || block.type === 'closing') return [block.title, ...block.body]
+      if (block.type === 'paper-break') return [block.title, block.contribution]
+      if (block.type === 'comparison') return [block.title, block.summary, ...block.points.map((point) => point.detail)]
+      if (block.type === 'critique') return [block.title, block.summary, ...block.bullets]
+      return []
+    })
+    .join(' ')
+
+  assert.equal(viewModel.isMergeNode, true)
+  assert.equal(viewModel.stats.paperCount, 3)
+  assert.deepEqual(
+    viewModel.paperRoles.map((paper) => paper.paperId).sort(),
+    expectedPaperIds,
+  )
+  assert.deepEqual(
+    referencePaperIds,
+    expectedPaperIds,
+  )
+  assert.deepEqual(
+    viewModel.article.flow
+      .filter((block) => block.type === 'paper-break')
+      .map((block) => block.paperId)
+      .sort(),
+    expectedPaperIds,
+  )
+  assert.equal(
+    viewModel.evidence.some(
+      (item) =>
+        item.title === 'Topic placement' || /grouped into \d+ node\(s\)/iu.test(item.content),
+    ),
+    false,
+  )
+  assert.equal(/grouped into \d+ node\(s\)/iu.test(articleText), false)
+  assert.doesNotMatch(
+    JSON.stringify(viewModel.enhancedArticleFlow ?? []),
+    /单篇深读入口|当前阶段的「Learning by Cheating」节点只纳入《DeepDriving/u,
+  )
 })
 
 test('reader artifact fingerprints change when the active model configuration changes', async () => {

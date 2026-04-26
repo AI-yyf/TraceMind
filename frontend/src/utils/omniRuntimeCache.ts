@@ -5,6 +5,11 @@ import type {
 } from '@/types/alpha'
 
 import { apiGet } from './api'
+import {
+  assertModelCapabilitySummaryContract,
+  assertModelConfigResponseContract,
+  assertTopicResearchBriefContract,
+} from './contracts'
 
 type CacheEntry<T> = {
   data: T
@@ -89,7 +94,11 @@ export function fetchModelConfigResponse(options: FetchOptions = {}) {
     'default',
     modelConfigCache,
     modelConfigInflight,
-    () => apiGet<ModelConfigResponse>('/api/model-configs'),
+    async () => {
+      const data = await apiGet<unknown>('/api/model-configs')
+      assertModelConfigResponseContract(data)
+      return data
+    },
     options,
     DEFAULT_MODEL_CONFIG_MAX_AGE_MS,
   )
@@ -109,13 +118,18 @@ export function fetchModelCapabilitySummary(options: FetchOptions = {}) {
     'default',
     modelCapabilityCache,
     modelCapabilityInflight,
-    () => apiGet<ModelCapabilitySummary>('/api/model-capabilities'),
+    async () => {
+      const data = await apiGet<unknown>('/api/model-capabilities')
+      assertModelCapabilitySummaryContract(data)
+      return data
+    },
     options,
     DEFAULT_MODEL_CAPABILITY_MAX_AGE_MS,
   )
 }
 
 export function primeTopicResearchBrief(data: TopicResearchBrief) {
+  assertTopicResearchBriefContract(data)
   return setCacheValue(topicResearchBriefCache, data.topicId, data)
 }
 
@@ -135,7 +149,11 @@ export function fetchTopicResearchBrief(topicId: string, options: FetchOptions =
     topicId,
     topicResearchBriefCache,
     topicResearchBriefInflight,
-    () => apiGet<TopicResearchBrief>(`/api/topics/${topicId}/research-brief`),
+    async () => {
+      const data = await apiGet<unknown>(`/api/topics/${topicId}/research-brief`)
+      assertTopicResearchBriefContract(data)
+      return data
+    },
     options,
     DEFAULT_TOPIC_RESEARCH_BRIEF_MAX_AGE_MS,
   )

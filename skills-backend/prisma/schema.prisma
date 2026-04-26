@@ -7,6 +7,19 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model figure_groups {
+  id         String   @id
+  paperId    String
+  groupId    String
+  caption    String
+  page       Int
+  subFigures String
+  createdAt  DateTime @default(now())
+  papers     papers   @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  @@index([paperId])
+}
+
 model figures {
   id        String   @id
   paperId   String
@@ -28,10 +41,22 @@ model formulas {
   latex     String
   rawText   String
   page      Int
+  imagePath String?  // VLM formula recognition requires image path
   createdAt DateTime @default(now())
   papers    papers   @relation(fields: [paperId], references: [id], onDelete: Cascade)
 
   @@index([paperId])
+}
+
+model model_config_history {
+  id          String   @id
+  version     Int      @unique
+  configJson  String
+  actor       String?
+  diffSummary String?
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
 }
 
 model model_configs {
@@ -116,7 +141,7 @@ model paper_sections {
 }
 
 model papers {
-  id             String           @id
+  id             String                 @id
   topicId        String
   title          String
   titleZh        String
@@ -126,28 +151,32 @@ model papers {
   summary        String
   explanation    String?
   arxivUrl       String?
+  openAlexId     String?
   pdfUrl         String?
   pdfPath        String?
   citationCount  Int?
   coverPath      String?
-  figurePaths    String
-  tablePaths     String
-  status         String           @default("candidate")
+  figurePaths    String                 @default("")
+  tablePaths     String                 @default("")
+  formulaPaths   String                 @default("")
+  status         String                 @default("candidate")
   tags           String
-  contentMode    String           @default("editorial")
-  createdAt      DateTime         @default(now())
+  contentMode    String                 @default("editorial")
+  createdAt      DateTime               @default(now())
   updatedAt      DateTime
+  extraction_stats extraction_stats?
+  figure_groups  figure_groups[]
   figures        figures[]
   formulas       formulas[]
   node_papers    node_papers[]
   paper_sections paper_sections[]
-  topics         topics           @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  topics         topics                 @relation(fields: [topicId], references: [id], onDelete: Cascade)
   research_nodes research_nodes[]
   tables         tables[]
 
-  @@index([published])
-  @@index([status])
   @@index([topicId])
+  @@index([status])
+  @@index([published])
 }
 
 model research_nodes {
@@ -302,4 +331,29 @@ model zotero_config {
   enabled   Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime
+}
+
+model extraction_stats {
+  id                String   @id
+  paperId           String   @unique
+  topicId           String?
+  extractionMethod  String
+  figureCount       Int      @default(0)
+  figureAvgConf     Float?
+  figureMethods      String   @default("{}")
+  tableCount        Int      @default(0)
+  tableAvgConf      Float?
+  tableMethods      String   @default("{}")
+  formulaCount      Int      @default(0)
+  formulaAvgConf    Float?
+  formulaMethods    String   @default("{}")
+  qualityWarnings   String   @default("[]")
+  pageCount         Int      @default(0)
+  extractedAt       DateTime @default(now())
+  createdAt         DateTime @default(now())
+  papers            papers   @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  @@index([paperId])
+  @@index([topicId])
+  @@index([extractedAt])
 }

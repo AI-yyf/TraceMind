@@ -479,6 +479,195 @@ test('paper tracker builds a broader discovery plan without diluting stage-bound
   assert.ok(plan.maxCandidates >= 18)
 })
 
+test('paper tracker duration policy overrides stage and node caps for long-running research', () => {
+  const settings = __testing.resolvePaperTrackerResearchSettings({
+    input: {
+      topicId: 'topic-vla',
+      maxCandidates: 200,
+      maxPapersPerNode: 20,
+      minimumUsefulPapersPerNode: 10,
+      durationResearchPolicy: {
+        maxCandidatesPerStage: 200,
+        targetPapersPerNode: 20,
+        minimumUsefulPapersPerNode: 10,
+        targetCandidatesBeforeAdmission: 180,
+        highConfidenceThreshold: 0.74,
+      },
+    },
+    researchConfig: {
+      maxCandidatesPerStage: 12,
+      discoveryQueryLimit: 24,
+      admissionThreshold: 0.63,
+      maxPapersPerNode: 6,
+      minPapersPerNode: 5,
+      targetCandidatesBeforeAdmission: 60,
+      highConfidenceThreshold: 0.83,
+      semanticScholarLimit: 10,
+      discoveryRounds: 2,
+    },
+  })
+
+  assert.equal(settings.maxCandidatesPerStage, 200)
+  assert.equal(settings.maxPapersPerNode, 20)
+  assert.equal(settings.minimumUsefulPapersPerNode, 10)
+  assert.equal(settings.targetCandidatesBeforeAdmission, 200)
+  assert.equal(settings.highConfidenceThreshold, 0.74)
+})
+
+test('paper tracker configurable high-confidence thresholds control direct and branch admissions', () => {
+  assert.equal(
+    __testing.shouldAdmitCandidate(
+      {
+        verdict: 'reject',
+        candidateType: 'direct',
+        confidence: 0.76,
+      },
+      {
+        directHighConfidenceThreshold: 0.75,
+        branchHighConfidenceThreshold: 0.71,
+      },
+    ),
+    'admitted',
+  )
+
+  assert.equal(
+    __testing.shouldAdmitCandidate(
+      {
+        verdict: 'reject',
+        candidateType: 'branch',
+        confidence: 0.72,
+      },
+      {
+        directHighConfidenceThreshold: 0.75,
+        branchHighConfidenceThreshold: 0.71,
+      },
+    ),
+    'admitted',
+  )
+
+  assert.equal(
+    __testing.shouldAdmitCandidate(
+      {
+        verdict: 'reject',
+        candidateType: 'direct',
+        confidence: 0.7,
+      },
+      {
+        directHighConfidenceThreshold: 0.75,
+        branchHighConfidenceThreshold: 0.71,
+      },
+    ),
+    'candidate',
+  )
+})
+
+test('paper tracker multi-angle duration plans add rationale-rich discovery queries', () => {
+  const topic = {
+    id: 'topic-vla',
+    nameZh: '自动驾驶 VLA 世界模型',
+    nameEn: 'Autonomous Driving VLA World Models',
+    focusLabel: 'autonomous driving VLA world model',
+    summary: 'Testing multi-angle discovery planning.',
+    description: 'Testing multi-angle discovery planning.',
+    createdAt: new Date('2025-01-03T00:00:00.000Z'),
+    papers: [],
+    nodes: [],
+    stages: [],
+  } as any
+
+  const topicDef = {
+    id: 'topic-vla',
+    nameZh: '自动驾驶 VLA 世界模型',
+    nameEn: 'Autonomous Driving VLA World Models',
+    focusLabel: 'autonomous driving VLA world model',
+    queryTags: ['vision language action', 'world model', 'autonomous driving'],
+    problemPreference: ['planning', 'closed-loop simulation', 'latent dynamics'],
+    defaults: {
+      bootstrapWindowDays: 3650,
+      maxCandidates: 8,
+    },
+  } as any
+
+  const stageWindow = {
+    currentStageIndex: 2,
+    targetStageIndex: 2,
+    windowMonths: 3,
+    stageLabel: '2026.01-2026.03',
+    startDate: new Date('2026-01-01T00:00:00.000Z'),
+    endDateExclusive: new Date('2026-04-01T00:00:00.000Z'),
+    searchStartDate: new Date('2026-01-01T00:00:00.000Z'),
+    searchEndDateExclusive: new Date('2026-04-01T00:00:00.000Z'),
+    anchorStageIndex: 1,
+    bootstrapMode: false,
+    anchorPapers: [
+      {
+        paperId: 'paper-1',
+        title: 'Drive-WM: A Driving World Model for Closed-Loop Autonomous Driving',
+        published: '2026-01-12T00:00:00.000Z',
+      },
+    ],
+    anchorNodes: [
+      {
+        nodeId: 'node-1',
+        title: 'Closed-loop world models',
+        summary: 'Latent dynamics, planning, and world-model-based simulation for self-driving.',
+      },
+    ],
+  } as any
+
+  const baselinePlan = __testing.buildDiscoveryPlan({
+    topic,
+    topicDef,
+    input: {
+      topicId: 'topic-vla',
+      maxCandidates: 200,
+    },
+    stageWindow,
+    discoveryQueryLimit: 16,
+    discoveryRounds: 3,
+    semanticScholarLimit: 20,
+    maxPapersPerNode: 20,
+  })
+
+  const plan = __testing.buildMultiAngleDiscoveryPlan({
+    topic,
+    topicDef,
+    input: {
+      topicId: 'topic-vla',
+      maxCandidates: 200,
+      durationResearchPolicy: {
+        researchAngles: [
+          {
+            id: 'evidence-audit',
+            label: 'Evidence Audit',
+            focus: 'citation',
+            prompts: ['benchmark', 'ablation', 'evaluation protocol'],
+          },
+          {
+            id: 'artifact-grounding',
+            label: 'Artifact Grounding',
+            focus: 'method',
+            prompts: ['table evidence', 'formula objective'],
+          },
+        ],
+      },
+    },
+    stageWindow,
+    discoveryQueryLimit: 16,
+    discoveryRounds: 3,
+    semanticScholarLimit: 20,
+    maxPapersPerNode: 20,
+    minimumUsefulPapersPerNode: 10,
+  })
+
+  assert.equal(plan.maxPapersPerNode, 20)
+  assert.equal(plan.minimumUsefulPapersPerNode, 10)
+  assert.equal(plan.maxCandidates, 200)
+  assert.ok(plan.queries.length >= baselinePlan.queries.length)
+  assert.ok(plan.discoveryQueries.some((query) => /Evidence Audit lens/u.test(query.rationale)))
+  assert.ok(plan.discoveryQueries.some((query) => query.focus === 'method'))
+})
+
 test('paper tracker ignores topic creation time when deriving the next temporal stage', () => {
   const topic = {
     id: 'topic-vla-created-late',
@@ -1343,4 +1532,10 @@ test('paper tracker materialization turns committed stage papers into stage node
       },
     })
   }
+})
+
+test('paper tracker semantic scholar query budget now adapts instead of pinning to a fixed value', () => {
+  assert.equal(discoveryTesting.resolveSemanticScholarQueryBudget(5, 40), 6)
+  assert.equal(discoveryTesting.resolveSemanticScholarQueryBudget(40, 200), 10)
+  assert.equal(discoveryTesting.resolveSemanticScholarQueryBudget(120, 400), 15)
 })

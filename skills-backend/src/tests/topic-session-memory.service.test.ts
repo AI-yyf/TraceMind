@@ -180,6 +180,74 @@ test('session memory sanitization strips prompt echoes and operational artifacts
   assert.equal(summary.lastUserIntent, 'Explain the weakest link.')
 })
 
+test('session memory hydration refreshes user steering and research continuity from recent events immediately', () => {
+  const hydrated = __testing.hydrateSummaryFromRecentEvents(
+    buildMemoryState({
+      summary: {
+        currentFocus: 'Older focus that should be replaced',
+        continuity: 'Older continuity',
+        establishedJudgments: [],
+        openQuestions: ['Legacy question'],
+        researchMomentum: ['Legacy momentum'],
+        conversationStyle: 'Older style',
+        lastResearchMove: 'Older move',
+        lastUserIntent: 'Older intent',
+      },
+    }).summary,
+    [
+      {
+        id: 'evt-1',
+        kind: 'chat-user',
+        headline: 'User style directive',
+        summary: 'Keep the prose surgical and evidence-first.',
+        createdAt: '2026-04-02T00:10:00.000Z',
+      },
+      {
+        id: 'evt-2',
+        kind: 'chat-user',
+        headline: 'User focus directive',
+        summary: 'Stay on the benchmark mismatch instead of opening a new branch.',
+        createdAt: '2026-04-02T00:11:00.000Z',
+      },
+      {
+        id: 'evt-3',
+        kind: 'research-cycle',
+        headline: 'Compared the contested benchmark pair',
+        summary: 'The latest cycle narrowed the disagreement to one benchmark mismatch.',
+        openQuestions: ['Which dataset shift still breaks the current claim?'],
+        createdAt: '2026-04-02T00:12:00.000Z',
+      },
+      {
+        id: 'evt-4',
+        kind: 'chat-user',
+        headline: 'User suggestion',
+        summary: 'Document the weakest assumption before broadening scope.',
+        createdAt: '2026-04-02T00:13:00.000Z',
+      },
+    ],
+  )
+
+  assert.equal(
+    hydrated.lastUserIntent,
+    'Document the weakest assumption before broadening scope.',
+  )
+  assert.equal(hydrated.conversationStyle, 'Keep the prose surgical and evidence-first.')
+  assert.equal(
+    hydrated.currentFocus,
+    'Stay on the benchmark mismatch instead of opening a new branch.',
+  )
+  assert.equal(hydrated.lastResearchMove, 'Compared the contested benchmark pair')
+  assert.equal(
+    hydrated.openQuestions.includes('Which dataset shift still breaks the current claim?'),
+    true,
+  )
+  assert.equal(
+    hydrated.researchMomentum.includes('Compared the contested benchmark pair'),
+    true,
+  )
+  assert.equal(hydrated.continuity.includes('Latest user steering:'), true)
+})
+
 test('session memory compaction thresholds respect init, chat, research, and token gates', () => {
   const runtime = {
     topicSessionMemoryEnabled: true,

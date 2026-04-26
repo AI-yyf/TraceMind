@@ -20,7 +20,8 @@ import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useI18n } from '@/i18n'
 import type { ModelCapabilitySummary, PromptStudioBundle } from '@/types/alpha'
 import { apiGet, apiPatch } from '@/utils/api'
-import { fetchModelCapabilitySummary } from '@/utils/omniRuntimeCache'
+import { fetchModelCapabilitySummary, invalidateModelCapabilitySummary } from '@/utils/omniRuntimeCache'
+import { ConfigHistoryPanel } from '@/components/settings/ConfigHistoryPanel'
 
 type SettingsFocusTab = 'models' | 'pipeline' | 'prompts' | 'copy' | 'agents' | 'research'
 
@@ -28,7 +29,10 @@ interface ResearchConfig {
   maxCandidatesPerStage: number
   discoveryQueryLimit: number
   maxPapersPerNode: number
+  minPapersPerNode: number
+  targetCandidatesBeforeAdmission: number
   admissionThreshold: number
+  highConfidenceThreshold: number
   semanticScholarLimit: number
   discoveryRounds: number
 }
@@ -239,37 +243,80 @@ function ResearchConfigCard({
       <p className="mt-3 text-[13px] leading-7 text-black/58">{body}</p>
 
       {editing ? (
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           <EditableResearchMetric
             label={t('settings.metric.maxCandidates', 'Max candidates per stage')}
             value={config.maxCandidatesPerStage}
-            onChange={(v) => onChange({ ...config, maxCandidatesPerStage: v })}
-            min={10}
-            max={100}
+            onChange={(v) =>
+              onChange({
+                ...config,
+                maxCandidatesPerStage: v,
+                targetCandidatesBeforeAdmission: Math.max(config.targetCandidatesBeforeAdmission, v),
+              })}
+            min={20}
+            max={200}
             disabled={saving}
           />
           <EditableResearchMetric
             label={t('settings.metric.discoveryLimit', 'Discovery query limit')}
             value={config.discoveryQueryLimit}
             onChange={(v) => onChange({ ...config, discoveryQueryLimit: v })}
-            min={50}
-            max={300}
+            min={100}
+            max={800}
             disabled={saving}
           />
           <EditableResearchMetric
             label={t('settings.metric.maxPapersPerNode', 'Max papers per node')}
             value={config.maxPapersPerNode}
-            onChange={(v) => onChange({ ...config, maxPapersPerNode: v })}
+            onChange={(v) =>
+              onChange({
+                ...config,
+                maxPapersPerNode: v,
+                minPapersPerNode: Math.min(config.minPapersPerNode, v),
+              })}
             min={5}
-            max={30}
+            max={20}
+            disabled={saving}
+          />
+          <EditableResearchMetric
+            label={t('settings.metric.minPapersPerNode', 'Minimum useful papers per node')}
+            value={config.minPapersPerNode}
+            onChange={(v) =>
+              onChange({
+                ...config,
+                minPapersPerNode: Math.min(v, config.maxPapersPerNode),
+              })}
+            min={3}
+            max={20}
+            disabled={saving}
+          />
+          <EditableResearchMetric
+            label={t('settings.metric.targetCandidatesBeforeAdmission', 'Target candidates before admission')}
+            value={config.targetCandidatesBeforeAdmission}
+            onChange={(v) =>
+              onChange({
+                ...config,
+                targetCandidatesBeforeAdmission: Math.max(v, config.maxCandidatesPerStage),
+              })}
+            min={50}
+            max={200}
             disabled={saving}
           />
           <EditableResearchMetric
             label={t('settings.metric.admissionThreshold', 'Admission threshold')}
             value={config.admissionThreshold}
             onChange={(v) => onChange({ ...config, admissionThreshold: v })}
-            min={0.15}
-            max={0.85}
+            min={0.25}
+            max={0.75}
+            step={0.05}
+            disabled={saving}
+          />
+          <EditableResearchMetric
+            label={t('settings.metric.highConfidenceThreshold', 'High-confidence admission threshold')}
+            value={config.highConfidenceThreshold}
+            onChange={(v) => onChange({ ...config, highConfidenceThreshold: v })}
+            min={0.5}
+            max={0.95}
             step={0.05}
             disabled={saving}
           />
@@ -277,25 +324,28 @@ function ResearchConfigCard({
             label={t('settings.metric.semanticScholarLimit', 'Semantic Scholar limit')}
             value={config.semanticScholarLimit}
             onChange={(v) => onChange({ ...config, semanticScholarLimit: v })}
-            min={10}
-            max={50}
+            min={20}
+            max={150}
             disabled={saving}
           />
           <EditableResearchMetric
             label={t('settings.metric.discoveryRounds', 'Discovery rounds')}
             value={config.discoveryRounds}
             onChange={(v) => onChange({ ...config, discoveryRounds: v })}
-            min={1}
-            max={4}
+            min={2}
+            max={10}
             disabled={saving}
           />
         </div>
       ) : (
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           <SettingsMetric label={t('settings.metric.maxCandidates', 'Max candidates per stage')} value={String(config.maxCandidatesPerStage)} />
           <SettingsMetric label={t('settings.metric.discoveryLimit', 'Discovery query limit')} value={String(config.discoveryQueryLimit)} />
           <SettingsMetric label={t('settings.metric.maxPapersPerNode', 'Max papers per node')} value={String(config.maxPapersPerNode)} />
+          <SettingsMetric label={t('settings.metric.minPapersPerNode', 'Minimum useful papers per node')} value={String(config.minPapersPerNode)} />
+          <SettingsMetric label={t('settings.metric.targetCandidatesBeforeAdmission', 'Target candidates before admission')} value={String(config.targetCandidatesBeforeAdmission)} />
           <SettingsMetric label={t('settings.metric.admissionThreshold', 'Admission threshold')} value={String(config.admissionThreshold)} />
+          <SettingsMetric label={t('settings.metric.highConfidenceThreshold', 'High-confidence admission threshold')} value={String(config.highConfidenceThreshold)} />
           <SettingsMetric label={t('settings.metric.semanticScholarLimit', 'Semantic Scholar limit')} value={String(config.semanticScholarLimit)} />
           <SettingsMetric label={t('settings.metric.discoveryRounds', 'Discovery rounds')} value={String(config.discoveryRounds)} />
         </div>
@@ -380,20 +430,26 @@ export function SettingsPage() {
   const [bundle, setBundle] = useState<PromptStudioBundle | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  
+
   // Research config state
   const [researchConfig, setResearchConfig] = useState<ResearchConfig>({
-    maxCandidatesPerStage: 100,
-    discoveryQueryLimit: 200,
+    maxCandidatesPerStage: 200,
+    discoveryQueryLimit: 500,
     maxPapersPerNode: 20,
-    admissionThreshold: 0.55,
-    semanticScholarLimit: 25,
-    discoveryRounds: 2,
+    minPapersPerNode: 10,
+    targetCandidatesBeforeAdmission: 150,
+    admissionThreshold: 0.45,
+    highConfidenceThreshold: 0.75,
+    semanticScholarLimit: 100,
+    discoveryRounds: 10,
   })
   const [researchEditing, setResearchEditing] = useState(false)
   const [researchSaving, setResearchSaving] = useState(false)
   const [researchSaved, setResearchSaved] = useState(false)
   const [researchError, setResearchError] = useState<string | null>(null)
+
+  // Config version state
+  const [currentConfigVersion, setCurrentConfigVersion] = useState<number | undefined>(undefined)
 
   const focusTab = normalizeFocusTab(searchParams.get('tab'))
   const focusLabel =
@@ -410,12 +466,12 @@ export function SettingsPage() {
               : t('settings.focus.research', 'Research Tracking')
 
   useDocumentTitle(t('nav.settings', 'Settings'))
-  
+
   const handleSaveResearchConfig = async () => {
     setResearchSaving(true)
     setResearchError(null)
     setResearchSaved(false)
-    
+
     try {
       const result = await apiPatch<ResearchConfig>('/api/topics/research-config', researchConfig)
       setResearchConfig(result)
@@ -428,7 +484,7 @@ export function SettingsPage() {
       setResearchSaving(false)
     }
   }
-  
+
   const handleCancelResearchEdit = () => {
     setResearchEditing(false)
     setResearchError(null)
@@ -453,12 +509,16 @@ useEffect(() => {
       fetchModelCapabilitySummary(),
       apiGet<PromptStudioBundle>('/api/prompt-templates/studio'),
       apiGet<ResearchConfig>('/api/topics/research-config'),
+      apiGet<{ history: Array<{ version: number }> }>('/api/omni/config/history?limit=1'),
     ])
-      .then(([nextCapabilities, nextBundle, nextResearchConfig]) => {
+      .then(([nextCapabilities, nextBundle, nextResearchConfig, historyResponse]) => {
         if (!alive) return
         setCapabilities(nextCapabilities)
         setBundle(nextBundle)
         setResearchConfig(nextResearchConfig)
+        if (historyResponse.history.length > 0) {
+          setCurrentConfigVersion(historyResponse.history[0].version)
+        }
       })
       .catch((nextError) => {
         if (!alive) return
@@ -720,8 +780,20 @@ useEffect(() => {
             value: String(researchConfig.maxPapersPerNode),
           },
           {
+            label: t('settings.metric.minPapersPerNode', 'Minimum useful papers per node'),
+            value: String(researchConfig.minPapersPerNode),
+          },
+          {
+            label: t('settings.metric.targetCandidatesBeforeAdmission', 'Target candidates before admission'),
+            value: String(researchConfig.targetCandidatesBeforeAdmission),
+          },
+          {
             label: t('settings.metric.admissionThreshold', 'Admission threshold'),
             value: String(researchConfig.admissionThreshold),
+          },
+          {
+            label: t('settings.metric.highConfidenceThreshold', 'High-confidence admission threshold'),
+            value: String(researchConfig.highConfidenceThreshold),
           },
           {
             label: t('settings.metric.semanticScholarLimit', 'Semantic Scholar limit'),
@@ -740,6 +812,10 @@ useEffect(() => {
       },
     ]
   }, [bundle, capabilities, configuredRoleCount, effectiveRoleCount, t, totalRoleCount, researchConfig])
+
+  const advancedModulesOpen = focusTab === 'prompts' || focusTab === 'copy' || focusTab === 'agents'
+  const primaryCards = cards.filter((card) => card.id === 'models' || card.id === 'pipeline')
+  const advancedCards = cards.filter((card) => card.id === 'prompts' || card.id === 'agents')
 
   return (
     <main data-testid="settings-page" className="px-4 pb-20 pt-8 md:px-6 xl:px-10">
@@ -811,11 +887,12 @@ useEffect(() => {
             </div>
           </section>
         ) : (
+          <>
           <section className="mt-6 grid gap-5 xl:grid-cols-2">
-            {cards.filter((card) => card.id !== 'research').map((card) => (
+            {primaryCards.map((card) => (
               <SettingsCard
                 key={card.id}
-                active={focusTab === card.id || (focusTab === 'copy' && card.id === 'prompts')}
+                active={focusTab === card.id}
                 eyebrow={card.eyebrow}
                 title={card.title}
                 body={card.body}
@@ -823,11 +900,10 @@ useEffect(() => {
                 primaryHref={card.primaryHref}
                 primaryLabel={card.primaryLabel}
                 secondaryHref={card.secondaryHref}
-                secondaryLabel={card.secondaryLabel}
-                icon={card.icon}
-              />
+              secondaryLabel={card.secondaryLabel}
+              icon={card.icon}
+            />
             ))}
-            {/* Research config card with editable form */}
             <ResearchConfigCard
               active={focusTab === 'research'}
               eyebrow={t('settings.researchEyebrow', 'Research tracking')}
@@ -851,11 +927,61 @@ useEffect(() => {
               secondaryHref="/settings?tab=pipeline"
               secondaryLabel={t('settings.researchSecondary', 'View pipeline')}
               t={t}
-            />
+/>
           </section>
-        )}
 
-        <section className="mt-6 rounded-[30px] border border-black/8 bg-white px-6 py-6 shadow-[0_14px_34px_rgba(15,23,42,0.05)] md:px-8">
+          <details open={advancedModulesOpen} className="mt-6 rounded-[24px] border border-black/8 bg-white px-5 py-5">
+            <summary className="cursor-pointer list-none text-[14px] font-medium text-black">
+              {t('settings.advancedModulesTitle', 'Advanced modules')}
+            </summary>
+            <p className="mt-2 max-w-[760px] text-[13px] leading-7 text-black/56">
+              {t(
+                'settings.advancedModulesDescription',
+                'Prompt editing, interface copy, and agent assets stay here so the main settings page can stay easy to scan.',
+              )}
+            </p>
+            <div className="mt-5 grid gap-5 xl:grid-cols-2">
+              {advancedCards.map((card) => (
+                <SettingsCard
+                  key={card.id}
+                  active={focusTab === card.id || (focusTab === 'copy' && card.id === 'prompts')}
+                  eyebrow={card.eyebrow}
+                  title={card.title}
+                  body={card.body}
+                  metrics={card.metrics}
+                  primaryHref={card.primaryHref}
+                  primaryLabel={card.primaryLabel}
+                  secondaryHref={card.secondaryHref}
+                  secondaryLabel={card.secondaryLabel}
+                  icon={card.icon}
+                />
+              ))}
+            </div>
+          </details>
+          </>
+         )}
+
+        <details className="mt-6 rounded-[24px] border border-black/8 bg-white px-5 py-5">
+          <summary className="cursor-pointer list-none text-[14px] font-medium text-black">
+            {t('settings.historyTitle', 'History and rollback')}
+          </summary>
+          <div className="mt-4">
+            <ConfigHistoryPanel
+              currentVersion={currentConfigVersion}
+              onRollback={() => {
+                invalidateModelCapabilitySummary()
+                fetchModelCapabilitySummary({ force: true }).then(setCapabilities)
+                apiGet<{ history: Array<{ version: number }> }>('/api/omni/config/history?limit=1').then((res) => {
+                  if (res.history.length > 0) {
+                    setCurrentConfigVersion(res.history[0].version)
+                  }
+                })
+              }}
+            />
+          </div>
+        </details>
+
+        <section className="mt-6 border-y border-black/8 px-4 py-5 md:px-2">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
             <div className="inline-flex items-center gap-2 rounded-full bg-[var(--surface-soft)] px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-black/44">

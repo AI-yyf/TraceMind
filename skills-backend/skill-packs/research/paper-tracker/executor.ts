@@ -4,6 +4,7 @@ import { prisma } from '../../../shared/db'
 import { researchMemory } from '../../../shared/research-memory'
 import { getTopicDefinition } from '../../../topic-config/index'
 import { omniGateway } from '../../../src/services/omni/gateway'
+import { withRetry, LLMGenerationError } from '../../../src/services/omni/retry'
 import { enhancedTaskScheduler } from '../../../src/services/enhanced-scheduler'
 import {
   extractAndPersistPaperPdfFromUrl,
@@ -12,7 +13,7 @@ import {
 import { refreshTopicViewModelSnapshot } from '../../../src/services/topics/alpha-topic'
 import { orchestrateTopicReaderArtifacts } from '../../../src/services/topics/alpha-reader'
 import { syncConfiguredTopicWorkflowSnapshot } from '../../../src/services/topics/topic-config-sync'
-import { discoverExternalCandidates, type DiscoveryQuery } from './discovery'
+import { discoverExternalCandidates, discoverWithSnowball, type DiscoveryQuery } from './discovery'
 import {
   deriveTemporalStageBuckets,
   normalizeStageWindowMonths,
@@ -26,6 +27,29 @@ import {
   loadGlobalResearchConfig,
   RESEARCH_CONFIG_DEFAULTS,
 } from '../../../src/services/topics/topic-research-config'
+import {
+  getSourceCooldownUntil,
+  noteSourceRateLimit,
+  noteSourceSuccess,
+} from '../../../src/services/search/source-health'
+
+type PaperTrackerDurationResearchAngle = {
+  id?: string
+  label?: string
+  focus?: DiscoveryQuery['focus']
+  prompts?: string[]
+}
+
+type PaperTrackerDurationResearchPolicy = {
+  stageWindowHours?: number
+  maxCandidatesPerStage?: number
+  targetPapersPerNode?: number
+  minimumUsefulPapersPerNode?: number
+  targetCandidatesBeforeAdmission?: number
+  highConfidenceThreshold?: number
+  admissionMode?: string
+  researchAngles?: PaperTrackerDurationResearchAngle[]
+}
 
 interface PaperTrackerInput {
   topicId: string
@@ -39,6 +63,9 @@ interface PaperTrackerInput {
   maxTokens?: number
   windowMonths?: number
   maxCandidates?: number
+  maxPapersPerNode?: number
+  minimumUsefulPapersPerNode?: number
+  durationResearchPolicy?: PaperTrackerDurationResearchPolicy
   mode?: 'dry-run' | 'inspect' | 'commit'
   allowMerge?: boolean
 }
@@ -67,7 +94,8 @@ interface ArxivPaper {
   primaryCategory?: string
   pdfUrl?: string
   arxivUrl: string
-  discoverySource?: 'arxiv-api' | 'openalex' | 'semantic-scholar'
+  openAlexId?: string
+  discoverySource?: 'arxiv-api' | 'openalex' | 'semantic-scholar' | 'crossref'
 }
 
 interface PaperCandidate {
@@ -90,15 +118,19 @@ interface PaperCandidate {
   queryHits?: string[]
   discoveryChannels?: string[]
   arxivData?: ArxivPaper
+  // OpenAlex ID for citation network traversal
+  openAlexId?: string
   // Rejection audit trail (for "广纳贤文")
   rejectReason?: string
   rejectFilter?: string
   rejectScore?: number
-  discoverySource?: 'arxiv' | 'arxiv-api' | 'openalex' | 'semantic-scholar' | 'snowball'
+  discoverySource?: 'arxiv' | 'arxiv-api' | 'openalex' | 'semantic-scholar' | 'crossref' | 'snowball'
   // Snowball sampling metadata
   snowballParentId?: string
   snowballDepth?: number
   snowballType?: 'forward' | 'backward'
+  // Persistence failure marker (BUG #3 fix)
+  persistenceFailed?: boolean
 }
 
 type BootstrapAnchorWindow = {
@@ -155,6 +187,7 @@ type DiscoveryStageWindow = {
     title: string
     published: string
     branchId?: string
+    openAlexId?: string
   }>
   anchorNodes: Array<{
     nodeId: string
@@ -200,6 +233,14 @@ type TrackerStageMaterializationResult = {
   warmedPaperCount: number
 }
 
+type EffectivePaperTrackerResearchSettings = {
+  maxCandidatesPerStage: number
+  maxPapersPerNode: number
+  minimumUsefulPapersPerNode: number
+  targetCandidatesBeforeAdmission: number
+  highConfidenceThreshold: number
+}
+
 const DISCOVERY_QUERY_LIMIT = 200 // Increased from 50 for 200 candidates discovery before admission
 const FALLBACK_BOOTSTRAP_WINDOW_DAYS = 3650
 const DISCOVERY_QUERY_CACHE_TTL_MS = 30 * 60 * 1000
@@ -210,8 +251,8 @@ const ARXIV_RATE_LIMIT_COOLDOWN_MS = 15 * 60 * 1000
 const ARXIV_UNAVAILABLE_COOLDOWN_MS = 5 * 60 * 1000
 const ARXIV_FETCH_TIMEOUT_MS = 4_500
 const OPENALEX_FETCH_TIMEOUT_MS = 10_000
-const PAPER_EVALUATION_LLM_CONCURRENCY = 2
-const PAPER_EVALUATION_LLM_MAX_CANDIDATES = 100 // Max 100 papers admitted per stage after quality evaluation
+const PAPER_EVALUATION_LLM_CONCURRENCY = 5  // Raised from 2 to 5 for faster 200-candidate evaluation
+const PAPER_EVALUATION_LLM_MAX_CANDIDATES = 200 // Max 200 papers admitted per stage after quality evaluation (aligned with DEFAULT_MAX_CANDIDATES_PER_STAGE)
 const TRACKER_PDF_GROUNDING_CONCURRENCY = 2
 
 // Helper to get research config with fallback chain: topic-specific -> global -> defaults
@@ -220,6 +261,9 @@ async function getResearchConfigParams(topicId: string): Promise<{
   discoveryQueryLimit: number
   admissionThreshold: number
   maxPapersPerNode: number
+  minPapersPerNode: number
+  targetCandidatesBeforeAdmission: number
+  highConfidenceThreshold: number
   semanticScholarLimit: number
   discoveryRounds: number
 }> {
@@ -233,6 +277,9 @@ async function getResearchConfigParams(topicId: string): Promise<{
         discoveryQueryLimit: topicConfig.discoveryQueryLimit,
         admissionThreshold: topicConfig.admissionThreshold,
         maxPapersPerNode: topicConfig.maxPapersPerNode,
+        minPapersPerNode: topicConfig.minPapersPerNode,
+        targetCandidatesBeforeAdmission: topicConfig.targetCandidatesBeforeAdmission,
+        highConfidenceThreshold: topicConfig.highConfidenceThreshold,
         semanticScholarLimit: topicConfig.semanticScholarLimit,
         discoveryRounds: topicConfig.discoveryRounds,
       }
@@ -251,6 +298,9 @@ async function getResearchConfigParams(topicId: string): Promise<{
         discoveryQueryLimit: globalConfig.discoveryQueryLimit,
         admissionThreshold: globalConfig.admissionThreshold,
         maxPapersPerNode: globalConfig.maxPapersPerNode,
+        minPapersPerNode: globalConfig.minPapersPerNode,
+        targetCandidatesBeforeAdmission: globalConfig.targetCandidatesBeforeAdmission,
+        highConfidenceThreshold: globalConfig.highConfidenceThreshold,
         semanticScholarLimit: globalConfig.semanticScholarLimit,
         discoveryRounds: globalConfig.discoveryRounds,
       }
@@ -265,8 +315,145 @@ async function getResearchConfigParams(topicId: string): Promise<{
     discoveryQueryLimit: RESEARCH_CONFIG_DEFAULTS.DISCOVERY_QUERY_LIMIT,
     admissionThreshold: RESEARCH_CONFIG_DEFAULTS.ADMISSION_THRESHOLD,
     maxPapersPerNode: RESEARCH_CONFIG_DEFAULTS.MAX_PAPERS_PER_NODE,
+    minPapersPerNode: RESEARCH_CONFIG_DEFAULTS.MIN_PAPERS_PER_NODE,
+    targetCandidatesBeforeAdmission: RESEARCH_CONFIG_DEFAULTS.TARGET_CANDIDATES_BEFORE_ADMISSION,
+    highConfidenceThreshold: RESEARCH_CONFIG_DEFAULTS.HIGH_CONFIDENCE_THRESHOLD,
     semanticScholarLimit: RESEARCH_CONFIG_DEFAULTS.SEMANTIC_SCHOLAR_LIMIT,
     discoveryRounds: RESEARCH_CONFIG_DEFAULTS.DISCOVERY_ROUNDS,
+  }
+}
+
+function clampPositiveInteger(
+  value: number | null | undefined,
+  min: number,
+  max: number,
+) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null
+  }
+
+  return Math.max(min, Math.min(max, Math.trunc(value)))
+}
+
+function clampConfidence(
+  value: number | null | undefined,
+  min: number,
+  max: number,
+) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null
+  }
+
+  return Math.max(min, Math.min(max, value))
+}
+
+function normalizeDurationResearchAngles(
+  angles: PaperTrackerDurationResearchPolicy['researchAngles'],
+) {
+  if (!Array.isArray(angles)) {
+    return []
+  }
+
+  const seen = new Set<string>()
+  const normalized: Array<{
+    id: string
+    label: string
+    focus: DiscoveryQuery['focus']
+    prompts: string[]
+  }> = []
+
+  for (const angle of angles) {
+    if (!angle || typeof angle !== 'object') continue
+
+    const prompts = sanitizeDiscoveryTerms(
+      Array.isArray(angle.prompts) ? angle.prompts : [],
+      8,
+    )
+    if (prompts.length === 0) continue
+
+    const id = pickText(angle.id, angle.label, prompts[0]).toLowerCase().replace(/[^a-z0-9]+/gu, '-')
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+
+    normalized.push({
+      id,
+      label: pickText(angle.label, angle.id, prompts[0]),
+      focus:
+        angle.focus === 'problem' ||
+        angle.focus === 'method' ||
+        angle.focus === 'citation' ||
+        angle.focus === 'merge'
+          ? angle.focus
+          : 'problem',
+      prompts,
+    })
+  }
+
+  return normalized
+}
+
+function resolvePaperTrackerResearchSettings(args: {
+  input: PaperTrackerInput
+  researchConfig: Awaited<ReturnType<typeof getResearchConfigParams>>
+}): EffectivePaperTrackerResearchSettings {
+  const requestedMaxCandidates = clampPositiveInteger(
+    args.input.durationResearchPolicy?.maxCandidatesPerStage ?? args.input.maxCandidates,
+    8,
+    200,
+  )
+  const requestedMaxPapersPerNode = clampPositiveInteger(
+    args.input.durationResearchPolicy?.targetPapersPerNode ?? args.input.maxPapersPerNode,
+    4,
+    40,
+  )
+  const requestedMinimumUseful = clampPositiveInteger(
+    args.input.durationResearchPolicy?.minimumUsefulPapersPerNode ??
+      args.input.minimumUsefulPapersPerNode,
+    3,
+    30,
+  )
+  const requestedTargetCandidatesBeforeAdmission = clampPositiveInteger(
+    args.input.durationResearchPolicy?.targetCandidatesBeforeAdmission,
+    20,
+    200,
+  )
+  const requestedHighConfidenceThreshold = clampConfidence(
+    args.input.durationResearchPolicy?.highConfidenceThreshold,
+    0.5,
+    0.95,
+  )
+  const maxPapersPerNode =
+    requestedMaxPapersPerNode ?? clampPositiveInteger(args.researchConfig.maxPapersPerNode, 4, 40) ?? 20
+  const minimumUsefulFloor = Math.min(
+    maxPapersPerNode,
+    clampPositiveInteger(args.researchConfig.minPapersPerNode, 3, maxPapersPerNode) ??
+      Math.max(3, Math.ceil(maxPapersPerNode / 2)),
+  )
+  const minimumUsefulPapersPerNode =
+    requestedMinimumUseful !== null
+      ? Math.min(maxPapersPerNode, requestedMinimumUseful)
+      : minimumUsefulFloor
+  const maxCandidatesPerStage =
+    requestedMaxCandidates ??
+    clampPositiveInteger(args.researchConfig.maxCandidatesPerStage, 8, 200) ??
+    20
+  const targetCandidatesBeforeAdmission = Math.max(
+    maxCandidatesPerStage,
+    requestedTargetCandidatesBeforeAdmission ??
+      clampPositiveInteger(args.researchConfig.targetCandidatesBeforeAdmission, 20, 200) ??
+      maxCandidatesPerStage,
+  )
+  const highConfidenceThreshold =
+    requestedHighConfidenceThreshold ??
+    clampConfidence(args.researchConfig.highConfidenceThreshold, 0.5, 0.95) ??
+    0.75
+
+  return {
+    maxCandidatesPerStage,
+    maxPapersPerNode,
+    minimumUsefulPapersPerNode,
+    targetCandidatesBeforeAdmission,
+    highConfidenceThreshold,
   }
 }
 
@@ -803,7 +990,7 @@ async function loadTopicRecord(topicId: string) {
 }
 
 async function loadTopicCreationSeed(topicId: string): Promise<TopicCreationSeed | null> {
-  const record = await (prisma as any).systemConfig.findUnique({
+  const record = await prisma.system_configs.findUnique({
     where: { key: `topic:${topicId}:creation` },
   })
 
@@ -949,12 +1136,10 @@ function resolveTemporalDiscoveryWindow(args: {
   const stageStart = addUtcMonths(firstStageStart, Math.max(0, targetStageIndex - 1) * windowMonths)
   const endDateExclusive = addUtcMonths(stageStart, windowMonths)
   const anchorStageIndex = Math.max(1, Math.min(Math.max(currentStageIndex, 1), targetStageIndex))
-  const anchorStageStart = addUtcMonths(firstStageStart, Math.max(0, anchorStageIndex - 1) * windowMonths)
-  const anchorStageBucketKey = `${anchorStageStart.getUTCFullYear()}-${`${anchorStageStart.getUTCMonth() + 1}`.padStart(2, '0')}-01`
   const requestedBranchId = args.requestedBranchId?.trim() || undefined
   const paperById = new Map(args.topic.papers.map((paper: any) => [paper.id, paper]))
   const anchorPaperIds = Array.from(temporalBuckets.paperAssignments.entries())
-    .filter(([, assignment]) => assignment.bucketKey === anchorStageBucketKey)
+    .filter(([, assignment]) => assignment.stageIndex === anchorStageIndex)
     .map(([paperId]) => paperId)
   const anchorPapers = (anchorPaperIds.length > 0
     ? anchorPaperIds.map((paperId) => paperById.get(paperId)).filter(Boolean)
@@ -965,16 +1150,20 @@ function resolveTemporalDiscoveryWindow(args: {
         new Date(left.published).getTime() - new Date(right.published).getTime(),
     )
     .slice(-6)
-    .map((paper: any) => ({
+.map((paper: any) => ({
       paperId: extractArxivId(paper.arxivUrl) || paper.id,
       title: paper.titleEn || paper.title || paper.titleZh || paper.id,
       published: new Date(paper.published).toISOString(),
       branchId: resolveTrackerPaperBranchId(args.topic, paper.id, requestedBranchId),
+      // Include openAlexId if available (from previous discovery)
+      openAlexId: paper.openAlexId ?? (paper.arxivUrl?.startsWith('https://openalex.org/')
+        ? paper.arxivUrl.replace('https://openalex.org/', '')
+        : undefined),
     }))
   const anchorNodes = args.topic.nodes
     .filter((node: any) => {
       const assignment = temporalBuckets.nodeAssignments.get(node.id)
-      return assignment?.bucketKey === anchorStageBucketKey
+      return assignment?.stageIndex === anchorStageIndex
     })
     .slice(0, 8)
     .map((node: any) => ({
@@ -1200,7 +1389,7 @@ function prioritizeExternalDiscoveryTerms(
 }
 
 async function loadTopicKeywordHints(topicId: string, creationSeed: TopicCreationSeed | null) {
-  const record = await (prisma as any).systemConfig.findUnique({
+  const record = await prisma.system_configs.findUnique({
     where: { key: `topic:${topicId}:keywords` },
   })
 
@@ -1401,6 +1590,66 @@ function buildDiscoveryQueries(baseAnchor: string, modifierTerms: string[], limi
   }
 
   return compactDiscoveryTerms(queries.filter((query) => isExternalDiscoveryQueryCandidate(query)), limit)
+}
+
+function buildDurationAngleQueries(args: {
+  baseAnchor: string
+  stageLabel: string
+  domainTerms: string[]
+  problemTerms: string[]
+  methodTerms: string[]
+  angles: ReturnType<typeof normalizeDurationResearchAngles>
+}) {
+  const queryMeta = new Map<
+    string,
+    {
+      rationale: string
+      focus: DiscoveryQuery['focus']
+    }
+  >()
+
+  const registerQuery = (
+    query: string | null | undefined,
+    rationale: string,
+    focus: DiscoveryQuery['focus'],
+  ) => {
+    const normalized = normalizeDiscoveryTerm(query)
+    if (!normalized || !isExternalDiscoveryQueryCandidate(normalized)) return
+    if (!queryMeta.has(normalized)) {
+      queryMeta.set(normalized, { rationale, focus })
+    }
+  }
+
+  for (const angle of args.angles) {
+    const focusTerms =
+      angle.focus === 'method'
+        ? args.methodTerms
+        : angle.focus === 'citation' || angle.focus === 'merge'
+          ? [...args.problemTerms, ...args.methodTerms]
+          : args.problemTerms
+    const angleTerms = prioritizeExternalDiscoveryTerms(
+      [...angle.prompts, ...focusTerms],
+      6,
+    )
+    const rationale = `${angle.label} lens for ${args.stageLabel}`
+
+    for (const query of buildDiscoveryQueries(args.baseAnchor, angleTerms, 3)) {
+      registerQuery(query, rationale, angle.focus)
+    }
+
+    for (const query of buildDiscoveryPairQueries({
+      leftTerms: args.domainTerms.length > 0 ? args.domainTerms : [args.baseAnchor],
+      rightTerms: angleTerms,
+      limit: 2,
+    })) {
+      registerQuery(query, rationale, angle.focus)
+    }
+  }
+
+  return {
+    queries: [...queryMeta.keys()],
+    queryMeta,
+  }
 }
 
 const AUTONOMOUS_DRIVING_WORLD_MODEL_ERA_START_UTC_MS = Date.UTC(2023, 0, 1)
@@ -1948,11 +2197,156 @@ return {
   }
 }
 
+function buildMultiAngleDiscoveryPlan(args: {
+  topic: NonNullable<TopicRecord>
+  topicDef: TopicDefinitionLike
+  input: PaperTrackerInput
+  stageWindow: DiscoveryStageWindow
+  discoveryQueryLimit?: number
+  discoveryRounds?: number
+  semanticScholarLimit?: number
+  maxPapersPerNode?: number
+  minimumUsefulPapersPerNode?: number
+}) {
+  const basePlan = buildDiscoveryPlan({
+    topic: args.topic,
+    topicDef: args.topicDef,
+    input: args.input,
+    stageWindow: args.stageWindow,
+    discoveryQueryLimit: args.discoveryQueryLimit,
+    discoveryRounds: args.discoveryRounds,
+    semanticScholarLimit: args.semanticScholarLimit,
+    maxPapersPerNode: args.maxPapersPerNode,
+  })
+  const normalizedAngles = normalizeDurationResearchAngles(
+    args.input.durationResearchPolicy?.researchAngles,
+  )
+
+  if (normalizedAngles.length === 0) {
+    return {
+      ...basePlan,
+      minimumUsefulPapersPerNode:
+        args.minimumUsefulPapersPerNode ??
+        args.input.minimumUsefulPapersPerNode ??
+        Math.max(4, Math.ceil(basePlan.maxPapersPerNode / 2)),
+    }
+  }
+
+  const anchorPaperTerms = args.stageWindow.anchorPapers.map((paper) => paper.title)
+  const stageNodeTerms = args.stageWindow.anchorNodes.flatMap((node) => [node.title, node.summary])
+  const bridgeStage = isAutonomousDrivingBridgeStage({
+    topicId: args.topicDef.id,
+    stageWindow: args.stageWindow,
+    anchorPaperTerms,
+    stageNodeTerms,
+  })
+  const baseAnchor = selectStageAwareDiscoveryAnchor({
+    topicDef: args.topicDef,
+    topic: args.topic,
+    bridgeStage,
+    anchorPaperTerms,
+    stageNodeTerms,
+    topicSpecificTerms: buildTopicSpecificDiscoveryBoostTerms({
+      topicId: args.topicDef.id,
+      stageWindow: args.stageWindow,
+      termPool: [
+        args.topicDef.nameEn,
+        args.topic.nameEn ?? args.topic.nameZh,
+        args.topicDef.focusLabel,
+        args.topic.focusLabel ?? args.topicDef.focusLabel,
+        ...anchorPaperTerms,
+        ...stageNodeTerms,
+        ...args.topicDef.queryTags,
+        ...args.topicDef.problemPreference,
+      ],
+      anchorPaperTerms,
+      stageNodeTerms,
+    }),
+  })
+  const problemTerms = collectPatternMatchedDiscoveryTerms(
+    basePlan.queries,
+    bridgeStage
+      ? /\b(?:control|driving policy|policy learning|recovery|intervention|steering|simulation|attention|interpretable|dataset)\b/giu
+      : /\b(?:planning|simulation|closed[- ]loop|control|forecasting|trajectory prediction|safety|policy learning|reasoning|action models?)\b/giu,
+    bridgeStage ? 10 : 8,
+  )
+  const methodTerms = collectPatternMatchedDiscoveryTerms(
+    basePlan.queries,
+    bridgeStage
+      ? /\b(?:end[- ]to[- ]end|imitation learning|behavior cloning|behaviour cloning|conditional imitation|direct perception|attention|visual attention|causal attention|interpretable|cognitive model)\b/giu
+      : /\b(?:vision[- ]language[- ]action|vla|world models?|latent world models?|latent dynamics|video generation|foundation models?|diffusion|transformers?|end[- ]to[- ]end)\b/giu,
+    bridgeStage ? 10 : 8,
+  )
+  const domainTerms = collectPatternMatchedDiscoveryTerms(
+    [
+      baseAnchor,
+      ...basePlan.queries,
+      args.topicDef.nameEn,
+      args.topicDef.focusLabel,
+      ...args.topicDef.queryTags,
+    ],
+    /\b(?:autonomous driving|self[- ]driving|driving|robotics?|navigation|embodied ai|embodied agents?)\b/giu,
+    6,
+  )
+  const durationAnglePlan = buildDurationAngleQueries({
+    baseAnchor,
+    stageLabel: args.stageWindow.stageLabel,
+    domainTerms,
+    problemTerms,
+    methodTerms,
+    angles: normalizedAngles,
+  })
+  const mergedQueries = uniqueNonEmpty(
+    [...durationAnglePlan.queries, ...basePlan.queries],
+    Math.max(basePlan.queries.length + durationAnglePlan.queries.length, basePlan.queries.length),
+  )
+  const structuredQueries = mergedQueries.map((query, index) => {
+    const angleMeta = durationAnglePlan.queryMeta.get(query)
+    const baseMeta = basePlan.discoveryQueries.find((entry) => entry.query === query)
+
+    return {
+      query,
+      rationale:
+        angleMeta?.rationale ??
+        baseMeta?.rationale ??
+        (index === 0
+          ? `Main stage discovery for ${args.stageWindow.stageLabel}`
+          : `Broaden adjacent evidence for ${args.stageWindow.stageLabel}`),
+      targetProblemIds: baseMeta?.targetProblemIds ?? args.stageWindow.anchorNodes.map((node) => node.nodeId),
+      targetBranchIds:
+        baseMeta?.targetBranchIds ??
+        uniqueNonEmpty([
+          args.input.branchId,
+          ...args.stageWindow.anchorPapers.map((paper) => paper.branchId),
+          ...args.stageWindow.anchorNodes.map((node) => node.branchId),
+        ]),
+      targetAnchorPaperIds: baseMeta?.targetAnchorPaperIds ?? basePlan.anchorPapers,
+      focus:
+        angleMeta?.focus ??
+        baseMeta?.focus ??
+        (index === 0 ? 'problem' : index % 2 === 0 ? 'method' : 'citation'),
+    } satisfies DiscoveryQuery
+  })
+
+  return {
+    ...basePlan,
+    queries: mergedQueries,
+    discoveryQueries: structuredQueries,
+    minimumUsefulPapersPerNode: Math.min(
+      basePlan.maxPapersPerNode,
+      args.minimumUsefulPapersPerNode ??
+        args.input.minimumUsefulPapersPerNode ??
+        Math.max(4, Math.ceil(basePlan.maxPapersPerNode / 2)),
+    ),
+  }
+}
+
 function mapExternalCandidateSourceToDiscoverySource(
-  source: 'arxiv' | 'openalex' | 'semantic-scholar',
+  source: 'arxiv' | 'openalex' | 'semantic-scholar' | 'crossref',
 ): ArxivPaper['discoverySource'] {
   if (source === 'openalex') return 'openalex'
   if (source === 'semantic-scholar') return 'semantic-scholar'
+  if (source === 'crossref') return 'crossref'
   return 'arxiv-api'
 }
 
@@ -2321,6 +2715,8 @@ function buildFollowOnDiscoveryAnchors(args: {
       title: paper.title,
       published: paper.published,
       branchId: args.plan.branchId,
+      // Use openAlexId directly from ArxivPaper (already extracted during discovery)
+      openAlexId: paper.openAlexId,
     })
     seenPaperIds.add(paper.id)
     if (anchors.length >= Math.max(args.plan.anchorPaperDetails.length + 4, 6)) {
@@ -2365,6 +2761,11 @@ async function discoverPapers(
         )
       }
 
+      arxivRateLimitedUntil = Math.max(
+        arxivRateLimitedUntil,
+        await getSourceCooldownUntil('arxiv'),
+      )
+
       if (Date.now() < arxivRateLimitedUntil) {
         context.logger.warn('Skipping arXiv query during cooldown window', {
           query,
@@ -2381,16 +2782,25 @@ async function discoverPapers(
             endDate,
             maxResults: Math.max(10, plan.maxCandidates * 3),
           })
+          if (results.length > 0) {
+            await noteSourceSuccess('arxiv')
+          }
         }
       } catch (error) {
         if (isRateLimitError(error)) {
           arxivRateLimitedUntil = Date.now() + ARXIV_RATE_LIMIT_COOLDOWN_MS
+          await noteSourceRateLimit('arxiv', {
+            defaultCooldownMs: ARXIV_RATE_LIMIT_COOLDOWN_MS,
+          })
           context.logger.warn('arXiv query rate limited; entering cooldown window', {
             query,
             cooldownMs: ARXIV_RATE_LIMIT_COOLDOWN_MS,
           })
         } else if (isArxivUnavailableError(error)) {
           arxivRateLimitedUntil = Date.now() + ARXIV_UNAVAILABLE_COOLDOWN_MS
+          await noteSourceRateLimit('arxiv', {
+            defaultCooldownMs: ARXIV_UNAVAILABLE_COOLDOWN_MS,
+          })
           context.logger.warn('arXiv query timed out; entering temporary cooldown window', {
             query,
             cooldownMs: ARXIV_UNAVAILABLE_COOLDOWN_MS,
@@ -2451,108 +2861,116 @@ async function discoverPapers(
     }
   }
 
-  if (plan.discoverySource !== 'internal-only' && plan.anchorPaperDetails.length > 0) {
-    try {
-const externalCandidates = await discoverExternalCandidates({
-        anchors: plan.anchorPaperDetails,
-        queries: plan.discoveryQueries,
-        discoveryRound: 1,
-        maxWindowMonths: plan.windowMonths,
-        searchStartDate: plan.searchStartDate,
-        searchEndDateExclusive: plan.searchEndDateExclusive,
-        maxResultsPerQuery: Math.max(10, Math.ceil(plan.maxCandidates * 1.25)),
-        maxTotalCandidates: Math.max(plan.maxCandidates * 5, 72),
-        semanticScholarLimit: plan.semanticScholarLimit, // 使用动态Semantic Scholar上限
-      })
+  function processDiscoveryCandidates(
+    candidates: Awaited<ReturnType<typeof discoverWithSnowball>>,
+    startDate: Date,
+    endDate: Date,
+    topicDef: TopicDefinitionLike,
+    queries: string[],
+    admissionContext: TopicAdmissionContext,
+    seenDiscoveryKeys: Set<string>,
+    discovered: ArxivPaper[]
+  ) {
+    for (const candidate of candidates) {
+      const publishedAt = new Date(candidate.published)
+      if (Number.isNaN(publishedAt.getTime())) continue
+      if (publishedAt < startDate || publishedAt >= endDate) continue
 
-      for (const candidate of externalCandidates) {
-        const publishedAt = new Date(candidate.published)
-        if (Number.isNaN(publishedAt.getTime())) continue
-        if (publishedAt < startDate || publishedAt >= endDate) continue
-
-        const arxivPaper: ArxivPaper = {
-          id: candidate.paperId,
-          title: candidate.title,
-          summary: candidate.abstract,
-          authors: candidate.authors,
-          published: candidate.published,
-          categories: [],
-          primaryCategory: undefined,
-          pdfUrl: candidate.pdfUrl,
-          arxivUrl: candidate.arxivUrl ?? candidate.openAlexId ?? `https://openalex.org/${candidate.paperId}`,
-          discoverySource: mapExternalCandidateSourceToDiscoverySource(candidate.source),
-        }
-        if (
-          !shouldRetainDiscoveredPaper({
-            paper: arxivPaper,
-            topicDef,
-            queries: plan.queries,
-            admissionContext,
-          })
-        ) {
-          continue
-        }
-
-        const identityKeys = collectDiscoveryIdentityKeys(arxivPaper)
-        if (identityKeys.some((key) => seenDiscoveryKeys.has(key))) continue
-        identityKeys.forEach((key) => seenDiscoveryKeys.add(key))
-        discovered.push(arxivPaper)
+      const arxivPaper: ArxivPaper = {
+        id: candidate.paperId,
+        title: candidate.title,
+        summary: candidate.abstract,
+        authors: candidate.authors,
+        published: candidate.published,
+        categories: [],
+        primaryCategory: undefined,
+        pdfUrl: candidate.pdfUrl,
+        arxivUrl: candidate.arxivUrl ?? (candidate.source === 'arxiv' ? `https://arxiv.org/abs/${candidate.paperId}` : ''),
+        openAlexId: candidate.openAlexId ?? (candidate.source === 'openalex' ? candidate.paperId : undefined),
+        discoverySource: mapExternalCandidateSourceToDiscoverySource(candidate.source),
       }
 
-      if (plan.discoveryRounds > 1) {
-        const followOnQueries = buildFollowOnDiscoveryQueries({
-          plan,
-          discovered,
-          topicDef,
+      if (!shouldRetainDiscoveredPaper({
+        paper: arxivPaper,
+        topicDef,
+        queries,
+        admissionContext,
+      })) {
+        continue
+      }
+
+      const identityKeys = collectDiscoveryIdentityKeys(arxivPaper)
+      if (identityKeys.some((key) => seenDiscoveryKeys.has(key))) continue
+      identityKeys.forEach((key) => seenDiscoveryKeys.add(key))
+      discovered.push(arxivPaper)
+    }
+  }
+
+  if (plan.discoverySource !== 'internal-only' && plan.anchorPaperDetails.length > 0) {
+    try {
+      // 多轮发现循环 - 支持discoveryRounds配置（最多10轮）
+      const totalRounds = Math.min(plan.discoveryRounds, 10) // 上限10轮
+
+      for (let round = 1; round <= totalRounds; round++) {
+        // 动态调整每轮参数：第一轮最深度，后续轮次逐渐收敛
+        const snowballDepth = round === 1 ? 2 : Math.max(1, 2 - Math.floor((round - 1) / 3))
+        const snowballMaxCandidates = round === 1 ? 30 : Math.max(15, 30 - (round - 1) * 3)
+        const openAlexMaxCandidates = round === 1 ? 20 : Math.max(10, 20 - (round - 1) * 2)
+        const maxResultsPerQuery = round === 1
+          ? Math.max(10, Math.ceil(plan.maxCandidates * 1.25))
+          : Math.max(6, plan.maxCandidates - (round - 1) * 2)
+        const maxTotalCandidates = round === 1
+          ? Math.max(plan.maxCandidates * 5, 72)
+          : Math.max(plan.maxCandidates * 2, 36)
+
+        // 获取本轮anchors
+        const roundAnchors = round === 1
+          ? plan.anchorPaperDetails
+          : buildFollowOnDiscoveryAnchors({ plan, discovered })
+
+        // 获取本轮queries
+        const roundQueries = round === 1
+          ? plan.discoveryQueries
+          : buildFollowOnDiscoveryQueries({ plan, discovered, topicDef })
+
+        if (roundQueries.length === 0 && round > 1) {
+          // 没有新的查询，停止后续轮次
+          break
+        }
+
+        // 执行发现
+        const roundCandidates = await discoverWithSnowball({
+          anchors: roundAnchors,
+          queries: roundQueries,
+          discoveryRound: round,
+          maxWindowMonths: Math.max(plan.windowMonths, round),
+          searchStartDate: plan.searchStartDate,
+          searchEndDateExclusive: plan.searchEndDateExclusive,
+          maxResultsPerQuery,
+          maxTotalCandidates,
+          semanticScholarLimit: plan.semanticScholarLimit,
+          enableSnowball: true,
+          snowballDepth,
+          snowballMaxCandidates,
+          enableOpenAlex: true,
+          openAlexMaxCandidates,
         })
 
-        if (followOnQueries.length > 0) {
-const followOnCandidates = await discoverExternalCandidates({
-            anchors: buildFollowOnDiscoveryAnchors({ plan, discovered }),
-            queries: followOnQueries,
-            discoveryRound: 2,
-            maxWindowMonths: Math.max(plan.windowMonths, 2),
-            searchStartDate: plan.searchStartDate,
-            searchEndDateExclusive: plan.searchEndDateExclusive,
-            maxResultsPerQuery: Math.max(8, plan.maxCandidates),
-            maxTotalCandidates: Math.max(plan.maxCandidates * 3, 48),
-            semanticScholarLimit: plan.semanticScholarLimit, // 使用动态Semantic Scholar上限
-          })
+        // 处理本轮结果
+        processDiscoveryCandidates(
+          roundCandidates,
+          startDate,
+          endDate,
+          topicDef,
+          plan.queries,
+          admissionContext,
+          seenDiscoveryKeys,
+          discovered
+        )
 
-          for (const candidate of followOnCandidates) {
-            const publishedAt = new Date(candidate.published)
-            if (Number.isNaN(publishedAt.getTime())) continue
-            if (publishedAt < startDate || publishedAt >= endDate) continue
-
-            const arxivPaper: ArxivPaper = {
-              id: candidate.paperId,
-              title: candidate.title,
-              summary: candidate.abstract,
-              authors: candidate.authors,
-              published: candidate.published,
-              categories: [],
-              primaryCategory: undefined,
-              pdfUrl: candidate.pdfUrl,
-              arxivUrl:
-                candidate.arxivUrl ?? candidate.openAlexId ?? `https://openalex.org/${candidate.paperId}`,
-              discoverySource: mapExternalCandidateSourceToDiscoverySource(candidate.source),
-            }
-            if (
-              !shouldRetainDiscoveredPaper({
-                paper: arxivPaper,
-                topicDef,
-                queries: plan.queries,
-                admissionContext,
-              })
-            ) {
-              continue
-            }
-
-            const identityKeys = collectDiscoveryIdentityKeys(arxivPaper)
-            if (identityKeys.some((key) => seenDiscoveryKeys.has(key))) continue
-            identityKeys.forEach((key) => seenDiscoveryKeys.add(key))
-            discovered.push(arxivPaper)
-          }
+        // 如果本轮发现数量太少，提前终止
+        if (round > 1 && roundCandidates.length < 5) {
+          break
         }
       }
     } catch (error) {
@@ -2729,13 +3147,13 @@ function parsePaperEvaluationJson(raw: string): LlmPaperEvaluation | null {
   try {
     const parsed = JSON.parse(jsonCandidate) as Record<string, unknown>
     const confidence = normalizeConfidence(parsed.confidence)
-    
+
     // 广纳贤文: Lower thresholds for more papers per node (user expects 10-20+ papers)
     // 0.45+ → admitted (was 0.55)
     // 0.25-0.45 → candidate (was 0.35-0.55)
     // <0.25 → rejected
     const thresholdStatus = confidence >= 0.45 ? 'admit' : confidence >= 0.25 ? 'candidate' : 'reject'
-    
+
     return {
       verdict: normalizeVerdict(parsed.verdict ?? parsed.decision ?? parsed.status, thresholdStatus),
       candidateType: normalizeCandidateType(parsed.candidateType),
@@ -2989,25 +3407,31 @@ async function requestPaperEvaluationCompletion(args: {
 }) {
   const repair = args.repair === true
 
-  return omniGateway.complete({
-    task: 'general_chat',
-    preferredSlot: 'language',
-    messages: [
-      {
-        role: 'system',
-        content: repair
-          ? 'You are repairing a paper-classifier output. Output exactly five plain key:value lines with the keys verdict, candidateType, citeIntent, confidence, and why. Never mention the user, the task, or your reasoning process.'
-          : 'You are a strict paper classifier. Output exactly five plain key:value lines with the keys verdict, candidateType, citeIntent, confidence, and why. Never mention the user, the task, or your reasoning process.',
-      },
-      {
-        role: 'user',
-        content: args.prompt,
-      },
-    ],
-    json: false,
-    temperature: 0,
-    maxTokens: Math.min(args.input.maxTokens ?? (repair ? 120 : 140), repair ? 160 : 180),
-  })
+  // NO FALLBACK: Use retry mechanism for paper evaluation
+  return withRetry(
+    async () => {
+      return omniGateway.complete({
+        task: 'general_chat',
+        preferredSlot: 'language',
+        messages: [
+          {
+            role: 'system',
+            content: repair
+              ? 'You are repairing a paper-classifier output. Output exactly five plain key:value lines with the keys verdict, candidateType, citeIntent, confidence, and why. Never mention the user, the task, or your reasoning process.'
+              : 'You are a strict paper classifier. Output exactly five plain key:value lines with the keys verdict, candidateType, citeIntent, confidence, and why. Never mention the user, the task, or your reasoning process.',
+          },
+          {
+            role: 'user',
+            content: args.prompt,
+          },
+        ],
+        json: false,
+        temperature: 0,
+        maxTokens: Math.min(args.input.maxTokens ?? (repair ? 120 : 140), repair ? 160 : 180),
+      })
+    },
+    { maxRetries: 3 }
+  )
 }
 
 async function evaluatePaperWithLLM(args: {
@@ -3540,7 +3964,7 @@ function enforceTopicAdmissionGuard(args: {
   }
 
   const rejectReasons: string[] = []
-  
+
   if (!signals.hasTopicAnchor) {
     rejectReasons.push('missing_topic_anchor')
   }
@@ -3621,6 +4045,11 @@ function buildHeuristicCandidate(args: {
   queries?: string[]
   admissionContext?: TopicAdmissionContext
 }) {
+  const hasUsablePdf =
+    resolveCandidateGroundablePdfUrl({
+      pdfUrl: args.paper.pdfUrl ?? null,
+      arxivUrl: args.paper.arxivUrl ?? null,
+    }).length > 0
   const admissionSignals =
     args.topicDef && args.queries
       ? buildTopicAdmissionSignals(args.paper, args.topicDef, args.queries, args.admissionContext)
@@ -3639,7 +4068,7 @@ function buildHeuristicCandidate(args: {
     directTopicLexicalFit || (args.queryHits.length >= 1 && args.confidence >= 0.25)
 
   let status: 'admitted' | 'candidate' | 'rejected'
-  
+
   if (args.bootstrapMode === true) {
     if (directTopicLexicalFit || args.queryHits.length >= 1 || args.confidence >= 0.20) {
       status = 'admitted'
@@ -3658,6 +4087,10 @@ function buildHeuristicCandidate(args: {
     } else {
       status = 'rejected'
     }
+  }
+
+  if (!hasUsablePdf && status === 'admitted' && !directTopicLexicalFit) {
+    status = args.confidence >= 0.18 ? 'candidate' : 'rejected'
   }
 
   const candidateType =
@@ -3684,6 +4117,10 @@ function buildHeuristicCandidate(args: {
           ? `Candidate pool entry (confidence=${args.confidence.toFixed(2)}) for manual review.`
           : 'Heuristic fallback from lexical and temporal relevance.'
 
+  const groundedWhy = hasUsablePdf
+    ? why
+    : `${why} Full-text PDF is not directly groundable yet, so it stays out of the main admitted lane.`
+
   return {
     paperId: args.paper.id,
     title: args.paper.title,
@@ -3693,12 +4130,13 @@ function buildHeuristicCandidate(args: {
     candidateType,
     confidence: args.confidence,
     status,
-    why,
+    why: groundedWhy,
     citeIntent,
     earliestWindowMonths: args.windowMonths ?? 6,
     stageIndex: args.stageIndex,
     queryHits: args.queryHits,
     discoveryChannels: [args.paper.discoverySource ?? 'arxiv-api'],
+    openAlexId: args.paper.openAlexId,
     arxivData: args.paper,
     discoverySource: args.paper.discoverySource,
   } satisfies PaperCandidate
@@ -3740,7 +4178,10 @@ function resolveBootstrapAnchorWindow(
 
   return {
     bucketKey: assignment.bucketKey,
-    label: assignment.label,
+    label: formatStageWindowLabel(
+      assignment.bucketStart,
+      normalizeStageWindowMonths(windowMonths),
+    ),
     bucketStart: assignment.bucketStart,
   }
 }
@@ -3779,7 +4220,10 @@ function constrainBootstrapCandidatesToAnchorWindow(
       return {
         ...candidate,
         status: 'rejected' as const,
-        why: `${candidate.why} Deferred until ${assignment.label} because bootstrap anchored stage 1 at ${anchorWindow.label}.`,
+        why: `${candidate.why} Deferred until ${formatStageWindowLabel(
+          startOfUtcMonth(candidate.published) ?? assignment.bucketStart,
+          normalizeStageWindowMonths(windowMonths),
+        )} because bootstrap anchored stage 1 at ${anchorWindow.label}.`,
       }
     }),
   }
@@ -3790,6 +4234,9 @@ function shouldAdmitCandidate(evaluation: {
   candidateType: 'direct' | 'branch' | 'transfer'
   confidence: number
   citeIntent?: 'supporting' | 'contrasting' | 'method-using' | 'background'
+}, thresholds?: {
+  directHighConfidenceThreshold?: number
+  branchHighConfidenceThreshold?: number
 }): 'admitted' | 'candidate' | 'rejected' {
   // 广纳贤文: Return status based on verdict
   if (evaluation.verdict === 'admit') {
@@ -3800,12 +4247,26 @@ function shouldAdmitCandidate(evaluation: {
     return 'candidate'
   }
 
+  const directHighConfidenceThreshold =
+    clampConfidence(thresholds?.directHighConfidenceThreshold, 0.5, 0.95) ?? 0.82
+  const branchHighConfidenceThreshold = Math.min(
+    directHighConfidenceThreshold,
+    clampConfidence(thresholds?.branchHighConfidenceThreshold, 0.45, 0.95) ??
+      Math.max(0.5, directHighConfidenceThreshold - 0.04),
+  )
+
   // High-confidence papers can override reject verdict
-  if (evaluation.candidateType === 'direct' && evaluation.confidence >= 0.82) {
+  if (
+    evaluation.candidateType === 'direct' &&
+    evaluation.confidence >= directHighConfidenceThreshold
+  ) {
     return 'admitted'
   }
 
-  if (evaluation.candidateType === 'branch' && evaluation.confidence >= 0.78) {
+  if (
+    evaluation.candidateType === 'branch' &&
+    evaluation.confidence >= branchHighConfidenceThreshold
+  ) {
     return 'admitted'
   }
 
@@ -3827,14 +4288,23 @@ async function evaluateCandidates(args: {
   context: SkillContext
   bootstrapMode?: boolean
   admissionContext?: TopicAdmissionContext
+  targetCandidatesBeforeAdmission?: number
+  highConfidenceThreshold?: number
   maxCandidates?: number // 动态配置：每阶段上限
   admissionThreshold?: number // 动态配置：准入阈值
 }) {
   // 从配置获取maxCandidates，默认使用硬编码值
-  const maxCandidatesLimit = args.maxCandidates ?? PAPER_EVALUATION_LLM_MAX_CANDIDATES
+  const maxCandidatesLimit = Math.max(
+    args.maxCandidates ?? PAPER_EVALUATION_LLM_MAX_CANDIDATES,
+    args.targetCandidatesBeforeAdmission ?? 0,
+  )
   // 从配置获取admissionThreshold，默认使用0.55
   const admissionThreshold = args.admissionThreshold ?? 0.55
-  
+  const directHighConfidenceThreshold =
+    clampConfidence(args.highConfidenceThreshold, 0.5, 0.95) ??
+    RESEARCH_CONFIG_DEFAULTS.HIGH_CONFIDENCE_THRESHOLD
+  const branchHighConfidenceThreshold = Math.max(0.5, directHighConfidenceThreshold - 0.04)
+
   const existingKeys = buildExistingPaperKeySet(args.topic)
   const candidateSeeds = args.papers
     .filter(
@@ -3854,83 +4324,17 @@ async function evaluateCandidates(args: {
       queryHits: collectMatchedQueries(paper, args.queries),
     }))
 
-  if (args.bootstrapMode) {
-    const heuristicCandidates = candidateSeeds.map((seed) =>
-      enforceTopicAdmissionGuard({
-        candidate: buildHeuristicCandidate({
-          paper: seed.paper,
-          confidence: seed.confidence,
-          queryHits: seed.queryHits,
-          stageIndex: args.targetStageIndex,
-          windowMonths: args.input.windowMonths,
-          bootstrapMode: true,
-          topicDef: args.topicDef,
-          queries: args.queries,
-          admissionContext: args.admissionContext,
-        }),
-        paper: seed.paper,
-        topicDef: args.topicDef,
-        queries: args.queries,
-        admissionContext: args.admissionContext,
-      }),
-    )
+  // ========== NO FALLBACK: All candidates must go through LLM evaluation ==========
+  // Removed bootstrapMode, heuristicCandidates, and overflowHeuristicCandidates paths
+  // All papers are evaluated by LLM to ensure "LLM全程参与"
 
-    heuristicCandidates.sort((left, right) => right.confidence - left.confidence)
-    return heuristicCandidates
-  }
+  // Increase LLM concurrency to handle more papers
+  const effectiveConcurrency = Math.min(PAPER_EVALUATION_LLM_CONCURRENCY * 2, 10)
 
-// 放宽启发式准入条件: 使用动态admissionThreshold或confidence >= 0.55 或有queryHits即可进入启发式评估路径
-  // 从原来的 0.82 && queryHits 降低到更宽松的条件，确保更多论文能被评估
-  const heuristicThreshold = Math.min(admissionThreshold, 0.55)
-  const heuristicCandidates = candidateSeeds
-    .filter((seed) => seed.confidence >= heuristicThreshold || seed.queryHits.length > 0)
-    .map((seed) =>
-      enforceTopicAdmissionGuard({
-        candidate: buildHeuristicCandidate({
-          paper: seed.paper,
-          confidence: seed.confidence,
-          queryHits: seed.queryHits,
-          stageIndex: args.targetStageIndex,
-          windowMonths: args.input.windowMonths,
-          topicDef: args.topicDef,
-          queries: args.queries,
-          admissionContext: args.admissionContext,
-        }),
-        paper: seed.paper,
-        topicDef: args.topicDef,
-        queries: args.queries,
-        admissionContext: args.admissionContext,
-      }),
-    )
-  // llmSeeds: 不满足启发式条件的论文走LLM评估路径
-  const llmSeeds = candidateSeeds
-    .filter((seed) => !(seed.confidence >= heuristicThreshold || seed.queryHits.length > 0))
-    .slice(0, maxCandidatesLimit)
-  // overflowHeuristicCandidates: 超出LLM评估容量的论文，仍走启发式评估
-  const overflowHeuristicCandidates = candidateSeeds
-    .filter((seed) => !(seed.confidence >= heuristicThreshold || seed.queryHits.length > 0))
-    .slice(maxCandidatesLimit)
-    .map((seed) =>
-      enforceTopicAdmissionGuard({
-        candidate: buildHeuristicCandidate({
-          paper: seed.paper,
-          confidence: seed.confidence,
-          queryHits: seed.queryHits,
-          stageIndex: args.targetStageIndex,
-          windowMonths: args.input.windowMonths,
-          topicDef: args.topicDef,
-          queries: args.queries,
-          admissionContext: args.admissionContext,
-        }),
-        paper: seed.paper,
-        topicDef: args.topicDef,
-        queries: args.queries,
-        admissionContext: args.admissionContext,
-      }),
-    )
+  // All candidates go through LLM evaluation - no heuristic shortcuts
   const llmCandidates = await mapWithConcurrency(
-    llmSeeds,
-    PAPER_EVALUATION_LLM_CONCURRENCY,
+    candidateSeeds.slice(0, maxCandidatesLimit),
+    effectiveConcurrency,
     async (seed) => {
       try {
         const evaluation = await evaluatePaperWithLLM({
@@ -3950,7 +4354,10 @@ async function evaluateCandidates(args: {
           authors: seed.paper.authors,
           candidateType: evaluation.candidateType,
           confidence: evaluation.confidence,
-          status: shouldAdmitCandidate(evaluation),
+          status: shouldAdmitCandidate(evaluation, {
+            directHighConfidenceThreshold,
+            branchHighConfidenceThreshold,
+          }),
           why: evaluation.why,
           citeIntent: evaluation.citeIntent,
           earliestWindowMonths: args.input.windowMonths ?? 6,
@@ -3965,32 +4372,35 @@ async function evaluateCandidates(args: {
           admissionContext: args.admissionContext,
         })
       } catch (error) {
-        args.context.logger.warn('LLM candidate evaluation failed; using heuristic fallback', {
+        // NO FALLBACK: LLM evaluation failed - reject candidate instead of heuristic fallback
+        args.context.logger.warn('LLM candidate evaluation failed; rejecting candidate', {
           paperId: seed.paper.id,
           error,
         })
 
-        return enforceTopicAdmissionGuard({
-          candidate: buildHeuristicCandidate({
-            paper: seed.paper,
-            confidence: seed.confidence,
-            queryHits: seed.queryHits,
-            stageIndex: args.targetStageIndex,
-            windowMonths: args.input.windowMonths,
-            topicDef: args.topicDef,
-            queries: args.queries,
-            admissionContext: args.admissionContext,
-          }),
-          paper: seed.paper,
-          topicDef: args.topicDef,
-          queries: args.queries,
-          admissionContext: args.admissionContext,
-        })
+        // Return rejected candidate instead of heuristic fallback
+        return {
+          paperId: seed.paper.id,
+          title: seed.paper.title,
+          titleZh: seed.paper.titleZh,
+          published: seed.paper.published,
+          authors: seed.paper.authors || [],
+          stageIndex: args.targetStageIndex,
+          queryHits: seed.queryHits,
+          discoveryChannels: [seed.paper.discoverySource ?? 'arxiv-api'],
+          arxivData: seed.paper,
+          status: 'rejected' as const,
+          candidateType: 'direct' as const,
+          citeIntent: 'background' as const,
+          confidence: 0,
+          why: `LLM评估失败: ${error instanceof Error ? error.message : String(error)}`,
+        } satisfies PaperCandidate
       }
     },
   )
 
-  const candidates = [...heuristicCandidates, ...llmCandidates, ...overflowHeuristicCandidates]
+  // Only LLM candidates now - no heuristic fallbacks
+  const candidates = llmCandidates
 
   candidates.sort((left, right) => right.confidence - left.confidence)
   return candidates
@@ -4035,8 +4445,9 @@ async function persistCandidatePool(args: {
   for (const candidate of args.candidates) {
     try {
       // Create entry in candidate pool
-      const poolEntry = await (prisma as any).paperCandidatePool.create({
+      const poolEntry = await prisma.paper_candidate_pool.create({
         data: {
+          id: `pool-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           topicId: args.topicId,
           title: candidate.title,
           authors: JSON.stringify(candidate.authors ?? []),
@@ -4058,9 +4469,9 @@ async function persistCandidatePool(args: {
           paperId: candidate.status === 'admitted' ? candidate.paperId : null,
         },
       })
-      
+
       poolEntries.push(poolEntry)
-      
+
       args.context.logger.info('[广纳贤文] Candidate pool entry created', {
         topicId: args.topicId,
         title: candidate.title,
@@ -4070,16 +4481,16 @@ async function persistCandidatePool(args: {
       })
     } catch (error) {
       // Check if entry already exists
-      const existingEntry = await (prisma as any).paperCandidatePool.findFirst({
+      const existingEntry = await prisma.paper_candidate_pool.findFirst({
         where: {
           topicId: args.topicId,
           title: candidate.title,
         },
       })
-      
+
       if (existingEntry) {
         // Update existing entry
-        await (prisma as any).paperCandidatePool.update({
+        await prisma.paper_candidate_pool.update({
           where: { id: existingEntry.id },
           data: {
             status: candidate.status,
@@ -4114,25 +4525,25 @@ async function persistCandidatePool(args: {
  */
 function generateRejectionAuditReport(candidates: PaperCandidate[]): string {
   const rejected = candidates.filter(c => c.status === 'rejected')
-  
+
   if (rejected.length === 0) {
     return 'No papers rejected in this discovery round.'
   }
-  
+
   const reportLines = [
     `## Rejection Audit Report (${rejected.length} papers rejected)`,
     '',
     '| Title | Confidence | Reject Filter | Reject Reason |',
     '|-------|-----------|---------------|---------------|',
   ]
-  
+
   for (const paper of rejected) {
     const titleShort = paper.title.slice(0, 50)
     reportLines.push(
       `| ${titleShort} | ${paper.confidence.toFixed(2)} | ${paper.rejectFilter ?? 'unknown'} | ${paper.rejectReason ?? paper.why.slice(0, 40)} |`
     )
   }
-  
+
   return reportLines.join('\n')
 }
 
@@ -4151,7 +4562,7 @@ async function saveResultsToDatabase(args: {
 
       const existingPaper =
         lookupConditions.length > 0
-          ? await (prisma as any).paper.findFirst({
+          ? await prisma.papers.findFirst({
               where: {
                 topicId: args.topicId,
                 OR: lookupConditions,
@@ -4159,7 +4570,7 @@ async function saveResultsToDatabase(args: {
             })
           : null
 
-      const paperData = {
+const paperData = {
         title: candidate.title,
         titleZh: candidate.titleZh || candidate.title,
         titleEn: candidate.title,
@@ -4168,6 +4579,8 @@ async function saveResultsToDatabase(args: {
         authors: JSON.stringify(candidate.authors ?? []),
         published: new Date(candidate.published),
         arxivUrl: candidate.arxivData?.arxivUrl ?? null,
+        // Persist openAlexId for future citation network traversal
+        openAlexId: candidate.openAlexId ?? candidate.arxivData?.openAlexId ?? null,
         pdfUrl:
           normalizePdfUrl(candidate.arxivData?.pdfUrl ?? candidate.arxivData?.arxivUrl ?? null) ||
           null,
@@ -4182,18 +4595,21 @@ async function saveResultsToDatabase(args: {
         ),
         contentMode: 'editorial',
         status: 'candidate',
+        updatedAt: new Date(),
       }
 
       if (existingPaper) {
-        const persistedPaper = await (prisma as any).paper.update({
+        const persistedPaper = await prisma.papers.update({
           where: { id: existingPaper.id },
           data: paperData,
         })
         candidate.sourcePaperId = candidate.sourcePaperId ?? candidate.paperId
         candidate.paperId = persistedPaper.id
       } else {
-        const persistedPaper = await (prisma as any).paper.create({
+        const paperId = `paper-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+        const persistedPaper = await prisma.papers.create({
           data: {
+            id: paperId,
             ...paperData,
             topicId: args.topicId,
           },
@@ -4201,19 +4617,40 @@ async function saveResultsToDatabase(args: {
         candidate.sourcePaperId = candidate.sourcePaperId ?? candidate.paperId
         candidate.paperId = persistedPaper.id
       }
-    } catch (error) {
+} catch (error) {
       args.context.logger.error('Failed to persist admitted paper', {
         paperId: candidate.paperId,
         error,
       })
+      // BUG #3 fix: Mark persistence failure to prevent downstream usage
+      candidate.persistenceFailed = true
     }
   }
 }
 
+function resolveCandidateGroundablePdfUrl(args: {
+  pdfUrl?: string | null
+  arxivUrl?: string | null
+}) {
+  const normalizedPdfUrl = normalizePdfUrl(args.pdfUrl ?? null)
+  const normalizedArxivUrl = normalizePdfUrl(args.arxivUrl ?? null)
+  const candidates = [normalizedPdfUrl, normalizedArxivUrl].filter(Boolean)
+
+  return candidates.find((value) => {
+    if (/^https?:\/\/(?:dx\.)?doi\.org\//iu.test(value)) return false
+    if (/ieeexplore\.ieee\.org\/document\//iu.test(value)) return false
+    if (/^https?:\/\/arxiv\.org\/pdf\//iu.test(value)) return true
+    if (/\.pdf(?:[?#]|$)/iu.test(value) && !/ieeexplore\.ieee\.org/iu.test(value)) return true
+    if (/^\/uploads\//u.test(value)) return true
+    return false
+  }) ?? ''
+}
+
 function resolveCandidatePdfUrl(candidate: PaperCandidate) {
-  return (
-    normalizePdfUrl(candidate.arxivData?.pdfUrl ?? candidate.arxivData?.arxivUrl ?? null) || ''
-  )
+  return resolveCandidateGroundablePdfUrl({
+    pdfUrl: candidate.arxivData?.pdfUrl ?? null,
+    arxivUrl: candidate.arxivData?.arxivUrl ?? null,
+  })
 }
 
 async function groundPersistedCandidatesFromPdf(args: {
@@ -4598,10 +5035,23 @@ export async function executePaperTracker(
     }
 
     const topicDef = await resolveTopicDefinition(params.topicId, topic)
-    
+
     // 加载研究追踪配置参数
     const researchConfig = await getResearchConfigParams(params.topicId)
-    
+    const effectiveResearchSettings = resolvePaperTrackerResearchSettings({
+      input: params,
+      researchConfig,
+    })
+    params.maxCandidates = effectiveResearchSettings.maxCandidatesPerStage
+    params.maxPapersPerNode = effectiveResearchSettings.maxPapersPerNode
+    params.minimumUsefulPapersPerNode = effectiveResearchSettings.minimumUsefulPapersPerNode
+    researchConfig.maxCandidatesPerStage = effectiveResearchSettings.maxCandidatesPerStage
+    researchConfig.maxPapersPerNode = effectiveResearchSettings.maxPapersPerNode
+    researchConfig.minPapersPerNode = effectiveResearchSettings.minimumUsefulPapersPerNode
+    researchConfig.targetCandidatesBeforeAdmission =
+      effectiveResearchSettings.targetCandidatesBeforeAdmission
+    researchConfig.highConfidenceThreshold = effectiveResearchSettings.highConfidenceThreshold
+
     const requestedWindowMonths = await resolveTrackerStageWindowMonths(
       params.topicId,
       params.windowMonths,
@@ -4629,7 +5079,7 @@ export async function executePaperTracker(
       ),
     }
 
-const discoveryPlan = buildDiscoveryPlan({
+    const discoveryPlan = buildMultiAngleDiscoveryPlan({
       topic,
       topicDef,
       input: params,
@@ -4641,7 +5091,7 @@ const discoveryPlan = buildDiscoveryPlan({
     })
 
     const discoveredPapers = await discoverPapers(discoveryPlan, topicDef, context)
-const evaluatedCandidates = await evaluateCandidates({
+    const evaluatedCandidates = await evaluateCandidates({
       papers: discoveredPapers,
       topic,
       topicDef,
@@ -4651,6 +5101,8 @@ const evaluatedCandidates = await evaluateCandidates({
       context,
       bootstrapMode: temporalStageWindow.bootstrapMode,
       admissionContext,
+      targetCandidatesBeforeAdmission: researchConfig.targetCandidatesBeforeAdmission,
+      highConfidenceThreshold: researchConfig.highConfidenceThreshold,
       maxCandidates: researchConfig.maxCandidatesPerStage, // 使用动态配置
       admissionThreshold: researchConfig.admissionThreshold, // 使用动态准入阈值
     })
@@ -4663,6 +5115,16 @@ const evaluatedCandidates = await evaluateCandidates({
         : { candidates: evaluatedCandidates, anchorWindow: null as BootstrapAnchorWindow | null }
     const candidates = bootstrapConstraint.candidates
     const admittedCandidates = candidates.filter((candidate) => candidate.status === 'admitted')
+    const groundedAdmittedCandidates = admittedCandidates.filter(
+      (candidate) => Boolean(resolveCandidatePdfUrl(candidate)),
+    )
+    // Merge grounded first, then non-grounded, both sorted by confidence
+    const finalCandidates = [
+      ...groundedAdmittedCandidates,
+      ...admittedCandidates.filter(
+        c => !groundedAdmittedCandidates.some(g => g.paperId === c.paperId)
+      ),
+    ].slice(0, effectiveResearchSettings.maxCandidatesPerStage)
     const branchDecision = determineBranchAction(candidates, params.allowMerge !== false)
     let stageMaterialization: TrackerStageMaterializationResult | null = null
     let pdfGroundingSummary: {
@@ -4672,41 +5134,62 @@ const evaluatedCandidates = await evaluateCandidates({
       groundedPaperIds: string[]
     } | null = null
 
-    if (params.mode !== 'dry-run' && params.mode !== 'inspect' && admittedCandidates.length > 0) {
+if (params.mode !== 'dry-run' && params.mode !== 'inspect' && finalCandidates.length > 0) {
+
       await saveResultsToDatabase({
         topicId: params.topicId,
-        candidates: admittedCandidates,
-        context,
-      })
-      pdfGroundingSummary = await groundPersistedCandidatesFromPdf({
-        candidates: admittedCandidates,
+        candidates: finalCandidates,
         context,
       })
 
-stageMaterialization = await materializeTrackerStageCoverage({
-        topicId: params.topicId,
-        stageIndex: targetStageIndex,
-        stageLabel: discoveryPlan.stageLabel,
-        stageStartDate: discoveryPlan.startDate,
-        stageEndDateExclusive: discoveryPlan.endDateExclusive,
-        stageWindowMonths: discoveryPlan.windowMonths,
-        admittedPaperIds: admittedCandidates.map((candidate) => candidate.paperId),
-        artifactMode: 'deferred',
-        maxPapersPerNode: discoveryPlan.maxPapersPerNode, // 使用动态每节点论文上限
-        context,
-      })
-
-      await researchMemory.addDiscoveryBatch(
-        params.topicId,
-        admittedCandidates.map((candidate) => ({
-          paperId: candidate.paperId,
-          title: candidate.title,
-          confidence: candidate.confidence,
-          stageIndex: targetStageIndex,
-          discoveredAt: new Date().toISOString(),
-        })),
+      // BUG #3 fix: Filter out candidates that failed persistence
+      const successfullyPersistedCandidates = finalCandidates.filter(
+        (candidate) => !candidate.persistenceFailed
       )
+
+      if (successfullyPersistedCandidates.length > 0) {
+        pdfGroundingSummary = await groundPersistedCandidatesFromPdf({
+          candidates: successfullyPersistedCandidates,
+          context,
+        })
+
+        stageMaterialization = await materializeTrackerStageCoverage({
+          topicId: params.topicId,
+          stageIndex: targetStageIndex,
+          stageLabel: discoveryPlan.stageLabel,
+          stageStartDate: discoveryPlan.startDate,
+          stageEndDateExclusive: discoveryPlan.endDateExclusive,
+          stageWindowMonths: discoveryPlan.windowMonths,
+          admittedPaperIds: successfullyPersistedCandidates.map((candidate) => candidate.paperId),
+          artifactMode: 'deferred',
+          maxPapersPerNode: discoveryPlan.maxPapersPerNode, // 使用动态每节点论文上限
+          context,
+        })
+
+        await researchMemory.addDiscoveryBatch(
+          params.topicId,
+          successfullyPersistedCandidates.map((candidate) => ({
+            paperId: candidate.paperId,
+            title: candidate.title,
+            confidence: candidate.confidence,
+            stageIndex: targetStageIndex,
+            discoveredAt: new Date().toISOString(),
+          })),
+        )
+      } else {
+        // Log if all candidates failed persistence
+        context.logger.warn('All admitted candidates failed persistence, skipping downstream operations')
+      }
     }
+
+    console.log(`[PaperTracker] Admission funnel for topic ${params.topicId}:`, {
+      discovered: discoveredPapers.length,
+      afterEvaluation: evaluatedCandidates.length,
+      admitted: admittedCandidates.length,
+      withPdfUrls: groundedAdmittedCandidates.length,
+      finalAfterCap: finalCandidates.length,
+      topCandidate: finalCandidates[0]?.paperId ?? 'none',
+    })
 
     const output = {
       discoveryPlan,
@@ -4722,17 +5205,24 @@ stageMaterialization = await materializeTrackerStageCoverage({
           end: new Date(discoveryPlan.endDateExclusive.getTime() - 1).toISOString(),
         },
       },
-      admittedCandidates,
+      admittedCandidates: finalCandidates, // Hard cap enforced - maxCandidatesPerStage
       candidates,
-      recommendations: admittedCandidates.slice(0, 5).map((candidate) => ({
+      recommendations: finalCandidates.slice(0, 5).map((candidate) => ({
         paperId: candidate.paperId,
         candidateType: candidate.candidateType,
         confidence: candidate.confidence,
         why: candidate.why,
         status: candidate.status,
       })),
-      selectedCandidate: admittedCandidates[0] ?? null,
-      decisionSummary: `Discovered ${discoveredPapers.length} papers and admitted ${admittedCandidates.length} for stage ${targetStageIndex} (${discoveryPlan.stageLabel}).`,
+      selectedCandidate: finalCandidates[0] ?? null,
+      topCandidates: finalCandidates.slice(0, 3).map(c => ({
+        paperId: c.paperId,
+        candidateType: c.candidateType,
+        confidence: c.confidence,
+        citeIntent: c.citeIntent,
+        stageIndex: c.stageIndex,
+      })),
+      decisionSummary: `Discovered ${discoveredPapers.length} papers and admitted ${finalCandidates.length} (hard cap enforced) for stage ${targetStageIndex} (${discoveryPlan.stageLabel}).`,
       branchDecisionRationale: branchDecision.rationale,
       branchAction: branchDecision.action,
       selectedBranch: branchDecision.selectedBranch,
@@ -4740,15 +5230,15 @@ stageMaterialization = await materializeTrackerStageCoverage({
       stageWindow: {
         stageIndex: targetStageIndex,
         windowMonths: discoveryPlan.windowMonths,
-        paperCount: admittedCandidates.length,
+        paperCount: finalCandidates.length,
       },
       stageMaterialization,
       stageWindowDecision: {
-        shouldAdvance: admittedCandidates.length >= 3,
+        shouldAdvance: finalCandidates.length >= 3,
         rationale:
           temporalStageWindow.bootstrapMode && bootstrapConstraint.anchorWindow
             ? `Bootstrap anchored stage 1 at ${bootstrapConstraint.anchorWindow.label}; keep later-window papers for future stages.`
-            : admittedCandidates.length >= 3
+            : finalCandidates.length >= 3
               ? 'Enough new evidence was admitted to justify stage advancement.'
               : 'Keep consolidating the current stage before advancing.',
       },
@@ -4759,38 +5249,38 @@ stageMaterialization = await materializeTrackerStageCoverage({
       topicMemoryPatch: {
         lastDiscoveryAt: new Date().toISOString(),
         currentStage: targetStageIndex,
-        admittedCount: admittedCandidates.length,
+        admittedCount: finalCandidates.length,
       },
       paperCatalogPatch: {
-        added: admittedCandidates.map((candidate) => candidate.paperId),
-        total: topic.papers.length + admittedCandidates.length,
+        added: finalCandidates.map((candidate) => candidate.paperId),
+        total: topic.papers.length + finalCandidates.length,
       },
       paperMetricsPatch: {
         discoveryRate:
-          discoveredPapers.length > 0 ? admittedCandidates.length / discoveredPapers.length : 0,
+          discoveredPapers.length > 0 ? finalCandidates.length / discoveredPapers.length : 0,
         averageConfidence:
-          admittedCandidates.length > 0
-            ? admittedCandidates.reduce((sum, candidate) => sum + candidate.confidence, 0) /
-              admittedCandidates.length
+          finalCandidates.length > 0
+            ? finalCandidates.reduce((sum, candidate) => sum + candidate.confidence, 0) /
+              finalCandidates.length
             : 0,
       },
       timelineContextPatch: {
         lastUpdate: new Date().toISOString(),
         stageCount: topic.stages.length,
-        paperCount: topic.papers.length + admittedCandidates.length,
+        paperCount: topic.papers.length + finalCandidates.length,
       },
       runSummary: {
         duration: Date.now() - startTime,
         papersDiscovered: discoveredPapers.length,
-        papersAdmitted: admittedCandidates.length,
-        stageAdvanced: admittedCandidates.length >= 3,
+        papersAdmitted: finalCandidates.length,
+        stageAdvanced: finalCandidates.length >= 3,
       },
     }
 
     context.logger.info('Paper tracker execution completed', {
       topicId: params.topicId,
       discovered: discoveredPapers.length,
-      admitted: admittedCandidates.length,
+      admitted: finalCandidates.length, // Hard cap enforced
       duration: Date.now() - startTime,
     })
 
@@ -4823,6 +5313,9 @@ export const __testing = {
   constrainBootstrapCandidatesToAnchorWindow,
   resolveTemporalDiscoveryWindow,
   buildDiscoveryPlan,
+  buildMultiAngleDiscoveryPlan,
+  resolvePaperTrackerResearchSettings,
+  shouldAdmitCandidate,
   materializeTrackerStageCoverage,
   parsePaperEvaluationJson,
   parsePaperEvaluationLines,

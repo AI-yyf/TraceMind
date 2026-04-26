@@ -1,533 +1,772 @@
 import { Router } from 'express'
 import { v4 as uuidv4 } from 'uuid'
+
 import { prisma } from '../lib/prisma'
-import { asyncHandler, AppError } from '../middleware/errorHandler'
-import { logger } from '../utils/logger'
-import { 
-  broadcastResearchProgress, 
-  broadcastResearchComplete, 
-  broadcastResearchError 
-} from '../websocket/server'
-import { executePaperTracker } from '../../skill-packs/research/paper-tracker/executor'
-import { executeContentGenesis } from '../../skill-packs/research/content-genesis-v2/executor'
-import { executeOrchestrator } from '../../skill-packs/research/orchestrator/executor'
-import type { SkillContext } from '../../engine/contracts'
-import { setSession, getSession, getAllSessions } from '../lib/redis'
+import { deleteSession, getAllSessions, getSession, setSession } from '../lib/redis'
+import { AppError, asyncHandler } from '../middleware/errorHandler'
+import { validate } from '../middleware/requestValidator'
+import { CreateResearchSessionSchema } from './schemas'
+import {
+  enhancedTaskScheduler,
+  STAGE_DURATION_DAYS_DEFAULT,
+  STAGE_DURATION_DAYS_MAX,
+  STAGE_DURATION_DAYS_MIN,
+} from '../services/enhanced-scheduler'
+import { computeDurationProgress } from '../services/scheduler-utils'
 
 const router = Router()
 
-// Session key prefix for Redis storage
-const SESSION_KEY_PREFIX = 'research:session:'
+// ============================================================================
+// Types for Topics Overview Endpoint
+// ============================================================================
 
-// 创建 Skill 上下文
-function createSkillContext(sessionId: string): SkillContext {
-  return {
-    logger: {
-      info: (msg: string, meta?: any) => logger.info(`[Session ${sessionId}] ${msg}`, meta),
-      warn: (msg: string, meta?: any) => logger.warn(`[Session ${sessionId}] ${msg}`, meta),
-      error: (msg: string, meta?: any) => logger.error(`[Session ${sessionId}] ${msg}`, meta),
-      debug: (msg: string, meta?: any) => logger.debug(`[Session ${sessionId}] ${msg}`, meta),
-    },
-    activeTopicIds: [],
-    generatedDataSummary: { paperCount: 0, topicCount: 0, capabilityCount: 0, nodeCount: 0 },
+interface TopicResearchBriefOverview {
+  stageCount: number
+  nodeCount: number
+  paperCount: number
+  lastResearchAt: string | null
+  status: 'running' | 'paused' | 'idle' | 'completed'
+}
+
+interface TopicResearchOverviewItem {
+  id: string
+  title: string
+  titleEn: string | null
+  description: string | null
+  createdAt: string
+  updatedAt: string
+  researchBrief: TopicResearchBriefOverview | null
+}
+
+interface TopicsOverviewResponse {
+  success: boolean
+  topics: TopicResearchOverviewItem[]
+}
+
+// ============================================================================
+// GET /api/research/topics/overview - Global Research Overview
+// ============================================================================
+
+router.get(
+  '/topics/overview',
+  asyncHandler(async (_req, res) => {
+    const topics = await prisma.topics.findMany({
+      select: {
+        id: true,
+        nameZh: true,
+        nameEn: true,
+        description: true,
+        createdAt: true,
+        updatedAt: true,
+        _count: {
+          select: {
+            papers: true,
+            research_nodes: true,
+            topic_stages: true,
+          },
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
+    })
+
+    const overview: TopicResearchOverviewItem[] = await Promise.all(
+      topics.map(async (topic) => {
+        try {
+          const state = await enhancedTaskScheduler.getTopicResearchState(topic.id)
+          const progress = state.progress
+
+          let status: TopicResearchBriefOverview['status'] = 'idle'
+          if (state.active) {
+            status = 'running'
+          } else if (progress?.status === 'completed') {
+            status = 'completed'
+          } else if (progress?.status === 'paused' || progress?.status === 'interrupted') {
+            status = 'paused'
+          } else if (progress?.status === 'failed') {
+            status = 'paused'
+          }
+
+          const brief: TopicResearchBriefOverview = {
+            stageCount: topic._count.topic_stages,
+            nodeCount: topic._count.research_nodes,
+            paperCount: topic._count.papers,
+            lastResearchAt: progress?.lastRunAt ?? null,
+            status,
+          }
+
+          return {
+            id: topic.id,
+            title: topic.nameZh || topic.nameEn || '',
+            titleEn: topic.nameEn,
+            description: topic.description,
+            createdAt: topic.createdAt.toISOString(),
+            updatedAt: topic.updatedAt.toISOString(),
+            researchBrief: brief,
+          }
+        } catch (error) {
+          // If we can't get research state, return topic with null brief
+          return {
+            id: topic.id,
+            title: topic.nameZh || topic.nameEn || '',
+            titleEn: topic.nameEn,
+            description: topic.description,
+            createdAt: topic.createdAt.toISOString(),
+            updatedAt: topic.updatedAt.toISOString(),
+            researchBrief: {
+              stageCount: topic._count.topic_stages,
+              nodeCount: topic._count.research_nodes,
+              paperCount: topic._count.papers,
+              lastResearchAt: null,
+              status: 'idle' as const,
+            },
+          }
+        }
+      }),
+    )
+
+    const response: TopicsOverviewResponse = {
+      success: true,
+      topics: overview,
+    }
+
+    res.json(response)
+  }),
+)
+
+const SESSION_KEY_PREFIX = 'research:session:'
+const DEFAULT_SESSION_TTL_SECONDS = 24 * 60 * 60
+
+type LegacyResearchLogLevel = 'info' | 'warn' | 'error' | 'success'
+
+type LegacyResearchLog = {
+  timestamp: string
+  level: LegacyResearchLogLevel
+  message: string
+}
+
+type CompatibilitySessionRecord = {
+  id: string
+  topicIds: string[]
+  researchMode: 'duration'
+  durationHours: number
+  stageDurationDays: number
+  mode: 'full'
+  status: 'running' | 'paused' | 'completed' | 'failed'
+  progress: number
+  currentStage: string
+  currentTopicIndex: number
+  createdAt: string
+  updatedAt: string
+  completedAt: string | null
+  logs: LegacyResearchLog[]
+}
+
+type CompatibilitySessionView = CompatibilitySessionRecord & {
+  totalTopics: number
+  deadlineAt: string | null
+  latestSummary: string | null
+  results: {
+    discoveredPapers: number
+    admittedPapers: number
+    generatedContents: number
+    errors: Array<{ topicId?: string; error: string }>
+  }
+  topicProgress: Array<{
+    topicId: string
+    topicName: string
+    status: 'pending' | 'running' | 'paused' | 'completed' | 'error'
+    currentStage: number
+    totalStages: number
+    nodeCount: number
+  }>
+  schedulerState: unknown
+}
+
+function uniqueTopicIds(values: unknown) {
+  if (!Array.isArray(values)) return []
+  return Array.from(
+    new Set(
+      values
+        .filter((value): value is string => typeof value === 'string')
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ),
+  )
+}
+
+function parseStoredLogs(value: unknown): LegacyResearchLog[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter(
+      (entry): entry is LegacyResearchLog =>
+        Boolean(entry) &&
+        typeof entry === 'object' &&
+        typeof (entry as LegacyResearchLog).timestamp === 'string' &&
+        typeof (entry as LegacyResearchLog).level === 'string' &&
+        typeof (entry as LegacyResearchLog).message === 'string',
+    )
+    .map((entry): LegacyResearchLog => ({
+      timestamp: entry.timestamp,
+      level:
+        entry.level === 'warn' ||
+        entry.level === 'error' ||
+        entry.level === 'success'
+          ? entry.level
+          : 'info',
+      message: entry.message.trim(),
+    }))
+    .filter((entry) => Boolean(entry.message))
+}
+
+function parseDbTopicIds(value: string) {
+  try {
+    const parsed = JSON.parse(value)
+    return uniqueTopicIds(parsed)
+  } catch {
+    return []
   }
 }
 
-// 启动研究会话
-router.post('/sessions', asyncHandler(async (req, res) => {
-  const { topicIds, mode = 'full', startStage = 1, maxIterations = 3 } = req.body
-
-  if (!topicIds || !Array.isArray(topicIds) || topicIds.length === 0) {
-    throw new AppError(400, '必须提供至少一个主题ID')
-  }
-
-  const sessionId = uuidv4()
-  const session = {
-    id: sessionId,
-    topicIds,
-    mode,
-    startStage,
-    maxIterations,
-    status: 'running',
-    progress: 0,
-    currentStage: '初始化',
-    currentTopicIndex: 0,
-    logs: [{
-      timestamp: new Date().toISOString(),
-      level: 'info',
-      message: `启动研究会话，主题: ${topicIds.join(', ')}，模式: ${mode}`
-    }],
-    results: {
-      discoveredPapers: 0,
-      admittedPapers: 0,
-      generatedContents: 0,
-      errors: []
-    },
-    createdAt: new Date().toISOString()
-  }
-
-  // Store session in Redis with 24-hour TTL
-  await setSession(SESSION_KEY_PREFIX + sessionId, session, 86400)
-
-  // 保存到数据库 (results stored in Redis only, not in DB schema)
-  await prisma.research_sessions.create({
-    data: {
-      id: sessionId,
-      topicIds: JSON.stringify(topicIds),
-      mode,
-      status: 'running',
-      currentStage: '初始化',
-      progress: 0,
-      logs: JSON.stringify(session.logs)
-    }
-  })
-
-  // 异步执行研究流程
-  executeResearchSession(session)
-
-  res.status(201).json({
-    success: true,
-    data: { sessionId, status: 'running' }
-  })
-}))
-
-// 获取会话状态
-router.get('/sessions/:id', asyncHandler(async (req, res) => {
-  const { id } = req.params
-  
-  // 优先从Redis获取
-  let session = await getSession(SESSION_KEY_PREFIX + id)
-  
-  // Redis中没有则从数据库获取
-  if (!session) {
-    const dbSession = await prisma.research_sessions.findUnique({
-      where: { id }
-    })
-    if (!dbSession) throw new AppError(404, '会话不存在')
-    session = {
-      ...dbSession,
-      topicIds: JSON.parse(dbSession.topicIds),
-      logs: JSON.parse(dbSession.logs as string),
-      results: { discoveredPapers: 0, admittedPapers: 0, generatedContents: 0, errors: [] }
-    }
-  }
-
-  res.json({ success: true, data: session })
-}))
-
-// 获取所有会话
-router.get('/sessions', asyncHandler(async (req, res) => {
-  // Get sessions from Redis (active sessions within TTL)
-  const redisSessions = await getAllSessions('research:session:*')
-  
-  // Also get from database for historical sessions
-  const dbSessions = await prisma.research_sessions.findMany({
-    orderBy: { createdAt: 'desc' },
-    take: 50
-  })
-
-  // Merge Redis sessions with database sessions (Redis has fresher data)
-  const sessionsMap = new Map()
-  
-  // Add database sessions first
-  for (const s of dbSessions) {
-    sessionsMap.set(s.id, {
-      ...s,
-      topicIds: JSON.parse(s.topicIds),
-      logs: JSON.parse(s.logs as string),
-      results: { discoveredPapers: 0, admittedPapers: 0, generatedContents: 0, errors: [] }
-    })
-  }
-  
-  // Override with Redis sessions (they have fresher state)
-  for (const [key, session] of redisSessions) {
-    const id = key.replace(SESSION_KEY_PREFIX, '')
-    sessionsMap.set(id, session)
-  }
-
-  const sessions = Array.from(sessionsMap.values())
-
-  res.json({ success: true, data: sessions })
-}))
-
-// 停止研究会话
-router.post('/sessions/:id/stop', asyncHandler(async (req, res) => {
-  const { id } = req.params
-  
-  const session: any = await getSession(SESSION_KEY_PREFIX + id)
-  if (!session) {
-    throw new AppError(404, '会话不存在')
-  }
-
-  session.status = 'stopped'
-  session.logs.push({
-    timestamp: new Date().toISOString(),
-    level: 'warn',
-    message: '研究会话被用户停止'
-  })
-
-  await prisma.research_sessions.update({
-    where: { id },
-    data: {
-      status: 'stopped',
-      logs: JSON.stringify(session.logs)
-    }
-  })
-
-  // Update session in Redis
-  await setSession(SESSION_KEY_PREFIX + id, session, 86400)
-
-  broadcastResearchError(id, '研究会话被用户停止')
-
-  res.json({ success: true, message: '会话已停止' })
-}))
-
-// 执行研究流程 - 真实实现
-async function executeResearchSession(session: any) {
-  const context = createSkillContext(session.id)
-  
+function safeParseJson(value: string) {
   try {
-    // 阶段定义
-    const _stages = [
-      { name: '论文发现', key: 'discovery' },
-      { name: '论文筛选', key: 'filtering' },
-      { name: '阶段分类', key: 'classification' },
-      { name: '节点合并', key: 'merging' },
-      { name: '内容生成', key: 'content-generation' },
-      { name: '完成', key: 'completion' }
-    ]
+    return JSON.parse(value) as unknown
+  } catch {
+    return []
+  }
+}
 
-    // 对每个主题执行研究
-    for (let topicIndex = 0; topicIndex < session.topicIds.length; topicIndex++) {
-      if (session.status === 'stopped') {
-        logger.info('研究会话被停止', { sessionId: session.id })
-        return
-      }
+function clampStageDurationDays(value: number | undefined) {
+  if (!Number.isFinite(value)) {
+    return STAGE_DURATION_DAYS_DEFAULT
+  }
 
-      const topicId = session.topicIds[topicIndex]
-      session.currentTopicIndex = topicIndex
-      
-      await updateSessionProgress(session, 0, `开始处理主题: ${topicId}`, context)
+  return Math.min(
+    STAGE_DURATION_DAYS_MAX,
+    Math.max(STAGE_DURATION_DAYS_MIN, Math.trunc(value as number)),
+  )
+}
 
-      // 阶段 1: 论文发现
-      await updateSessionProgress(session, 10, '论文发现: 搜索相关论文...', context)
-      
-      const discoveryResult = await executePaperTracker(
+function resolveDurationOptions(body: Record<string, unknown>) {
+  const requestedStageDurationDays =
+    typeof body.stageDurationDays === 'number' && Number.isFinite(body.stageDurationDays)
+      ? body.stageDurationDays
+      : undefined
+  const requestedDurationHours =
+    typeof body.durationHours === 'number' && Number.isFinite(body.durationHours)
+      ? body.durationHours
+      : undefined
+
+  const stageDurationDays =
+    requestedStageDurationDays !== undefined
+      ? clampStageDurationDays(requestedStageDurationDays)
+      : clampStageDurationDays(
+          requestedDurationHours !== undefined
+            ? Math.ceil(requestedDurationHours / 24)
+            : STAGE_DURATION_DAYS_DEFAULT,
+        )
+
+  const durationHours = Math.min(
+    STAGE_DURATION_DAYS_MAX * 24,
+    Math.max(STAGE_DURATION_DAYS_MIN * 24, requestedDurationHours ?? stageDurationDays * 24),
+  )
+
+  return {
+    stageDurationDays,
+    durationHours,
+  }
+}
+
+function mapTopicProgressStatus(
+  status: 'active' | 'paused' | 'completed' | 'failed' | 'interrupted' | null | undefined,
+  active: boolean,
+): 'pending' | 'running' | 'paused' | 'completed' | 'error' {
+  if (active || status === 'active') return 'running'
+  if (status === 'completed') return 'completed'
+  if (status === 'failed') return 'error'
+  if (status === 'paused' || status === 'interrupted') return 'paused'
+  return 'pending'
+}
+
+function mapSessionStatus(args: {
+  activeTopics: number
+  completedTopics: number
+  failedTopics: number
+  totalTopics: number
+}) {
+  if (args.activeTopics > 0) return 'running' as const
+  if (args.failedTopics > 0) return 'failed' as const
+  if (args.totalTopics > 0 && args.completedTopics === args.totalTopics) {
+    return 'completed' as const
+  }
+  return 'paused' as const
+}
+
+function buildStageLabel(args: {
+  currentStage?: number | null
+  latestSummary?: string | null
+  totalTopics?: number
+}) {
+  const summary = args.latestSummary?.trim()
+  if (summary) return summary
+  if (typeof args.currentStage === 'number' && Number.isFinite(args.currentStage)) {
+    return `Stage ${args.currentStage} deep research`
+  }
+  if ((args.totalTopics ?? 0) > 1) {
+    return 'Multi-topic duration research'
+  }
+  return 'Duration research'
+}
+
+function appendLogIfChanged(
+  logs: LegacyResearchLog[],
+  entry: LegacyResearchLog | null,
+): LegacyResearchLog[] {
+  if (!entry) return logs
+  const lastLog = logs.at(-1)
+  if (
+    lastLog?.level === entry.level &&
+    lastLog?.message === entry.message
+  ) {
+    return logs
+  }
+  return [...logs, entry]
+}
+
+function buildInitialCompatibilityRecord(args: {
+  sessionId: string
+  topicIds: string[]
+  durationHours: number
+  stageDurationDays: number
+}): CompatibilitySessionRecord {
+  const now = new Date().toISOString()
+  return {
+    id: args.sessionId,
+    topicIds: args.topicIds,
+    researchMode: 'duration' as const,
+    durationHours: args.durationHours,
+    stageDurationDays: args.stageDurationDays,
+    mode: 'full',
+    status: 'running' as const,
+    progress: 0,
+    currentStage: buildStageLabel({ totalTopics: args.topicIds.length }),
+    currentTopicIndex: 0,
+    createdAt: now,
+    updatedAt: now,
+    completedAt: null,
+    logs: [
+      {
+        timestamp: now,
+        level: 'info' as const,
+        message:
+          args.topicIds.length > 1
+            ? `Started duration research across ${args.topicIds.length} topics.`
+            : `Started duration research for topic ${args.topicIds[0]}.`,
+      },
+    ],
+  }
+}
+
+async function persistCompatibilitySession(record: CompatibilitySessionRecord) {
+  await setSession(`${SESSION_KEY_PREFIX}${record.id}`, record, DEFAULT_SESSION_TTL_SECONDS)
+  await prisma.research_sessions.upsert({
+    where: { id: record.id },
+    update: {
+      topicIds: JSON.stringify(record.topicIds),
+      mode: record.researchMode,
+      status: record.status,
+      currentStage: record.currentStage,
+      progress: record.progress,
+      logs: JSON.stringify(record.logs),
+      completedAt: record.completedAt ? new Date(record.completedAt) : null,
+      error: record.status === 'failed' ? record.logs.at(-1)?.message ?? null : null,
+    },
+    create: {
+      id: record.id,
+      topicIds: JSON.stringify(record.topicIds),
+      mode: record.researchMode,
+      status: record.status,
+      currentStage: record.currentStage,
+      progress: record.progress,
+      logs: JSON.stringify(record.logs),
+      createdAt: new Date(record.createdAt),
+      completedAt: record.completedAt ? new Date(record.completedAt) : null,
+      error: record.status === 'failed' ? record.logs.at(-1)?.message ?? null : null,
+    },
+  })
+}
+
+async function loadCompatibilitySessionRecord(sessionId: string) {
+  const cached = await getSession<CompatibilitySessionRecord>(`${SESSION_KEY_PREFIX}${sessionId}`)
+  if (cached) {
+    return {
+      ...cached,
+      topicIds: uniqueTopicIds(cached.topicIds),
+      logs: parseStoredLogs(cached.logs),
+    }
+  }
+
+  const dbSession = await prisma.research_sessions.findUnique({
+    where: { id: sessionId },
+  })
+
+  if (!dbSession) {
+    return null
+  }
+
+  return {
+    id: dbSession.id,
+    topicIds: parseDbTopicIds(dbSession.topicIds),
+    researchMode: 'duration' as const,
+    durationHours: STAGE_DURATION_DAYS_DEFAULT * 24,
+    stageDurationDays: STAGE_DURATION_DAYS_DEFAULT,
+    mode: 'full' as const,
+    status: (
+      dbSession.status === 'completed'
+        ? 'completed'
+        : dbSession.status === 'failed'
+          ? 'failed'
+          : dbSession.status === 'stopped'
+            ? 'paused'
+            : 'running') as CompatibilitySessionRecord['status'],
+    progress: Math.round(dbSession.progress),
+    currentStage: dbSession.currentStage?.trim() || 'Duration research',
+    currentTopicIndex: 0,
+    createdAt: dbSession.createdAt.toISOString(),
+    updatedAt: dbSession.completedAt?.toISOString() ?? dbSession.createdAt.toISOString(),
+    completedAt: dbSession.completedAt?.toISOString() ?? null,
+    logs: parseStoredLogs(safeParseJson(dbSession.logs)),
+  }
+}
+
+async function projectCompatibilitySession(
+  record: CompatibilitySessionRecord,
+): Promise<CompatibilitySessionView> {
+  if (record.topicIds.length === 0) {
+    throw new AppError(500, `Research session ${record.id} lost its topic mapping.`)
+  }
+
+  if (record.topicIds.length === 1) {
+    const topicId = record.topicIds[0]
+    const state = await enhancedTaskScheduler.getTopicResearchState(topicId)
+    const progressValue = state.progress
+      ? state.progress.researchMode === 'duration'
+        ? computeDurationProgress(state.progress)
+        : Math.round(state.progress.stageProgress)
+      : record.progress
+    const latestSummary = state.progress?.latestSummary ?? state.report?.summary ?? null
+    const status = state.active
+      ? 'running'
+      : state.progress?.status === 'failed'
+        ? 'failed'
+        : state.progress?.status === 'completed'
+          ? 'completed'
+          : 'paused'
+    const nextRecord: CompatibilitySessionRecord = {
+      ...record,
+      status,
+      progress: progressValue,
+      currentStage: buildStageLabel({
+        currentStage: state.progress?.currentStage,
+        latestSummary,
+      }),
+      currentTopicIndex: 0,
+      updatedAt: new Date().toISOString(),
+      completedAt:
+        state.progress?.completedAt ??
+        (status === 'completed' || status === 'failed' ? new Date().toISOString() : null),
+      logs: appendLogIfChanged(
+        record.logs,
+        latestSummary
+          ? {
+              timestamp: new Date().toISOString(),
+              level: status === 'failed' ? 'error' : status === 'completed' ? 'success' : 'info',
+              message: latestSummary,
+            }
+          : null,
+      ),
+    }
+
+    await persistCompatibilitySession(nextRecord)
+
+    return {
+      ...nextRecord,
+      totalTopics: 1,
+      deadlineAt: state.progress?.deadlineAt ?? null,
+      latestSummary,
+      results: {
+        discoveredPapers: state.progress?.discoveredPapers ?? 0,
+        admittedPapers: state.progress?.admittedPapers ?? 0,
+        generatedContents: state.progress?.generatedContents ?? 0,
+        errors:
+          status === 'failed'
+            ? [{
+                topicId,
+                error: state.report?.summary || state.progress?.latestSummary || 'Research failed.',
+              }]
+            : [],
+      },
+      topicProgress: [
         {
-          params: {
-            topicId,
-            stageMode: 'next-stage',
-            discoverySource: 'external-only',
-            maxCandidates: 10,
-            mode: 'commit',
-          },
-          request: {
-            skillId: 'paper-tracker',
-            input: {
-              topicId,
-              stageMode: 'next-stage',
-              discoverySource: 'external-only',
-              maxCandidates: 10,
-              mode: 'commit',
-            },
-          },
+          topicId,
+          topicName: state.progress?.topicName ?? topicId,
+          status: mapTopicProgressStatus(state.progress?.status, state.active),
+          currentStage: state.progress?.currentStage ?? 1,
+          totalStages: state.progress?.totalStages ?? 0,
+          nodeCount: 0,
         },
-        context,
-        null as any
-      )
+      ],
+      schedulerState: state,
+    }
+  }
 
-      if (!discoveryResult.success) {
-        throw new Error(`论文发现失败: ${discoveryResult.error}`)
-      }
-
-      const discoveryData = discoveryResult.data as {
-        admittedCandidates?: Array<{ paperId: string; stageIndex?: number; citeIntent?: string }>
-        discoverySummary?: { totalDiscovered?: number }
-        stageWindow?: { stageIndex?: number }
-        decisionSummary?: string
-      } | null
-      
-      const admittedCandidates = discoveryData?.admittedCandidates || []
-      session.results.discoveredPapers += discoveryData?.discoverySummary?.totalDiscovered || 0
-      session.results.admittedPapers += admittedCandidates.length
-
-      await updateSessionProgress(
-        session, 
-        25, 
-        `论文发现完成: 发现 ${discoveryData?.discoverySummary?.totalDiscovered || 0} 篇，准入 ${admittedCandidates.length} 篇`,
-        context
-      )
-
-      // 阶段 2: 论文筛选（已在 discovery 中完成）
-      await updateSessionProgress(session, 35, '论文筛选: 完成准入判断', context)
-
-      // 阶段 3: 阶段分类
-      await updateSessionProgress(session, 45, '阶段分类: 定论文所属阶段...', context)
-      
-      // Skip stage update - papers schema has no stageIndex field
-
-      await updateSessionProgress(session, 55, `阶段分类完成: 分配到阶段 ${discoveryData?.stageWindow?.stageIndex || 1}`, context)
-
-      // 阶段 4: 节点合并
-      await updateSessionProgress(session, 65, '节点合并: 关联到研究节点...', context)
-      
-      // 创建或更新研究节点
-      const stageIndex = discoveryData?.stageWindow?.stageIndex || 1
-      
-      // Find existing node or create new one
-      let node = await prisma.research_nodes.findFirst({
-        where: { topicId, stageIndex }
-      })
-      
-      if (!node) {
-        node = await prisma.research_nodes.create({
-          data: {
-            id: uuidv4(),
-            topicId,
-            stageIndex,
-            nodeLabel: `阶段 ${stageIndex}`,
-            nodeSummary: discoveryData?.decisionSummary || '',
-            updatedAt: new Date(),
+  const state = await enhancedTaskScheduler.getMultiTopicResearchState(record.topicIds)
+  const firstActiveIndex = state.sessions.findIndex((session) => session.active)
+  const leadSession =
+    state.sessions[firstActiveIndex >= 0 ? firstActiveIndex : 0] ?? null
+  const latestSummary =
+    leadSession?.progress?.latestSummary ??
+    leadSession?.report?.summary ??
+    null
+  const status = mapSessionStatus({
+    activeTopics: state.aggregate.activeTopics,
+    completedTopics: state.aggregate.completedTopics,
+    failedTopics: state.aggregate.failedTopics,
+    totalTopics: state.aggregate.totalTopics,
+  })
+  const nextRecord: CompatibilitySessionRecord = {
+    ...record,
+    status,
+    progress: Math.round(state.aggregate.overallProgress),
+    currentStage: buildStageLabel({
+      currentStage: leadSession?.progress?.currentStage,
+      latestSummary,
+      totalTopics: record.topicIds.length,
+    }),
+    currentTopicIndex: firstActiveIndex >= 0 ? firstActiveIndex : 0,
+    updatedAt: new Date().toISOString(),
+    completedAt:
+      status === 'completed' || status === 'failed'
+        ? new Date().toISOString()
+        : null,
+    logs: appendLogIfChanged(
+      record.logs,
+      latestSummary
+        ? {
+            timestamp: new Date().toISOString(),
+            level: status === 'failed' ? 'error' : status === 'completed' ? 'success' : 'info',
+            message: latestSummary,
           }
+        : null,
+    ),
+  }
+
+  await persistCompatibilitySession(nextRecord)
+
+  return {
+    ...nextRecord,
+    totalTopics: state.aggregate.totalTopics,
+    deadlineAt: state.aggregate.deadlineAt,
+    latestSummary,
+    results: {
+      discoveredPapers: state.aggregate.totalDiscoveredPapers,
+      admittedPapers: state.aggregate.totalAdmittedPapers,
+      generatedContents: state.aggregate.totalGeneratedContents,
+      errors: state.sessions
+        .filter((session) => Boolean(session.error))
+        .map((session) => ({
+          topicId: session.topicId,
+          error: session.error as string,
+        })),
+    },
+    topicProgress: state.sessions.map((session) => ({
+      topicId: session.topicId,
+      topicName: session.progress?.topicName ?? session.topicId,
+      status: mapTopicProgressStatus(session.progress?.status, session.active),
+      currentStage: session.progress?.currentStage ?? 1,
+      totalStages: session.progress?.totalStages ?? 0,
+      nodeCount: 0,
+    })),
+    schedulerState: state,
+  }
+}
+
+async function loadProjectedSession(sessionId: string) {
+  const record = await loadCompatibilitySessionRecord(sessionId)
+  if (!record) {
+    throw new AppError(404, 'Research session not found.')
+  }
+
+  return projectCompatibilitySession(record)
+}
+
+router.post(
+  '/sessions',
+  validate(CreateResearchSessionSchema),
+  asyncHandler(async (req, res) => {
+    const topicIds = uniqueTopicIds(req.body.topicIds)
+    if (topicIds.length === 0) {
+      throw new AppError(400, 'topicIds must contain at least one topic ID.')
+    }
+
+    const { durationHours, stageDurationDays } = resolveDurationOptions(req.body)
+    const sessionId = uuidv4()
+
+    const record = buildInitialCompatibilityRecord({
+      sessionId,
+      topicIds,
+      durationHours,
+      stageDurationDays,
+    })
+
+    await persistCompatibilitySession(record)
+
+    try {
+      if (topicIds.length === 1) {
+        await enhancedTaskScheduler.startTopicResearchSession(topicIds[0], {
+          durationHours,
+          stageDurationDays,
         })
       } else {
-        await prisma.research_nodes.update({
-          where: { id: node.id },
-          data: { updatedAt: new Date() }
+        await enhancedTaskScheduler.startMultiTopicResearchSession(topicIds, {
+          durationHours,
+          stageDurationDays,
         })
       }
-
-      // 关联论文到节点 (skip - papers has no arxivId)
-      for (const candidate of admittedCandidates) {
-        // Find paper by title or other identifier since arxivId not in schema
-        const paper = await prisma.papers.findFirst({
-          where: { topicId, title: candidate.paperId }
-        })
-        if (paper) {
-          await prisma.node_papers.upsert({
-            where: {
-              nodeId_paperId: {
-                nodeId: node.id,
-                paperId: paper.id,
-              }
-            },
-            update: {},
-            create: {
-              id: uuidv4(),
-              nodeId: node.id,
-              paperId: paper.id,
-              order: 0,
-            }
-          })
-        }
+    } catch (error) {
+      const failedRecord: CompatibilitySessionRecord = {
+        ...record,
+        status: 'failed',
+        updatedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+        logs: appendLogIfChanged(record.logs, {
+          timestamp: new Date().toISOString(),
+          level: 'error',
+          message: error instanceof Error ? error.message : 'Failed to start duration research.',
+        }),
       }
-
-      await updateSessionProgress(session, 75, `节点合并完成: 关联到节点 ${node.id}`, context)
-
-      // 阶段 5: 内容生成
-      await updateSessionProgress(session, 80, '内容生成: 生成三层内容...', context)
-      
-      // 为每篇准入论文生成内容
-      for (let i = 0; i < admittedCandidates.length; i++) {
-        if (session.status === 'stopped') return
-
-        const candidate = admittedCandidates[i]
-        const progress = 80 + Math.round((i / admittedCandidates.length) * 15)
-        
-        await updateSessionProgress(
-          session, 
-          progress, 
-          `内容生成: 处论文 ${i + 1}/${admittedCandidates.length}...`,
-          context
-        )
-
-        const contentResult = await executeContentGenesis(
-          {
-            params: {
-              paperId: candidate.paperId,
-              topicId,
-              stageIndex,
-              citeIntent: candidate.citeIntent as 'supporting' | 'contrasting' | 'method-using' | 'background' | undefined,
-              contentMode: 'editorial',
-            },
-            request: {
-              skillId: 'content-genesis-v2',
-              input: {
-                paperId: candidate.paperId,
-                topicId,
-                stageIndex,
-                citeIntent: candidate.citeIntent,
-                contentMode: 'editorial',
-              },
-            },
-          },
-          context,
-          null as any
-        )
-
-        if (contentResult.success) {
-          session.results.generatedContents++
-        } else {
-          session.results.errors.push({
-            paperId: candidate.paperId,
-            error: contentResult.error
-          })
-        }
-      }
-
-      await updateSessionProgress(
-        session, 
-        95, 
-        `内容生成完成: 生成 ${session.results.generatedContents} 篇内容`,
-        context
-      )
-
-      // 执行编排器
-      await updateSessionProgress(session, 98, '执行编排器: 整合研究成果...', context)
-      
-      const orchestratorResult = await executeOrchestrator({
-        request: {
-          skillId: 'orchestrator',
-          input: {
-            topicId,
-            mode: 'promote',
-            promoteTarget: 'topic',
-          },
-        },
-        context,
-      })
-
-      const orchestratorOutput = orchestratorResult.output
-      if (orchestratorOutput && orchestratorOutput.failures && orchestratorOutput.failures.length > 0) {
-        logger.warn('编排器执行警告', { failures: orchestratorOutput.failures })
-      }
+      await persistCompatibilitySession(failedRecord)
+      throw error
     }
 
-    // 完成
-    await finalizeSession(session, context)
+    const projected = await loadProjectedSession(sessionId)
 
-  } catch (error) {
-    await handleSessionError(session, error, context)
-  }
-}
+    res.status(201).json({
+      sessionId,
+      status: projected.status,
+      data: projected,
+    })
+  }),
+)
 
-// 更新会话进度
-async function updateSessionProgress(
-  session: any, 
-  progress: number, 
-  message: string, 
-  context: SkillContext
-) {
-  session.progress = progress
-  session.currentStage = message
-  session.logs.push({
-    timestamp: new Date().toISOString(),
-    level: 'info',
-    message
-  })
+router.get(
+  '/sessions/:id',
+  asyncHandler(async (req, res) => {
+    const session = await loadProjectedSession(req.params.id)
+    res.json({ success: true, data: session })
+  }),
+)
 
-  // 广播进度
-  broadcastResearchProgress(session.id, {
-    stage: session.currentStage,
-    progress: session.progress,
-    currentTopicIndex: session.currentTopicIndex,
-    totalTopics: session.topicIds.length,
-    logs: session.logs.slice(-10),
-    results: session.results
-  })
+router.get(
+  '/sessions',
+  asyncHandler(async (_req, res) => {
+    const cachedSessions = await getAllSessions<CompatibilitySessionRecord>(`${SESSION_KEY_PREFIX}*`)
+    const records: CompatibilitySessionRecord[] =
+      cachedSessions.size > 0
+        ? Array.from(cachedSessions.values())
+        : (
+            await prisma.research_sessions.findMany({
+              orderBy: { createdAt: 'desc' },
+              take: 50,
+            })
+          ).map((session) => ({
+            id: session.id,
+            topicIds: parseDbTopicIds(session.topicIds),
+            researchMode: 'duration' as const,
+            durationHours: STAGE_DURATION_DAYS_DEFAULT * 24,
+            stageDurationDays: STAGE_DURATION_DAYS_DEFAULT,
+            mode: 'full' as const,
+            status: (
+              session.status === 'completed'
+                ? 'completed'
+                : session.status === 'failed'
+                  ? 'failed'
+                  : session.status === 'stopped'
+                    ? 'paused'
+                    : 'running') as CompatibilitySessionRecord['status'],
+            progress: Math.round(session.progress),
+            currentStage: session.currentStage?.trim() || 'Duration research',
+            currentTopicIndex: 0,
+            createdAt: session.createdAt.toISOString(),
+            updatedAt: session.completedAt?.toISOString() ?? session.createdAt.toISOString(),
+            completedAt: session.completedAt?.toISOString() ?? null,
+            logs: parseStoredLogs(safeParseJson(session.logs)),
+          }))
 
-  // 更新数据库 (results stored in Redis only)
-  await prisma.research_sessions.update({
-    where: { id: session.id },
-    data: {
-      currentStage: session.currentStage,
-      progress: session.progress,
-      logs: JSON.stringify(session.logs)
+    const sessions = await Promise.all(
+      records
+        .map((record) => ({
+          ...record,
+          topicIds: uniqueTopicIds(record.topicIds),
+          logs: parseStoredLogs(record.logs),
+        }))
+        .filter((record) => record.topicIds.length > 0)
+        .map((record) => projectCompatibilitySession(record)),
+    )
+
+    res.json({ success: true, data: sessions })
+  }),
+)
+
+router.post(
+  '/sessions/:id/stop',
+  asyncHandler(async (req, res) => {
+    const record = await loadCompatibilitySessionRecord(req.params.id)
+    if (!record) {
+      throw new AppError(404, 'Research session not found.')
     }
-  })
 
-  // Update session in Redis
-  await setSession(SESSION_KEY_PREFIX + session.id, session, 86400)
-
-  context.logger.info(message)
-}
-
-// 完成会话
-async function finalizeSession(session: any, context: SkillContext) {
-  session.status = 'completed'
-  session.progress = 100
-  session.currentStage = '已完成'
-  session.completedAt = new Date().toISOString()
-
-  const summaryMessage = `研究会话完成！发现 ${session.results.discoveredPapers} 篇论文，` +
-    `准入 ${session.results.admittedPapers} 篇，生成 ${session.results.generatedContents} 篇内容`
-
-  session.logs.push({
-    timestamp: new Date().toISOString(),
-    level: 'info',
-    message: summaryMessage
-  })
-
-  await prisma.research_sessions.update({
-    where: { id: session.id },
-    data: {
-      status: 'completed',
-      progress: 100,
-      currentStage: '已完成',
-      completedAt: new Date(),
-      logs: JSON.stringify(session.logs)
+    if (record.topicIds.length === 1) {
+      await enhancedTaskScheduler.stopTopicResearchSession(record.topicIds[0])
+    } else {
+      await enhancedTaskScheduler.stopMultiTopicResearchSession(record.topicIds)
     }
-  })
 
-  // Update session in Redis
-  await setSession(SESSION_KEY_PREFIX + session.id, session, 86400)
-
-  broadcastResearchComplete(session.id, {
-    message: summaryMessage,
-    results: session.results,
-    logs: session.logs
-  })
-
-  context.logger.info('研究会话完成', { 
-    sessionId: session.id, 
-    results: session.results 
-  })
-}
-
-// 处理会话错误
-async function handleSessionError(session: any, error: any, context: SkillContext) {
-  session.status = 'failed'
-  const errorMessage = error instanceof Error ? error.message : '未知错误'
-  
-  session.logs.push({
-    timestamp: new Date().toISOString(),
-    level: 'error',
-    message: `错误: ${errorMessage}`
-  })
-
-  session.results.errors.push({
-    stage: session.currentStage,
-    error: errorMessage
-  })
-
-  await prisma.research_sessions.update({
-    where: { id: session.id },
-    data: {
-      status: 'failed',
-      logs: JSON.stringify(session.logs),
-      error: errorMessage
+    const projected = await loadProjectedSession(req.params.id)
+    const stoppedRecord: CompatibilitySessionRecord = {
+      ...projected,
+      status: 'paused',
+      updatedAt: new Date().toISOString(),
+      completedAt: projected.completedAt,
+      logs: appendLogIfChanged(projected.logs, {
+        timestamp: new Date().toISOString(),
+        level: 'warn',
+        message: 'Research session was stopped manually.',
+      }),
     }
-  })
+    await persistCompatibilitySession(stoppedRecord)
 
-  // Update session in Redis
-  await setSession(SESSION_KEY_PREFIX + session.id, session, 86400)
+    res.json({
+      success: true,
+      message: 'Research session stopped.',
+      data: {
+        ...projected,
+        ...stoppedRecord,
+      },
+    })
+  }),
+)
 
-  broadcastResearchError(session.id, errorMessage)
+router.delete(
+  '/sessions/:id',
+  asyncHandler(async (req, res) => {
+    const sessionId = req.params.id
+    await deleteSession(`${SESSION_KEY_PREFIX}${sessionId}`)
+    await prisma.research_sessions.deleteMany({
+      where: { id: sessionId },
+    })
 
-  context.logger.error('研究会话失败', { 
-    sessionId: session.id, 
-    error: errorMessage 
-  })
-}
+    res.json({ success: true })
+  }),
+)
 
 export default router

@@ -1,4 +1,4 @@
-import { enhancedTaskScheduler } from '../enhanced-scheduler'
+﻿import { enhancedTaskScheduler } from '../enhanced-scheduler'
 import type { TopicChatResponse, TopicWorkbenchAction } from '../omni/types'
 import {
   updateTopicGuidanceDirective,
@@ -94,7 +94,21 @@ export function parseTopicChatCommand(
 ): SupportedTopicChatCommand | null {
   const question = extractTopicChatUserQuestion(rawQuestion)
   if (!question) return null
-  if (EN_QUESTION_RE.test(question) || ZH_QUESTION_RE.test(question)) return null
+  const hasExplicitStartIntent =
+    EN_START_RE.test(question) ||
+    ZH_START_RE.test(question) ||
+    ZH_DURATION_ONLY_RE.test(question)
+  const hasExplicitStopIntent = EN_STOP_RE.test(question) || ZH_STOP_RE.test(question)
+  const hasExplicitExportIntent = EN_EXPORT_RE.test(question) || ZH_EXPORT_RE.test(question)
+
+  if (
+    (EN_QUESTION_RE.test(question) || ZH_QUESTION_RE.test(question)) &&
+    !hasExplicitStartIntent &&
+    !hasExplicitStopIntent &&
+    !hasExplicitExportIntent
+  ) {
+    return null
+  }
   if (looksLikeGuidanceAdjustment(question)) return null
 
   if (
@@ -366,7 +380,7 @@ export async function finalizeTopicChatCommandResponse(args: {
           ? 'export-notes'
           : 'export-dossier',
     summary: exportSummary,
-    targetTab: 'notes',
+    targetRoute: `/favorites?topic=${encodeURIComponent(args.topicId)}`,
   }
   const promptHint = buildExportPromptHint(prefersEnglish)
 

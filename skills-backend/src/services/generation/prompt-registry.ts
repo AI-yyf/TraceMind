@@ -564,6 +564,7 @@ export interface GenerationRuntimeConfig {
   maxEvidencePerArticle: number
   contextWindowStages: number
   contextWindowNodes: number
+  unlimitedMemoryMode: boolean
   editorialPolicies: Record<PromptLanguage, GenerationEditorialPolicy>
 }
 
@@ -600,6 +601,14 @@ export interface PromptStudioBundle {
   }
 }
 
+export const DEFAULT_NODE_ARTICLE_PASSES = 5
+export const DEFAULT_SELF_REFINE_PASSES = 2
+export const DEFAULT_RESEARCH_ORCHESTRATION_PASSES = 4
+export const DEFAULT_RESEARCH_STAGE_PAPER_LIMIT = 20
+export const DEFAULT_RESEARCH_ARTIFACT_REBUILD_LIMIT = 20
+const MAX_RESEARCH_STAGE_PAPER_LIMIT = 40
+const MAX_RESEARCH_ARTIFACT_REBUILD_LIMIT = 40
+
 const DEFAULT_RUNTIME_CONFIG: GenerationRuntimeConfig = {
   defaultLanguage: 'zh',
   cacheGeneratedOutputs: true,
@@ -614,21 +623,21 @@ const DEFAULT_RUNTIME_CONFIG: GenerationRuntimeConfig = {
   topicLocalizationPasses: 1,
   topicChatPasses: 2,
   stageNamingPasses: 2,
-  nodeArticlePasses: 3,
+  nodeArticlePasses: DEFAULT_NODE_ARTICLE_PASSES,
   paperArticlePasses: 2,
-  selfRefinePasses: 1,
-  researchOrchestrationPasses: 2,
+  selfRefinePasses: DEFAULT_SELF_REFINE_PASSES,
+  researchOrchestrationPasses: DEFAULT_RESEARCH_ORCHESTRATION_PASSES,
   researchReportPasses: 2,
   researchCycleDelayMs: 60000,
   researchStageStallLimit: 2,
-  researchStagePaperLimit: 6,
-  researchArtifactRebuildLimit: 8,
+  researchStagePaperLimit: DEFAULT_RESEARCH_STAGE_PAPER_LIMIT,
+  researchArtifactRebuildLimit: DEFAULT_RESEARCH_ARTIFACT_REBUILD_LIMIT,
   nodeCardFigureCandidateLimit: 8,
   topicSessionMemoryEnabled: true,
-  topicSessionMemoryInitEventCount: 3,
-  topicSessionMemoryChatTurnsBetweenCompaction: 4,
-  topicSessionMemoryResearchCyclesBetweenCompaction: 2,
-  topicSessionMemoryTokenThreshold: 2600,
+  topicSessionMemoryInitEventCount: 6,  // Increased from 3 to reduce premature compaction
+  topicSessionMemoryChatTurnsBetweenCompaction: 8,  // Increased from 4 to reduce LLM calls
+  topicSessionMemoryResearchCyclesBetweenCompaction: 4,  // Increased from 2
+  topicSessionMemoryTokenThreshold: 6000,  // Increased from 2600 for more tolerance
   topicSessionMemoryRecentEventLimit: 20,
   topicSessionMemoryRecallEnabled: true,
   topicSessionMemoryRecallLimit: 4,
@@ -639,6 +648,7 @@ const DEFAULT_RUNTIME_CONFIG: GenerationRuntimeConfig = {
   maxEvidencePerArticle: 10,
   contextWindowStages: 6,
   contextWindowNodes: 16,
+  unlimitedMemoryMode: true,
   editorialPolicies: {
     zh: {
       identity:
@@ -3619,15 +3629,15 @@ function sanitizeRuntimePatch(
     topicLocalizationPasses: clamp(Number(next.topicLocalizationPasses), 1, 4),
     topicChatPasses: clamp(Number(next.topicChatPasses), 1, 4),
     stageNamingPasses: clamp(Number(next.stageNamingPasses), 1, 6),
-    nodeArticlePasses: clamp(Number(next.nodeArticlePasses), 1, 6),
+    nodeArticlePasses: clamp(Number(next.nodeArticlePasses), DEFAULT_NODE_ARTICLE_PASSES, 8),
     paperArticlePasses: clamp(Number(next.paperArticlePasses), 1, 6),
-    selfRefinePasses: clamp(Number(next.selfRefinePasses), 0, 4),
-    researchOrchestrationPasses: clamp(Number(next.researchOrchestrationPasses), 1, 4),
+    selfRefinePasses: clamp(Number(next.selfRefinePasses), DEFAULT_SELF_REFINE_PASSES, 6),
+    researchOrchestrationPasses: clamp(Number(next.researchOrchestrationPasses), DEFAULT_RESEARCH_ORCHESTRATION_PASSES, 6),
     researchReportPasses: clamp(Number(next.researchReportPasses), 1, 4),
     researchCycleDelayMs: clamp(Number(next.researchCycleDelayMs), 1000, 1800000),
     researchStageStallLimit: clamp(Number(next.researchStageStallLimit), 1, 6),
-    researchStagePaperLimit: clamp(Number(next.researchStagePaperLimit), 1, 12),
-    researchArtifactRebuildLimit: clamp(Number(next.researchArtifactRebuildLimit), 1, 16),
+    researchStagePaperLimit: clamp(Number(next.researchStagePaperLimit), DEFAULT_RESEARCH_STAGE_PAPER_LIMIT, MAX_RESEARCH_STAGE_PAPER_LIMIT),
+    researchArtifactRebuildLimit: clamp(Number(next.researchArtifactRebuildLimit), DEFAULT_RESEARCH_ARTIFACT_REBUILD_LIMIT, MAX_RESEARCH_ARTIFACT_REBUILD_LIMIT),
     nodeCardFigureCandidateLimit: clamp(Number(next.nodeCardFigureCandidateLimit), 1, 16),
     topicSessionMemoryEnabled: Boolean(next.topicSessionMemoryEnabled),
     topicSessionMemoryInitEventCount: clamp(Number(next.topicSessionMemoryInitEventCount), 1, 12),
@@ -3660,6 +3670,7 @@ function sanitizeRuntimePatch(
     maxEvidencePerArticle: clamp(Number(next.maxEvidencePerArticle), 1, 24),
     contextWindowStages: clamp(Number(next.contextWindowStages), 1, 12),
     contextWindowNodes: clamp(Number(next.contextWindowNodes), 1, 32),
+    unlimitedMemoryMode: Boolean(next.unlimitedMemoryMode),
     editorialPolicies: mapPromptLanguageRecord((language) =>
       mergeEditorialPolicy(
         DEFAULT_RUNTIME_CONFIG.editorialPolicies[language],

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, Plus, X } from 'lucide-react'
 
 import { useProductCopy } from '@/hooks/useProductCopy'
@@ -26,7 +26,8 @@ export function ContextTray({
   const { t } = useI18n()
   const workbenchText = (copyId: string, key: string, fallback: string) =>
     copy(copyId, t(key, fallback))
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(() => items.length > 0)
+  const previousPinnedCountRef = useRef(items.length)
   const intakeAvailable = suggestions.length > 0 || Boolean(onCaptureSelection)
   const visibleTrail = readingTrail.filter((item) => item.id !== implicitFocus?.id).slice(0, 3)
   const collapsedSummary =
@@ -46,6 +47,13 @@ export function ContextTray({
               'workbench.contextCollapsedAuto',
               'Current reading focus will still ground your next turn.',
             )
+
+  useEffect(() => {
+    if (items.length > previousPinnedCountRef.current) {
+      setExpanded(true)
+    }
+    previousPinnedCountRef.current = items.length
+  }, [items.length])
 
   if (
     items.length === 0 &&

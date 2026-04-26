@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { buildWsUrl } from '@/utils/api'
+import { logger } from '@/utils/logger'
 
 interface WSMessage {
   type:
@@ -17,9 +18,15 @@ interface WSMessage {
 }
 
 export interface ResearchProgress {
-  stage: string
-  progress: number
-  logs: Array<{
+  stage?: string
+  progress?: number
+  // Alpha-reader extended format
+  timestamp?: string
+  message?: string
+  status?: string
+  percent?: number
+  paperId?: string
+  logs?: Array<{
     timestamp: string
     level: string
     message: string
@@ -54,6 +61,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   const reconnectAttemptsRef = useRef(0)
   const shouldReconnectRef = useRef(true)
   const subscribedSessionsRef = useRef<Set<string>>(new Set())
+  // Track mounted state to handle React Strict Mode double-render
+  const mountedRef = useRef(false)
   const [isConnected, setIsConnected] = useState(false)
   const [subscribedSessions, setSubscribedSessions] = useState<Set<string>>(
     () => new Set(),
@@ -135,7 +144,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
           break
 
         case 'error':
-          console.error('[WebSocket] Server error:', message.payload)
+          logger.error('WebSocket', 'Server error', message.payload)
           break
 
         case 'connected':
@@ -177,7 +186,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
           const message = JSON.parse(event.data) as WSMessage
           handleMessage(message)
         } catch (error) {
-          console.error('[WebSocket] Failed to parse message:', error)
+          logger.error('WebSocket', 'Failed to parse message', error)
         }
       }
 
@@ -205,12 +214,12 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       }
 
       ws.onerror = (error) => {
-        console.error('[WebSocket] Error:', error)
+        logger.error('WebSocket', 'Connection error', error)
       }
 
       wsRef.current = ws
     } catch (error) {
-      console.error('[WebSocket] Failed to connect:', error)
+      logger.error('WebSocket', 'Failed to connect', error)
     }
   }, [clearReconnectTimeout, getWsUrl, handleMessage])
 
@@ -254,12 +263,25 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   }, [clearReconnectTimeout])
 
   useEffect(() => {
+    // Mark as mounted when effect runs
+    mountedRef.current = true
+
     connect()
     const heartbeatInterval = window.setInterval(sendPing, 30000)
 
     return () => {
       window.clearInterval(heartbeatInterval)
-      disconnect()
+      // Mark as unmounted in cleanup
+      mountedRef.current = false
+      // Delay disconnect to handle React Strict Mode double-render
+      // In Strict Mode, cleanup runs, then effect runs again immediately
+      // This delay allows the second effect to set mountedRef back to true
+      // before we actually disconnect
+      window.setTimeout(() => {
+        if (!mountedRef.current) {
+          disconnect()
+        }
+      }, 50)
     }
   }, [connect, disconnect, sendPing])
 

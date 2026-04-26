@@ -26,6 +26,53 @@ export function toPublicUploadPath(targetPath: string | null | undefined) {
   return normalized.startsWith('/') ? normalized : `/${normalized}`
 }
 
+export function resolvePaperAssetPath(args: {
+  assetPath?: string | null
+  paperId?: string | null
+}) {
+  const value = trimUrl(args.assetPath)
+  if (!value) return undefined
+  if (/^(https?:|data:)/iu.test(value)) return value
+
+  const normalized = value.replace(/\\/gu, '/')
+  const lowered = normalized.toLowerCase()
+  const paperId = trimUrl(args.paperId)
+
+  const generatedPublicIndex = lowered.lastIndexOf('/generated-data/public/')
+  if (generatedPublicIndex >= 0) {
+    const publicPath = normalized.slice(generatedPublicIndex + '/generated-data/public'.length)
+    return publicPath.startsWith('/') ? publicPath : `/${publicPath}`
+  }
+
+  const uploadsIndex = lowered.lastIndexOf('/uploads/')
+  if (uploadsIndex >= 0) {
+    return normalized.slice(uploadsIndex)
+  }
+
+  if (lowered.startsWith('uploads/')) {
+    return `/${normalized}`
+  }
+
+  if (lowered.startsWith('/uploads/')) {
+    return normalized
+  }
+
+  if (lowered.startsWith('papers/')) {
+    return `/${normalized}`
+  }
+
+  if (lowered.startsWith('/papers/')) {
+    return normalized
+  }
+
+  if ((lowered.startsWith('images/') || lowered.startsWith('/images/')) && paperId) {
+    const imagePath = normalized.replace(/^\/+/u, '')
+    return `/uploads/${paperId}/${imagePath}`
+  }
+
+  return normalized.startsWith('/') ? normalized : `/${normalized}`
+}
+
 export function normalizePaperPdfUrl(rawUrl: string | null | undefined) {
   const value = trimUrl(rawUrl)
   if (!value) return undefined

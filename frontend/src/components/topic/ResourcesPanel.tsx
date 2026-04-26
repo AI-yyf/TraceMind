@@ -1,6 +1,8 @@
-import type { ContextPill, EvidencePayload } from '@/types/alpha'
+import { MathFormula, MathText } from '@/components/MathFormula'
+import type { EvidencePayload } from '@/types/alpha'
 import { useProductCopy } from '@/hooks/useProductCopy'
 import { useI18n } from '@/i18n'
+import { resolveApiAssetUrl } from '@/utils/api'
 import {
   compactTopicSurfaceTitle,
   sanitizeTopicSurfaceText,
@@ -22,12 +24,10 @@ type ResourceCard = {
 }
 
 export function ResourcesPanel({
-  contextPills,
   resources,
   selectedEvidence,
   onSaveSelectedEvidence,
 }: {
-  contextPills: ContextPill[]
   resources: ResourceCard[]
   selectedEvidence: EvidencePayload | null
   onSaveSelectedEvidence?: () => void
@@ -41,37 +41,14 @@ export function ResourcesPanel({
     node: t('workbench.resourceKindNode', 'Node'),
     paper: t('workbench.resourceKindPaper', 'Paper'),
   }
+  const evidenceImageUrl = selectedEvidence
+    ? resolveApiAssetUrl(selectedEvidence.thumbnailPath ?? selectedEvidence.imagePath)
+    : null
 
   return (
-    <div data-testid="topic-resources-panel" className="space-y-4">
-      <section className="rounded-[22px] bg-[var(--surface-soft)] p-4">
-        <div className="text-[11px] uppercase tracking-[0.22em] text-black/36">
-          {workbenchText('assistant.contextTitle', 'workbench.contextTitle', 'Current Context')}
-        </div>
-        {contextPills.length === 0 ? (
-          <p className="mt-3 text-[13px] leading-6 text-black/56">
-            {workbenchText(
-              'assistant.contextEmpty',
-              'workbench.contextEmpty',
-              'Add nodes, figures, search results, or selected passages first. This area keeps the context the conversation is truly relying on.',
-            )}
-          </p>
-        ) : (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {contextPills.map((item) => (
-              <span
-                key={item.id}
-                className="rounded-full border border-black/8 bg-white px-3 py-1.5 text-[11px] text-black/66"
-              >
-                {item.label}
-              </span>
-            ))}
-          </div>
-        )}
-      </section>
-
+    <div data-testid="topic-resources-panel" className="space-y-3">
       {selectedEvidence ? (
-        <section className="rounded-[22px] bg-[var(--surface-soft)] p-4">
+        <section className="rounded-[12px] bg-[var(--surface-soft)] p-3">
           <div className="flex items-start justify-between gap-3">
             <div className="text-[11px] uppercase tracking-[0.22em] text-black/36">
               {workbenchText('assistant.evidenceTitle', 'workbench.evidenceTitle', 'Current Evidence')}
@@ -80,21 +57,45 @@ export function ResourcesPanel({
               <button
                 type="button"
                 onClick={onSaveSelectedEvidence}
-                className="rounded-full border border-black/8 bg-white px-3 py-1.5 text-[11px] text-black/60 transition hover:border-black/16 hover:text-black"
+                className="rounded-full border border-black/8 bg-white px-3 py-1 text-[11px] text-black/60 transition hover:border-black/16 hover:text-black"
               >
                 {workbenchText(
                   'assistant.captureEvidence',
                   'workbench.captureEvidence',
-                  'Capture Current Evidence',
+                  'Capture',
                 )}
               </button>
             ) : null}
           </div>
           <h3 className="mt-2 text-[15px] font-semibold text-black">{selectedEvidence.label}</h3>
-          <p className="mt-3 text-[12px] leading-6 text-black/62">
+          <p className="mt-2 text-[12px] leading-5 text-black/62">
             {clipText(selectedEvidence.whyItMatters || selectedEvidence.quote, 220)}
           </p>
-          <div className="mt-3 flex flex-wrap gap-2">
+          {selectedEvidence.type === 'figure' && evidenceImageUrl ? (
+            <div className="mt-3 overflow-hidden rounded-[14px] border border-black/8 bg-white">
+              <img
+                src={evidenceImageUrl}
+                alt={selectedEvidence.title}
+                className="max-h-[280px] w-full object-contain bg-[#f8f5ef]"
+              />
+            </div>
+          ) : null}
+          {selectedEvidence.type === 'formula' ? (
+            <div className="mt-3 rounded-[12px] border border-black/8 bg-white px-3 py-3">
+              {selectedEvidence.formulaLatex ? (
+                <MathFormula
+                  expression={selectedEvidence.formulaLatex}
+                  className="overflow-x-auto text-[15px] text-black"
+                />
+              ) : (
+                <MathText
+                  content={selectedEvidence.content || selectedEvidence.quote}
+                  className="overflow-x-auto text-[14px] leading-7 text-black/72"
+                />
+              )}
+            </div>
+          ) : null}
+          <div className="mt-2 flex flex-wrap gap-2">
             <span className="rounded-full border border-black/8 bg-white px-2.5 py-1 text-[10px] text-black/52">
               {selectedEvidence.type}
             </span>
@@ -107,13 +108,13 @@ export function ResourcesPanel({
         </section>
       ) : null}
 
-      <section className="rounded-[22px] bg-[var(--surface-soft)] p-4">
+      <section className="rounded-[12px] bg-[var(--surface-soft)] p-3">
         <div className="text-[11px] uppercase tracking-[0.22em] text-black/36">
           {workbenchText('assistant.resourcesTitle', 'workbench.resourcesTitle', 'Extended Resources')}
         </div>
-        <div className="mt-3 space-y-3">
+        <div className="mt-3 space-y-2">
           {resources.map((resource) => (
-            <article key={resource.id} className="rounded-[18px] border border-black/6 bg-white px-4 py-3">
+            <article key={resource.id} className="rounded-[12px] border border-black/6 bg-white px-3 py-2.5">
               <div className="text-[10px] uppercase tracking-[0.18em] text-black/34">
                 {kindLabels[resource.kind]}
               </div>
@@ -126,7 +127,7 @@ export function ResourcesPanel({
                 <div className="mt-1 text-[12px] text-black/46">{resource.subtitle}</div>
               ) : null}
               {sanitizeTopicSurfaceText(resource.description, 180) ? (
-                <p className="mt-2 text-[12px] leading-6 text-black/58">
+                <p className="mt-1.5 text-[12px] leading-5 text-black/58">
                   {clipText(sanitizeTopicSurfaceText(resource.description, 180), 180)}
                 </p>
               ) : null}

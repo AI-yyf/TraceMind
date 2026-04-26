@@ -37,7 +37,7 @@ describe('TopicDashboard', () => {
 
     expect(screen.getByText('Topic title')).toBeVisible()
     expect(screen.getByText('Insight one')).toBeVisible()
-    expect(screen.getByText(/暂无研究主线数据|No research threads available yet\./u)).toBeVisible()
+    expect(screen.getByText(/暂无研究主线数据|No research threads available/u)).toBeVisible()
     expect(
       screen.getByText(
         /All tracked papers in this stage window are already placed into nodes\.|当前时间窗内的追踪论文都已经进入节点。/u,

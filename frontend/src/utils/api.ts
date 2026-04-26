@@ -1,4 +1,17 @@
+import { APP_STATE_STORAGE_KEYS, readLocalStorageItem } from './appStateStorage'
+
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/u, '')
+
+// 默认用户ID（单用户系统）
+const DEFAULT_USER_ID = 'default'
+
+// 获取用户ID（可从localStorage读取，默认使用'default'）
+function getUserId(): string {
+  const stored = readLocalStorageItem(APP_STATE_STORAGE_KEYS.alphaUserId)
+  if (stored && stored.trim()) return stored.trim()
+    // localStorage不可用时使用默认值
+  return DEFAULT_USER_ID
+}
 
 export type ApiSuccessResponse<T> = {
   success: true
@@ -134,18 +147,25 @@ async function handleResponse<T>(response: Response): Promise<T> {
   return payload as T
 }
 
-export async function apiGet<T>(path: string): Promise<T> {
-  const response = await fetch(buildApiUrl(path))
+export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(buildApiUrl(path), {
+    signal,
+    headers: {
+      'x-alpha-user-id': getUserId(),
+    },
+  })
   return handleResponse<T>(response)
 }
 
-export async function apiPost<T, B = unknown>(path: string, body: B): Promise<T> {
+export async function apiPost<T, B = unknown>(path: string, body: B, signal?: AbortSignal): Promise<T> {
   const response = await fetch(buildApiUrl(path), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'x-alpha-user-id': getUserId(),
     },
     body: JSON.stringify(body),
+    signal,
   })
 
   return handleResponse<T>(response)
@@ -184,6 +204,7 @@ export async function apiPatch<T, B = unknown>(path: string, body: B): Promise<T
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
+      'x-alpha-user-id': getUserId(),
     },
     body: JSON.stringify(body),
   })

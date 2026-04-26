@@ -1,5 +1,6 @@
 ﻿import { runStructuredGenerationPass } from '../generation/orchestrator'
 import { PROMPT_TEMPLATE_IDS } from '../generation/prompt-registry'
+import { collectPaperFormulaArtifacts, countPaperFormulaArtifacts } from './synthetic-formulas'
 
 export interface PipelineCritique {
   summary: string
@@ -283,6 +284,73 @@ function sanitizeString(value: unknown, fallback: string) {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback
 }
 
+function normalizeSearchText(value: string | null | undefined) {
+  return (value ?? '').replace(/\s+/gu, ' ').trim().toLowerCase()
+}
+
+function paperIdentityTokens(paper: any) {
+  const title = normalizeSearchText(paper?.titleZh || paper?.title)
+  return uniqueStrings(
+    title
+      .split(/[^\p{L}\p{N}.]+/u)
+      .filter((token) => token.length >= 4)
+      .slice(0, 8),
+    8,
+  )
+}
+
+function mentionsPaperIdentity(pass: NodePaperPass, paper: any) {
+  const haystack = normalizeSearchText(
+    [pass.overviewTitle, pass.role, pass.contribution, ...pass.body].join(' '),
+  )
+  const paperId = normalizeSearchText(paper?.id)
+  if (paperId && haystack.includes(paperId)) return true
+  const tokens = paperIdentityTokens(paper)
+  return tokens.length === 0 || tokens.some((token) => haystack.includes(token))
+}
+
+function mentionsEvidenceSurface(pass: NodePaperPass) {
+  const haystack = normalizeSearchText(pass.body.join(' '))
+  return /figure|table|formula|section|图|表|公式|章节|正文|证据/u.test(haystack)
+}
+
+function strengthenNodePaperPass(pass: NodePaperPass, paper: any, fallback: NodePaperPass): NodePaperPass {
+  const body = uniqueStrings(
+    [
+      ...pass.body,
+      ...(pass.body.length < 4 ? fallback.body : []),
+      ...(!mentionsPaperIdentity(pass, paper) ? fallback.body.slice(0, 1) : []),
+      ...(!mentionsEvidenceSurface(pass) ? fallback.body.slice(-2) : []),
+    ],
+    8,
+  )
+
+  return {
+    ...pass,
+    contribution: sanitizeString(pass.contribution, fallback.contribution),
+    body: body.length > 0 ? body : fallback.body,
+  }
+}
+
+function buildNodeArticleEditorialChecklist(papers: any[]) {
+  return {
+    role: 'research-editor',
+    mustExplainEveryPaper: papers.map((paper, index) => ({
+      paperId: paper.id,
+      title: paper.titleZh || paper.title,
+      expectedRole: paperRoleLabel(index, paper.id === papers[0]?.id),
+      evidenceStats: summarizePaper(paper).stats,
+    })),
+    articleStandard: [
+      'Write like a rigorous editor, not a task log.',
+      'A reader should understand why every included paper matters without opening the original PDF.',
+      'Each paper needs problem, method, evidence, boundary, and handoff coverage.',
+      'Figures, tables, formulas, and sections must be discussed when present; missing assets must be stated as a limitation.',
+      'Avoid mechanical bullets unless the output contract explicitly asks for structured points.',
+    ],
+  }
+}
+
 function pickPaperExplanationSeed(paper: any, maxLength = 320) {
   const explanation =
     typeof paper?.explanation === 'string' && !HEURISTIC_EXPLANATION_RE.test(paper.explanation)
@@ -385,19 +453,17 @@ function summarizePaper(paper: any) {
           page: asNumber(item.page),
         }))
       : [],
-    formulas: Array.isArray(paper.formulas)
-      ? paper.formulas.map((item: any, index: number) => ({
-          label: `Formula ${item.number ?? index + 1}`,
-          latex: clipText(item.latex, 220),
-          excerpt: clipText(item.rawText || item.latex, 220),
-          page: asNumber(item.page),
-        }))
-      : [],
+    formulas: collectPaperFormulaArtifacts(paper).map((item, index: number) => ({
+      label: `Formula ${item.number ?? index + 1}`,
+      latex: clipText(item.latex, 220),
+      excerpt: clipText(item.rawText || item.latex, 220),
+      page: asNumber(item.page),
+    })),
     stats: {
       sectionCount: sections.length,
       figureCount: Array.isArray(paper.figures) ? paper.figures.length : 0,
       tableCount: Array.isArray(paper.tables) ? paper.tables.length : 0,
-      formulaCount: Array.isArray(paper.formulas) ? paper.formulas.length : 0,
+      formulaCount: countPaperFormulaArtifacts(paper),
     },
   }
 }
@@ -416,7 +482,7 @@ function summarizePaperEvidenceCoverage(
   const secondarySection = sections[1] ?? null
   const firstFigure = Array.isArray(paper.figures) ? paper.figures[0] : null
   const firstTable = Array.isArray(paper.tables) ? paper.tables[0] : null
-  const firstFormula = Array.isArray(paper.formulas) ? paper.formulas[0] : null
+  const firstFormula = collectPaperFormulaArtifacts(paper)[0] ?? null
 
   return uniqueStrings(
     [
@@ -436,7 +502,7 @@ function summarizePaperEvidenceCoverage(
       firstFormula
         ? `关键公式锚点是 Formula ${firstFormula.number ?? 1}：${clipText(firstFormula.rawText || firstFormula.latex, 220)}`
         : '',
-      `证据覆盖上，这篇论文提供了 ${sections.length} 个正文 section、${Array.isArray(paper.figures) ? paper.figures.length : 0} 张图、${Array.isArray(paper.tables) ? paper.tables.length : 0} 张表和 ${Array.isArray(paper.formulas) ? paper.formulas.length : 0} 个公式，需要把这些材料都纳入叙述，而不是只摘结论。`,
+      `证据覆盖上，这篇论文提供了 ${sections.length} 个正文 section、${Array.isArray(paper.figures) ? paper.figures.length : 0} 张图、${Array.isArray(paper.tables) ? paper.tables.length : 0} 张表和 ${countPaperFormulaArtifacts(paper)} 个公式，需要把这些材料都纳入叙述，而不是只摘结论。`,
     ],
     8,
   )
@@ -461,7 +527,7 @@ function buildNodePaperFallback(paper: any, index: number, primaryPaperId: strin
         : [
             clipText(paper.summary, 260),
             clipText(paper.explanation ?? paper.summary, 320),
-            `证据重心：${Array.isArray(paper.figures) ? paper.figures.length : 0} 张图、${Array.isArray(paper.tables) ? paper.tables.length : 0} 张表、${Array.isArray(paper.formulas) ? paper.formulas.length : 0} 个公式。`,
+            `证据重心：${Array.isArray(paper.figures) ? paper.figures.length : 0} 张图、${Array.isArray(paper.tables) ? paper.tables.length : 0} 张表、${countPaperFormulaArtifacts(paper)} 个公式。`,
           ],
   } satisfies NodePaperPass
 }
@@ -527,6 +593,7 @@ export async function generateNodePaperPasses(
         userPayload: {
           mode: 'paper-pass',
           paper: summarizePaper(paper),
+          editorialChecklist: buildNodeArticleEditorialChecklist(papers),
           paperIndex: index,
           paperCount: papers.length,
           primaryPaperId,
@@ -545,7 +612,7 @@ export async function generateNodePaperPasses(
         summaryHint: fallback.contribution,
       })
 
-      return {
+      return strengthenNodePaperPass({
         paperId: paper.id,
         overviewTitle: sanitizeString(
           response.overviewTitle,
@@ -554,7 +621,7 @@ export async function generateNodePaperPasses(
         role: sanitizeString(response.role, fallback.role),
         contribution: sanitizeString(response.contribution, fallback.contribution),
         body: sanitizeParagraphs(response.body, fallback.body),
-      } satisfies NodePaperPass
+      }, paper, fallback)
     }),
   )
 }
@@ -697,6 +764,7 @@ export async function generateNodeSynthesisPass(
       papers: papers.map((paper) => summarizePaper(paper)),
       paperPasses,
       comparison,
+      editorialChecklist: buildNodeArticleEditorialChecklist(papers),
       totalStructure: '总-分-总',
     },
     memoryContext: mergeMemoryContext(
@@ -806,13 +874,11 @@ export async function generatePaperStoryPass(
               excerpt: clipText(item.rawText, 320),
             }))
           : [],
-        formulas: Array.isArray(paper.formulas)
-          ? paper.formulas.map((item: any) => ({
-              label: `Formula ${item.number ?? ''}`.trim(),
-              latex: clipText(item.latex, 220),
-              excerpt: clipText(item.rawText || item.latex, 220),
-            }))
-          : [],
+        formulas: collectPaperFormulaArtifacts(paper).map((item) => ({
+          label: `Formula ${item.number ?? ''}`.trim(),
+          latex: clipText(item.latex, 220),
+          excerpt: clipText(item.rawText || item.latex, 220),
+        })),
       },
       totalStructure: '总-分-总',
     },
@@ -821,7 +887,7 @@ export async function generatePaperStoryPass(
         sectionCount: Array.isArray(paper.paper_sections) ? paper.paper_sections.length : 0,
         figureCount: Array.isArray(paper.figures) ? paper.figures.length : 0,
         tableCount: Array.isArray(paper.tables) ? paper.tables.length : 0,
-        formulaCount: Array.isArray(paper.formulas) ? paper.formulas.length : 0,
+        formulaCount: countPaperFormulaArtifacts(paper),
       },
       researchPipelineContext,
     ),
@@ -851,6 +917,8 @@ export const __testing = {
   buildArticleAuthorBrief,
   mergeMemoryContext,
   buildNodePaperFallback,
+  strengthenNodePaperPass,
+  buildNodeArticleEditorialChecklist,
   summarizePaper,
 }
 

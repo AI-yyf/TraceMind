@@ -1,39 +1,15 @@
 import { Router } from 'express'
-import { z } from 'zod'
 
 import { prisma } from '../lib/prisma'
+import { logger } from '../utils/logger'
+import { asyncHandler, AppError } from '../middleware/errorHandler'
+import { validate } from '../middleware/requestValidator'
+import { TaskConfigBodySchema, TaskToggleSchema, TaskRunSchema, TaskJumpSchema } from './schemas'
 import { enhancedTaskScheduler } from '../services/enhanced-scheduler'
 import { type TaskConfig } from '../services/scheduler'
 import { getStageLocalization, getTopicLocalization, getTopicLocalizationMap } from '../services/topics/localization'
 
 const router = Router()
-
-const taskConfigSchema = z.object({
-  id: z.string(),
-  name: z.string().min(1),
-  cronExpression: z.string(),
-  enabled: z.boolean(),
-  topicId: z.string().optional(),
-  action: z.enum(['discover', 'refresh', 'sync']),
-  researchMode: z.enum(['stage-rounds', 'duration']).optional(),
-  options: z
-    .object({
-      maxResults: z.number().optional(),
-      stageIndex: z.number().optional(),
-      maxIterations: z.number().int().min(1).optional(),
-      durationHours: z.number().min(1).max(48).optional(),
-      cycleDelayMs: z.number().int().min(250).max(15000).optional(),
-      stageRounds: z
-        .array(
-          z.object({
-            stageIndex: z.number().int().min(1),
-            rounds: z.number().int().min(1).max(12),
-          }),
-        )
-        .optional(),
-    })
-    .optional(),
-})
 
 router.get('/topics', async (_req, res) => {
   try {
@@ -57,7 +33,7 @@ router.get('/topics', async (_req, res) => {
       })),
     })
   } catch (error) {
-    console.error('[Task API] Topics error:', error)
+    logger.error('[Task API] Topics error', { error: error instanceof Error ? error.message : String(error) })
     res.status(500).json({ success: false, error: 'Failed to get topics' })
   }
 })
@@ -79,7 +55,7 @@ router.get('/topics/:topicId/stages', async (req, res) => {
       })),
     })
   } catch (error) {
-    console.error('[Task API] Stages error:', error)
+    logger.error('[Task API] Stages error', { error: error instanceof Error ? error.message : String(error) })
     res.status(500).json({ success: false, error: 'Failed to get stages' })
   }
 })
@@ -121,7 +97,7 @@ router.get('/stats', async (_req, res) => {
       },
     })
   } catch (error) {
-    console.error('[Task API] Stats error:', error)
+    logger.error('[Task API] Stats error', { error: error instanceof Error ? error.message : String(error) })
     res.status(500).json({ success: false, error: 'Failed to get stats' })
   }
 })
@@ -150,44 +126,31 @@ router.get('/', async (_req, res) => {
 
     res.json({ success: true, data: tasksWithProgress })
   } catch (error) {
-    console.error('[Task API] List error:', error)
+    logger.error('[Task API] List error', { error: error instanceof Error ? error.message : String(error) })
     res.status(500).json({ success: false, error: 'Failed to list tasks' })
   }
 })
 
-router.post('/', async (req, res) => {
-  try {
-    const body = taskConfigSchema.parse(req.body)
-    const success = enhancedTaskScheduler.addTask(body)
+router.post('/', validate(TaskConfigBodySchema), asyncHandler(async (req, res) => {
+  const body = req.body as TaskConfig
+  const success = enhancedTaskScheduler.addTask(body)
 
-    if (success) {
-      await prisma.system_configs.upsert({
-        where: { key: `task:${body.id}` },
-        update: { value: JSON.stringify(body), updatedAt: new Date() },
-        create: { id: crypto.randomUUID(), key: `task:${body.id}`, value: JSON.stringify(body), updatedAt: new Date() },
-      })
-    }
-
-    res.json({
-      success,
-      data: {
-        ...body,
-        progress: enhancedTaskScheduler.getProgress(body.id),
-      },
+  if (success) {
+    await prisma.system_configs.upsert({
+      where: { key: `task:${body.id}` },
+      update: { value: JSON.stringify(body), updatedAt: new Date() },
+      create: { id: crypto.randomUUID(), key: `task:${body.id}`, value: JSON.stringify(body), updatedAt: new Date() },
     })
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({
-        success: false,
-        error: 'Validation error',
-        details: error.errors,
-      })
-    }
-
-    console.error('[Task API] Create error:', error)
-    res.status(500).json({ success: false, error: 'Failed to create task' })
   }
-})
+
+  res.json({
+    success,
+    data: {
+      ...body,
+      progress: enhancedTaskScheduler.getProgress(body.id),
+    },
+  })
+}))
 
 router.get('/:taskId', async (req, res) => {
   try {
@@ -210,39 +173,38 @@ router.get('/:taskId', async (req, res) => {
       },
     })
   } catch (error) {
-    console.error('[Task API] Get error:', error)
+    logger.error('[Task API] Get error', { error: error instanceof Error ? error.message : String(error) })
     res.status(500).json({ success: false, error: 'Failed to get task' })
   }
 })
 
-router.put('/:taskId', async (req, res) => {
-  try {
-    const { taskId } = req.params
-    const body = taskConfigSchema.parse({ ...req.body, id: taskId })
-
-    enhancedTaskScheduler.removeTask(taskId)
-    const success = enhancedTaskScheduler.addTask(body)
-
-    if (success) {
-await prisma.system_configs.upsert({
-        where: { key: `task:${taskId}` },
-        update: { value: JSON.stringify(body), updatedAt: new Date() },
-        create: { id: crypto.randomUUID(), key: `task:${taskId}`, value: JSON.stringify(body), updatedAt: new Date() },
-      })
-    }
-
-    res.json({
-      success,
-      data: {
-        ...body,
-        progress: enhancedTaskScheduler.getProgress(taskId),
-      },
-    })
-  } catch (error) {
-    console.error('[Task API] Update error:', error)
-    res.status(500).json({ success: false, error: 'Failed to update task' })
+router.put('/:taskId', asyncHandler(async (req, res) => {
+  const { taskId } = req.params
+  const parsed = TaskConfigBodySchema.safeParse({ body: { ...req.body, id: taskId } })
+  if (!parsed.success) {
+    throw new AppError(400, parsed.error.issues[0]?.message ?? 'Validation error')
   }
-})
+  const body = parsed.data.body as TaskConfig
+
+  enhancedTaskScheduler.removeTask(taskId)
+  const success = enhancedTaskScheduler.addTask(body)
+
+  if (success) {
+    await prisma.system_configs.upsert({
+      where: { key: `task:${taskId}` },
+      update: { value: JSON.stringify(body), updatedAt: new Date() },
+      create: { id: crypto.randomUUID(), key: `task:${taskId}`, value: JSON.stringify(body), updatedAt: new Date() },
+    })
+  }
+
+  res.json({
+    success,
+    data: {
+      ...body,
+      progress: enhancedTaskScheduler.getProgress(taskId),
+    },
+  })
+}))
 
 router.delete('/:taskId', async (req, res) => {
   try {
@@ -259,84 +221,58 @@ router.delete('/:taskId', async (req, res) => {
 
     res.json({ success })
   } catch (error) {
-    console.error('[Task API] Delete error:', error)
+    logger.error('[Task API] Delete error', { error: error instanceof Error ? error.message : String(error) })
     res.status(500).json({ success: false, error: 'Failed to delete task' })
   }
 })
 
-router.post('/:taskId/toggle', async (req, res) => {
-  try {
-    const { taskId } = req.params
-    const { enabled } = req.body as { enabled?: boolean }
+router.post('/:taskId/toggle', validate(TaskToggleSchema), asyncHandler(async (req, res) => {
+  const { taskId } = req.params
+  const { enabled } = req.body
 
-    if (typeof enabled !== 'boolean') {
-      return res.status(400).json({ success: false, error: 'enabled must be a boolean' })
-    }
+  const success = enhancedTaskScheduler.setTaskEnabled(taskId, enabled)
 
-    const success = enhancedTaskScheduler.setTaskEnabled(taskId, enabled)
-
-    if (success) {
-      const task = enhancedTaskScheduler.getTaskConfig(taskId)
-      if (task) {
-await prisma.system_configs.upsert({
+  if (success) {
+    const task = enhancedTaskScheduler.getTaskConfig(taskId)
+    if (task) {
+      await prisma.system_configs.upsert({
         where: { key: `task:${taskId}` },
         update: { value: JSON.stringify(task), updatedAt: new Date() },
         create: { id: crypto.randomUUID(), key: `task:${taskId}`, value: JSON.stringify(task), updatedAt: new Date() },
       })
-      }
     }
-
-    res.json({ success })
-  } catch (error) {
-    console.error('[Task API] Toggle error:', error)
-    res.status(500).json({ success: false, error: 'Failed to toggle task' })
   }
-})
 
-router.post('/:taskId/run', async (req, res) => {
-  try {
-    const { taskId } = req.params
-    const { forceStage, mode } = req.body as { forceStage?: number; mode?: 'full' | 'discover-only' }
-    const result = await enhancedTaskScheduler.triggerTask(taskId, { forceStage, mode })
+  res.json({ success })
+}))
 
-    if (!result) {
-      return res.status(404).json({ success: false, error: 'Task not found' })
-    }
+router.post('/:taskId/run', validate(TaskRunSchema), asyncHandler(async (req, res) => {
+  const { taskId } = req.params
+  const { forceStage, mode } = req.body
+  const result = await enhancedTaskScheduler.triggerTask(taskId, {
+    forceStage,
+    mode: mode === 'duration' ? undefined : mode,
+  })
 
-    res.json({ success: true, data: result })
-  } catch (error) {
-    console.error('[Task API] Run error:', error)
-    res.status(500).json({ success: false, error: 'Failed to run task' })
+  if (!result) {
+    throw new AppError(404, 'Task not found')
   }
-})
 
-router.post('/:taskId/reset', async (req, res) => {
-  try {
-    const { taskId } = req.params
-    const success = await enhancedTaskScheduler.resetProgress(taskId)
-    res.json({ success })
-  } catch (error) {
-    console.error('[Task API] Reset error:', error)
-    res.status(500).json({ success: false, error: 'Failed to reset task' })
-  }
-})
+  res.json({ success: true, data: result })
+}))
 
-router.post('/:taskId/jump', async (req, res) => {
-  try {
-    const { taskId } = req.params
-    const { stageIndex } = req.body as { stageIndex?: number }
+router.post('/:taskId/reset', asyncHandler(async (req, res) => {
+  const { taskId } = req.params
+  const success = await enhancedTaskScheduler.resetProgress(taskId)
+  res.json({ success })
+}))
 
-    if (typeof stageIndex !== 'number' || stageIndex < 1) {
-      return res.status(400).json({ success: false, error: 'Invalid stage index' })
-    }
-
-    const success = await enhancedTaskScheduler.jumpToStage(taskId, stageIndex)
-    res.json({ success })
-  } catch (error) {
-    console.error('[Task API] Jump error:', error)
-    res.status(500).json({ success: false, error: 'Failed to jump to stage' })
-  }
-})
+router.post('/:taskId/jump', validate(TaskJumpSchema), asyncHandler(async (req, res) => {
+  const { taskId } = req.params
+  const { stageIndex } = req.body
+  const success = await enhancedTaskScheduler.jumpToStage(taskId, stageIndex)
+  res.json({ success })
+}))
 
 router.get('/:taskId/history', async (req, res) => {
   try {
@@ -348,7 +284,7 @@ router.get('/:taskId/history', async (req, res) => {
       data: enhancedTaskScheduler.getExecutionHistory(taskId, limit),
     })
   } catch (error) {
-    console.error('[Task API] History error:', error)
+    logger.error('[Task API] History error', { error: error instanceof Error ? error.message : String(error) })
     res.status(500).json({ success: false, error: 'Failed to get history' })
   }
 })

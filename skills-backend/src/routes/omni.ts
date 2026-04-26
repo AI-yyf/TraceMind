@@ -1,22 +1,139 @@
 import { Router } from 'express'
+import { z } from 'zod'
 
 import { asyncHandler, AppError } from '../middleware/errorHandler'
+import { validate } from '../middleware/requestValidator'
+import { OmniCompleteSchema } from './schemas'
 import { omniGateway } from '../services/omni/gateway'
+import { PROVIDER_CATALOG, MODEL_PRESETS } from '../services/omni/catalog'
+import {
+  getSanitizedUserModelConfig,
+  saveUserModelConfig,
+  getModelCapabilitySummary,
+  getUserModelConfigRecord,
+  listConfigVersionHistory,
+  rollbackConfigToVersion,
+} from '../services/omni/config-store'
+import { RESEARCH_ROLE_IDS, allTaskRouteTargets } from '../services/omni/routing'
 import type { OmniAttachment, OmniCompleteRequest } from '../services/omni/types'
+import type { UserModelConfig } from '../../shared/model-config'
 
 const router = Router()
 
+// ========== Helper Functions ==========
+
+function resolveRequestUserId(req: { header(name: string): string | undefined }) {
+  const candidate = req.header('x-alpha-user-id')?.trim()
+  if (!candidate) return undefined
+  const normalized = candidate.replace(/[^a-zA-Z0-9:_-]/gu, '').slice(0, 64)
+  return normalized || undefined
+}
+
+function injectResolvedUserId<T extends { userId?: string }>(
+  payload: T,
+  req: { header(name: string): string | undefined },
+): T {
+  if (payload.userId?.trim()) {
+    return payload
+  }
+
+  const resolvedUserId = resolveRequestUserId(req)
+  if (!resolvedUserId) {
+    return payload
+  }
+
+  return {
+    ...payload,
+    userId: resolvedUserId,
+  }
+}
+
+// ========== Validation Schemas ==========
+
+const providerSchema = z.enum([
+  'nvidia',
+  'openai_compatible',
+  'openai',
+  'anthropic',
+  'google',
+  'dashscope',
+  'bigmodel',
+  'ark',
+  'hunyuan',
+  'deepseek',
+])
+
+const taskSchema = z.enum([
+  'general_chat',
+  'topic_chat',
+  'topic_chat_vision',
+  'topic_summary',
+  'document_parse',
+  'figure_analysis',
+  'formula_recognition',
+  'table_extraction',
+  'evidence_explainer',
+])
+
+const slotRefSchema = z
+  .object({
+    provider: providerSchema,
+    model: z.string().trim().min(1),
+  })
+  .strict()
+
+const slotOptionsSchema = z
+  .object({
+    thinking: z.enum(['on', 'off', 'auto']).optional(),
+    citations: z.enum(['native', 'backend']).optional(),
+    parser: z.enum(['native', 'backend']).optional(),
+    temperature: z.number().finite().optional(),
+    maxTokens: z.number().int().positive().optional(),
+  })
+  .strict()
+
+const slotConfigSchema = z
+  .object({
+    provider: providerSchema,
+    model: z.string().trim().min(1),
+    baseUrl: z.string().trim().optional(),
+    apiKeyRef: z.string().trim().optional(),
+    apiKey: z.string().trim().optional(),
+    providerOptions: z.record(z.unknown()).optional(),
+    options: slotOptionsSchema.optional(),
+  })
+  .strict()
+
+const researchRoleSchema = z.enum(RESEARCH_ROLE_IDS as [string, ...string[]])
+const taskRouteTargetSchema = z.enum(allTaskRouteTargets() as [string, ...string[]])
+
+const userModelConfigSchema = z
+  .object({
+    language: slotConfigSchema.nullable().optional(),
+    multimodal: slotConfigSchema.nullable().optional(),
+    roles: z.record(researchRoleSchema, slotConfigSchema.nullable()).optional(),
+    taskOverrides: z.record(taskSchema, slotRefSchema).optional(),
+    taskRouting: z.record(taskSchema, taskRouteTargetSchema).optional(),
+  })
+  .strict()
+
+const hasOwn = <T extends object>(value: T, key: keyof T) =>
+  Object.prototype.hasOwnProperty.call(value, key)
+
 router.post(
   '/complete',
+  validate(OmniCompleteSchema),
   asyncHandler(async (req, res) => {
-    const result = await omniGateway.complete(req.body as OmniCompleteRequest)
+    const request = injectResolvedUserId(req.body as OmniCompleteRequest, req)
+    const result = await omniGateway.complete(request)
     res.json({ success: true, data: result })
   }),
 )
 
-router.post('/stream', async (req, res, next) => {
+router.post('/stream', validate(OmniCompleteSchema), async (req, res, next) => {
   try {
-    const result = await omniGateway.complete(req.body as OmniCompleteRequest)
+    const request = injectResolvedUserId(req.body as OmniCompleteRequest, req)
+    const result = await omniGateway.complete(request)
 
     res.setHeader('Content-Type', 'text/event-stream')
     res.setHeader('Cache-Control', 'no-cache')
@@ -38,6 +155,7 @@ router.post('/stream', async (req, res, next) => {
 router.post(
   '/parse',
   asyncHandler(async (req, res) => {
+    const userId = resolveRequestUserId(req)
     const {
       task = 'document_parse',
       prompt,
@@ -65,6 +183,7 @@ router.post(
 
     const result = await omniGateway.complete({
       task,
+      userId,
       json: true,
       messages: [
         {
@@ -83,6 +202,220 @@ router.post(
       success: true,
       data: {
         raw: result,
+      },
+    })
+  }),
+)
+
+// ========== Catalog Endpoints ==========
+
+/**
+ * GET /api/omni/catalog
+ * Returns ProviderCatalogEntry[] - all available providers and their models
+ */
+router.get(
+  '/catalog',
+  asyncHandler(async (_req, res) => {
+    res.json({
+      success: true,
+      data: PROVIDER_CATALOG,
+    })
+  }),
+)
+
+/**
+ * GET /api/omni/presets
+ * Returns ModelPreset[] - predefined model configuration presets
+ */
+router.get(
+  '/presets',
+  asyncHandler(async (_req, res) => {
+    res.json({
+      success: true,
+      data: MODEL_PRESETS,
+    })
+  }),
+)
+
+// ========== Config Endpoints ==========
+
+/**
+ * GET /api/omni/config
+ * Returns SanitizedUserModelConfig - current user model configuration (API keys masked)
+ */
+router.get(
+  '/config',
+  asyncHandler(async (req, res) => {
+    const userId = resolveRequestUserId(req)
+    const config = await getSanitizedUserModelConfig(userId)
+    res.json({
+      success: true,
+      data: config,
+    })
+  }),
+)
+
+/**
+ * POST /api/omni/config
+ * Accepts UserModelConfig - saves user model configuration
+ */
+router.post(
+  '/config',
+  asyncHandler(async (req, res) => {
+    const userId = resolveRequestUserId(req)
+    const parsedPayload = userModelConfigSchema.safeParse(req.body)
+    if (!parsedPayload.success) {
+      throw new AppError(400, parsedPayload.error.issues[0]?.message ?? 'Invalid model config payload.')
+    }
+
+    const incoming = parsedPayload.data as UserModelConfig
+    const previous = await getSanitizedUserModelConfig(userId)
+    const saved = await saveUserModelConfig(incoming, userId)
+    const capabilitySummary = await getModelCapabilitySummary(userId)
+
+    const shouldValidateLanguage =
+      hasOwn(incoming, 'language') &&
+      Boolean(incoming.language) &&
+      (
+        Boolean(incoming.language?.apiKey) ||
+        previous.language?.provider !== saved.language?.provider ||
+        previous.language?.model !== saved.language?.model ||
+        previous.language?.baseUrl !== saved.language?.baseUrl
+      )
+    const shouldValidateMultimodal =
+      hasOwn(incoming, 'multimodal') &&
+      Boolean(incoming.multimodal) &&
+      (
+        Boolean(incoming.multimodal?.apiKey) ||
+        previous.multimodal?.provider !== saved.multimodal?.provider ||
+        previous.multimodal?.model !== saved.multimodal?.model ||
+        previous.multimodal?.baseUrl !== saved.multimodal?.baseUrl
+      )
+    const validationIssues = (
+      await Promise.all([
+        shouldValidateLanguage ? omniGateway.validateSlot('language', userId) : Promise.resolve(null),
+        shouldValidateMultimodal ? omniGateway.validateSlot('multimodal', userId) : Promise.resolve(null),
+      ])
+    ).filter(Boolean)
+
+    res.json({
+      success: true,
+      data: {
+        userId: capabilitySummary.userId,
+        config: saved,
+        configRecord: await getUserModelConfigRecord(userId),
+        slots: capabilitySummary.slots,
+        roles: capabilitySummary.roles,
+        routing: capabilitySummary.routing,
+        roleDefinitions: capabilitySummary.roleDefinitions,
+        validationIssues,
+      },
+    })
+  }),
+)
+
+// ========== Capabilities Endpoint ==========
+
+/**
+ * GET /api/omni/capabilities
+ * Returns capability summary - detailed breakdown of configured slots, roles, and routing
+ */
+router.get(
+  '/capabilities',
+  asyncHandler(async (req, res) => {
+    const userId = resolveRequestUserId(req)
+    const capabilitySummary = await getModelCapabilitySummary(userId)
+    res.json({
+      success: true,
+      data: capabilitySummary,
+    })
+  }),
+)
+
+// ========== Full Config Record Endpoint ==========
+
+/**
+ * GET /api/omni/config-record
+ * Returns full config record with metadata and history
+ */
+router.get(
+  '/config-record',
+  asyncHandler(async (req, res) => {
+    const userId = resolveRequestUserId(req)
+    const [configRecord, capabilitySummary] = await Promise.all([
+      getUserModelConfigRecord(userId),
+      getModelCapabilitySummary(userId),
+    ])
+
+    res.json({
+      success: true,
+      data: {
+        userId: capabilitySummary.userId,
+        config: configRecord.config,
+        configMeta: configRecord.meta,
+        configHistory: configRecord.history,
+        roles: capabilitySummary.roles,
+        routing: capabilitySummary.routing,
+        roleDefinitions: capabilitySummary.roleDefinitions,
+        catalog: capabilitySummary.catalog,
+        presets: capabilitySummary.presets,
+      },
+    })
+  }),
+)
+
+// ========== Config History Endpoints ==========
+
+/**
+ * GET /api/omni/config/history
+ * Returns config version history list
+ */
+router.get(
+  '/config/history',
+  asyncHandler(async (req, res) => {
+    const userId = resolveRequestUserId(req)
+    const limit = Math.min(Number(req.query.limit) || 12, 50)
+    const history = await listConfigVersionHistory(limit)
+    res.json({
+      success: true,
+      data: {
+        userId,
+        history,
+        total: history.length,
+      },
+    })
+  }),
+)
+
+/**
+ * POST /api/omni/config/rollback
+ * Rollback config to a specific version
+ */
+router.post(
+  '/config/rollback',
+  asyncHandler(async (req, res) => {
+    const userId = resolveRequestUserId(req)
+    const { version } = req.body as { version: number }
+
+    if (!version || typeof version !== 'number') {
+      throw new AppError(400, 'Version number is required.')
+    }
+
+    const result = await rollbackConfigToVersion(version, userId)
+    if (!result) {
+      throw new AppError(404, `Config version ${version} not found.`)
+    }
+
+    const capabilitySummary = await getModelCapabilitySummary(userId)
+    res.json({
+      success: true,
+      data: {
+        userId: capabilitySummary.userId,
+        config: result,
+        slots: capabilitySummary.slots,
+        roles: capabilitySummary.roles,
+        routing: capabilitySummary.routing,
+        rollbackVersion: version,
       },
     })
   }),

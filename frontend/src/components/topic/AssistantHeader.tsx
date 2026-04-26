@@ -46,7 +46,7 @@ export function AssistantHeader({
   ] as const
 
   return (
-    <header className="border-b border-black/6 bg-white px-2.5 py-2">
+    <header className="border-b border-black/6 bg-white px-3 py-2.5">
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="text-[12px] font-medium text-black/78">
@@ -63,7 +63,7 @@ export function AssistantHeader({
                 key={action.id}
                 type="button"
                 onClick={action.onClick}
-                className="inline-flex shrink-0 items-center justify-center rounded-full bg-[var(--surface-soft)] p-1.5 text-black/54 transition hover:bg-black/[0.04] hover:text-black"
+                className="inline-flex shrink-0 items-center justify-center rounded-full border border-transparent p-1.5 text-black/46 transition hover:border-black/8 hover:bg-black/[0.025] hover:text-black/72"
                 aria-label={action.label}
                 title={action.label}
               >
@@ -76,7 +76,7 @@ export function AssistantHeader({
             type="button"
             onClick={onToggleCollapse}
             className={cn(
-              'rounded-full border border-black/8 bg-white p-1.5 text-black/48 transition hover:border-black/16 hover:text-black',
+              'rounded-full border border-black/8 bg-white p-1.5 text-black/42 transition hover:border-black/14 hover:bg-black/[0.02] hover:text-black/72',
               collapsed && 'rotate-180',
             )}
             aria-label={workbenchText(

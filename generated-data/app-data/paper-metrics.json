@@ -1,316 +1,28 @@
 {
   "2210.03629": {
-    "citationCount": 690,
+    "citationCount": 725,
     "source": "OpenAlex",
-    "retrievedAt": "2026-03-25"
+    "retrievedAt": "2026-04-17"
   },
   "1604.07316": {
-    "citationCount": 3101,
+    "citationCount": 3108,
     "source": "OpenAlex",
-    "retrievedAt": "2026-03-25"
+    "retrievedAt": "2026-04-17"
   },
   "1803.08554": {
     "citationCount": 2,
     "source": "OpenAlex",
-    "retrievedAt": "2026-03-25"
+    "retrievedAt": "2026-04-17"
   },
   "2204.01691": {
-    "citationCount": 512,
+    "citationCount": 514,
     "source": "OpenAlex",
-    "retrievedAt": "2026-03-25"
+    "retrievedAt": "2026-04-17"
   },
   "1706.03762": {
-    "citationCount": 6507,
+    "citationCount": 6525,
     "source": "OpenAlex",
-    "retrievedAt": "2026-03-25"
-  },
-  "autonomous-driving-workflow-sync-1775688562856": {
-    "citationCount": null
-  },
-  "02bcd04f-f86a-4e58-a23e-f86ef97f4f95": {
-    "citationCount": null
-  },
-  "39e68cb8-6574-4bca-83d9-02ee52a2b860": {
-    "citationCount": null
-  },
-  "ff933027-3c9b-41a9-93c3-ef0d4138be77": {
-    "citationCount": null
-  },
-  "7a1e48e4-c497-499f-b223-aa97806b3c38": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775692103986-6xpner-a": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775692103986-6xpner-b": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775692140290-b6qbad-a": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775692140290-b6qbad-b": {
-    "citationCount": null
-  },
-  "autonomous-driving-workflow-sync-1775693220667": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775693220861-yagyp4-a": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775693220861-yagyp4-b": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775696592759-fjodvs-a": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775696592759-fjodvs-b": {
-    "citationCount": null
-  },
-  "autonomous-driving-workflow-sync-1775696594138": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775697472238-yxqqqb-a": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775697472238-yxqqqb-b": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775697536691-mpuyn4-a": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775697536691-mpuyn4-b": {
-    "citationCount": null
-  },
-  "3b0113dc-46c5-4be9-b8d6-a03b2102c392": {
-    "citationCount": null
-  },
-  "a06f0f00-34d8-4a1d-aa24-d737f96d28c3": {
-    "citationCount": null
-  },
-  "e38dca12-f939-4c50-91d4-70513a0cbf41": {
-    "citationCount": null
-  },
-  "0946bdb9-826b-4742-b62e-e0db013e7025": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775719413747-sm3dws-a": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775719413747-sm3dws-b": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775719567825-coloww-a": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775719567825-coloww-b": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775720556094-vyepbn-a": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775720556094-vyepbn-b": {
-    "citationCount": null
-  },
-  "autonomous-driving-workflow-sync-1775723581365": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775723581201-6eopci-a": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775723581201-6eopci-b": {
-    "citationCount": null
-  },
-  "autonomous-driving-workflow-sync-1775724150480": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775724150542-0ec3bd-a": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775724150542-0ec3bd-b": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775724532790-31pxth-a": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775724532790-31pxth-b": {
-    "citationCount": null
-  },
-  "autonomous-driving-workflow-sync-1775724534792": {
-    "citationCount": null
-  },
-  "autonomous-driving-workflow-sync-1775724542942": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775724542997-sk6asl-a": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775724542997-sk6asl-b": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775724662079-e6x7wy-a": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775724662079-e6x7wy-b": {
-    "citationCount": null
-  },
-  "autonomous-driving-workflow-sync-1775724672718": {
-    "citationCount": null
-  },
-  "autonomous-driving-workflow-sync-1775725405084": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775725405120-b3szj2-a": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775725405120-b3szj2-b": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775725479896-kbvc71-a": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775725479896-kbvc71-b": {
-    "citationCount": null
-  },
-  "autonomous-driving-workflow-sync-1775725479967": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775726003996-d6te07-a": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775726003996-d6te07-b": {
-    "citationCount": null
-  },
-  "autonomous-driving-workflow-sync-1775726003961": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775726245003-q7tfrl-a": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775726245003-q7tfrl-b": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775726544248-u8iydw-a": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775726544248-u8iydw-b": {
-    "citationCount": null
-  },
-  "autonomous-driving-workflow-sync-1775726580242": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775726580151-4cc77l-a": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775726580151-4cc77l-b": {
-    "citationCount": null
-  },
-  "autonomous-driving-workflow-sync-1775726620668": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775726620720-9mlfus-a": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775726620720-9mlfus-b": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775726688982-n8h1sd-a": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775726688982-n8h1sd-b": {
-    "citationCount": null
-  },
-  "autonomous-driving-workflow-sync-1775726715351": {
-    "citationCount": null
-  },
-  "autonomous-driving-workflow-sync-1775727235216": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775727235281-gwdc99-a": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775727235281-gwdc99-b": {
-    "citationCount": null
-  },
-  "autonomous-driving-workflow-sync-1775727267163": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775727267239-l6tdgr-a": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775727267239-l6tdgr-b": {
-    "citationCount": null
-  },
-  "autonomous-driving-workflow-sync-1775727268059": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775727268103-ddi1h4-a": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775727268103-ddi1h4-b": {
-    "citationCount": null
-  },
-  "autonomous-driving-workflow-sync-1775727268958": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775727269039-09qj6t-a": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775727269039-09qj6t-b": {
-    "citationCount": null
-  },
-  "autonomous-driving-workflow-sync-1775727269850": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775727269921-7kc9ck-a": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775727269921-7kc9ck-b": {
-    "citationCount": null
-  },
-  "autonomous-driving-workflow-sync-1775727270734": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775727270805-jvhzds-a": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775727270805-jvhzds-b": {
-    "citationCount": null
-  },
-  "autonomous-driving-workflow-sync-1775727271633": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775727271709-9o2zo4-a": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775727271709-9o2zo4-b": {
-    "citationCount": null
-  },
-  "autonomous-driving-workflow-sync-1775727272585": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775727272650-0xhq3p-a": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775727272650-0xhq3p-b": {
-    "citationCount": null
-  },
-  "autonomous-driving-workflow-sync-1775727273501": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775727273576-ur5llt-a": {
-    "citationCount": null
-  },
-  "autonomous-driving-stage-paper-1775727273576-ur5llt-b": {
-    "citationCount": null
-  },
-  "autonomous-driving-workflow-sync-1775732254222": {
-    "citationCount": null
-  },
-  "autonomous-driving-workflow-sync-1775732254282": {
-    "citationCount": null
-  },
-  "autonomous-driving-workflow-sync-1775736437910": {
-    "citationCount": null
+    "retrievedAt": "2026-04-17"
   },
   "1710.02410": {
     "citationCount": null
@@ -321,163 +33,277 @@
   "1511.03791": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1775738727714": {
+  "autonomous-driving-workflow-sync-1776428155829": {
     "citationCount": null
   },
-  "0e21245f-24da-4693-b951-94f1c22903e8": {
+  "autonomous-driving-workflow-sync-1776428292411": {
     "citationCount": null
   },
-  "06b87490-9d46-496d-b26d-2b2db88c4f81": {
+  "autonomous-driving-workflow-sync-1776429427367": {
     "citationCount": null
   },
-  "908c7e00-e489-4c20-b218-657cc589733b": {
+  "autonomous-driving-workflow-sync-1776442340380": {
     "citationCount": null
   },
-  "54338a51-bb92-4688-8083-497b2df88887": {
+  "autonomous-driving-workflow-sync-1776477667290": {
     "citationCount": null
   },
-  "316472df-d1a7-48a2-bd68-ce594d27250a": {
+  "autonomous-driving-workflow-sync-1776484887621": {
     "citationCount": null
   },
-  "0743b70f-4687-4845-8c5a-467612974850": {
+  "autonomous-driving-workflow-sync-1776489081309": {
     "citationCount": null
   },
-  "4d7757a0-e2ad-4f43-a2aa-04ac0d01227e": {
+  "autonomous-driving-workflow-sync-1776489144901": {
     "citationCount": null
   },
-  "5635af16-6171-4ce8-9884-35787fb149e6": {
+  "autonomous-driving-workflow-sync-1776489170506": {
     "citationCount": null
   },
-  "6272b245-4176-47ef-a5dd-66564e1fd70a": {
+  "autonomous-driving-workflow-sync-1776490526367": {
     "citationCount": null
   },
-  "e4a4916c-832d-4088-86cf-c6b3555e49d5": {
+  "autonomous-driving-workflow-sync-1776497933500": {
     "citationCount": null
   },
-  "ba21435b-4a74-4319-9b29-4cb2d86bbbe8": {
+  "autonomous-driving-workflow-sync-1776526096406": {
     "citationCount": null
   },
-  "e11a0b5d-878d-4149-8a5c-66df300b2525": {
+  "autonomous-driving-workflow-sync-1776570773320": {
     "citationCount": null
   },
-  "71f27b74-8a8c-428d-8942-ab15f3fc6dc7": {
+  "autonomous-driving-workflow-sync-1776574959807": {
     "citationCount": null
   },
-  "58e7e0d3-83b5-4e04-b729-c19784bf8f11": {
+  "autonomous-driving-workflow-sync-1776574986566": {
     "citationCount": null
   },
-  "36c6f2b2-d0f2-49ae-99ba-a13de6517410": {
+  "autonomous-driving-workflow-sync-1776575184423": {
     "citationCount": null
   },
-  "8f93e834-ac91-4a39-b08d-e91d7c40bf1c": {
+  "autonomous-driving-workflow-sync-1776649772689": {
     "citationCount": null
   },
-  "74ff9450-0d50-4d5f-808e-3541660d6500": {
+  "autonomous-driving-workflow-sync-1776650004788": {
     "citationCount": null
   },
-  "46036b2c-4e3d-4338-8df6-8411253f3e5b": {
+  "autonomous-driving-workflow-sync-1776650713205": {
     "citationCount": null
   },
-  "888c7451-e52b-4f08-8464-a5fce590498e": {
+  "autonomous-driving-workflow-sync-1776652703853": {
     "citationCount": null
   },
-  "b75a72fd-8458-473b-a689-dd0921087c18": {
+  "autonomous-driving-workflow-sync-1776652767382": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1775969605656": {
+  "autonomous-driving-workflow-sync-1776653219993": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1775973060145": {
+  "autonomous-driving-workflow-sync-1776653221212": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1775973161138": {
+  "autonomous-driving-workflow-sync-1776658491767": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1775973585789": {
+  "autonomous-driving-workflow-sync-1776676683568": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1775975632113": {
+  "autonomous-driving-workflow-sync-1776676771930": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1775976266522": {
+  "autonomous-driving-workflow-sync-1776677133742": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1775978939914": {
+  "autonomous-driving-workflow-sync-1776685361055": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1775981363182": {
+  "autonomous-driving-workflow-sync-1776688516221": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1775989557358": {
+  "autonomous-driving-workflow-sync-1776689461038": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1775991081595": {
+  "autonomous-driving-workflow-sync-1776690455160": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1775991278007": {
+  "autonomous-driving-workflow-sync-1776691070667": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1775992269291": {
+  "autonomous-driving-workflow-sync-1776693529933": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1775992408909": {
+  "autonomous-driving-workflow-sync-1776693618657": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1775992707364": {
+  "autonomous-driving-workflow-sync-1776697763681": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1775993031120": {
+  "autonomous-driving-workflow-sync-1776699684084": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1775993032041": {
+  "autonomous-driving-workflow-sync-1776700393227": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1775993035644": {
+  "autonomous-driving-workflow-sync-1776700436107": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1775993253763": {
+  "autonomous-driving-workflow-sync-1776702939957": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1775993359523": {
+  "autonomous-driving-workflow-sync-1776706532174": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1775993856234": {
+  "autonomous-driving-workflow-sync-1776707200628": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1775994040555": {
+  "autonomous-driving-workflow-sync-1776736422750": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1775994721433": {
+  "autonomous-driving-workflow-sync-1776736767846": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1775994919433": {
+  "autonomous-driving-workflow-sync-1776737033121": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1775996356378": {
+  "autonomous-driving-workflow-sync-1776737073601": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1775996550346": {
+  "paper-1776772936006-euj9bdwg1": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1775999624042": {
+  "paper-1776772935992-rcyizqvf5": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1776001473847": {
+  "autonomous-driving-workflow-sync-1776862927125": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1776003506830": {
+  "autonomous-driving-workflow-sync-1776862995250": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1776004508500": {
+  "autonomous-driving-workflow-sync-1776865794506": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1776004706914": {
+  "autonomous-driving-workflow-sync-1776911067216": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1776004870718": {
+  "autonomous-driving-workflow-sync-1776965971994": {
     "citationCount": null
   },
-  "autonomous-driving-workflow-sync-1776005044121": {
+  "autonomous-driving-workflow-sync-1776992253258": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1776992387418": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1776999011999": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1776999327010": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777007330288": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777013062737": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777016631008": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777018109382": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777018620132": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777019407695": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777020645499": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777090715437": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777090862408": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777101213861": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777101801593": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777101939096": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777102140580": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777102242610": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777102262223": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777102322874": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777103133489": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777103444257": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777103688498": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777105059071": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777105143577": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777108700608": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777108899757": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777123087341": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777123923240": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777199770067": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777200045072": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777202296452": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777205681395": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777207693058": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777208324953": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777212243722": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777212367945": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777213207906": {
+    "citationCount": null
+  },
+  "autonomous-driving-workflow-sync-1777214284313": {
     "citationCount": null
   }
 }

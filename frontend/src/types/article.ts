@@ -1,15 +1,54 @@
 /**
  * 节点文章化重构 - 类型定义
  * 
- * 支持8-Pass深度生成链路的结构化文章类型
- * 每篇论文在节点中呈现为800-1200字的深度解析
+ * 学术海报风格：图为主60%+，文字精炼如摘要
+ * 每篇论文按自然段落流转呈现，不机械分点
  */
 
 // ============================================================================
-// 论文子节类型 - 8-Pass生成链路
+// 论文段落类型 - 自然流转结构
 // ============================================================================
 
-/** 论文子节类型 */
+/** 段落角色 - 自然流转中的语义角色 */
+export type ParagraphRole =
+  | 'thesis'        // 核心论点（海报标题级，20-30字）
+  | 'argument'      // 论证段落（50-80字，围绕证据展开）
+  | 'evidence'      // 证据锚点（图/表/公式的论点说明）
+  | 'insight'       // 洞察收束（论文边界与接手点，20-30字）
+
+/** 内联证据 - LLM生成的图表公式解读 */
+export interface InlineEvidence {
+  anchorId: string
+  type: 'figure' | 'table' | 'formula'
+  /** LLM生成的解读内容 */
+  description: string
+  /** 为什么这个证据重要 */
+  whyItMatters: string
+}
+
+/** 论文自然段落 - 替代分点式subsection */
+export interface PaperParagraph {
+  /** 段落角色 */
+  role: ParagraphRole
+  /** 段落标题（可选，用于视觉分隔） */
+  title?: string
+  titleEn?: string
+  /** 段落正文 */
+  content: string
+  contentEn?: string
+  /** 段落字数 */
+  wordCount: number
+  /** 引用证据ID列表 */
+  evidenceIds: string[]
+  /** 内联证据 - 嵌入的图表公式解读 */
+  inlineEvidences?: InlineEvidence[]
+  /** 段落排序索引 */
+  sortIndex: number
+}
+
+/**
+ * @deprecated 使用 PaperParagraph 替代。保留向后兼容。
+ * 论文子节内容 - 旧版分点式结构 */
 export type PaperSubsectionKind = 
   | 'background'      // 研究背景
   | 'problem'         // 问题定义
@@ -20,22 +59,20 @@ export type PaperSubsectionKind =
   | 'limitation'      // 局限与不足
   | 'significance'    // 学术意义
 
-/** 论文子节内容 */
+/** @deprecated 使用 PaperParagraph 替代 */
 export interface PaperSubsection {
   kind: PaperSubsectionKind
   title: string
   titleEn?: string
   content: string
   contentEn?: string
-  /** 该子节的字数统计 */
   wordCount: number
-  /** 关键要点（用于快速浏览） */
   keyPoints: string[]
-  /** 引用证据ID列表 */
   evidenceIds: string[]
+  inlineEvidences?: InlineEvidence[]
 }
 
-/** 完整论文文章块 - 替代原有的简单论文引用 */
+/** 完整论文文章块 - 学术海报风格 */
 export interface PaperArticleBlock {
   type: 'paper-article'
   id: string
@@ -56,15 +93,25 @@ export interface PaperArticleBlock {
   pdfUrl?: string
   /** 封面图 */
   coverImage?: string | null
-  
-  // === 结构化内容 ===
-  /** 引言段落（100-150字） */
-  introduction: string
-  /** 8个子节 */
-  subsections: PaperSubsection[]
-  /** 总结段落（100-150字） */
-  conclusion: string
-  
+
+  // === 海报风格核心内容 (v2) ===
+  /** 核心论点（20-30字，海报标题级） */
+  coreThesis?: string
+  coreThesisEn?: string
+  /** 自然段落流 - 替代分点式subsections */
+  paragraphs?: PaperParagraph[]
+  /** 收束洞察（20-30字，论文边界与接手点） */
+  closingInsight?: string
+  closingInsightEn?: string
+
+  // === 向后兼容（旧版字段，新逻辑不再填充） ===
+  /** @deprecated 使用 paragraphs 替代 */
+  introduction?: string
+  /** @deprecated 使用 paragraphs 替代 */
+  subsections?: PaperSubsection[]
+  /** @deprecated 使用 closingInsight 替代 */
+  conclusion?: string
+
   // === 元信息 ===
   /** 总字数 */
   totalWordCount: number
@@ -72,6 +119,8 @@ export interface PaperArticleBlock {
   readingTimeMinutes: number
   /** 锚点ID，用于URL跳转 */
   anchorId: string
+  /** 内容版本 - v2=海报风格自然段落, v1=旧版分点式 */
+  contentVersion?: 'v1' | 'v2'
 }
 
 /** 论文在节点中的角色 */
@@ -131,6 +180,13 @@ export interface MethodEvolutionStep {
   paperTitle: string
   contribution: string
   improvementOverPrevious?: string
+  fromPaperId?: string
+  fromPaperTitle?: string
+  toPaperId?: string
+  toPaperTitle?: string
+  transitionType?: 'method-evolution' | 'problem-shift' | 'scale-up' | 'scope-broaden' | 'complementary'
+  anchorId?: string
+  evidenceAnchorIds?: string[]
 }
 
 /** 节点结尾块 */

@@ -7,12 +7,8 @@ import { useI18n } from '@/i18n'
 import { formatDateTimeByLanguage } from '@/i18n/locale'
 import type { TopicViewModel } from '@/types/alpha'
 import { apiGet } from '@/utils/api'
+import { assertBackendTopicCollectionContract, assertTopicViewModelContract } from '@/utils/contracts'
 import { isRegressionSeedTopic } from '@/utils/topicPresentation'
-
-type TopicSummary = {
-  id: string
-  nameZh: string
-}
 
 type TopicSnapshot = {
   topicId: string
@@ -39,6 +35,7 @@ export default function TodayPage() {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10))
   const [snapshots, setSnapshots] = useState<TopicSnapshot[]>([])
   const [loading, setLoading] = useState(true)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const { t, preference } = useI18n()
 
   const title = t('today.title')
@@ -52,27 +49,27 @@ export default function TodayPage() {
 
     async function loadSnapshots() {
       setLoading(true)
+      setErrorMessage(null)
 
       try {
-        const topics = (await apiGet<TopicSummary[]>('/api/topics')).filter(
+        const topics = await apiGet<unknown>('/api/topics')
+        assertBackendTopicCollectionContract(topics)
+        const visibleTopics = topics.filter(
           (topic) => !isRegressionSeedTopic(topic),
         )
         const cutoff = endOfDayIso(selectedDate)
 
         const viewModels = await Promise.all(
-          topics.map(async (topic) => {
-            try {
-              return await apiGet<TopicViewModel>(`/api/topics/${topic.id}/view-model`)
-            } catch {
-              return null
-            }
+          visibleTopics.map(async (topic) => {
+            const viewModel = await apiGet<unknown>(`/api/topics/${topic.id}/view-model`)
+            assertTopicViewModelContract(viewModel)
+            return viewModel
           }),
         )
 
         if (!alive) return
 
         const nextSnapshots = viewModels
-          .filter((viewModel): viewModel is TopicViewModel => Boolean(viewModel))
           .map((viewModel) => {
             const latestNode =
               viewModel.stages
@@ -100,6 +97,14 @@ export default function TodayPage() {
           .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))
 
         setSnapshots(nextSnapshots)
+      } catch (error) {
+        if (!alive) return
+        setSnapshots([])
+        setErrorMessage(
+          error instanceof Error
+            ? error.message
+            : t('today.error', 'Failed to load backend timeline snapshots.'),
+        )
       } finally {
         if (alive) setLoading(false)
       }
@@ -109,7 +114,7 @@ export default function TodayPage() {
     return () => {
       alive = false
     }
-  }, [selectedDate])
+  }, [selectedDate, t])
 
   const description = useMemo(() => t('today.description'), [t])
   const updatedTopics = snapshots.filter((snapshot) => snapshot.latestNode)
@@ -174,7 +179,11 @@ export default function TodayPage() {
         </header>
 
         <section className="mt-10 grid gap-5">
-          {loading ? (
+          {errorMessage ? (
+            <div className="rounded-[24px] border border-red-300 bg-red-50 px-5 py-6 text-sm leading-7 text-red-700">
+              {errorMessage}
+            </div>
+          ) : loading ? (
             <div className="py-16 text-center text-sm text-black/56">
               {t('today.loading')}
             </div>

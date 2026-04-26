@@ -6,6 +6,14 @@
 import { Router } from 'express'
 import { prisma } from '../lib/prisma'
 import { asyncHandler, AppError } from '../middleware/errorHandler'
+import { validate } from '../middleware/requestValidator'
+import {
+  ZoteroConfigSchema,
+  ZoteroTestSchema,
+  ZoteroExportTopicSchema,
+  ZoteroExportNodeSchema,
+  ZoteroExportPapersSchema,
+} from './schemas'
 import {
   testZoteroConnection,
   getZoteroCollections,
@@ -56,6 +64,7 @@ router.get(
  */
 router.post(
   '/config',
+  validate(ZoteroConfigSchema),
   asyncHandler(async (req, res) => {
     const { userId, apiKey, username, enabled = true } = req.body
 
@@ -113,6 +122,7 @@ router.post(
  */
 router.post(
   '/test',
+  validate(ZoteroTestSchema),
   asyncHandler(async (req, res) => {
     const { userId, apiKey } = req.body
 
@@ -185,9 +195,21 @@ router.get(
  */
 router.post(
   '/export/topic/:topicId',
+  validate(ZoteroExportTopicSchema),
   asyncHandler(async (req, res) => {
     const { topicId } = req.params
     const { collectionName, collectionKey, paperIds } = req.body
+
+    // Create AbortController for client disconnect detection
+    const abortController = new AbortController()
+
+    // Detect client disconnect (close/abort)
+    req.on('close', () => {
+      if (!res.writableEnded) {
+        abortController.abort()
+        logger.info('Zotero export aborted by client disconnect', { topicId })
+      }
+    })
 
     // Get Zotero config
     const zoteroConfig = await prisma.zotero_config.findUnique({
@@ -236,11 +258,15 @@ router.post(
     // Default collection name to topic name
     const finalCollectionName = collectionName || topic.nameZh || topic.nameEn || `Topic-${topicId.slice(0, 8)}`
 
-    // Export to Zotero
+    // Export to Zotero with abort signal
     const result = await exportPrismaPapersToZotero(
       { userId: zoteroConfig.userId, apiKey: zoteroConfig.apiKey },
       papers,
-      { collectionName: finalCollectionName, collectionKey }
+      {
+        collectionName: finalCollectionName,
+        collectionKey,
+        signal: abortController.signal
+      }
     )
 
     // Update topic with export info
@@ -259,6 +285,7 @@ router.post(
       paperCount: papers.length,
       exportedCount: result.exportedCount,
       collectionKey: result.collectionKey,
+      aborted: result.aborted,
     })
 
     res.json(result)
@@ -270,9 +297,21 @@ router.post(
  */
 router.post(
   '/export/node/:nodeId',
+  validate(ZoteroExportNodeSchema),
   asyncHandler(async (req, res) => {
     const { nodeId } = req.params
     const { collectionName, collectionKey } = req.body
+
+    // Create AbortController for client disconnect detection
+    const abortController = new AbortController()
+
+    // Detect client disconnect
+    req.on('close', () => {
+      if (!res.writableEnded) {
+        abortController.abort()
+        logger.info('Zotero export aborted by client disconnect', { nodeId })
+      }
+    })
 
     // Get Zotero config
     const zoteroConfig = await prisma.zotero_config.findUnique({
@@ -315,11 +354,15 @@ router.post(
     // Default collection name to node label
     const finalCollectionName = collectionName || node.nodeLabel || `Node-${nodeId.slice(0, 8)}`
 
-    // Export to Zotero
+    // Export to Zotero with abort signal
     const result = await exportPrismaPapersToZotero(
       { userId: zoteroConfig.userId, apiKey: zoteroConfig.apiKey },
       papersData,
-      { collectionName: finalCollectionName, collectionKey }
+      {
+        collectionName: finalCollectionName,
+        collectionKey,
+        signal: abortController.signal
+      }
     )
 
     logger.info('Exported node papers to Zotero', {
@@ -327,6 +370,7 @@ router.post(
       paperCount: papersData.length,
       exportedCount: result.exportedCount,
       collectionKey: result.collectionKey,
+      aborted: result.aborted,
     })
 
     res.json(result)
@@ -338,12 +382,24 @@ router.post(
  */
 router.post(
   '/export/papers',
+  validate(ZoteroExportPapersSchema),
   asyncHandler(async (req, res) => {
     const { paperIds, collectionName, collectionKey } = req.body
 
     if (!paperIds || !Array.isArray(paperIds) || paperIds.length === 0) {
       throw new AppError(400, 'paperIds array is required')
     }
+
+    // Create AbortController for client disconnect detection
+    const abortController = new AbortController()
+
+    // Detect client disconnect
+    req.on('close', () => {
+      if (!res.writableEnded) {
+        abortController.abort()
+        logger.info('Zotero export aborted by client disconnect', { paperIds })
+      }
+    })
 
     // Get Zotero config
     const zoteroConfig = await prisma.zotero_config.findUnique({
@@ -368,17 +424,22 @@ router.post(
       return
     }
 
-    // Export to Zotero
+    // Export to Zotero with abort signal
     const result = await exportPrismaPapersToZotero(
       { userId: zoteroConfig.userId, apiKey: zoteroConfig.apiKey },
       papers,
-      { collectionName, collectionKey }
+      {
+        collectionName,
+        collectionKey,
+        signal: abortController.signal
+      }
     )
 
     logger.info('Exported papers to Zotero', {
       paperIds,
       paperCount: papers.length,
       exportedCount: result.exportedCount,
+      aborted: result.aborted,
     })
 
     res.json(result)

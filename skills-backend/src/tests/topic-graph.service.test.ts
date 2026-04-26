@@ -18,6 +18,10 @@ function createStageNode(
     summary: `summary ${nodeId}`,
     explanation: `explanation ${nodeId}`,
     paperCount: 1,
+    figureCount: 0,
+    tableCount: 0,
+    formulaCount: 0,
+    evidenceCount: 0,
     paperIds: [`paper-${nodeId}`],
     primaryPaperTitle: `paper ${nodeId}`,
     primaryPaperId: `paper-${nodeId}`,
@@ -111,6 +115,57 @@ test('buildGraphLayout keeps the mainline centered and assigns stable branch lan
   assert.equal(byId.get('n3')?.layoutHint.branchIndex, 0)
   assert.equal(byId.get('n4')?.layoutHint.branchIndex, 1)
   assert.equal(byId.get('n6')?.layoutHint.laneIndex, -1)
-  assert.deepEqual(byId.get('n5')?.parentNodeIds.sort(), ['n2', 'n3'])
+  assert.deepEqual(byId.get('n5')?.parentNodeIds.sort(), ['n2', 'n3', 'n4'])
   assert.equal(byId.get('n5')?.branchColor, __testing.MAINLINE_BRANCH_COLOR)
+})
+
+test('buildGraphLayout never emits more than ten total timelines', () => {
+  const crowdedStageNodes = Array.from({ length: 12 }, (_, index) =>
+    createStageNode(`crowded-${index + 1}`, 2),
+  )
+
+  const stages: TopicViewModel['stages'] = [
+    {
+      stageIndex: 1,
+      title: 'Origin',
+      titleEn: 'Origin',
+      description: '',
+      branchLabel: 'Origin',
+      branchColor: '#111827',
+      editorial: {
+        kicker: 'start',
+        summary: 'summary',
+        transition: 'transition',
+      },
+      trackedPaperCount: 1,
+      mappedPaperCount: 1,
+      unmappedPaperCount: 0,
+      nodes: [createStageNode('root', 1)],
+    },
+    {
+      stageIndex: 2,
+      title: 'Crowded',
+      titleEn: 'Crowded',
+      description: '',
+      branchLabel: 'Crowded',
+      branchColor: '#111827',
+      editorial: {
+        kicker: 'crowded',
+        summary: 'summary',
+        transition: 'transition',
+      },
+      trackedPaperCount: crowdedStageNodes.length,
+      mappedPaperCount: crowdedStageNodes.length,
+      unmappedPaperCount: 0,
+      nodes: crowdedStageNodes,
+    },
+  ]
+
+  const graph = __testing.buildGraphLayout(stages)
+  const laneIndexes = graph.lanes.map((lane) => lane.laneIndex)
+
+  assert.equal(__testing.BRANCH_LANES.length, 9)
+  assert.equal(graph.lanes.length, 10)
+  assert.equal(new Set(laneIndexes).size, graph.lanes.length)
+  assert.deepEqual(laneIndexes, [-4, -3, -2, -1, 0, 1, 2, 3, 4, 5])
 })

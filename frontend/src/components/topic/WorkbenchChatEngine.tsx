@@ -11,10 +11,16 @@ import {
 } from '@/utils/researchNotebook'
 import { hasMeaningfulWorkbenchText, normalizeWorkbenchText, isWorkbenchNoiseText } from '@/utils/workbenchText'
 import { ApiError, apiGet, apiPost } from '@/utils/api'
+import { getTopicChatStorageKey, readLocalStorageItem } from '@/utils/appStateStorage'
 import {
   fetchTopicResearchBrief,
   invalidateTopicResearchBrief,
 } from '@/utils/omniRuntimeCache'
+import {
+  assertTopicChatResponseContract,
+  assertTopicResearchExportBundleContract,
+  assertTopicResearchSessionContract,
+} from '@/utils/contracts'
 import { useI18n } from '@/i18n'
 import { useProductCopy } from '@/hooks/useProductCopy'
 import { useFavorites } from '@/hooks'
@@ -28,9 +34,8 @@ import type {
   SearchResultItem,
   StoredChatMessage,
   StoredChatThread,
-  TopicChatResponse,
+  TopicChatWorkbenchPayload,
   TopicResearchBrief,
-  TopicResearchExportBundle,
   TopicResearchSessionState,
   TopicWorkbenchTab,
 } from '@/types/alpha'
@@ -49,6 +54,7 @@ export interface WorkbenchChatState {
   researchStarting: boolean
   researchStopping: boolean
   dossierExporting: boolean
+  dossierExportError: string | null
   researchHours: number
   modelStatus: ModelCapabilitySummary | null
 }
@@ -63,6 +69,7 @@ export type WorkbenchChatAction =
   | { type: 'SET_RESEARCH_STARTING'; payload: boolean }
   | { type: 'SET_RESEARCH_STOPPING'; payload: boolean }
   | { type: 'SET_DOSSIER_EXPORTING'; payload: boolean }
+  | { type: 'SET_DOSSIER_EXPORT_ERROR'; payload: string | null }
   | { type: 'SET_RESEARCH_HOURS'; payload: number }
   | { type: 'SET_MODEL_STATUS'; payload: ModelCapabilitySummary | null }
   | { type: 'UPDATE_THREAD'; payload: (thread: StoredChatThread) => StoredChatThread }
@@ -145,6 +152,7 @@ export function buildMessage(
     suggestedActions: extra?.suggestedActions,
     guidanceReceipt: extra?.guidanceReceipt,
     notice: extra?.notice,
+    workbench: extra?.workbench,
     createdAt: new Date().toISOString(),
   }
 }
@@ -306,7 +314,7 @@ export function buildEvidenceNotebookEntry({
 export function createInitialWorkbenchChatState(topicId: string): WorkbenchChatState {
   const store =
     typeof window !== 'undefined'
-      ? parseChatStore(window.localStorage.getItem(`topic-chat:${topicId}`))
+      ? parseChatStore(readLocalStorageItem(getTopicChatStorageKey(topicId)))
       : { currentThreadId: createThread().id, threads: [createThread()] }
 
   return {
@@ -319,6 +327,7 @@ export function createInitialWorkbenchChatState(topicId: string): WorkbenchChatS
     researchStarting: false,
     researchStopping: false,
     dossierExporting: false,
+    dossierExportError: null,
     researchHours: 4,
     modelStatus: null,
   }
@@ -348,6 +357,8 @@ export function workbenchChatReducer(
       return { ...state, researchStopping: action.payload }
     case 'SET_DOSSIER_EXPORTING':
       return { ...state, dossierExporting: action.payload }
+    case 'SET_DOSSIER_EXPORT_ERROR':
+      return { ...state, dossierExportError: action.payload }
     case 'SET_RESEARCH_HOURS':
       return { ...state, researchHours: action.payload }
     case 'SET_MODEL_STATUS':
@@ -419,6 +430,7 @@ export interface UseWorkbenchChatResult {
   researchStarting: boolean
   researchStopping: boolean
   dossierExporting: boolean
+  dossierExportError: string | null
   researchHours: number
   modelStatus: ModelCapabilitySummary | null
   currentThread: StoredChatThread
@@ -436,6 +448,7 @@ export interface UseWorkbenchChatResult {
   setResearchStarting: (starting: boolean) => void
   setResearchStopping: (stopping: boolean) => void
   setDossierExporting: (exporting: boolean) => void
+  setDossierExportError: (error: string | null) => void
   setResearchHours: (hours: number) => void
   setModelStatus: (status: ModelCapabilitySummary | null) => void
   setQuestion: (question: string | ((current: string) => string)) => void
@@ -507,6 +520,7 @@ export function useWorkbenchChat(
   const setResearchStarting = useCallback((starting: boolean) => dispatch({ type: 'SET_RESEARCH_STARTING', payload: starting }), [])
   const setResearchStopping = useCallback((stopping: boolean) => dispatch({ type: 'SET_RESEARCH_STOPPING', payload: stopping }), [])
   const setDossierExporting = useCallback((exporting: boolean) => dispatch({ type: 'SET_DOSSIER_EXPORTING', payload: exporting }), [])
+  const setDossierExportError = useCallback((error: string | null) => dispatch({ type: 'SET_DOSSIER_EXPORT_ERROR', payload: error }), [])
   const setResearchHours = useCallback((hours: number) => dispatch({ type: 'SET_RESEARCH_HOURS', payload: hours }), [])
   const setModelStatus = useCallback((status: ModelCapabilitySummary | null) => dispatch({ type: 'SET_MODEL_STATUS', payload: status }), [])
   const setQuestion = useCallback((q: string | ((current: string) => string)) => dispatch({ type: 'SET_QUESTION', payload: q }), [])
@@ -579,11 +593,12 @@ export function useWorkbenchChat(
 
     try {
       const data = await apiPost<
-        TopicResearchSessionState & { result?: unknown },
+        unknown,
         { durationHours: number }
       >(`/api/topics/${topicId}/research-session`, {
         durationHours: state.researchHours,
       })
+      assertTopicResearchSessionContract(data, topicId)
 
       setResearchSession({
         task: data.task,
@@ -607,10 +622,19 @@ export function useWorkbenchChat(
       }
       openWorkbench()
       setActiveTab('assistant')
+    } catch (error) {
+      const message =
+        error instanceof ApiError
+          ? error.message
+          : t(
+              'workbench.researchSessionStartErrorMessage',
+              'The workbench could not start the topic research session just now.',
+            )
+      setResearchBriefError(message)
     } finally {
       setResearchStarting(false)
     }
-  }, [topicId, state.researchHours, state.researchBriefState, openWorkbench, setActiveTab, setResearchBriefError, setResearchBriefState, setResearchSession, setResearchStarting])
+  }, [openWorkbench, setActiveTab, setResearchBriefError, setResearchBriefState, setResearchSession, setResearchStarting, state.researchBriefState, state.researchHours, t, topicId])
 
   const stopResearchSession = useCallback(async () => {
     if (!state.researchSession?.task?.id) return
@@ -618,14 +642,24 @@ export function useWorkbenchChat(
     setResearchStopping(true)
 
     try {
-      await apiPost<TopicResearchSessionState>(`/api/topics/${topicId}/research-session/stop`, {})
+      const data = await apiPost<unknown>(`/api/topics/${topicId}/research-session/stop`, {})
+      assertTopicResearchSessionContract(data, topicId)
       setResearchBriefError(null)
       invalidateTopicResearchBrief(topicId)
       await loadResearchSession(true, true)
+    } catch (error) {
+      const message =
+        error instanceof ApiError
+          ? error.message
+          : t(
+              'workbench.researchSessionStopErrorMessage',
+              'The workbench could not stop the topic research session just now.',
+            )
+      setResearchBriefError(message)
     } finally {
       setResearchStopping(false)
     }
-  }, [topicId, state.researchSession?.task?.id, loadResearchSession, setResearchBriefError, setResearchStopping])
+  }, [loadResearchSession, setResearchBriefError, setResearchStopping, state.researchSession?.task?.id, t, topicId])
 
   const sendQuestion = useCallback(
     async (nextQuestion: string) => {
@@ -642,23 +676,40 @@ export function useWorkbenchChat(
       const explicitContextItems = implicitFocusPill
         ? contextPills.filter((item) => item.id !== implicitFocusPill.id)
         : contextPills
-      const focusBlock = implicitFocusPill
-        ? `Current reading focus:\n- ${implicitFocusPill.label}${implicitFocusPill.description ? `: ${implicitFocusPill.description}` : ''}\n\n`
-        : ''
-      const contextBlock =
-        explicitContextItems.length > 0
-          ? `Workbench context:\n${explicitContextItems
-              .map((item) => `- ${item.label}${item.description ? `: ${item.description}` : ''}`)
-              .join('\n')}\n\n`
-          : ''
+      const structuredContextItems = Array.from(
+        new Set(
+          [
+            implicitFocusPill
+              ? `Current reading focus: ${implicitFocusPill.label}${implicitFocusPill.description ? ` - ${implicitFocusPill.description}` : ''}`
+              : '',
+            ...explicitContextItems.map((item) =>
+              `${item.label}${item.description ? `: ${item.description}` : ''}`.trim(),
+            ),
+          ].filter((item): item is string => Boolean(item.trim())),
+        ),
+      ).slice(0, 8)
 
       try {
-        const data = await apiPost<TopicChatResponse, { question: string }>(
+        const workbenchPayload: TopicChatWorkbenchPayload = {
+          controls: {
+            responseStyle: style,
+            reasoningEnabled: thinkingEnabled,
+            retrievalEnabled: searchEnabled,
+          },
+          contextItems: structuredContextItems.length > 0 ? structuredContextItems : undefined,
+        }
+
+        const data = await apiPost<
+          unknown,
+          { question: string; workbench: TopicChatWorkbenchPayload }
+        >(
           `/api/topics/${topicId}/chat`,
           {
-            question: `${focusBlock}${contextBlock}${trimmed}\n\nWorkbench controls:\nresponse_style=${style}\nreasoning=${thinkingEnabled ? 'enabled' : 'disabled'}\nretrieval=${searchEnabled ? 'enabled' : 'disabled'}`,
+            question: trimmed,
+            workbench: workbenchPayload,
           },
         )
+        assertTopicChatResponseContract(data)
 
         setAssistantState(
           data.notice?.code === 'missing_key' || data.notice?.code === 'invalid_key'
@@ -737,7 +788,7 @@ export function useWorkbenchChat(
     (entry: FavoriteExcerpt) => {
       addFavorite(entry)
       openWorkbench()
-      setActiveTab('notes')
+      setActiveTab('assistant')
     },
     [addFavorite, openWorkbench, setActiveTab],
   )
@@ -799,11 +850,13 @@ export function useWorkbenchChat(
   const exportResearchDossier = useCallback(async () => {
     if (state.dossierExporting) return false
 
+    setDossierExportError(null)
     setDossierExporting(true)
 
     try {
       const locale = resolveLanguageLocale(preference.primary)
-      const bundle = await apiGet<TopicResearchExportBundle>(`/api/topics/${topicId}/export-bundle`)
+      const bundle = await apiGet<unknown>(`/api/topics/${topicId}/export-bundle`)
+      assertTopicResearchExportBundleContract(bundle)
       const title = renderTemplate(t('workbench.exportDossierTitle', '{topic} Research Dossier'), { topic: topicTitle })
       const stem = slugifyNotebookFilename(title)
 
@@ -815,18 +868,18 @@ export function useWorkbenchChat(
       return true
     } catch (error) {
       const message =
-        error instanceof ApiError
+        error instanceof Error
           ? error.message
           : t(
               'workbench.exportDossierFailed',
               copy('assistant.exportDossierFailed', 'Failed to export the research dossier. Please try again later.'),
             )
-      window.alert(message)
+      setDossierExportError(message)
       return false
     } finally {
       setDossierExporting(false)
     }
-  }, [topicId, topicTitle, topicNotes, state.dossierExporting, preference.primary, setDossierExporting, t, copy])
+  }, [topicId, topicTitle, topicNotes, state.dossierExporting, preference.primary, setDossierExporting, setDossierExportError, t, copy])
 
   const exportResearchHighlights = useCallback(() => {
     if (topicNotes.length === 0) return false
@@ -881,6 +934,7 @@ export function useWorkbenchChat(
     researchStarting: state.researchStarting,
     researchStopping: state.researchStopping,
     dossierExporting: state.dossierExporting,
+    dossierExportError: state.dossierExportError,
     researchHours: state.researchHours,
     modelStatus: state.modelStatus,
     currentThread,
@@ -898,6 +952,7 @@ export function useWorkbenchChat(
     setResearchStarting,
     setResearchStopping,
     setDossierExporting,
+    setDossierExportError,
     setResearchHours,
     setModelStatus,
     setQuestion,

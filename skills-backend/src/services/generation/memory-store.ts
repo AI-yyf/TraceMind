@@ -5,21 +5,21 @@ import type { PromptTemplateId, PromptLanguage } from './prompt-registry'
 import type { ModelSlot, OmniIssue } from '../omni/types'
 
 const GENERATION_MEMORY_KEY_PREFIX = 'generation-memory:v1:'
-const MAX_MEMORY_PASS_RECORDS = 72
-const MEMORY_HOT_PASS_RECORDS = 36
-const MAX_MEMORY_JSON_CHARS = 1_500_000
+const MAX_MEMORY_PASS_RECORDS = 500
+const MEMORY_HOT_PASS_RECORDS = 250
+const MAX_MEMORY_JSON_CHARS = 10_000_000
 const MAX_SUMMARY_CHARS = 320
 const MAX_OUTPUT_STRING_CHARS = 680
-const MAX_OUTPUT_ARRAY_ITEMS = 10
-const MAX_OUTPUT_OBJECT_KEYS = 24
+const MAX_OUTPUT_ARRAY_ITEMS = 30
+const MAX_OUTPUT_OBJECT_KEYS = 50
 const MAX_OUTPUT_DEPTH = 5
 const MEMORY_COMPACTION_STEPS = [
   { profile: 'memory', passLimit: MAX_MEMORY_PASS_RECORDS },
-  { profile: 'memory', passLimit: 56 },
-  { profile: 'tight', passLimit: 42 },
-  { profile: 'tight', passLimit: 30 },
-  { profile: 'tight', passLimit: 20 },
-  { profile: 'tight', passLimit: 12 },
+  { profile: 'memory', passLimit: 400 },
+  { profile: 'tight', passLimit: 300 },
+  { profile: 'tight', passLimit: 200 },
+  { profile: 'tight', passLimit: 100 },
+  { profile: 'tight', passLimit: 50 },
 ] as const
 
 export type GenerationSubjectType = 'topic' | 'stage' | 'node' | 'paper' | 'evidence'

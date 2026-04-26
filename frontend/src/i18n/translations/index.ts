@@ -10,6 +10,7 @@ import home from './home'
 import mainPath from './main-path'
 import navigation from './navigation'
 import node from './node'
+import nodeReadingCurated from './node-reading-curated'
 import onboarding from './onboarding'
 import paper from './paper'
 import polish from './polish'
@@ -110,6 +111,7 @@ const TRANSLATIONS: TranslationDictionary = mergeTranslationModules(
   mainPath,
   dashboard,
   onboarding,
+  nodeReadingCurated,
 )
 
 function resolveTranslationRecord(

@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { apiGet } from '@/utils/api'
+import {
+  assertBackendTopicCollectionContract,
+  assertHealthStatusContract,
+  assertPromptStudioSummaryContract,
+} from '@/utils/contracts'
 import { fetchModelConfigResponse } from '@/utils/omniRuntimeCache'
 
 export type SystemInitStatus = 'checking' | 'uninitialized' | 'ready' | 'error'
@@ -23,7 +28,8 @@ async function checkSystemInit(): Promise<{ status: SystemInitStatus; config: Sy
   try {
     let backendHealthy = false
     try {
-      const health = await apiGet<{ status: string }>('/health')
+      const health = await apiGet<unknown>('/health')
+      assertHealthStatusContract(health)
       backendHealthy = health.status === 'ok'
     } catch {
       backendHealthy = false
@@ -31,8 +37,9 @@ async function checkSystemInit(): Promise<{ status: SystemInitStatus; config: Sy
 
     let hasTopics = false
     try {
-      const topics = await apiGet<unknown[]>('/api/topics')
-      hasTopics = Array.isArray(topics) && topics.length > 0
+      const topics = await apiGet<unknown>('/api/topics')
+      assertBackendTopicCollectionContract(topics)
+      hasTopics = topics.length > 0
     } catch {
       hasTopics = false
     }
@@ -47,9 +54,8 @@ async function checkSystemInit(): Promise<{ status: SystemInitStatus; config: Sy
 
     let hasPromptTemplates = false
     try {
-      const bundle = await apiGet<{ productCopies?: unknown[]; templates?: unknown[] }>(
-        '/api/prompt-templates/studio',
-      )
+      const bundle = await apiGet<unknown>('/api/prompt-templates/studio')
+      assertPromptStudioSummaryContract(bundle)
       hasPromptTemplates =
         (Array.isArray(bundle.productCopies) && bundle.productCopies.length > 0) ||
         (Array.isArray(bundle.templates) && bundle.templates.length > 0)

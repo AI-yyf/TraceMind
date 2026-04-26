@@ -6,8 +6,14 @@ import {
 } from '../generation/prompt-registry'
 import { omniGateway } from '../omni/gateway'
 import { inferResearchRoleForTemplate } from '../omni/routing'
-import type { OmniCompleteRequest, OmniMessage, TopicCitationRef } from '../omni/types'
+import type {
+  OmniCompleteRequest,
+  OmniMessage,
+  TopicCitationRef,
+  TopicWorkbenchAction,
+} from '../omni/types'
 import { loadTopicResearchReport } from './research-report'
+import type { TopicGuidanceReceipt } from './topic-guidance-ledger'
 
 const TOPIC_SESSION_MEMORY_KEY_PREFIX = 'topic:session-memory:v1:'
 const DEFAULT_CONVERSATION_STYLE =
@@ -26,6 +32,7 @@ export type TopicSessionMemoryEventKind =
   | 'research-status'
   | 'guidance-application'
   | 'artifact-rebuild'
+  | 'content-generation'  // Added for content genesis events
 
 export interface TopicSessionMemoryEvent {
   id: string
@@ -89,6 +96,12 @@ interface TopicSessionMemoryEventInput {
   paperIds?: string[]
   citationAnchorIds?: string[]
   openQuestions?: string[]
+}
+
+interface TopicChatWorkbenchControls {
+  responseStyle?: 'brief' | 'balanced' | 'deep'
+  reasoningEnabled?: boolean
+  retrievalEnabled?: boolean
 }
 
 function topicSessionMemoryKey(topicId: string) {
@@ -388,40 +401,46 @@ function parseState(topicId: string, value: string | null | undefined) {
 
   try {
     const parsed = JSON.parse(value) as Partial<TopicSessionMemoryState>
+    const recentEvents = Array.isArray(parsed.recentEvents)
+      ? parsed.recentEvents.map((event) => ({
+          id:
+            clipText(typeof event?.id === 'string' ? event.id : '', 80) ||
+            `evt-${Date.now()}`,
+          kind:
+            event?.kind === 'chat-user' ||
+            event?.kind === 'chat-assistant' ||
+            event?.kind === 'research-cycle' ||
+            event?.kind === 'research-status' ||
+            event?.kind === 'guidance-application' ||
+            event?.kind === 'artifact-rebuild'
+              ? event.kind
+              : 'research-status',
+          headline: clipText(typeof event?.headline === 'string' ? event.headline : '', 140),
+          summary: clipText(typeof event?.summary === 'string' ? event.summary : '', 260),
+          detail:
+            clipText(typeof event?.detail === 'string' ? event.detail : '', 420) || undefined,
+          stageIndex: typeof event?.stageIndex === 'number' ? event.stageIndex : null,
+          nodeIds: normalizeStringArray(event?.nodeIds, 8, 80),
+          paperIds: normalizeStringArray(event?.paperIds, 12, 80),
+          citationAnchorIds: normalizeStringArray(event?.citationAnchorIds, 8, 80),
+          openQuestions: normalizeStringArray(event?.openQuestions, 6, 180),
+          createdAt:
+            typeof event?.createdAt === 'string' && event.createdAt.trim()
+              ? event.createdAt
+              : new Date().toISOString(),
+        }))
+      : []
+    const summary = hydrateSummaryFromRecentEvents(
+      sanitizeSummary(parsed.summary, emptySummary()),
+      recentEvents,
+    )
+
     return {
       ...emptyState(topicId),
       ...parsed,
       topicId,
-      recentEvents: Array.isArray(parsed.recentEvents)
-        ? parsed.recentEvents.map((event) => ({
-            id:
-              clipText(typeof event?.id === 'string' ? event.id : '', 80) ||
-              `evt-${Date.now()}`,
-            kind:
-              event?.kind === 'chat-user' ||
-              event?.kind === 'chat-assistant' ||
-              event?.kind === 'research-cycle' ||
-              event?.kind === 'research-status' ||
-              event?.kind === 'guidance-application' ||
-              event?.kind === 'artifact-rebuild'
-                ? event.kind
-                : 'research-status',
-            headline: clipText(typeof event?.headline === 'string' ? event.headline : '', 140),
-            summary: clipText(typeof event?.summary === 'string' ? event.summary : '', 260),
-            detail:
-              clipText(typeof event?.detail === 'string' ? event.detail : '', 420) || undefined,
-            stageIndex: typeof event?.stageIndex === 'number' ? event.stageIndex : null,
-            nodeIds: normalizeStringArray(event?.nodeIds, 8, 80),
-            paperIds: normalizeStringArray(event?.paperIds, 12, 80),
-            citationAnchorIds: normalizeStringArray(event?.citationAnchorIds, 8, 80),
-            openQuestions: normalizeStringArray(event?.openQuestions, 6, 180),
-            createdAt:
-              typeof event?.createdAt === 'string' && event.createdAt.trim()
-                ? event.createdAt
-                : new Date().toISOString(),
-          }))
-        : [],
-      summary: sanitizeSummary(parsed.summary, emptySummary()),
+      recentEvents,
+      summary,
     } satisfies TopicSessionMemoryState
   } catch {
     return null
@@ -474,6 +493,319 @@ function sanitizeSummary(
     lastResearchMove: lastResearchMove || fallback.lastResearchMove,
     lastUserIntent: lastUserIntent || fallback.lastUserIntent,
   }
+}
+
+function summarizeWorkbenchControls(controls?: TopicChatWorkbenchControls) {
+  if (!controls) return ''
+
+  const parts = [
+    controls.responseStyle ? `${controls.responseStyle} answer` : '',
+    typeof controls.reasoningEnabled === 'boolean'
+      ? controls.reasoningEnabled
+        ? 'reasoning on'
+        : 'reasoning off'
+      : '',
+    typeof controls.retrievalEnabled === 'boolean'
+      ? controls.retrievalEnabled
+        ? 'retrieval on'
+        : 'retrieval off'
+      : '',
+  ].filter(Boolean)
+
+  return parts.join(', ')
+}
+
+function describeGuidanceKind(
+  receipt: Pick<TopicGuidanceReceipt, 'classification' | 'directiveType'> | null | undefined,
+) {
+  const kind = receipt?.directiveType ?? receipt?.classification ?? null
+  switch (kind) {
+    case 'suggest':
+      return 'suggest'
+    case 'challenge':
+      return 'challenge'
+    case 'focus':
+      return 'focus'
+    case 'style':
+      return 'style'
+    case 'constraint':
+      return 'constraint'
+    case 'command':
+      return 'command'
+    default:
+      return null
+  }
+}
+
+function buildUserChatHeadline(args: {
+  guidanceReceipt?: TopicGuidanceReceipt
+  workbenchAction?: TopicWorkbenchAction
+  agentBrief?: string
+  materials?: Array<{ name: string }>
+  contextItems?: string[]
+  controls?: TopicChatWorkbenchControls
+}) {
+  const guidanceKind = describeGuidanceKind(args.guidanceReceipt)
+  if (guidanceKind === 'command' || args.workbenchAction) return 'Workbench command'
+  if (guidanceKind === 'focus') return 'User focus directive'
+  if (guidanceKind === 'style') return 'User style directive'
+  if (guidanceKind === 'suggest') return 'User suggestion'
+  if (guidanceKind === 'challenge') return 'User challenge'
+  if (guidanceKind === 'constraint') return 'User constraint'
+  if (
+    (args.materials?.length ?? 0) > 0 ||
+    Boolean(args.agentBrief) ||
+    (args.contextItems?.length ?? 0) > 0 ||
+    Boolean(summarizeWorkbenchControls(args.controls))
+  ) {
+    return 'User workbench handoff'
+  }
+  return 'User follow-up'
+}
+
+function buildAssistantChatHeadline(args: {
+  guidanceReceipt?: TopicGuidanceReceipt
+  workbenchAction?: TopicWorkbenchAction
+}) {
+  if (args.workbenchAction) return 'Workbench command result'
+
+  const guidanceKind = describeGuidanceKind(args.guidanceReceipt)
+  switch (guidanceKind) {
+    case 'focus':
+      return 'Focus receipt'
+    case 'style':
+      return 'Style receipt'
+    case 'suggest':
+      return 'Suggestion receipt'
+    case 'challenge':
+      return 'Challenge receipt'
+    case 'constraint':
+      return 'Constraint receipt'
+    case 'command':
+      return 'Command receipt'
+    default:
+      return 'Sidebar answer'
+  }
+}
+
+function buildUserChatSummary(args: {
+  question: string
+  agentBrief?: string
+  materialSummary: string[]
+  contextItems?: string[]
+}) {
+  return clipText(
+    args.question ||
+      args.agentBrief ||
+      args.contextItems?.[0] ||
+      args.materialSummary[0] ||
+      'Workbench follow-up',
+    220,
+  )
+}
+
+function buildUserChatDetail(args: {
+  guidanceReceipt?: TopicGuidanceReceipt
+  agentBrief?: string
+  materials?: Array<{
+    name: string
+    summary: string
+    highlights?: string[]
+    kind?: 'image' | 'pdf' | 'text'
+    status?: 'parsing' | 'ready' | 'vision-only' | 'error'
+  }>
+  contextItems?: string[]
+  controls?: TopicChatWorkbenchControls
+}) {
+  const controlSummary = summarizeWorkbenchControls(args.controls)
+
+  return clipText(
+    [
+      args.guidanceReceipt?.scopeLabel ? `Scope: ${args.guidanceReceipt.scopeLabel}` : '',
+      args.guidanceReceipt?.summary ? `Recorded as: ${args.guidanceReceipt.summary}` : '',
+      args.agentBrief ? `Agent brief: ${args.agentBrief}` : '',
+      args.contextItems?.length ? `Context: ${args.contextItems.join(' | ')}` : '',
+      controlSummary ? `Composer preferences: ${controlSummary}` : '',
+      ...(args.materials ?? []).map((material) =>
+        [
+          `${material.kind ?? 'material'} ${material.name}`,
+          material.summary,
+          ...(material.highlights ?? []).slice(0, 3),
+        ]
+          .filter(Boolean)
+          .join(' | '),
+      ),
+    ]
+      .filter(Boolean)
+      .join('\n'),
+    420,
+  )
+}
+
+function buildAssistantChatSummary(args: {
+  answer: string
+  guidanceReceipt?: TopicGuidanceReceipt
+  workbenchAction?: TopicWorkbenchAction
+}) {
+  return clipText(
+    args.workbenchAction?.summary || args.guidanceReceipt?.summary || args.answer,
+    240,
+  )
+}
+
+function buildAssistantChatDetail(args: {
+  answer: string
+  guidanceReceipt?: TopicGuidanceReceipt
+  workbenchAction?: TopicWorkbenchAction
+}) {
+  const summary = buildAssistantChatSummary(args)
+
+  return clipText(
+    [
+      args.guidanceReceipt
+        ? `Guidance receipt: ${args.guidanceReceipt.classification}/${args.guidanceReceipt.status} on ${args.guidanceReceipt.scopeLabel}`
+        : '',
+      args.guidanceReceipt?.promptHint ? `Next prompt hint: ${args.guidanceReceipt.promptHint}` : '',
+      args.workbenchAction
+        ? `Workbench action: ${args.workbenchAction.kind}${args.workbenchAction.targetTab ? ` -> ${args.workbenchAction.targetTab}` : ''}${args.workbenchAction.targetResearchView ? `/${args.workbenchAction.targetResearchView}` : ''}`
+        : '',
+      args.answer && args.answer !== summary ? args.answer : '',
+    ]
+      .filter(Boolean)
+      .join('\n'),
+    420,
+  )
+}
+
+function findLatestRecentEvent(
+  recentEvents: TopicSessionMemoryEvent[],
+  predicate: (event: TopicSessionMemoryEvent) => boolean,
+) {
+  for (let index = recentEvents.length - 1; index >= 0; index -= 1) {
+    const event = recentEvents[index]
+    if (predicate(event)) return event
+  }
+  return null
+}
+
+function isResearchSignalEvent(event: TopicSessionMemoryEvent) {
+  return (
+    event.kind === 'research-cycle' ||
+    event.kind === 'research-status' ||
+    event.kind === 'guidance-application' ||
+    event.kind === 'artifact-rebuild'
+  )
+}
+
+function hydrateSummaryFromRecentEvents(
+  value: TopicSessionMemorySummary,
+  recentEvents: TopicSessionMemoryEvent[],
+) {
+  const base = sanitizeSummary(value, emptySummary())
+  if (recentEvents.length === 0) return base
+
+  const latestUser = findLatestRecentEvent(recentEvents, (event) => event.kind === 'chat-user')
+  const latestStyleUser = findLatestRecentEvent(
+    recentEvents,
+    (event) => event.kind === 'chat-user' && event.headline === 'User style directive',
+  )
+  const latestStyleReceipt = findLatestRecentEvent(
+    recentEvents,
+    (event) => event.kind === 'chat-assistant' && event.headline === 'Style receipt',
+  )
+  const latestFocusUser = findLatestRecentEvent(
+    recentEvents,
+    (event) => event.kind === 'chat-user' && event.headline === 'User focus directive',
+  )
+  const latestFocusReceipt = findLatestRecentEvent(
+    recentEvents,
+    (event) => event.kind === 'chat-assistant' && event.headline === 'Focus receipt',
+  )
+  const latestGuidanceReceipt = findLatestRecentEvent(
+    recentEvents,
+    (event) => event.kind === 'chat-assistant' && /receipt$/u.test(event.headline),
+  )
+  const researchEvents = recentEvents.filter(isResearchSignalEvent)
+  const latestResearch = findLatestRecentEvent(recentEvents, isResearchSignalEvent)
+
+  const lastUserIntent =
+    sanitizeMemoryText(latestUser?.summary || latestUser?.headline || base.lastUserIntent, 180) ||
+    base.lastUserIntent
+  const conversationStyle =
+    sanitizeMemoryText(
+      latestStyleUser?.summary ||
+        latestStyleReceipt?.summary ||
+        latestStyleReceipt?.detail ||
+        base.conversationStyle,
+      200,
+    ) ||
+    base.conversationStyle ||
+    DEFAULT_CONVERSATION_STYLE
+  const currentFocus =
+    sanitizeMemoryText(
+      latestFocusUser?.summary ||
+        latestFocusReceipt?.summary ||
+        latestResearch?.summary ||
+        base.currentFocus ||
+        lastUserIntent,
+      260,
+    ) ||
+    base.currentFocus ||
+    lastUserIntent
+  const lastResearchMove =
+    sanitizeMemoryText(
+      latestResearch?.headline || latestResearch?.summary || base.lastResearchMove,
+      180,
+    ) || base.lastResearchMove
+  const openQuestions = sanitizeMemoryStringArray(
+    [
+      ...[...recentEvents].reverse().flatMap((event) => event.openQuestions ?? []),
+      ...base.openQuestions,
+    ],
+    6,
+    180,
+  )
+  const researchMomentum = sanitizeMemoryStringArray(
+    [
+      ...[...researchEvents]
+        .reverse()
+        .flatMap((event) => [event.headline, event.summary]),
+      ...base.researchMomentum,
+    ],
+    5,
+    180,
+  )
+  const continuity =
+    sanitizeMemoryText(
+      uniqueStrings(
+        [
+          lastResearchMove ? `Latest research move: ${lastResearchMove}` : '',
+          currentFocus ? `Current focus: ${currentFocus}` : '',
+          lastUserIntent ? `Latest user steering: ${lastUserIntent}` : '',
+          latestGuidanceReceipt?.summary,
+          ...[...researchEvents].reverse().slice(0, 2).map((event) => event.summary),
+          base.continuity,
+        ],
+        5,
+      ).join(' '),
+      260,
+    ) ||
+    base.continuity ||
+    currentFocus
+
+  return sanitizeSummary(
+    {
+      ...base,
+      currentFocus,
+      continuity,
+      openQuestions,
+      researchMomentum,
+      conversationStyle,
+      lastResearchMove,
+      lastUserIntent,
+    },
+    base,
+  )
 }
 
 function buildSystemPrompt(
@@ -732,7 +1064,23 @@ async function buildLLMSummary(
     return fallback
   }
 
-  const result = await omniGateway.complete(request)
+  // Add timeout protection to prevent blocking chat API
+  const COMPACTION_TIMEOUT_MS = 15000 // 15 seconds max for compaction
+
+  const resultPromise = omniGateway.complete(request)
+  const timeoutPromise = new Promise<ReturnType<typeof omniGateway.complete>>((_, reject) => {
+    setTimeout(() => reject(new Error('Session memory compaction timeout')), COMPACTION_TIMEOUT_MS)
+  })
+
+  let result
+  try {
+    result = await Promise.race([resultPromise, timeoutPromise])
+  } catch (timeoutErr) {
+    // On timeout, return fallback immediately without blocking
+    console.warn(`[TopicSessionMemory] Compaction timed out for topic ${topicId}, using fallback`)
+    return fallback
+  }
+
   if (result.issue) {
     return fallback
   }
@@ -838,6 +1186,10 @@ export async function appendTopicSessionMemoryEvent(
       memory.researchCyclesSinceCompaction +
       (event.kind === 'research-cycle' || event.kind === 'guidance-application' ? 1 : 0),
     estimatedTokensSinceCompaction: memory.estimatedTokensSinceCompaction + estimatedTokens,
+    summary: hydrateSummaryFromRecentEvents(
+      memory.summary,
+      [...memory.recentEvents, event].slice(-runtime.topicSessionMemoryRecentEventLimit),
+    ),
   }
 
   if (shouldCompact(next, runtime)) {
@@ -855,20 +1207,75 @@ export async function appendTopicSessionMemoryEvent(
 export async function recordTopicChatExchange(args: {
   topicId: string
   question: string
+  agentBrief?: string
+  contextItems?: string[]
+  controls?: TopicChatWorkbenchControls
+  materials?: Array<{
+    name: string
+    summary: string
+    highlights?: string[]
+    kind?: 'image' | 'pdf' | 'text'
+    status?: 'parsing' | 'ready' | 'vision-only' | 'error'
+  }>
   answer: string
   citations?: TopicCitationRef[]
+  guidanceReceipt?: TopicGuidanceReceipt
+  workbenchAction?: TopicWorkbenchAction
 }) {
+  const materialSummary = uniqueStrings(
+    (args.materials ?? []).flatMap((material) => [
+      `${material.name}: ${material.summary}`,
+      ...(material.highlights ?? []).map((highlight) => `${material.name}: ${highlight}`),
+    ]),
+    4,
+  )
+  const userSummary = buildUserChatSummary({
+    question: args.question,
+    agentBrief: args.agentBrief,
+    materialSummary,
+    contextItems: args.contextItems,
+  })
+  const userDetail = buildUserChatDetail({
+    guidanceReceipt: args.guidanceReceipt,
+    agentBrief: args.agentBrief,
+    materials: args.materials,
+    contextItems: args.contextItems,
+    controls: args.controls,
+  })
+
   await appendTopicSessionMemoryEvent(args.topicId, {
     kind: 'chat-user',
-    headline: 'User follow-up',
-    summary: clipText(args.question, 220),
+    headline: buildUserChatHeadline({
+      guidanceReceipt: args.guidanceReceipt,
+      workbenchAction: args.workbenchAction,
+      agentBrief: args.agentBrief,
+      materials: args.materials,
+      contextItems: args.contextItems,
+      controls: args.controls,
+    }),
+    summary: userSummary || clipText(args.question, 220),
+    detail: userDetail || undefined,
     citationAnchorIds: uniqueStrings(args.citations?.map((item) => item.anchorId) ?? [], 6),
+    openQuestions: _extractOpenQuestionsFromText(args.question),
   })
 
   return appendTopicSessionMemoryEvent(args.topicId, {
     kind: 'chat-assistant',
-    headline: 'Sidebar answer',
-    summary: clipText(args.answer, 240),
+    headline: buildAssistantChatHeadline({
+      guidanceReceipt: args.guidanceReceipt,
+      workbenchAction: args.workbenchAction,
+    }),
+    summary: buildAssistantChatSummary({
+      answer: args.answer,
+      guidanceReceipt: args.guidanceReceipt,
+      workbenchAction: args.workbenchAction,
+    }),
+    detail:
+      buildAssistantChatDetail({
+        answer: args.answer,
+        guidanceReceipt: args.guidanceReceipt,
+        workbenchAction: args.workbenchAction,
+      }) || undefined,
     citationAnchorIds: uniqueStrings(args.citations?.map((item) => item.anchorId) ?? [], 6),
   })
 }
@@ -983,6 +1390,7 @@ export async function retrieveTopicSessionMemoryContext(
 
 export const __testing = {
   buildFallbackSummary,
+  hydrateSummaryFromRecentEvents,
   shouldCompact: (
     memory: TopicSessionMemoryState,
     runtime: Awaited<ReturnType<typeof getGenerationRuntimeConfig>>,

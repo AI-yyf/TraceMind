@@ -16,3 +16,12 @@ test('topic chat command parser still accepts explicit start requests', () => {
     durationHours: 2,
   })
 })
+test('topic chat command parser keeps explicit commands even when they include a follow-up explanation clause', () => {
+  assert.deepEqual(
+    parseTopicChatCommand('start research for 1 hour and explain what you will prioritize first'),
+    {
+      action: 'start-research',
+      durationHours: 1,
+    },
+  )
+})

@@ -182,6 +182,39 @@ export function WorkbenchPulseCard({
 }) {
   const { copy } = useProductCopy()
   const { t } = useI18n()
+
+  if (!brief) {
+    return (
+      <section
+        data-testid="topic-workbench-pulse-card"
+        className="rounded-[18px] border border-black/8 bg-white px-3 py-3"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-[10px] uppercase tracking-[0.22em] text-black/34">
+            {t('workbench.calibrationEyebrow', copy('assistant.calibrationEyebrow', 'Current calibration'))}
+          </div>
+          <div className="rounded-full bg-white px-2.5 py-1 text-[10px] text-black/56">
+            {t('workbench.researchStatusIdle', 'Idle')}
+          </div>
+        </div>
+
+        <h3 className="mt-2 text-[14px] font-semibold leading-6 text-black">
+          {t('workbench.pulseFallbackTitle', 'The research thread is still taking shape.')}
+        </h3>
+
+        <p className="mt-2 text-[11px] leading-6 text-black/60">
+          {t(
+            'workbench.pulseFallbackDek',
+            copy(
+              'assistant.calibrationDek',
+              'We keep this pulse card pinned so the current judgment, next adjustments, and live research cadence have a stable home as soon as the topic intel returns.',
+            ),
+          )}
+        </p>
+      </section>
+    )
+  }
+
   const report = brief?.session.report ?? null
   const memory = brief?.sessionMemory.summary ?? null
   const pipeline = brief?.pipeline ?? null
@@ -265,6 +298,7 @@ export function WorkbenchPulseCard({
     cognitive?.conversationContract ||
     memory?.conversationStyle ||
     ''
+  const latestUserIntent = memory?.lastUserIntent || ''
   const preserveEntries = cognitive?.projectMemories.slice(0, 2) ?? []
   const adjustEntries = cognitive?.feedbackMemories.slice(0, 2) ?? []
   const referenceEntries = cognitive?.referenceMemories.slice(0, 2) ?? []
@@ -327,7 +361,7 @@ export function WorkbenchPulseCard({
   return (
     <section
       data-testid="topic-workbench-pulse-card"
-      className="rounded-[18px] border border-black/8 bg-[linear-gradient(180deg,#fffdf9_0%,#f8f5ef_100%)] px-3 py-3 shadow-[0_12px_26px_rgba(15,23,42,0.05)]"
+      className="rounded-[18px] border border-black/8 bg-white px-3 py-3"
     >
       <div className="flex items-center justify-between gap-3">
         <div className="text-[10px] uppercase tracking-[0.22em] text-black/34">
@@ -358,6 +392,22 @@ export function WorkbenchPulseCard({
           </div>
           <p className="mt-1 text-[10px] leading-5 text-black/58">{clipText(conversationContract, 220)}</p>
         </div>
+      ) : null}
+
+      {latestUserIntent ? (
+        <button
+          type="button"
+          data-testid="topic-workbench-latest-user-intent"
+          onClick={() => onUsePrompt(latestUserIntent)}
+          className="mt-2 block w-full rounded-[16px] border border-black/8 bg-white/82 px-3 py-2.5 text-left transition hover:border-black/16"
+        >
+          <div className="text-[10px] uppercase tracking-[0.18em] text-black/34">
+            {t('workbench.latestUserSteering', 'Latest user steering')}
+          </div>
+          <p className="mt-1 text-[10px] leading-5 text-black/58">
+            {clipText(latestUserIntent, 220)}
+          </p>
+        </button>
       ) : null}
 
       {latestDecision ? (

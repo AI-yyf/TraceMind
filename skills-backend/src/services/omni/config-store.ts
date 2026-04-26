@@ -1,9 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { mkdir, writeFile, readFile, unlink, readdir } from 'node:fs/promises'
+import { join } from 'node:path'
 
 import { prisma } from '../../lib/prisma'
 import { logger } from '../../utils/logger'
 import { defaultBaseUrlForProvider, inferCapabilities, MODEL_PRESETS, PROVIDER_CATALOG } from './catalog'
 import { SecureStorage, type EncryptedSecretPayload } from './secure-storage'
+import type { ProviderId, OmniTask, ResearchRoleId } from '../../../shared/model-config'
 import {
   listVersionedSystemConfigHistory,
   readVersionedSystemConfig,
@@ -20,18 +23,192 @@ import {
 } from './routing'
 import type {
   ModelSlot,
-  OmniTask,
   ProviderCapability,
   ProviderModelConfig,
   ProviderModelOptions,
   ProviderModelRef,
-  ProviderId,
-  ResearchRoleId,
   SanitizedProviderModelConfig,
   SanitizedUserModelConfig,
   TaskRouteTarget,
   UserModelConfig,
+  CategoriesConfig,
 } from './types'
+
+// ========== Async Mutex Implementation for File Locking ==========
+
+class AsyncMutex {
+  private locked = false
+  private queue: Array<{ resolve: () => void; reject: (err: Error) => void }> = []
+
+  async acquire(): Promise<void> {
+    if (!this.locked) {
+      this.locked = true
+      return
+    }
+
+    return new Promise<void>((resolve, reject) => {
+      this.queue.push({ resolve, reject })
+    })
+  }
+
+  release(): void {
+    const next = this.queue.shift()
+    if (next) {
+      next.resolve()
+    } else {
+      this.locked = false
+    }
+  }
+
+  async runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+    await this.acquire()
+    try {
+      return await fn()
+    } finally {
+      this.release()
+    }
+  }
+}
+
+// Config-specific mutex instances
+const userConfigMutexes = new Map<string, AsyncMutex>()
+
+function getUserConfigMutex(userId: string): AsyncMutex {
+  if (!userConfigMutexes.has(userId)) {
+    userConfigMutexes.set(userId, new AsyncMutex())
+  }
+  return userConfigMutexes.get(userId)!
+}
+
+// ========== Backup Mechanism ==========
+
+const BACKUP_DIR = join(process.cwd(), 'data', 'config-backups')
+const MAX_BACKUP_FILES = 8
+
+async function ensureBackupDir(): Promise<void> {
+  try {
+    await mkdir(BACKUP_DIR, { recursive: true })
+  } catch {
+    // Directory already exists
+  }
+}
+
+async function createConfigBackup(userId: string, config: UserModelConfig): Promise<string> {
+  await ensureBackupDir()
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const backupPath = join(BACKUP_DIR, `user-config-${userId}-${timestamp}.bak`)
+  await writeFile(backupPath, JSON.stringify(config, null, 2), 'utf-8')
+
+  // Cleanup old backups beyond the limit
+  try {
+    const files = await readdir(BACKUP_DIR)
+    const backupFiles = files.filter(f => f.startsWith(`user-config-${userId}`)).sort()
+    if (backupFiles.length > MAX_BACKUP_FILES) {
+      const toDelete = backupFiles.slice(0, backupFiles.length - MAX_BACKUP_FILES)
+      for (const file of toDelete) {
+        await unlink(join(BACKUP_DIR, file))
+      }
+    }
+  } catch {
+    // Ignore cleanup errors
+  }
+
+  return backupPath
+}
+
+async function restoreFromBackup(userId: string): Promise<UserModelConfig | null> {
+  try {
+    const backupPattern = `user-config-${userId}`
+    const files = await readdir(BACKUP_DIR)
+    const matchingFiles = files.filter(f => f.startsWith(backupPattern)).sort().reverse()
+
+    if (matchingFiles.length === 0) return null
+
+    const latestBackup = matchingFiles[0]
+    const content = await readFile(join(BACKUP_DIR, latestBackup), 'utf-8')
+    return JSON.parse(content) as UserModelConfig
+  } catch (error) {
+    logger.warn('Failed to restore from backup', { userId, error })
+    return null
+  }
+}
+
+// ========== Model Config History Table Operations ==========
+
+interface ModelConfigHistoryRecord {
+  id: string
+  version: number
+  configJson: string
+  actor: string | null
+  diffSummary: string | null
+  createdAt: Date
+}
+
+async function getNextConfigVersion(): Promise<number> {
+  const latest = await prisma.model_config_history.findFirst({
+    orderBy: { version: 'desc' },
+    select: { version: true },
+  })
+  return (latest?.version ?? 0) + 1
+}
+
+async function writeModelConfigHistory(
+  config: UserModelConfig,
+  actor: string | null,
+  diffSummary: string | null,
+): Promise<ModelConfigHistoryRecord> {
+  const version = await getNextConfigVersion()
+  const record = await prisma.model_config_history.create({
+    data: {
+      id: randomUUID(),
+      version,
+      configJson: JSON.stringify(config),
+      actor,
+      diffSummary,
+    },
+  })
+  return record
+}
+
+async function listModelConfigHistory(limit: number = 12): Promise<ModelConfigHistoryRecord[]> {
+  return prisma.model_config_history.findMany({
+    orderBy: { version: 'desc' },
+    take: limit,
+  })
+}
+
+async function getModelConfigByVersion(version: number): Promise<UserModelConfig | null> {
+  const record = await prisma.model_config_history.findUnique({
+    where: { version },
+  })
+  if (!record) return null
+  return JSON.parse(record.configJson) as UserModelConfig
+}
+
+function computeDiffSummary(previous: UserModelConfig | null, next: UserModelConfig): string {
+  const changes: string[] = []
+
+  if (previous?.language?.provider !== next.language?.provider) {
+    changes.push(`language.provider: ${previous?.language?.provider ?? 'none'} → ${next.language?.provider ?? 'none'}`)
+  }
+  if (previous?.language?.model !== next.language?.model) {
+    changes.push(`language.model: ${previous?.language?.model ?? 'none'} → ${next.language?.model ?? 'none'}`)
+  }
+  if (previous?.multimodal?.provider !== next.multimodal?.provider) {
+    changes.push(`multimodal.provider: ${previous?.multimodal?.provider ?? 'none'} → ${next.multimodal?.provider ?? 'none'}`)
+  }
+  if (previous?.multimodal?.model !== next.multimodal?.model) {
+    changes.push(`multimodal.model: ${previous?.multimodal?.model ?? 'none'} → ${next.multimodal?.model ?? 'none'}`)
+  }
+
+  const prevRoleKeys = previous?.roles ? Object.keys(previous.roles) : []
+  const nextRoleKeys = next.roles ? Object.keys(next.roles) : []
+  if (prevRoleKeys.length !== nextRoleKeys.length || !prevRoleKeys.every(k => nextRoleKeys.includes(k))) {
+    changes.push(`roles: ${prevRoleKeys.length} → ${nextRoleKeys.length}`)
+  }
+
+  return changes.length > 0 ? changes.join('; ') : 'no significant changes'
+}
 
 const DEFAULT_USER_ID = 'default'
 const USER_MODEL_CONFIG_PREFIX = 'alpha:user-model-config:'
@@ -63,6 +240,8 @@ export interface ResolvedUserModelConfig {
   roles?: Partial<Record<ResearchRoleId, ResolvedProviderModelConfig | null>>
   taskOverrides?: Partial<Record<OmniTask, ProviderModelRef>>
   taskRouting?: Partial<Record<OmniTask, TaskRouteTarget>>
+  categories?: CategoriesConfig
+  disabledCategories?: string[]
 }
 
 export interface UserModelConfigRecord {
@@ -289,13 +468,19 @@ function normalizeTaskRouting(
 
 function sanitizeSlotConfig(config: ResolvedProviderModelConfig | null): SanitizedProviderModelConfig | null {
   if (!config) return null
+
+  const persistedSecretPreview =
+    config.apiKeyRef && config.apiKey
+      ? `${config.apiKey.slice(0, 4)}****${config.apiKey.slice(-4)}`
+      : undefined
+
   return {
     provider: config.provider,
     model: config.model,
     baseUrl: config.baseUrl,
     apiKeyRef: config.apiKeyRef,
     apiKeyStatus: config.apiKey ? 'configured' : 'missing',
-    apiKeyPreview: config.apiKeyPreview,
+    apiKeyPreview: persistedSecretPreview ?? config.apiKeyPreview,
     providerOptions: normalizeProviderOptions(config.providerOptions),
     options: config.options,
   }
@@ -434,10 +619,13 @@ function getSlotEnvSecret(slot: ModelSlot): { key: string; preview: string } | n
     }
   }
 
+  return null
+}
+
+function getDefaultEnvSecret(): { key: string; preview: string } | null {
   const defaultEnvVar = `${DEFAULT_ENV_PREFIX}_API_KEY`
   const defaultValue = process.env[defaultEnvVar]?.trim()
   if (!defaultValue) return null
-
   return {
     key: defaultValue,
     preview: `${defaultEnvVar} (env)`,
@@ -520,13 +708,14 @@ function getEnvBootstrapConfig(args: {
 
   const localSecret = args.getSecret()
   const providerSecret = !localSecret ? getEnvSecret(provider, { model, baseUrl }) : null
+  const defaultSecret = !localSecret && !providerSecret ? getDefaultEnvSecret() : null
 
   return {
     provider,
     model,
     baseUrl: baseUrl || defaultBaseUrlForProvider(provider),
-    apiKey: localSecret?.key ?? providerSecret?.key,
-    apiKeyPreview: localSecret?.preview ?? providerSecret?.preview,
+    apiKey: localSecret?.key ?? providerSecret?.key ?? defaultSecret?.key,
+    apiKeyPreview: localSecret?.preview ?? providerSecret?.preview ?? defaultSecret?.preview,
     providerOptions: args.buildProviderOptions(),
     options: args.buildOptions(),
   }
@@ -594,13 +783,18 @@ async function hydrateSlot(
     !secret && !slotEnvSecret
       ? getEnvSecret(config.provider, { model: config.model, baseUrl: config.baseUrl })
       : null
+  const defaultEnvSecret =
+    !secret && !slotEnvSecret && !envSecret
+      ? getDefaultEnvSecret()
+      : null
   return {
     provider: config.provider,
     model: config.model,
     baseUrl: config.baseUrl?.trim() || defaultBaseUrlForProvider(config.provider),
     apiKeyRef: config.apiKeyRef,
-    apiKey: secret?.key ?? slotEnvSecret?.key ?? envSecret?.key,
-    apiKeyPreview: secret?.preview ?? slotEnvSecret?.preview ?? envSecret?.preview,
+    apiKey: secret?.key ?? slotEnvSecret?.key ?? envSecret?.key ?? defaultEnvSecret?.key,
+    apiKeyPreview:
+      secret?.preview ?? slotEnvSecret?.preview ?? envSecret?.preview ?? defaultEnvSecret?.preview,
     providerOptions: normalizeProviderOptions(config.providerOptions),
     options: config.options,
   }
@@ -609,6 +803,7 @@ async function hydrateSlot(
 async function resolveSlotForSave(
   incoming: ProviderModelConfig | null,
   existing: ResolvedProviderModelConfig | null,
+  options?: { preserveMissingBaseUrl?: boolean },
 ): Promise<ResolvedProviderModelConfig | null> {
   if (!incoming) return null
 
@@ -635,7 +830,7 @@ async function resolveSlotForSave(
   return {
     provider: incoming.provider,
     model: incoming.model,
-    baseUrl: incoming.baseUrl?.trim() || defaultBaseUrlForProvider(incoming.provider),
+    baseUrl: incoming.baseUrl?.trim() || (options?.preserveMissingBaseUrl ? undefined : defaultBaseUrlForProvider(incoming.provider)),
     apiKeyRef,
     apiKey,
     apiKeyPreview,
@@ -659,6 +854,7 @@ async function resolveRoleConfigsForSave(
       const next = await resolveSlotForSave(
         normalizeSlotConfig(incoming[definition.id]),
         existing?.[definition.id] ?? null,
+        { preserveMissingBaseUrl: true },
       )
 
       return [definition.id, next] as const
@@ -719,6 +915,8 @@ export async function getResolvedUserModelConfig(userId = DEFAULT_USER_ID): Prom
     roles,
     taskOverrides: normalizeOverrides(raw?.taskOverrides),
     taskRouting: normalizeTaskRouting(raw?.taskRouting),
+    categories: raw?.categories,
+    disabledCategories: raw?.disabledCategories,
   }
 }
 
@@ -730,6 +928,8 @@ export async function getSanitizedUserModelConfig(userId = DEFAULT_USER_ID): Pro
     roles: sanitizeRoleConfigs(resolved.roles),
     taskOverrides: resolved.taskOverrides,
     taskRouting: resolved.taskRouting,
+    categories: resolved.categories,
+    disabledCategories: resolved.disabledCategories,
   }
 }
 
@@ -742,51 +942,81 @@ export async function saveUserModelConfig(
   incomingConfig: UserModelConfig,
   userId = DEFAULT_USER_ID,
 ): Promise<SanitizedUserModelConfig> {
-  const existing = await getResolvedUserModelConfig(userId)
-  const language = hasOwn(incomingConfig, 'language')
-    ? await resolveSlotForSave(normalizeSlotConfig(incomingConfig.language), existing.language)
-    : existing.language
-  const multimodal = hasOwn(incomingConfig, 'multimodal')
-    ? await resolveSlotForSave(normalizeSlotConfig(incomingConfig.multimodal), existing.multimodal)
-    : existing.multimodal
-  const roles = hasOwn(incomingConfig, 'roles')
-    ? await resolveRoleConfigsForSave(incomingConfig.roles, existing.roles)
-    : existing.roles
+  const mutex = getUserConfigMutex(userId)
 
-  const nextConfig: UserModelConfig = {
-    language: serializeResolvedConfig(language),
-    multimodal: serializeResolvedConfig(multimodal),
-    roles:
-      roles && Object.keys(roles).length > 0
-        ? Object.fromEntries(
-            Object.entries(roles)
-              .map(([role, config]) => [role, serializeResolvedConfig(config ?? null)] as const)
-              .filter(([, config]) => Boolean(config)),
-          ) as Partial<Record<ResearchRoleId, ProviderModelConfig | null>>
-        : undefined,
-    taskOverrides: normalizeOverrides(incomingConfig.taskOverrides ?? existing.taskOverrides),
-    taskRouting: normalizeTaskRouting(incomingConfig.taskRouting ?? existing.taskRouting),
-  }
+  return mutex.runExclusive(async () => {
+    const existing = await getResolvedUserModelConfig(userId)
+    const previousConfig = await getRawUserConfig(userId)
 
-  await writeVersionedSystemConfig({
-    key: userConfigKey(userId),
-    value: nextConfig,
-    parse: (value) =>
-      value && typeof value === 'object' && !Array.isArray(value)
-        ? (value as UserModelConfig)
-        : null,
-    fallback: null,
-    source: 'omni.model-config',
-    actor: userId,
+    const language = hasOwn(incomingConfig, 'language')
+      ? await resolveSlotForSave(normalizeSlotConfig(incomingConfig.language), existing.language)
+      : existing.language
+    const multimodal = hasOwn(incomingConfig, 'multimodal')
+      ? await resolveSlotForSave(normalizeSlotConfig(incomingConfig.multimodal), existing.multimodal)
+      : existing.multimodal
+    const roles = hasOwn(incomingConfig, 'roles')
+      ? await resolveRoleConfigsForSave(incomingConfig.roles, existing.roles)
+      : existing.roles
+
+    const nextConfig: UserModelConfig = {
+      language: serializeResolvedConfig(language),
+      multimodal: serializeResolvedConfig(multimodal),
+      roles:
+        roles && Object.keys(roles).length > 0
+          ? Object.fromEntries(
+              Object.entries(roles)
+                .map(([role, config]) => [role, serializeResolvedConfig(config ?? null)] as const)
+                .filter(([, config]) => Boolean(config)),
+            ) as Partial<Record<ResearchRoleId, ProviderModelConfig | null>>
+          : undefined,
+      taskOverrides: normalizeOverrides(incomingConfig.taskOverrides ?? existing.taskOverrides),
+      taskRouting: normalizeTaskRouting(incomingConfig.taskRouting ?? existing.taskRouting),
+      categories: incomingConfig.categories ?? existing.categories,
+      disabledCategories: incomingConfig.disabledCategories ?? existing.disabledCategories,
+    }
+
+    // Create backup before critical write
+    try {
+      await createConfigBackup(userId, nextConfig)
+      logger.info('Config backup created', { userId })
+    } catch (error) {
+      logger.warn('Failed to create config backup', { userId, error })
+    }
+
+    // Compute diff summary for history
+    const diffSummary = computeDiffSummary(previousConfig, nextConfig)
+
+    // Write to versioned system config
+    await writeVersionedSystemConfig({
+      key: userConfigKey(userId),
+      value: nextConfig,
+      parse: (value) =>
+        value && typeof value === 'object' && !Array.isArray(value)
+          ? (value as UserModelConfig)
+          : null,
+      fallback: null,
+      source: 'omni.model-config',
+      actor: userId,
+    })
+
+    // Write to dedicated model_config_history table
+    try {
+      await writeModelConfigHistory(nextConfig, userId, diffSummary)
+      logger.info('Model config history recorded', { userId, diffSummary })
+    } catch (error) {
+      logger.warn('Failed to write model config history', { userId, error })
+    }
+
+    return {
+      language: sanitizeSlotConfig(language),
+      multimodal: sanitizeSlotConfig(multimodal),
+      roles: sanitizeRoleConfigs(roles),
+      taskOverrides: nextConfig.taskOverrides,
+      taskRouting: nextConfig.taskRouting,
+      categories: nextConfig.categories,
+      disabledCategories: nextConfig.disabledCategories,
+    }
   })
-
-  return {
-    language: sanitizeSlotConfig(language),
-    multimodal: sanitizeSlotConfig(multimodal),
-    roles: sanitizeRoleConfigs(roles),
-    taskOverrides: nextConfig.taskOverrides,
-    taskRouting: nextConfig.taskRouting,
-  }
 }
 
 export async function getUserModelConfigRecord(userId = DEFAULT_USER_ID): Promise<UserModelConfigRecord> {
@@ -912,4 +1142,58 @@ export async function getModelCapabilitySummary(userId = DEFAULT_USER_ID) {
     catalog: PROVIDER_CATALOG,
     presets: MODEL_PRESETS,
   }
+}
+
+// ========== Exported Model Config History API ==========
+
+export interface ModelConfigHistoryEntry {
+  version: number
+  config: UserModelConfig
+  actor: string | null
+  diffSummary: string | null
+  createdAt: string
+}
+
+export async function listConfigVersionHistory(limit: number = 12): Promise<ModelConfigHistoryEntry[]> {
+  const records = await listModelConfigHistory(limit)
+  return records.map((r) => ({
+    version: r.version,
+    config: JSON.parse(r.configJson) as UserModelConfig,
+    actor: r.actor,
+    diffSummary: r.diffSummary,
+    createdAt: r.createdAt.toISOString(),
+  }))
+}
+
+export async function getConfigByVersion(version: number): Promise<ModelConfigHistoryEntry | null> {
+  const config = await getModelConfigByVersion(version)
+  if (!config) return null
+
+  const record = await prisma.model_config_history.findUnique({
+    where: { version },
+  })
+
+  if (!record) return null
+
+  return {
+    version: record.version,
+    config,
+    actor: record.actor,
+    diffSummary: record.diffSummary,
+    createdAt: record.createdAt.toISOString(),
+  }
+}
+
+export async function rollbackConfigToVersion(version: number, userId: string = DEFAULT_USER_ID): Promise<SanitizedUserModelConfig | null> {
+  const historicalConfig = await getModelConfigByVersion(version)
+  if (!historicalConfig) return null
+
+  return saveUserModelConfig(historicalConfig, userId)
+}
+
+export async function restoreConfigFromBackup(userId: string = DEFAULT_USER_ID): Promise<SanitizedUserModelConfig | null> {
+  const backupConfig = await restoreFromBackup(userId)
+  if (!backupConfig) return null
+
+  return saveUserModelConfig(backupConfig, userId)
 }

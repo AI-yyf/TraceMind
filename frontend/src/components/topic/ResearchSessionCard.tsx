@@ -7,6 +7,15 @@ import type {
   TopicResearchBrief,
   TopicResearchSessionState,
 } from '@/types/alpha'
+import {
+  MAX_RESEARCH_DURATION_DAYS,
+  MIN_RESEARCH_DURATION_DAYS,
+  RESEARCH_DURATION_DAY_PRESETS,
+  clampResearchDurationDays,
+  durationDaysToHours,
+  formatResearchDurationDays,
+  formatResearchDurationHours,
+} from '@/utils/researchDuration'
 
 function formatTime(
   value: string | null | undefined,
@@ -40,7 +49,9 @@ function formatRemaining(
 
   const totalMinutes = Math.max(1, Math.round(remainingMs / 60000))
   if (totalMinutes < 60) return formatter.format(totalMinutes, 'minute')
-  return formatter.format(Math.max(1, Math.round(totalMinutes / 60)), 'hour')
+  if (totalMinutes < 1_440) return formatter.format(Math.max(1, Math.round(totalMinutes / 60)), 'hour')
+  if (totalMinutes < 10_080) return formatter.format(Math.max(1, Math.round(totalMinutes / 1_440)), 'day')
+  return formatter.format(Math.max(1, Math.round(totalMinutes / 10_080)), 'week')
 }
 
 function formatCadence(
@@ -132,8 +143,8 @@ function formatDecisionStageLabel(
 export function ResearchSessionCard({
   session,
   brief = null,
-  durationHours,
-  onDurationHoursChange,
+  durationDays,
+  onDurationDaysChange,
   onStart,
   onStop,
   starting,
@@ -142,8 +153,8 @@ export function ResearchSessionCard({
 }: {
   session: TopicResearchSessionState | null
   brief?: TopicResearchBrief | null
-  durationHours: number
-  onDurationHoursChange: (value: number) => void
+  durationDays: number
+  onDurationDaysChange: (value: number) => void
   onStart: () => void
   onStop?: () => void
   starting: boolean
@@ -162,6 +173,12 @@ export function ResearchSessionCard({
   const deadlineAt = formatTime(report?.deadlineAt ?? progress?.deadlineAt, language)
   const remaining = formatRemaining(report?.deadlineAt ?? progress?.deadlineAt, language)
   const cadenceLabel = formatCadence(session?.strategy?.cycleDelayMs, language)
+  const configuredDurationLabel = formatResearchDurationDays(durationDays, language, 'long')
+  const activeDurationLabel = formatResearchDurationHours(
+    progress?.durationHours ?? report?.durationHours ?? durationDaysToHours(durationDays),
+    language,
+    'long',
+  )
   const latestDecision =
     brief?.pipeline.currentStage?.durationDecision ??
     brief?.pipeline.lastRun?.durationDecision ??
@@ -174,14 +191,14 @@ export function ResearchSessionCard({
   const title = text(
     'assistant.researchTitle',
     'workbench.researchTitle',
-    'Keep research running beside the topic, not on top of the topic.',
+    'Keep a long research lane open beside the topic.',
   )
   const dek =
     (running ? report?.headline : report?.dek) ||
     text(
       'assistant.researchDek',
       'workbench.researchDek',
-      'Start a sustained run here, let the backend keep searching and refining, then return to the thread when you want to steer it.',
+      'Start a sustained editorial run here. The backend keeps searching, comparing, and revising while the thread stays open for human steering.',
     )
 
   const summary =
@@ -369,37 +386,41 @@ export function ResearchSessionCard({
         <div className="flex flex-wrap items-center gap-2">
           <div className="inline-flex items-center gap-2 text-[11px] text-black/56">
             <Clock3 className="h-3.5 w-3.5" />
-            <span>{text('assistant.researchDurationLabel', 'workbench.researchDurationLabel', 'Duration')}</span>
+            <span>{text('assistant.researchDurationLabel', 'workbench.researchDurationLabel', 'Stage window')}</span>
           </div>
 
           <input
             type="number"
-            min={1}
-            max={48}
-            value={durationHours}
+            min={MIN_RESEARCH_DURATION_DAYS}
+            max={MAX_RESEARCH_DURATION_DAYS}
+            value={durationDays}
             disabled={inputLocked}
-            onChange={(event) => onDurationHoursChange(Number(event.target.value) || 1)}
-            className="h-8 w-14 rounded-full border border-black/10 bg-white px-3 text-center text-[12px] text-black outline-none disabled:cursor-not-allowed disabled:bg-black/[0.03] disabled:text-black/42"
+            onChange={(event) =>
+              onDurationDaysChange(
+                clampResearchDurationDays(Number(event.target.value) || MIN_RESEARCH_DURATION_DAYS),
+              )
+            }
+            className="h-8 w-16 rounded-full border border-black/10 bg-white px-3 text-center text-[12px] text-black outline-none disabled:cursor-not-allowed disabled:bg-black/[0.03] disabled:text-black/42"
           />
 
           <span className="text-[11px] text-black/48">
-            {text('assistant.researchDurationUnit', 'workbench.researchDurationUnit', 'hours')}
+            {configuredDurationLabel}
           </span>
 
           <div className="flex flex-wrap gap-1.5">
-            {[2, 4, 8].map((hours) => (
+            {RESEARCH_DURATION_DAY_PRESETS.filter((days) => days !== 14).map((days) => (
               <button
-                key={hours}
+                key={days}
                 type="button"
                 disabled={inputLocked}
-                onClick={() => onDurationHoursChange(hours)}
+                onClick={() => onDurationDaysChange(days)}
                 className={`rounded-full px-2.5 py-1 text-[10px] transition disabled:cursor-not-allowed disabled:opacity-45 ${
-                  durationHours === hours
+                  durationDays === days
                     ? 'bg-black text-white'
                     : 'bg-white text-black/58 hover:text-black'
                 }`}
               >
-                {hours}h
+                {formatResearchDurationDays(days, language)}
               </button>
             ))}
           </div>
@@ -434,7 +455,10 @@ export function ResearchSessionCard({
           </div>
         </div>
 
-        <div className="mt-2 text-[11px] leading-5 text-black/48">{timingLine}</div>
+        <div className="mt-2 text-[11px] leading-5 text-black/48">
+          {timingLine}
+          {!running ? ` ${activeDurationLabel}.` : ''}
+        </div>
 
         {summary ? (
           <div className="mt-2.5 rounded-[14px] bg-white px-3 py-2.5">

@@ -27,9 +27,13 @@ export interface EncryptedSecretPayload {
 }
 
 export function maskSecret(value: string): string {
-  if (!value) return ''
-  if (value.length <= 8) return `${value.slice(0, 2)}****`
-  return `${value.slice(0, 4)}****${value.slice(-4)}`
+  return getKeyPreview(value)
+}
+
+export function getKeyPreview(key: string): string {
+  if (!key) return ''
+  const previewLength = Math.min(8, key.length)
+  return `${key.slice(0, previewLength)}***`
 }
 
 export class SecureStorage {

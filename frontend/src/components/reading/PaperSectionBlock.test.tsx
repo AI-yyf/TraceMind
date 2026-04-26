@@ -18,20 +18,22 @@ function renderWithProviders(node: ReactNode) {
 
   return render(
     <I18nProvider>
-      <MemoryRouter>{node}</MemoryRouter>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        {node}
+      </MemoryRouter>
     </I18nProvider>,
   )
 }
 
 describe('PaperSectionBlock', () => {
-  it('renders inline figure and table evidence for subsections', () => {
+  it('renders all paper evidence instead of truncating unembedded items', () => {
     const evidenceById = new Map<string, EvidenceExplanation>([
       [
         'figure:fig-1',
         {
           anchorId: 'figure:fig-1',
           type: 'figure',
-          route: '/paper/paper-1?anchor=figure:fig-1',
+          route: '/node/node-1?evidence=figure%3Afig-1',
           title: 'Figure 1',
           label: 'Paper / Figure 1',
           quote: 'Architecture overview.',
@@ -44,11 +46,28 @@ describe('PaperSectionBlock', () => {
         },
       ],
       [
+        'formula:eq-1',
+        {
+          anchorId: 'formula:eq-1',
+          type: 'formula',
+          route: '/node/node-1?evidence=formula%3Aeq-1',
+          title: 'Formula 1',
+          label: 'Paper / Formula 1',
+          quote: 'L = ||x-y||',
+          content: 'L = ||x-y||',
+          page: 3,
+          sourcePaperId: 'paper-1',
+          sourcePaperTitle: 'Paper title',
+          formulaLatex: 'L = ||x-y||',
+          whyItMatters: 'It fixes the learning objective.',
+        },
+      ],
+      [
         'table:tab-1',
         {
           anchorId: 'table:tab-1',
           type: 'table',
-          route: '/paper/paper-1?anchor=table:tab-1',
+          route: '/node/node-1?evidence=table%3Atab-1',
           title: 'Table 1',
           label: 'Paper / Table 1',
           quote: 'Benchmark results.',
@@ -97,11 +116,17 @@ describe('PaperSectionBlock', () => {
       />,
     )
 
-    expect(screen.getByText('Methodology')).toBeInTheDocument()
-    expect(screen.getByText('Results Analysis')).toBeInTheDocument()
+    expect(screen.queryByText('Methodology')).not.toBeInTheDocument()
+    expect(screen.queryByText('Results Analysis')).not.toBeInTheDocument()
     expect(screen.getByText('Figure 1')).toBeInTheDocument()
+    expect(screen.getByText('Formula 1')).toBeInTheDocument()
     expect(screen.getByText('Table 1')).toBeInTheDocument()
     expect(screen.getByText('It shows the model structure.')).toBeInTheDocument()
+    expect(screen.getByText('It fixes the learning objective.')).toBeInTheDocument()
     expect(screen.getByText('It verifies the main gain.')).toBeInTheDocument()
+    expect(
+      screen.getByText('The paper leaves a clear mechanism for later work to test.'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('结语')).toBeInTheDocument()
   })
 })

@@ -10,11 +10,14 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useTranslation } from 'react-i18next'
+import { useI18n } from '@/i18n'
 import { setItem, getItem } from '../utils/storage'
 
 const ONBOARDING_KEY = 'tracemind:onboarding:completed'
 const ONBOARDING_VERSION = 1
+const IS_AUTOMATED_BROWSER =
+  import.meta.env.MODE === 'playwright' ||
+  (typeof navigator !== 'undefined' && navigator.webdriver)
 
 interface OnboardingStep {
   id: string
@@ -67,7 +70,7 @@ interface OnboardingTourProps {
 }
 
 export function OnboardingTour({ forceShow = false, onComplete, onSkip }: OnboardingTourProps) {
-  const { t } = useTranslation()
+  const { t } = useI18n()
   const [isVisible, setIsVisible] = useState(false)
   const [currentStepIndex, setCurrentStepIndex] = useState(0)
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null)
@@ -76,6 +79,11 @@ export function OnboardingTour({ forceShow = false, onComplete, onSkip }: Onboar
   useEffect(() => {
     if (forceShow) {
       setIsVisible(true)
+      return
+    }
+
+    if (IS_AUTOMATED_BROWSER) {
+      setIsVisible(false)
       return
     }
 

@@ -529,13 +529,11 @@ ${(round1.candidates || []).map((c) => `- ${c.paperId}: ${c.title}`).join('\n')}
 
         if (existing) {
           // 合并轮次信息
-          existing.discoveryRounds = [
-            ...new Set([...existing.discoveryRounds, ...candidate.discoveryRounds]),
-          ]
+          const allRounds = [...existing.discoveryRounds, ...candidate.discoveryRounds]
+          existing.discoveryRounds = allRounds.filter((r, i) => allRounds.indexOf(r) === i)
           existing.queryHits = [...existing.queryHits, ...candidate.queryHits]
-          existing.discoveryChannels = [
-            ...new Set([...existing.discoveryChannels, ...candidate.discoveryChannels]),
-          ]
+          const allChannels = [...existing.discoveryChannels, ...candidate.discoveryChannels]
+          existing.discoveryChannels = allChannels.filter((c, i) => allChannels.indexOf(c) === i)
           existing.confidence = Math.max(existing.confidence, candidate.confidence)
         } else {
           candidateMap.set(candidate.paperId, { ...candidate })

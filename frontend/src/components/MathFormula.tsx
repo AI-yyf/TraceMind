@@ -46,7 +46,7 @@ const MATHJAX_CONFIG: Record<string, unknown> = {
   },
   startup: {
     ready: () => {
-      (window.MathJax as any)?.startup?.defaultReady?.()
+      window.MathJax?.startup?.defaultReady?.()
     },
   },
 }
@@ -63,7 +63,7 @@ export function ensureMathJax() {
   window.MathJax = {
     ...MATHJAX_CONFIG,
     ...(window.MathJax ?? {}),
-  } as any
+  }
 
   const existing = document.getElementById(SCRIPT_ID) as HTMLScriptElement | null
   if (existing) {

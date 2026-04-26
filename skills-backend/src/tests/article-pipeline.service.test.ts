@@ -204,3 +204,79 @@ test('node paper fallback keeps section and evidence coverage visible for long-f
   assert.ok(fallback.body.some((paragraph) => paragraph.includes('Formula 1')))
   assert.ok(fallback.body.some((paragraph) => paragraph.includes('2 个正文 section')))
 })
+
+test('node paper pass quality gate restores omitted paper identity and evidence coverage', () => {
+  const paper = {
+    id: '2601.00001',
+    title: 'Grounded Planning for Long Horizon Agents',
+    titleZh: 'Grounded Planning for Long Horizon Agents',
+    topicId: 'agent',
+    published: new Date('2026-01-01T00:00:00.000Z'),
+    summary: 'This paper tests long-horizon planning with grounded feedback.',
+    explanation: 'It matters because it connects planning failures to observable evidence.',
+    paper_sections: [
+      {
+        sourceSectionTitle: 'Method',
+        editorialTitle: 'Method',
+        paragraphs: 'The method section explains the planning loop and the feedback signal.',
+      },
+    ],
+    figures: [
+      {
+        number: 1,
+        caption: 'Planning loop with verifier feedback.',
+        analysis: 'Shows where feedback enters the agent loop.',
+        page: 2,
+      },
+    ],
+    tables: [],
+    formulas: [],
+  }
+  const fallback = articlePipelineTesting.buildNodePaperFallback(paper, 0, paper.id)
+  const weakPass = {
+    paperId: paper.id,
+    overviewTitle: 'A vague contribution',
+    role: 'main paper',
+    contribution: 'It is useful.',
+    body: ['This work improves the field.'],
+  }
+
+  const strengthened = articlePipelineTesting.strengthenNodePaperPass(weakPass, paper, fallback)
+
+  assert.equal(strengthened.paperId, paper.id)
+  assert.ok(strengthened.body.length >= 4)
+  assert.ok(strengthened.body.some((paragraph: string) => /Grounded Planning|2601\.00001/u.test(paragraph)))
+  assert.ok(strengthened.body.some((paragraph: string) => /Figure|图|section|正文/u.test(paragraph)))
+})
+
+test('node article editorial checklist makes every paper explicit for the LLM editor', () => {
+  const checklist = articlePipelineTesting.buildNodeArticleEditorialChecklist([
+    {
+      id: 'paper-a',
+      title: 'First Paper',
+      published: new Date('2025-01-01T00:00:00.000Z'),
+      summary: 'First paper summary.',
+      figures: [{ id: 'fig-a' }],
+      tables: [],
+      formulas: [],
+      paper_sections: [{ id: 'section-a' }],
+    },
+    {
+      id: 'paper-b',
+      title: 'Second Paper',
+      published: new Date('2025-02-01T00:00:00.000Z'),
+      summary: 'Second paper summary.',
+      figures: [],
+      tables: [{ id: 'table-b' }],
+      formulas: [],
+      paper_sections: [],
+    },
+  ])
+
+  assert.equal(checklist.role, 'research-editor')
+  assert.deepEqual(
+    checklist.mustExplainEveryPaper.map((item: { paperId: string }) => item.paperId),
+    ['paper-a', 'paper-b'],
+  )
+  assert.ok(checklist.articleStandard.some((item: string) => item.includes('reader')))
+})

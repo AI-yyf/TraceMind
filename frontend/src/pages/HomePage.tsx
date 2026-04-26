@@ -1,29 +1,17 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ArrowRight, Plus } from 'lucide-react'
 
-import { TopicBuilderDialog } from '@/components/TopicBuilderDialog'
 import { OnboardingTour } from '@/components/OnboardingTour'
-import { getTopicDisplay } from '@/data/topicDisplay'
-import { useTopicRegistry } from '@/hooks'
+import { TopicBuilderDialog } from '@/components/TopicBuilderDialog'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useI18n } from '@/i18n'
-import type { TopicLocalizationPayload } from '@/types/alpha'
-import { buildApiUrl } from '@/utils/api'
+import { ApiError, apiGet } from '@/utils/api'
+import {
+  assertBackendTopicCollectionContract,
+  type BackendTopicListItem,
+} from '@/utils/contracts'
 import { getTopicLocalizedPair } from '@/utils/topicLocalization'
-import { dedupeTopicPresentation, isRegressionSeedTopic } from '@/utils/topicPresentation'
-
-type BackendTopic = {
-  id: string
-  nameZh: string
-  nameEn?: string | null
-  focusLabel?: string | null
-  summary?: string | null
-  createdAt?: string
-  status?: string
-  language?: string
-  localization?: TopicLocalizationPayload | null
-}
 
 type TopicCard = {
   id: string
@@ -35,41 +23,40 @@ type TopicCard = {
 }
 
 export function HomePage() {
-  const { activeTopics } = useTopicRegistry()
   const { t, preference } = useI18n()
   const [searchParams, setSearchParams] = useSearchParams()
-  const [backendTopics, setBackendTopics] = useState<BackendTopic[]>([])
+  const [topics, setTopics] = useState<BackendTopicListItem[]>([])
   const [builderOpen, setBuilderOpen] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useDocumentTitle(t('brand.title'))
 
+  const loadTopics = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+
+    try {
+      const data = await apiGet<unknown>('/api/topics')
+      assertBackendTopicCollectionContract(data)
+      setTopics(data)
+    } catch (nextError) {
+      const message =
+        nextError instanceof ApiError
+          ? nextError.message
+          : nextError instanceof Error
+            ? nextError.message
+            : t('home.backendUnavailable', 'Backend topics are unavailable right now.')
+      setTopics([])
+      setError(message || t('home.backendUnavailable', 'Backend topics are unavailable right now.'))
+    } finally {
+      setLoading(false)
+    }
+  }, [t])
+
   useEffect(() => {
-    let alive = true
-
-    async function loadBackendTopics() {
-      try {
-        const response = await fetch(buildApiUrl('/api/topics'))
-        if (!response.ok) return
-
-        const payload = (await response.json()) as {
-          success: boolean
-          data?: BackendTopic[]
-        }
-
-        if (alive) {
-          setBackendTopics(payload.data ?? [])
-        }
-      } catch {
-        // 静默处理错误，使用 registry 数据
-      }
-    }
-
-    void loadBackendTopics()
-
-    return () => {
-      alive = false
-    }
-  }, [])
+    void loadTopics()
+  }, [loadTopics])
 
   useEffect(() => {
     if (searchParams.get('create') !== '1') return
@@ -84,62 +71,44 @@ export function HomePage() {
     setSearchParams(next, { replace: true })
   }
 
-  const topicCards = useMemo<TopicCard[]>(() => {
-    const registryCards = activeTopics.map((topic) => {
-      const display = getTopicDisplay(topic.id)
-      return {
-        id: topic.id,
-        title: topic.nameZh,
-        titleSecondary: topic.nameZh,
-        focusLabel: topic.focusLabel,
-        summary: display?.hero.summary ?? topic.summary ?? topic.timelineDigest,
-        createdAt: topic.originPaper.published,
-      }
-    })
+  const topicCards = useMemo<TopicCard[]>(
+    () =>
+      topics
+        .map((topic) => {
+          const localizedTitle = getTopicLocalizedPair(
+            topic.localization,
+            'name',
+            preference,
+            topic.nameZh,
+            topic.nameEn ?? topic.nameZh,
+          )
+          const localizedSummary = getTopicLocalizedPair(
+            topic.localization,
+            'summary',
+            preference,
+            topic.summary ?? '',
+            topic.summary ?? '',
+          )
+          const localizedFocusLabel = getTopicLocalizedPair(
+            topic.localization,
+            'focusLabel',
+            preference,
+            topic.focusLabel ?? '',
+            topic.focusLabel ?? '',
+          )
 
-    const backendCards = backendTopics
-      .filter((topic) => !isRegressionSeedTopic(topic))
-      .map((topic) => {
-        const registry = registryCards.find((item) => item.id === topic.id)
-        const localizedTitle = getTopicLocalizedPair(
-          topic.localization,
-          'name',
-          preference,
-          registry?.title ?? topic.nameZh,
-          topic.nameEn ?? registry?.titleSecondary ?? topic.nameZh,
-        )
-        const localizedSummary = getTopicLocalizedPair(
-          topic.localization,
-          'summary',
-          preference,
-          registry?.summary ?? topic.summary ?? '',
-          topic.summary ?? registry?.summary ?? '',
-        )
-        const localizedFocusLabel = getTopicLocalizedPair(
-          topic.localization,
-          'focusLabel',
-          preference,
-          registry?.focusLabel ?? topic.focusLabel ?? '',
-          topic.focusLabel ?? registry?.focusLabel ?? '',
-        )
-
-        return {
-          id: topic.id,
-          title: localizedTitle.primary,
-          titleSecondary: localizedTitle.secondary,
-          focusLabel: localizedFocusLabel.primary || registry?.focusLabel || topic.focusLabel,
-          summary: localizedSummary.primary || registry?.summary || topic.summary || '',
-          createdAt: topic.createdAt ?? registry?.createdAt ?? new Date().toISOString(),
-        }
-      })
-
-    const backendIds = new Set(backendCards.map((item) => item.id))
-    const mergedCards = [...backendCards, ...registryCards.filter((item) => !backendIds.has(item.id))].sort(
-      (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
-    )
-
-    return dedupeTopicPresentation(mergedCards)
-  }, [activeTopics, backendTopics, preference])
+          return {
+            id: topic.id,
+            title: localizedTitle.primary,
+            titleSecondary: localizedTitle.secondary,
+            focusLabel: localizedFocusLabel.primary || topic.focusLabel,
+            summary: localizedSummary.primary || topic.summary || '',
+            createdAt: topic.createdAt ?? new Date().toISOString(),
+          }
+        })
+        .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()),
+    [preference, topics],
+  )
 
   return (
     <>
@@ -164,11 +133,14 @@ export function HomePage() {
             <div className="mb-6 flex items-end justify-between gap-4">
               <div className="text-left">
                 <div className="text-[11px] uppercase tracking-[0.28em] text-black/30">
-                  {t('home.title')}
+                  {t('brand.subtitle')}
                 </div>
                 <h2 className="mt-3 text-[28px] font-semibold text-black">
-                  {t('home.subtitle')}
+                  {t('home.title')}
                 </h2>
+                <p className="mt-3 text-[15px] leading-8 text-black/58">
+                  {t('home.subtitle')}
+                </p>
               </div>
 
               <button
@@ -182,7 +154,25 @@ export function HomePage() {
               </button>
             </div>
 
-            {topicCards.length === 0 ? (
+            {loading ? (
+              <div className="py-16 text-center text-[15px] leading-8 text-black/54">
+                {t('common.loading', 'Loading...')}
+              </div>
+            ) : error ? (
+              <div className="rounded-[24px] border border-red-200 bg-red-50/70 px-6 py-8 text-left">
+                <div className="text-[11px] uppercase tracking-[0.24em] text-red-500/72">
+                  {t('home.backendOnly', 'Backend source required')}
+                </div>
+                <p className="mt-3 text-[15px] leading-7 text-red-700">{error}</p>
+                <button
+                  type="button"
+                  onClick={() => void loadTopics()}
+                  className="mt-4 rounded-full bg-black px-4 py-2 text-sm text-white transition hover:bg-black/92"
+                >
+                  {t('common.retry', 'Retry')}
+                </button>
+              </div>
+            ) : topicCards.length === 0 ? (
               <div className="py-16 text-center text-[15px] leading-8 text-black/54">
                 {t('home.empty')}
               </div>
@@ -192,20 +182,22 @@ export function HomePage() {
                   <Link
                     key={topic.id}
                     to={`/topic/${topic.id}`}
-                    className="group flex items-center justify-between gap-6 rounded-[26px] px-5 py-5 transition hover:bg-black/[0.028]"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group flex items-center justify-between gap-6 rounded-[26px] px-5 py-5 transition-all duration-200 hover:bg-gradient-to-r hover:from-amber-50/40 hover:to-transparent hover:shadow-sm"
                   >
                     <div className="min-w-0 flex-1 text-left">
-                      <div className="text-[11px] uppercase tracking-[0.2em] text-black/32">{topic.focusLabel}</div>
-                      <h3 className="mt-3 text-[28px] font-semibold leading-[1.15] text-black">{topic.title}</h3>
+                      <div className="text-[11px] uppercase tracking-[0.2em] text-black/32 group-hover:text-amber-600/70">{topic.focusLabel}</div>
+                      <h3 className="mt-3 text-[28px] font-semibold leading-[1.15] text-black group-hover:text-amber-900">{topic.title}</h3>
                       {topic.titleSecondary && topic.titleSecondary !== topic.title ? (
-                        <div className="mt-2 text-[12px] uppercase tracking-[0.18em] text-black/40">
+                        <div className="mt-2 text-[12px] uppercase tracking-[0.18em] text-black/40 group-hover:text-amber-600/60">
                           {topic.titleSecondary}
                         </div>
                       ) : null}
                       <p className="mt-3 line-clamp-2 text-[15px] leading-8 text-black/58">{topic.summary}</p>
                     </div>
-                    <div className="shrink-0 text-sm text-black/46 transition group-hover:text-black">
-                      <ArrowRight className="h-5 w-5 transition group-hover:translate-x-1" />
+                    <div className="shrink-0 text-sm text-black/46 transition-all duration-200 group-hover:text-amber-600 group-hover:translate-x-1">
+                      <ArrowRight className="h-5 w-5" />
                     </div>
                   </Link>
                 ))}

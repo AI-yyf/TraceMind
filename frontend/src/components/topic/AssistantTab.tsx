@@ -1,15 +1,9 @@
 import { useState, useCallback } from 'react'
+import { ArrowRight, ChevronDown, ChevronUp } from 'lucide-react'
 
 import { AssistantEmptyState } from './AssistantEmptyState'
 import { ConversationThread } from './ConversationThread'
-import { CurrentReadingFocusCard } from './CurrentReadingFocusCard'
-import { GuidanceLedgerCard } from './GuidanceLedgerCard'
-import { ReadingPathCard } from './ReadingPathCard'
-import { ResearchIntelPanel } from './ResearchIntelPanel'
 import { ResearchSessionCard } from './ResearchSessionCard'
-import { ResearchWorldCard } from './ResearchWorldCard'
-import { WorkbenchPulseCard } from './WorkbenchPulseCard'
-import { useI18n } from '@/i18n'
 import type {
   CitationRef,
   SuggestedAction,
@@ -80,12 +74,15 @@ export function AssistantTab({
   onStopResearch,
   onUsePrompt,
 }: AssistantTabProps) {
-  const { t } = useI18n()
   const [assistantIntakeOpen, setAssistantIntakeOpen] = useState(false)
 
   const hasResearchIntel = Boolean(
     researchBriefState?.guidance || researchBriefState?.world || researchBriefState?.cognitiveMemory,
   )
+
+  // 计算上下文项数
+  const readingCount = (currentReadingEntry ? 1 : 0) + (readingPathEntries.length > 0 ? 1 : 0)
+  const researchCount = (hasResearchIntel || researchLoading || researchBriefError) && !compactSurface ? 1 : 0
 
   const hasAssistantIntake = !compactSurface && Boolean(
     currentReadingEntry ||
@@ -128,39 +125,40 @@ export function AssistantTab({
 
       {hasAssistantIntake ? (
         <section
-          className={`rounded-[14px] border border-black/8 px-2.5 ${
-            assistantIntakeOpen ? 'bg-[var(--surface-soft)] py-2' : 'bg-white py-1.5'
+          className={`rounded-[14px] border border-black/8 ${
+            assistantIntakeOpen ? 'bg-[var(--surface-soft)] px-3 py-3' : 'bg-white px-3 py-2'
           }`}
         >
-          <div className="flex items-center justify-between gap-2">
-            <div className="text-[10px] uppercase tracking-[0.16em] text-black/34">
-              {t('workbench.contextIntakeTitle', 'Context intake')}
+          <button
+            type="button"
+            onClick={() => setAssistantIntakeOpen((current) => !current)}
+            className="flex w-full items-center justify-between gap-2"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-medium text-black/70">
+                {assistantIntakeOpen ? '收起上下文' : '展开上下文'}
+              </span>
+              {!assistantIntakeOpen ? (
+                <span className="rounded-full bg-[var(--surface-soft)] px-2 py-0.5 text-[10px] text-black/56">
+                  {`${readingCount + researchCount}项`}
+                </span>
+              ) : null}
             </div>
-            <button
-              type="button"
-              onClick={() => setAssistantIntakeOpen((current) => !current)}
-              className="rounded-full border border-black/10 bg-white px-2.5 py-0.5 text-[10px] text-black/56 transition hover:border-black/18 hover:text-black"
-            >
-              {assistantIntakeOpen
-                ? t('workbench.contextIntakeHide', 'Hide')
-                : t('workbench.contextIntakeShow', 'Show')}
-            </button>
-          </div>
-          {!assistantIntakeOpen ? (
-            <p className="mt-1 text-[10px] leading-4 text-black/48">
-              {t(
-                'workbench.contextIntakeSummary',
-                'Reading focus and research context stay available without taking over the thread.',
-              )}
-            </p>
-          ) : (
-            <div className="mt-2 space-y-2">
+            {assistantIntakeOpen ? (
+              <ChevronUp className="h-4 w-4 text-black/48" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-black/48" />
+            )}
+          </button>
+
+          {assistantIntakeOpen ? (
+            <div className="mt-3 space-y-2">
               {!compactSurface ? (
                 <ResearchSessionCard
                   session={researchSession}
                   brief={researchBriefState}
-                  durationHours={researchHours}
-                  onDurationHoursChange={onSetResearchHours}
+                  durationDays={researchHours}
+                  onDurationDaysChange={onSetResearchHours}
                   onStart={onStartResearch}
                   onStop={onStopResearch}
                   starting={researchStarting || researchLoading}
@@ -169,46 +167,83 @@ export function AssistantTab({
                 />
               ) : null}
 
-              <CurrentReadingFocusCard
-                entry={currentReadingEntry}
-                onNavigate={onNavigate}
-              />
-
-              {readingPathEntries.length > 0 ? (
-                <ReadingPathCard
-                  entries={readingPathEntries}
-                  onNavigate={onNavigate}
-                />
+              {/* 阅读路径 - inline merged card */}
+              {(currentReadingEntry || readingPathEntries.length > 0) ? (
+                <article className="rounded-[14px] border border-black/8 bg-white px-3 py-2.5">
+                  <div className="text-[10px] uppercase tracking-[0.18em] text-black/34">
+                    阅读路径
+                  </div>
+                  {currentReadingEntry ? (
+                    <div className="mt-2 flex items-center gap-2">
+                      <span className="text-[11px] font-medium text-black">
+                        {currentReadingEntry.title}
+                      </span>
+                      <span className="rounded-full bg-[var(--surface-soft)] px-2 py-0.5 text-[10px] text-black/56">
+                        {currentReadingEntry.kind === 'paper' ? '论文' : currentReadingEntry.kind === 'node' ? '节点' : '主题'}
+                      </span>
+                    </div>
+                  ) : null}
+                  {readingPathEntries.length > 0 ? (
+                    <div className="mt-2 flex flex-wrap items-center gap-1">
+                      {readingPathEntries.map((entry, index) => (
+                        <div key={entry.id} className="inline-flex items-center gap-1">
+                          {index > 0 ? <ArrowRight className="h-3 w-3 text-black/24" /> : null}
+                          <button
+                            type="button"
+                            onClick={() => onNavigate(entry.route)}
+                            className={`rounded-full px-2 py-0.5 text-[10px] transition ${
+                              index === readingPathEntries.length - 1
+                                ? 'bg-black/8 text-black/70'
+                                : 'bg-[var(--surface-soft)] text-black/56 hover:text-black/80'
+                            }`}
+                          >
+                            {entry.title}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </article>
               ) : null}
 
-              {!compactSurface ? (
-                <ResearchIntelPanel
-                  loading={researchLoading}
-                  errorMessage={researchBriefError}
-                  ready={hasResearchIntel}
-                  onRetry={() => {
-                    // Caller handles retry
-                  }}
-                  onUsePrompt={onUsePrompt}
-                >
-                  <GuidanceLedgerCard
-                    guidance={researchBriefState?.guidance ?? null}
-                    onUsePrompt={onUsePrompt}
-                  />
-
-                  <ResearchWorldCard
-                    world={researchBriefState?.world ?? null}
-                    onUsePrompt={onUsePrompt}
-                  />
-
-                  <WorkbenchPulseCard
-                    brief={researchBriefState}
-                    onUsePrompt={onUsePrompt}
-                  />
-                </ResearchIntelPanel>
+              {/* 研究上下文 - inline summary card */}
+              {!compactSurface && (hasResearchIntel || researchLoading || researchBriefError) ? (
+                <article className="rounded-[14px] border border-black/8 bg-white px-3 py-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-black/34">
+                      研究上下文
+                    </div>
+                    {researchLoading ? (
+                      <span className="text-[10px] text-black/48">加载中...</span>
+                    ) : researchBriefError ? (
+                      <span className="text-[10px] text-amber-600">获取失败</span>
+                    ) : hasResearchIntel ? (
+                      <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] text-emerald-700">
+                        已就绪
+                      </span>
+                    ) : null}
+                  </div>
+                  {researchBriefState?.guidance?.summary?.focusHeadline ? (
+                    <p className="mt-2 text-[11px] leading-5 text-black/62">
+                      {researchBriefState.guidance.summary.focusHeadline}
+                    </p>
+                  ) : researchBriefState?.world?.summary?.thesis ? (
+                    <p className="mt-2 text-[11px] leading-5 text-black/62">
+                      {researchBriefState.world.summary.thesis}
+                    </p>
+                  ) : researchBriefError ? (
+                    <p className="mt-2 text-[11px] leading-5 text-black/50">
+                      {researchBriefError}
+                    </p>
+                  ) : (
+                    <p className="mt-2 text-[11px] leading-5 text-black/50">
+                      启动研究以获取智能上下文摘要
+                    </p>
+                  )}
+                </article>
               ) : null}
             </div>
-          )}
+          ) : null}
         </section>
       ) : null}
     </div>
