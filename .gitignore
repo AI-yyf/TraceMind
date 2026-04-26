@@ -56,9 +56,12 @@ frontend/node_modules/
 .playwright-qareview/
 .sisyphus/
 .omx/
+AGENTS.md
+**/AGENTS.md
 
 # Local screenshots / visual checks
-*.png
+/*.png
+frontend/*.png
 
 # Local scratch / one-off scripts
 fix-*.js
@@ -108,8 +111,8 @@ skills-backend/test-report-db.json
 skills-backend/uploads/
 skills-backend/scripts/__pycache__/
 frontend/generated/
-generated-data/public/
-generated-data/app-data/workflow/
+generated-data/references/
+generated-data/search-results/
 
 # Local external code dumps / experiments
 codeexample/

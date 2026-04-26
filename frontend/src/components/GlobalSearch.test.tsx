@@ -27,7 +27,7 @@ const apiGetMock = vi.mocked(apiGet)
 
 function renderWithProviders(node: ReactNode) {
   localStorage.setItem(
-    'arxiv-chronicle-language-preference',
+    'tracemind-language-preference',
     JSON.stringify({ primary: 'en', secondary: 'zh', mode: 'monolingual' }),
   )
 

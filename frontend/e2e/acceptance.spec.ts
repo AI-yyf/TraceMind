@@ -49,7 +49,7 @@ test.beforeEach(async ({ request, page }) => {
   await page.setViewportSize({ width: 1180, height: 920 })
   await page.addInitScript(() => {
     const onboardingValue = JSON.stringify({ completed: true, version: 1 })
-    window.localStorage.setItem('arxiv-tracker:tracemind:onboarding:completed', onboardingValue)
+    window.localStorage.setItem('tracemind-tracker:tracemind:onboarding:completed', onboardingValue)
     window.localStorage.setItem('tracemind:onboarding:completed', onboardingValue)
   })
   await ensureSystemReady(request)

@@ -10,7 +10,7 @@ import {
 } from './appStateStorage'
 import { clearLanguageSensitiveAppState, resetPersistedAppStateOnce } from './bootstrapStorage'
 
-const RESET_MARKER_KEY = 'arxiv-chronicle-storage-reset'
+const RESET_MARKER_KEY = 'tracemind-storage-reset'
 
 describe('bootstrapStorage', () => {
   beforeEach(() => {

@@ -2292,13 +2292,13 @@ async function localizeBlueprintWithLanguagePatches(
         issues: fallbackLanguages
           .map((entry) => entry.issue?.message)
           .filter((message): message is string => Boolean(message)),
-        service: 'research-tracker',
+        service: 'tracemind',
       })
     } else {
       logger.info('Topic localization uses deterministic fallback patches.', {
         sourceLanguage: input.sourceLanguage,
         languages: fallbackLanguages.map((entry) => entry.language),
-        service: 'research-tracker',
+        service: 'tracemind',
       })
     }
   }
@@ -2351,7 +2351,7 @@ async function generatePreview(input: TopicGenerationInput, userId?: string) {
     logger.warn('Topic preview generation fell back to heuristic preview.', {
       sourceLanguage: input.sourceLanguage,
       issue: issue?.message ?? null,
-      service: 'research-tracker',
+      service: 'tracemind',
     })
   }
 
@@ -2375,7 +2375,7 @@ async function generateBlueprint(
   if (strategy.mode === 'scaffold') {
     logger.info('Topic blueprint uses deterministic scaffold strategy override.', {
       sourceLanguage: input.sourceLanguage,
-      service: 'research-tracker',
+      service: 'tracemind',
     })
     return fallback
   }
@@ -2422,7 +2422,7 @@ async function generateBlueprint(
     logger.warn('Topic blueprint generation fell back to scaffold.', {
       sourceLanguage: input.sourceLanguage,
       issue: issue?.message ?? null,
-      service: 'research-tracker',
+      service: 'tracemind',
     })
   }
 
@@ -2454,7 +2454,7 @@ async function localizeBlueprint(
     if (usesCompatibleProvider && strategy.mode === 'native') {
       logger.info('Topic localization uses language patch pipeline for compatible provider.', {
         sourceLanguage: input.sourceLanguage,
-        service: 'research-tracker',
+        service: 'tracemind',
       })
     }
 
@@ -2489,7 +2489,7 @@ async function localizeBlueprint(
     logger.warn('Topic localization generation fell back to language patches.', {
       sourceLanguage: input.sourceLanguage,
       issue: issue?.message ?? null,
-      service: 'research-tracker',
+      service: 'tracemind',
     })
     return localizeBlueprintWithLanguagePatches(input, blueprint, {
       strategy,
@@ -2519,7 +2519,7 @@ async function runTopicGenerationPipeline(
       sourceLanguage: input.sourceLanguage,
       usesCompatibleGateway: strategy.usesCompatibleGateway,
       usesProvidedPreview: Boolean(providedPreview && options?.preferFastCreate),
-      service: 'research-tracker',
+      service: 'tracemind',
     })
 
     const blueprint = await generateBlueprint(input, preview, {

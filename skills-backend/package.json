@@ -1,7 +1,7 @@
 {
-  "name": "research-tracker-backend",
+  "name": "@tracemind/backend",
   "version": "1.0.0",
-  "description": "学术研究追踪系统后端服务",
+  "description": "TraceMind research API, orchestration, and model gateway",
   "main": "dist/src/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",

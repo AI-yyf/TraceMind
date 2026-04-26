@@ -71,7 +71,7 @@ if (process.env.NODE_ENV === 'production') {
 // 创建 logger
 export const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
-  defaultMeta: { service: 'research-tracker' },
+  defaultMeta: { service: 'tracemind' },
   transports,
   exitOnError: false
 })

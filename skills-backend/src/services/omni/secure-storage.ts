@@ -1,6 +1,12 @@
 import crypto from 'node:crypto'
 
-const DEV_MASTER_KEY_SALT = 'arxiv-chronicle-dev-master-key'
+const DEV_MASTER_KEY_SALT = 'tracemind-dev-master-key'
+const LEGACY_DEV_MASTER_KEY_SALT = ['arxiv', 'chronicle', 'dev', 'master', 'key'].join('-')
+
+function deriveDevelopmentMasterKey(salt: string) {
+  const fallbackSeed = `${salt}:${process.env.DATABASE_URL ?? 'local-dev'}`
+  return crypto.createHash('sha256').update(fallbackSeed).digest()
+}
 
 function resolveMasterKey(): Buffer {
   const configured = process.env.MASTER_ENCRYPTION_KEY?.trim()
@@ -15,8 +21,21 @@ function resolveMasterKey(): Buffer {
     throw new Error('MASTER_ENCRYPTION_KEY is required in production.')
   }
 
-  const fallbackSeed = `${DEV_MASTER_KEY_SALT}:${process.env.DATABASE_URL ?? 'local-dev'}`
-  return crypto.createHash('sha256').update(fallbackSeed).digest()
+  return deriveDevelopmentMasterKey(DEV_MASTER_KEY_SALT)
+}
+
+function resolveDecryptionMasterKeys(): Buffer[] {
+  const configured = process.env.MASTER_ENCRYPTION_KEY?.trim()
+  if (configured) return [resolveMasterKey()]
+
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('MASTER_ENCRYPTION_KEY is required in production.')
+  }
+
+  return [
+    deriveDevelopmentMasterKey(DEV_MASTER_KEY_SALT),
+    deriveDevelopmentMasterKey(LEGACY_DEV_MASTER_KEY_SALT),
+  ]
 }
 
 export interface EncryptedSecretPayload {
@@ -53,15 +72,25 @@ export class SecureStorage {
   }
 
   static decrypt(payload: EncryptedSecretPayload): string {
-    const decipher = crypto.createDecipheriv(
-      'aes-256-gcm',
-      resolveMasterKey(),
-      Buffer.from(payload.iv, 'hex'),
-    )
-    decipher.setAuthTag(Buffer.from(payload.tag, 'hex'))
+    let lastError: unknown
 
-    let decrypted = decipher.update(payload.encrypted, 'hex', 'utf8')
-    decrypted += decipher.final('utf8')
-    return decrypted
+    for (const masterKey of resolveDecryptionMasterKeys()) {
+      try {
+        const decipher = crypto.createDecipheriv(
+          'aes-256-gcm',
+          masterKey,
+          Buffer.from(payload.iv, 'hex'),
+        )
+        decipher.setAuthTag(Buffer.from(payload.tag, 'hex'))
+
+        let decrypted = decipher.update(payload.encrypted, 'hex', 'utf8')
+        decrypted += decipher.final('utf8')
+        return decrypted
+      } catch (error) {
+        lastError = error
+      }
+    }
+
+    throw lastError
   }
 }

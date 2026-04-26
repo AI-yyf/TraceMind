@@ -4,10 +4,13 @@
  */
 
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
 const { spawn } = require('child_process');
 const { PrismaClient } = require('@prisma/client');
 
 const BASE_URL = 'http://localhost:3303';
+const backendRoot = path.resolve(__dirname, '..');
 const prisma = new PrismaClient();
 
 let backendProcess = null;
@@ -65,7 +68,7 @@ async function startBackend() {
     console.log('正在启动后端服务...');
 
     backendProcess = spawn('npm', ['run', 'dev'], {
-      cwd: 'F:\\DailyReport-main\\skills-backend',
+      cwd: backendRoot,
       shell: true,
       stdio: ['ignore', 'pipe', 'pipe']
     });
@@ -643,15 +646,15 @@ async function main() {
   console.log(`\n总计: ${totalPassed} 通过, ${totalFailed} 失败`);
 
   // 保存证据
-  const fs = require('fs');
   const evidence = {
     timestamp: new Date().toISOString(),
     summary: { passed: totalPassed, failed: totalFailed },
     tests: allResults
   };
 
-  fs.writeFileSync('F:\\DailyReport-main\\skills-backend\\functional-test-evidence.json', JSON.stringify(evidence, null, 2));
-  console.log(`\n证据已保存: F:\\DailyReport-main\\skills-backend\\functional-test-evidence.json`);
+  const evidencePath = path.join(backendRoot, 'functional-test-evidence.json');
+  fs.writeFileSync(evidencePath, JSON.stringify(evidence, null, 2));
+  console.log(`\n证据已保存: ${evidencePath}`);
 
   // 停止后端
   if (backendProcess) {

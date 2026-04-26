@@ -2506,7 +2506,7 @@ async function searchArxiv(args: {
     try {
       const response = await fetch(url, {
         headers: {
-          'User-Agent': 'DailyReportResearch/1.0',
+          'User-Agent': 'TraceMindResearch/1.0',
         },
         signal: AbortSignal.timeout(ARXIV_FETCH_TIMEOUT_MS),
       })
@@ -2540,7 +2540,7 @@ async function searchOpenAlex(args: {
 
   const response = await fetch(url, {
     headers: {
-      'User-Agent': 'DailyReportResearch/1.0 (mailto:research@example.com)',
+      'User-Agent': 'TraceMindResearch/1.0 (mailto:research@example.com)',
     },
     signal: AbortSignal.timeout(OPENALEX_FETCH_TIMEOUT_MS),
   })

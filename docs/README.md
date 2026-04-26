@@ -1,26 +1,32 @@
-# 文档总览
+# TraceMind Documentation
 
-`docs/` 是溯知当前唯一的权威文档入口。
+This directory is the public documentation entry for TraceMind. It describes the product as it exists in the repository, not temporary planning notes.
 
-## 建议阅读顺序
+## Start Here
 
-1. `suzhi-ideal-state-blueprint.md`
-   说明产品目标、研究闭环和体验原则。
-2. `frontend-ui-system-blueprint.md`
-   说明页面职责、界面结构、工作台与搜索契约。
-3. `backend-research-architecture.md`
-   说明后端路由、研究编排、搜索、模型接入和资产流。
-4. `developer-operations.md`
-   说明启动、测试、端口、运行数据目录和开发治理。
-5. `implementation-roadmap.md`
-   说明当前已经稳定的部分与下一步收口重点。
-6. `model-config-migration.md`
-   说明模型配置从环境变量到配置接口/设置页的迁移方式。
-7. `legacy-docs-status.md`
-   说明根目录历史文档如何映射到当前文档体系。
+1. [Getting Started](getting-started.md): install, configure, and run the frontend/backend.
+2. [Architecture](architecture.md): the end-to-end research loop and major system boundaries.
+3. [Backend Research Architecture](backend-research-architecture.md): API routes, search aggregation, PDF extraction, scheduling, and model routing.
+4. [Model Configuration](model-config-migration.md): how model providers and runtime slots are configured.
+5. [Developer Operations](developer-operations.md): local development, tests, quality gates, and release hygiene.
+6. [Roadmap](roadmap.md): current completeness level and next product milestones.
+7. [Open Source References](open-source-references.md): frameworks, APIs, and prior art used by or referenced by TraceMind.
 
-## 文档原则
+## User Introductions in 8 Languages
 
-- 文档必须描述“当前代码真实怎么工作”，而不是空泛的理想状态。
-- 历史草图、实验计划、运行日志和一次性调查，不再放在这里当正式规范。
-- 如果代码改变了页面结构、接口契约或运行方式，优先更新这里，再补实现细节。
+TraceMind currently supports eight UI languages. The user-facing project introduction is mirrored in the same set:
+
+- [中文](i18n/README.zh-CN.md)
+- [English](i18n/README.en-US.md)
+- [日本語](i18n/README.ja-JP.md)
+- [한국어](i18n/README.ko-KR.md)
+- [Deutsch](i18n/README.de-DE.md)
+- [Français](i18n/README.fr-FR.md)
+- [Español](i18n/README.es-ES.md)
+- [Русский](i18n/README.ru-RU.md)
+
+## Documentation Principles
+
+- Public docs explain stable concepts, supported workflows, and real commands.
+- Local agent instructions, screenshots, temporary QA output, and one-off planning files are intentionally excluded from the public repository.
+- When code changes route contracts, model configuration, or generated data requirements, update these docs in the same pull request.

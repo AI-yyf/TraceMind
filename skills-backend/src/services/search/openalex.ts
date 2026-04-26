@@ -427,7 +427,7 @@ function buildFilterString(filters: OpenAlexSearchFilters): string {
 function getHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
     'Accept': 'application/json',
-    'User-Agent': 'TraceMind-DailyReport/2.0',
+    'User-Agent': 'TraceMind/2.0',
   }
 
   // Polite Pool: 添加mailto参数可提升速率限制

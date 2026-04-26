@@ -1,77 +1,72 @@
-# 后端研究架构
+# Backend Research Architecture
 
-## 服务入口
+TraceMind's backend is an Express application with Prisma persistence, academic search aggregation, PDF extraction, topic runtime services, and model routing.
 
-后端主入口是 `skills-backend/src/server.ts`，当前挂载的关键路由包括：
+## API Surface
 
-- `/health`
-- `/api/chat`
-- `/api/topics`
-- `/api/nodes`
-- `/api/papers`
-- `/api/search`
-- `/api/research`
-- `/api/tasks`
-- `/api/model-configs`
-- `/api/omni`
-- `/api/pdf`
+The backend exposes stable routes under `/api/*`:
 
-## 核心子系统
+- `/api/topics`: topic dashboard, topic graph, topic runtime views
+- `/api/papers`: paper metadata and reading assets
+- `/api/nodes`: research node views and node-level evidence
+- `/api/search`: academic search aggregation
+- `/api/pdf`: PDF extraction and grounding
+- `/api/research`: research reports and research actions
+- `/api/tasks`: scheduled/background task status
+- `/api/model-configs`: model provider configuration
+- `/api/omni`: unified model gateway operations
+- `/api/prompt-templates`: Prompt Studio and external-agent job packages
+- `/api/evidence`: evidence references and traceable support material
+- `/api/zotero`: reference-management export
 
-### 主题与阅读模型
+Health checks are available at `/health` and `/api/health`.
 
-- `src/services/topics/alpha-topic.ts`
-- `src/services/topics/alpha-reader.ts`
-- `src/services/topics/topic-contracts.ts`
+## Research Pipeline
 
-这部分负责生成和缓存主题 view model、研究 brief、节点 view model、导出包与阅读产物。
+The research loop is implemented as layered services:
 
-### 搜索
+1. Topic configuration starts from `skills-backend/topic-config/`.
+2. Topic materialization writes runtime data into `generated-data/app-data/`.
+3. Search aggregation collects academic candidates from provider services.
+4. PDF and grounding services extract text, figures, formulas, and citations.
+5. Topic/node services connect papers to research stages and node views.
+6. Editorial services generate structured reading and synthesis artifacts.
+7. Scheduler services keep longer-running topic refresh and monitoring workflows separate from request/response paths.
 
-- `src/services/search/search-aggregator.ts`
-- `src/services/search/web-search.ts`
-- `src/services/topics/search.ts`
+## Model Gateway
 
-职责是聚合 Semantic Scholar / ArXiv / OpenAlex / Crossref，并在允许时补充 Web 搜索结果。
+Model calls should be routed through the Omni layer:
 
-### 调度与研究会话
+- `src/services/omni/gateway.ts`: runtime dispatch
+- `src/services/omni/config-store.ts`: persisted provider configuration
+- `src/services/omni/catalog.ts`: model/provider capability catalog
+- `src/services/omni/validation-schemas.ts`: provider configuration validation
 
-- `src/services/enhanced-scheduler.ts`
-- `src/services/scheduler-types.ts`
-- `src/services/scheduler-utils.ts`
-- `src/routes/research.ts`
-- `src/routes/tasks.ts`
+This keeps provider credentials and model choices out of UI code and avoids hardcoded SDK calls in feature services.
 
-当前主路径已经偏向 duration-first 研究任务；旧的 stage-round 逻辑仍作为兼容面存在，但不再是主要工作流。
+## Search Providers
 
-### 模型接入
+Search provider services live under `src/services/search/`:
 
-- `src/services/omni/gateway.ts`
-- `src/routes/chat.ts`
-- `src/routes/model-configs.ts`
+- arXiv integration through topic/search services
+- OpenAlex metadata lookup
+- Crossref DOI and bibliography lookup
+- Semantic Scholar paper/citation lookup
+- source health tracking
 
-所有 LLM/VLM 调用应通过 Omni gateway 完成，不直接散落在路由中。
+The aggregator is responsible for deduplication, normalization, and scoring. Feature code should call the aggregator instead of calling providers directly.
 
-### PDF 与资产
+## PDF and Evidence
 
-- `src/services/pdf-extractor.ts`
-- `src/routes/pdf.ts`
-- `src/services/arxiv-source-extractor.ts`
+PDF extraction combines TypeScript service orchestration with Python helper scripts for parsing and rendering. Extracted assets are served through controlled static routes and normalized into evidence records so generated summaries can point back to source material.
 
-运行时静态资源通过两条静态路由暴露：
+## Generated Data
 
-- `/uploads` -> `skills-backend/uploads`
-- `/papers` -> `generated-data/public/papers`
+`generated-data/app-data/` is the frontend-readable runtime snapshot. `generated-data/public/papers/` contains curated paper assets used by demo topics and local exploration. Temporary screenshots, search dumps, and QA references are ignored.
 
-## 数据分层
+## Operational Rules
 
-- `prisma/schema.prisma`：数据库模型，默认 SQLite
-- `generated-data/app-data/`：研究数据与运行时快照
-- `generated-data/public/papers/`：论文静态资源
-- `skills-backend/uploads/`：本地上传与提取产物
-
-## 当前架构原则
-
-- 前端只消费契约，不拼隐藏字段。
-- 路由负责校验、错误边界和响应包装；业务逻辑沉到 services。
-- 搜索、节点、主题、研究任务都以契约测试保护，不允许默默漂移。
+- Keep long-running work outside synchronous request handlers.
+- Do not commit real API keys or local uploads.
+- Use Prisma migrations for schema changes.
+- Prefer extending existing topic/search/model services over adding parallel pathways.

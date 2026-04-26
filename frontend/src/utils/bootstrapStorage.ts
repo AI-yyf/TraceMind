@@ -10,7 +10,7 @@ import {
   writeLocalStorageItem,
 } from './appStateStorage'
 
-const RESET_MARKER_KEY = 'arxiv-chronicle-storage-reset'
+const RESET_MARKER_KEY = 'tracemind-storage-reset'
 const RESET_MARKER_VALUE = '2026-04-15-managed-app-state'
 
 export function resetPersistedAppStateOnce() {

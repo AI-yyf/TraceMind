@@ -80,7 +80,7 @@ function KeyedReadingWorkspace({ children }: { children: ReactNode }) {
 
 function renderWithProviders(node: ReactNode, initialEntry: string, path: string) {
   localStorage.setItem(
-    'arxiv-chronicle-language-preference',
+    'tracemind-language-preference',
     JSON.stringify({ primary: 'en', secondary: 'zh', mode: 'monolingual' }),
   )
 

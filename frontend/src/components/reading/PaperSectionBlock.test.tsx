@@ -12,7 +12,7 @@ import { PaperSectionBlock } from './PaperSectionBlock'
 
 function renderWithProviders(node: ReactNode) {
   localStorage.setItem(
-    'arxiv-chronicle-language-preference',
+    'tracemind-language-preference',
     JSON.stringify({ primary: 'zh', secondary: 'en', mode: 'monolingual' }),
   )
 

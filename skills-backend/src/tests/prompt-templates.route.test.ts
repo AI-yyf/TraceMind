@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import { createServer } from 'node:http'
+import path from 'node:path'
 import test from 'node:test'
 
 import { prisma } from '../lib/prisma'
 import { createApp } from '../server'
+
+const promptGuidePath = path.resolve(process.cwd(), 'external-agents', 'PROMPT_GUIDE.md')
 
 function createConfigRecord(key: string, value: string) {
   return {
@@ -315,10 +318,7 @@ test('POST /api/prompt-templates/studio persists edits and can be restored from 
     const originalAgentAssetRecord = await prisma.system_configs.findUnique({
       where: { key: agentAssetKey },
     })
-    const originalPromptGuide = await fs.readFile(
-      'F:\\DailyReport-main\\skills-backend\\external-agents\\PROMPT_GUIDE.md',
-      'utf8',
-    )
+    const originalPromptGuide = await fs.readFile(promptGuidePath, 'utf8')
 
     const originalResponse = await fetch(`${origin}/api/prompt-templates/studio`)
     assert.equal(originalResponse.status, 200)
@@ -419,10 +419,7 @@ test('POST /api/prompt-templates/studio persists edits and can be restored from 
         verifyPayload.data.runtime.editorialPolicies.zh.identity.includes('[route-test-policy]'),
         true,
       )
-      const promptGuideOnDisk = await fs.readFile(
-        'F:\\DailyReport-main\\skills-backend\\external-agents\\PROMPT_GUIDE.md',
-        'utf8',
-      )
+      const promptGuideOnDisk = await fs.readFile(promptGuidePath, 'utf8')
       assert.equal(promptGuideOnDisk.includes('[route-test-agent-marker]'), true)
     } finally {
       if (originalTemplateRecord) {
@@ -461,11 +458,7 @@ test('POST /api/prompt-templates/studio persists edits and can be restored from 
         })
       }
 
-      await fs.writeFile(
-        'F:\\DailyReport-main\\skills-backend\\external-agents\\PROMPT_GUIDE.md',
-        originalPromptGuide,
-        'utf8',
-      )
+      await fs.writeFile(promptGuidePath, originalPromptGuide, 'utf8')
     }
   })
 })

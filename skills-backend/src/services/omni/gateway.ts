@@ -20,7 +20,7 @@ import type {
 } from './types'
 
 const COMPATIBLE_PROVIDER_HEADERS: Partial<Record<ProviderId, Record<string, string>>> = {
-  deepseek: { 'X-Client-Source': 'arxiv-chronicle-alpha' },
+  deepseek: { 'X-Client-Source': 'tracemind-alpha' },
 }
 
 const VALIDATION_IMAGE_BASE64 =

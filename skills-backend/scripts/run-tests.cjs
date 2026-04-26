@@ -9,8 +9,10 @@
  */
 
 const http = require('http');
+const path = require('path');
 
 const BASE_URL = 'http://localhost:3303';
+const backendRoot = path.resolve(__dirname, '..');
 
 // Helper function for HTTP requests
 function request(method, path, body = null) {
@@ -498,7 +500,7 @@ async function main() {
 
   // 保存结果
   const fs = require('fs');
-  const reportPath = 'F:\\DailyReport-main\\skills-backend\\test-report.json';
+  const reportPath = path.join(backendRoot, 'test-report.json');
   fs.writeFileSync(reportPath, JSON.stringify({
     timestamp: new Date().toISOString(),
     summary: { passed: totalPassed, failed: totalFailed },

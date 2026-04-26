@@ -52,7 +52,7 @@ describe('GlobalLanguageSwitch', () => {
 
   it('switches the primary language to English from the visible quick action', async () => {
     localStorage.setItem(
-      'arxiv-chronicle-language-preference',
+      'tracemind-language-preference',
       JSON.stringify({ primary: 'zh', secondary: 'en', mode: 'monolingual' }),
     )
 
@@ -67,7 +67,7 @@ describe('GlobalLanguageSwitch', () => {
     })
 
     expect(document.documentElement.lang).toBe('en')
-    expect(localStorage.getItem('arxiv-chronicle-language-preference')).toContain('"primary":"en"')
+    expect(localStorage.getItem('tracemind-language-preference')).toContain('"primary":"en"')
   })
 
   it('can turn on bilingual mode from the expanded panel', async () => {
@@ -77,7 +77,7 @@ describe('GlobalLanguageSwitch', () => {
     fireEvent.click(screen.getByTestId('language-menu-toggle'))
     fireEvent.click(screen.getByTestId('language-mode-bilingual'))
 
-    expect(localStorage.getItem('arxiv-chronicle-language-preference')).toContain(
+    expect(localStorage.getItem('tracemind-language-preference')).toContain(
       '"mode":"bilingual"',
     )
   })

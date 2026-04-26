@@ -1,7 +1,7 @@
 {
-  "name": "arxiv-chronicle-frontend",
+  "name": "@tracemind/frontend",
   "version": "1.0.0",
-  "description": "溯知集 ArXiv Chronicle - AI驱动的学术研究追踪系统前端",
+  "description": "TraceMind frontend research workbench",
   "type": "module",
   "scripts": {
     "dev": "vite",

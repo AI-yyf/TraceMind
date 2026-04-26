@@ -6,16 +6,16 @@ export const LEGACY_APP_STATE_STORAGE_KEYS = {
 } as const
 
 export const APP_STATE_STORAGE_KEYS = {
-  config: 'arxiv-chronicle-config',
-  languagePreference: 'arxiv-chronicle-language-preference',
-  languageSwitchExpanded: 'arxiv-chronicle-language-switch-expanded',
+  config: 'tracemind-config',
+  languagePreference: 'tracemind-language-preference',
+  languageSwitchExpanded: 'tracemind-language-switch-expanded',
   globalSearchRecent: 'global-search:recent',
   readingWorkspace: 'reading-workspace:v1',
   errorReports: 'error_reports',
   topicContextQueue: 'topic-context-queue',
   favoriteExcerpts: 'favorite-excerpts',
   alphaUserId: 'alpha-user-id',
-  trackerPrefix: 'arxiv-tracker:',
+  trackerPrefix: 'tracemind-tracker:',
   topicChatPrefix: 'topic-chat:',
   topicSearchRecentPrefix: 'topic-search:recent:',
 } as const

@@ -1,36 +1,44 @@
-# 模型配置迁移说明
+# Model Configuration
 
-## 当前推荐方式
+TraceMind supports multiple model providers through the Omni Gateway. The intended path is:
 
-日常切换语言模型、多模态模型、base URL 或 key 状态时，优先使用：
+1. Use environment variables only for bootstrap defaults.
+2. Store provider settings through `/api/model-configs`.
+3. Let feature services call Omni Gateway rather than provider SDKs directly.
 
-- 前端设置页
-- `/api/model-configs`
+## Bootstrap Variables
 
-不要再把“换一个模型”当成必须改 `.env` 的操作。
+`skills-backend/.env.example` documents the common bootstrap values:
 
-## 当前分工
+```bash
+OMNI_DEFAULT_PROVIDER=bigmodel
+OMNI_DEFAULT_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+OMNI_DEFAULT_API_KEY=replace-with-your-key
+OMNI_LANGUAGE_MODEL=glm-5
+OMNI_MULTIMODAL_MODEL=glm-4.6v
+```
 
-### 环境变量仍适合做的事
+Provider-specific keys such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and `GOOGLE_API_KEY` are also supported as fallbacks.
 
-- 初始化默认 provider/base URL
-- 本地开发时提供基础 key
-- Docker / CI / 部署环境注入敏感值
+## Runtime Slots
 
-### 配置接口适合做的事
+TraceMind distinguishes model roles instead of assuming one model is good for everything:
 
-- 用户级模型选择
-- 语言 / 多模态双槽配置
-- preset 切换
-- 运行时可视化检查当前生效模型
+- language model: planning, reading, synthesis, chat
+- multimodal model: figures, screenshots, visual evidence
+- role overrides: specialized node writer, vision reader, or future task-specific roles
 
-## 迁移原则
+## Security Rules
 
-- 新能力统一经过 Omni gateway。
-- 前端不要直接推测 provider 能力，优先消费 `model-configs` 响应。
-- 历史脚本如果还在读旧环境变量，应逐步迁移到配置加载层，而不是在多个脚本里各自实现一套读取逻辑。
+- Never commit real credentials.
+- Do not hardcode provider keys in frontend code.
+- Prefer provider-compatible base URLs and model names in configuration.
+- Keep provider validation in backend schemas so bad settings fail early.
 
-## 当前提醒
+## User Workflow
 
-- 如果 topic chat 或 Omni 调用异常，先检查 `/api/model-configs` 和设置页的实际生效配置。
-- 如果只是要切模型，优先走配置接口，不要直接改源码。
+1. Start backend and frontend.
+2. Open Settings.
+3. Add or update model provider credentials.
+4. Test connectivity.
+5. Use the selected model profile in research workflows.

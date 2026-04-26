@@ -28,6 +28,7 @@ import { type GenerationPassRecord } from '../../../src/services/generation/memo
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
+import path from 'node:path'
 
 interface ContentGenesisInput {
   paperId: string
@@ -39,6 +40,14 @@ interface ContentGenesisInput {
   model?: string
   temperature?: number
   maxTokens?: number
+}
+
+function resolveLocalAssetPath(assetPath: string) {
+  if (path.isAbsolute(assetPath) || /^[A-Za-z]:[\\/]/u.test(assetPath)) {
+    return assetPath
+  }
+
+  return path.resolve(process.cwd(), assetPath)
 }
 
 interface TopicDefinitionLike {
@@ -407,9 +416,7 @@ async function generateThreeLayerContent(args: {
         let imageBase64: string | null = null
         try {
           // Handle both absolute paths and relative paths
-          const fullPath = imagePath.startsWith('/') || imagePath.startsWith('F:')
-            ? imagePath
-            : `F:/DailyReport-main/skills-backend/${imagePath}`
+          const fullPath = resolveLocalAssetPath(imagePath)
 
           if (existsSync(fullPath)) {
             const imageData = await readFile(fullPath)
@@ -417,7 +424,7 @@ async function generateThreeLayerContent(args: {
             console.log(`[ContentGenesis] Loaded figure image: ${fig.figureNumber || '?'} (${imageBase64.length} bytes base64)`)
           } else {
             // Try uploads directory
-            const uploadsPath = `F:/DailyReport-main/skills-backend/uploads/${imagePath}`
+            const uploadsPath = path.resolve(process.cwd(), 'uploads', imagePath)
             if (existsSync(uploadsPath)) {
               const imageData = await readFile(uploadsPath)
               imageBase64 = imageData.toString('base64')
@@ -512,9 +519,7 @@ async function generateThreeLayerContent(args: {
           if (!imagePath) continue
 
           try {
-            const fullPath = imagePath.startsWith('/') || imagePath.startsWith('F:')
-              ? imagePath
-              : `F:/DailyReport-main/skills-backend/${imagePath}`
+            const fullPath = resolveLocalAssetPath(imagePath)
 
             if (existsSync(fullPath)) {
               const imageData = await readFile(fullPath)

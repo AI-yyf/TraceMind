@@ -36,7 +36,7 @@ function renderWithProviders(
   primaryLanguage: 'en' | 'zh' = 'en',
 ) {
   localStorage.setItem(
-    'arxiv-chronicle-language-preference',
+    'tracemind-language-preference',
     JSON.stringify({
       primary: primaryLanguage,
       secondary: primaryLanguage === 'zh' ? 'en' : 'zh',
