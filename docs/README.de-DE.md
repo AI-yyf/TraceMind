@@ -7,7 +7,7 @@
 <h1 align="center">TraceMind</h1>
 
 <p align="center">
-  <strong>Eine KI-gestützte persönliche Forschungswerkbank für Menschen, die eine Richtung verstehen wollen, nicht nur eine schnelle Antwort.</strong>
+  <strong>Eine persönliche KI-Forschungswerkbank für Menschen, die eine Richtung verstehen wollen und nicht nur schnelle Antworten sammeln möchten.</strong>
 </p>
 
 <p align="center">
@@ -17,44 +17,74 @@
   <img alt="i18n" src="https://img.shields.io/badge/i18n-8_languages-2563eb">
 </p>
 
-TraceMind geht von einer einfachen Beobachtung aus: Ein einzelnes Forschungsergebnis reicht fast nie aus, um die Entwicklung eines ganzen Forschungsfeldes zu erkennen.
+## Kurz gesagt
 
-Die heutige KI-Forschung ist schnell, laut und stark von Trends geprägt. Zusammenfassungen sind leicht zu erzeugen, aber echtes Verständnis wächst langsamer. TraceMind verfolgt daher einen anderen Ansatz: KI soll Literatur verfolgen, Belege sammeln und Antworten auf dieser Grundlage geben, damit sie zu einem loyalen und präzisen Forschungsassistenten wird.
+Ein einzelnes Forschungsergebnis reicht fast nie aus, um die Entwicklung eines Feldes wirklich zu erkennen. Gerade in der KI-Forschung sind Tempo, Trends und Sichtbarkeit hoch, aber tiefes Verständnis wächst deutlich langsamer. TraceMind soll helfen, Literatur über längere Zeit zu verfolgen, Evidenz zu sammeln und daraus eine klarere Sicht auf ein Forschungsgebiet aufzubauen.
 
-## Projektvorstellung
+## Was ist TraceMind
 
-TraceMind ist eine persönliche KI-Forschungswerkbank für Studierende, unabhängige Forschende, Ingenieurinnen und Ingenieure, Tech Leads, Analystinnen und Analysten und alle, die aus vielen Papieren ein klares Bild formen müssen.
+TraceMind ist eine persönliche KI-Forschungswerkbank.
 
-| Typisches Problem | Wobei TraceMind hilft |
-| --- | --- |
-| Zu viele Papers, keine klare Hauptlinie | Themenkarten, Knotengrafen, Schlüsselpapiere und reale Forschungsphasen |
-| KI-Antworten klingen gut, aber ohne belastbare Basis | Antworten mit Bezug zu Papers, PDFs, Abbildungen, Formeln und Zitationen |
-| Gute Fragen verschwinden in Chats und Notizen | eine langfristige Themenwerkbank mit Gedächtnis und Export |
-| Viel Trendfolge, wenig kumuliertes Verständnis | Themen, die aus echtem Material wachsen |
+Es ist weder nur ein Chatfenster noch nur eine Literaturliste. Es verbindet Papers, PDFs, Abbildungen, Formeln, Zitationen, Forschungsnoten, Urteile und Folgefragen in einem langfristigen Arbeitsraum.
 
-## Motivation
+Geeignet für:
+- Studierende mit Thesis oder Literaturreview
+- unabhängige Forschende
+- Ingenieurinnen, Ingenieure und Tech Leads
+- Analystinnen und Analysten mit Bedarf an belegbasierten Notizen
 
-Forschung scheitert oft nicht am Mangel an Information, sondern daran, dass Verständnis nicht schnell genug kumuliert.
+## Warum ist es nötig
 
-Allgemeine Chat-Tools sind stark im Antworten, aber schwächer darin, folgende Dinge zu bewahren:
-- warum ein Urteil entstanden ist
-- welche Evidenz es trägt
-- was noch unsicher ist
-- wie sich ein Gebiet im Zeitverlauf verändert
+Forschung scheitert oft nicht an fehlender Information, sondern daran, dass Verständnis nicht stabil genug kumuliert.
 
-TraceMind baut deshalb auf vier Prinzipien:
+Allgemeine Chat-Tools sind stark im Antworten, aber schwächer darin, folgende Dinge festzuhalten:
+- warum ein Urteil entstand
+- welche Evidenz es stützt
+- was noch offen ist
+- wie sich ein Bereich im Zeitverlauf verschiebt
+
+TraceMind baut deshalb auf vier Ideen:
 - `Evidenz vor Eindruck`
 - `Gedächtnis vor Chat`
 - `Struktur vor Ablage`
 - `menschliches Urteil im Zentrum`
 
-## Stärken
+## Wie man das Produkt lesen sollte
 
-- `Themenseiten zeigen echten Forschungsfortschritt`: Phasen und Knoten entstehen aus realem Material statt aus künstlicher Vorplanung.
-- `Knotenseiten sind strukturierte Forschungsansichten`: Kernfrage, Schlüsselpapiere, Evidenzkette, Methoden, Ergebnisse, Grenzen, Kontroversen und Urteil stehen an einem Ort.
-- `Belege bleiben sichtbar`: PDF-Inhalte, Abbildungen, Formeln und Zitate bleiben nah am Ergebnis.
-- `Folgefragen bleiben geerdet`: Fragen starten nicht jedes Mal in einem leeren Chatfenster neu.
-- `Self-hosted gedacht`: Modelle, Zugangsdaten und Forschungsdaten bleiben unter eigener Kontrolle.
+| Fläche | Welche Frage sie schnell beantworten sollte |
+| --- | --- |
+| Home | Welche Themen verfolge ich gerade? |
+| Topic page | Wie weit ist dieses Thema, welche Knoten und Papers sind wichtig? |
+| Node research view | Was ist die Kernfrage, welche Evidenz trägt die aktuelle Lesart? |
+| Workbench | Welche Folgefrage schärft oder testet mein Verständnis? |
+| Export | Wie mache ich daraus Notizen, Briefings oder Berichtsmaterial? |
+
+## Warum Themen und Knoten so wichtig sind
+
+TraceMind erzeugt beim Erstellen eines Themas keine künstliche Planungsphase. Themen sollen aus realer Entdeckung, Auswahl, Extraktion und Beurteilung wachsen.
+
+Knotenseiten sind deshalb keine Einzelpaper-Seiten. Sie sollen helfen, die Hauptlinie schnell wiederzufinden: Kernfrage, Schlüsselarbeiten, Evidenzkette, Grenzen und aktuelles Urteil.
+
+## Was man heute damit tun kann
+
+- Papers über akademische Quellen entdecken
+- Kandidaten sichten und thematisch zuordnen
+- Text, Figuren, Tabellen, Formeln und Zitationen aus PDFs extrahieren
+- eine Richtung in Forschungs-Knoten organisieren
+- strukturierte Knotennotizen und Forschungsbriefe aufbauen
+- Folgefragen im Themenkontext stellen
+- Ergebnisse als Notizen oder Berichtsmaterial exportieren
+
+## Mentales Modell
+
+| Objekt | Bedeutung |
+| --- | --- |
+| Topic | eine Forschungsrichtung, zu der man wiederholt zurückkehrt |
+| Paper | Paper plus PDF, Metadaten, Zitationen und extrahierte Assets |
+| Evidence | wiederverwendbare Belege wie Textstellen, Figuren, Tabellen oder Formeln |
+| Node | strukturierte Forschungseinheit zu Problem, Methode, Grenze oder Kontroverse |
+| Judgment | aktuelles Urteil darüber, was die Evidenz trägt |
+| Memory | Langzeitkontext für spätere Folgefragen |
 
 ## Schnellstart
 
@@ -62,7 +92,7 @@ Voraussetzungen:
 - Node.js `18+`
 - npm `9+`
 - Python `3.10+`
-- ein API-Schlüssel für mindestens einen Modellanbieter
+- API-Schlüssel für mindestens einen Modellanbieter
 
 Backend:
 
@@ -86,72 +116,56 @@ Standardadressen:
 - frontend: `http://localhost:5173`
 - backend health: `http://localhost:3303/health`
 
-Docker:
+## Die erste Stunde
 
-```bash
-docker compose up --build
+1. Anwendung starten und Modellanbieter konfigurieren.
+2. Ein Thema anlegen, das wirklich über längere Zeit verfolgt werden soll.
+3. Paper-Discovery ausführen und Kandidaten kritisch sichten.
+4. Nur die Arbeiten behalten, die wirklich zur Hauptlinie gehören.
+5. Eine Node-Ansicht öffnen und den strukturierten Überblick lesen.
+6. Eine prüfende Frage stellen, zum Beispiel: `Was ist die schwächste Evidenz in diesem Zweig?`
+7. Ergebnis exportieren oder das Thema weiter wachsen lassen.
+
+## Forschungszyklus
+
+```mermaid
+flowchart LR
+    A["Frage entsteht"] --> B["Papers finden"]
+    B --> C["Kandidaten sichten"]
+    C --> D["Evidenz aus PDFs extrahieren"]
+    D --> E["Forschungsknoten bilden"]
+    E --> F["Zwischenurteile formulieren"]
+    F --> G["geerdete Folgefragen stellen"]
+    G --> H["Notizen und Berichte exportieren"]
+    H --> I["ins Themen-Gedächtnis zurückführen"]
 ```
-
-## Erste 15 Minuten
-
-1. Backend und Frontend starten.
-2. In den Einstellungen mindestens einen Modellanbieter konfigurieren.
-3. Ein Thema anlegen, das wirklich über längere Zeit verfolgt werden soll.
-4. Paper-Discovery starten und die Treffer prüfen.
-5. Nur die wirklich relevanten Papers in das Thema übernehmen.
-6. Eine strukturierte Forschungsansicht eines Knotens öffnen.
-7. Eine prüfende Folgefrage stellen, etwa: `Was ist die schwächste Evidenz in diesem Zweig?`
-8. Ergebnisse exportieren oder das Thema weiter wachsen lassen.
-
-## Arbeitsfluss
-
-TraceMind organisiert Forschung als wiederkehrenden Zyklus:
-- Papers finden
-- Kandidaten sichten und aufnehmen
-- Evidenz aus PDFs extrahieren
-- Forschungsknoten aufbauen
-- Zwischenurteile formulieren
-- geerdete Folgefragen stellen
-- Notizen und Berichte exportieren
-- alles ins Themen-Gedächtnis zurückführen
 
 ## Vergleich
 
-| Werkzeug | Besonders stark bei | Rolle von TraceMind |
+| Werkzeug | Starke Seite | Rolle von TraceMind |
 | --- | --- | --- |
-| Zotero | Sammeln, Annotieren, Zitieren | macht aus Literatur Knoten, Evidenzketten und Urteile |
+| Zotero | Sammeln und Zitieren | verwandelt Literatur in Knoten, Evidenzketten und Urteile |
 | NotebookLM | Fragen über gegebene Quellen | hält diese Fragen in einem langlebigen Thema |
-| Elicit | Suche und Review-Workflows | legt mehr Gewicht auf laufende persönliche Forschung |
-| Perplexity | schnelle Antworten mit Quellen | verwandelt einmalige Antworten in Themenwissen |
-| Obsidian / Notion | persönliche Notizen | ergänzt Literaturverfolgung und evidenzgebundene KI |
-| ChatGPT / Claude | Denken, Schreiben, Dialog | gibt dem Modell einen Forschungsraum statt eines leeren Chats |
+| Elicit | Suche und Review-Workflows | fokussiert stärker auf laufende persönliche Forschung |
+| Perplexity | schnelle Antworten mit Quellen | macht aus Einmalantworten Themenwissen |
+| ChatGPT / Claude | Denken und Schreiben | gibt dem Modell einen Forschungsraum statt eines leeren Chats |
 
-## Open-Source-Basis und Referenzen
+## Grenzen
 
-TraceMind baut auf etablierten Grundlagen auf:
-- `React`, `Vite`
-- `Express`, `Prisma`
-- `SQLite`, `PostgreSQL`, `Redis`
-- `PyMuPDF`
-- `OpenAI`, `Anthropic`, `Google`
-- `arXiv`, `OpenAlex`, `Crossref`, `Semantic Scholar`
+TraceMind verspricht nicht:
+- dass Modellantworten immer korrekt sind
+- dass PDF-Extraktion perfekt ist
+- dass KI menschliches Fachurteil ersetzt
 
-Bei Dokumentation und öffentlicher Darstellung haben Projekte wie `Supabase`, `Dify`, `LangChain`, `Immich`, `Next.js`, `Visual Studio Code`, `Excalidraw` und `Open WebUI` gezeigt, wie klar ein Open-Source-Projekt erklären kann, was es ist, warum es wichtig ist und wo seine Grenzen liegen.
+Gerade deshalb ist es für Nutzerinnen und Nutzer gedacht, die prüfen, hinterfragen und verbessern möchten.
 
-## Für wen es passt
+## Technische Basis und Referenzen
 
-TraceMind passt gut, wenn Sie:
-- eine Forschungsrichtung über Wochen oder Monate verfolgen
-- Papers vergleichen statt nur sammeln möchten
-- Reviews, technische Memos oder Forschungsberichte schreiben
-- Daten und Modellzugänge selbst verwalten möchten
+TraceMind baut auf `React`, `Vite`, `Express`, `Prisma`, `PyMuPDF`, `OpenAI`, `Anthropic`, `Google`, `arXiv`, `OpenAlex`, `Crossref` und `Semantic Scholar` auf.
 
-Weniger passend ist es für:
-- einmalige Faktensuche
-- schnelle Antworten ohne Interesse an der Evidenzkette
-- generische Unternehmens-Wissensdatenbanken
+Beim Aufbau der öffentlichen Dokumentation waren außerdem Projekte wie `Supabase`, `Dify`, `LangChain`, `Immich`, `Next.js`, `Visual Studio Code`, `Excalidraw` und `Open WebUI` wichtige Referenzen für Klarheit und Nutzernähe.
 
-## Beiträge, Sicherheit und Lizenz
+## Beiträge, Sicherheit, Lizenz
 
 - Beitragshinweise: [CONTRIBUTING.md](../CONTRIBUTING.md)
 - Sicherheitsrichtlinie: [SECURITY.md](../SECURITY.md)
@@ -159,6 +173,6 @@ Weniger passend ist es für:
 
 ## Schluss
 
-Es ist schwer, aus einem einzelnen Forschungsschritt die Richtung eines Feldes zu erkennen. Noch schwerer wird es, wenn das Umfeld Geschwindigkeit, Trends und oberflächliche Neuheit belohnt.
+Eine Forschungsrichtung wird selten durch einen einzelnen Fortschritt verständlich. Noch schwerer wird es, wenn das Umfeld Geschwindigkeit, Trendnähe und Oberflächenneuheit belohnt.
 
-TraceMind ist der Versuch, KI so einzusetzen, dass sie Literatur verfolgt, Evidenz sammelt und Rückfragen auf dieser Basis unterstützt. Nicht als lautere Stimme als die Forschung selbst, sondern als Werkzeug, das deren Struktur klarer sichtbar macht.
+TraceMind will KI so einsetzen, dass sie Literatur verfolgt, Evidenz sammelt und Folgefragen auf dieser Basis unterstützt. Nicht als lautere Stimme als die Forschung selbst, sondern als Werkzeug, das ihre Form klarer sichtbar macht.

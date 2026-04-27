@@ -7,7 +7,7 @@
 <h1 align="center">TraceMind</h1>
 
 <p align="center">
-  <strong>An AI personal research workbench for people who want to understand a direction, not just ask for an answer.</strong>
+  <strong>An AI personal research workbench for people who want to understand a field, not just harvest quick answers from it.</strong>
 </p>
 
 <p align="center">
@@ -15,61 +15,133 @@
   <img alt="Self-hosted" src="https://img.shields.io/badge/self--hosted-ready-0f766e">
   <img alt="Evidence-first" src="https://img.shields.io/badge/research-evidence_first-f5b84b">
   <img alt="i18n" src="https://img.shields.io/badge/i18n-8_languages-2563eb">
+  <img alt="Stack" src="https://img.shields.io/badge/stack-React%20%2B%20Express%20%2B%20Prisma-374151">
 </p>
 
-TraceMind is built for a simple but stubborn reality: one research update almost never lets you see a whole research direction.
+## If you read only one paragraph
 
-Today, AI research is loud. Papers pile up, hot terms spread fast, and many tools reward quick summaries or trend-following. That is useful for keeping up, but it is not enough for understanding what actually solves a problem. TraceMind asks a different question: can AI follow literature over time, accumulate evidence, and become a loyal, rigorous assistant that helps you see how a field is really moving?
+One research update almost never lets you see an entire research direction. In modern AI research, the pace is fast, the noise is high, and the social reward often goes to following trends quickly. That helps people keep up, but it does not necessarily help them understand what is actually changing, what evidence is strong, which papers form the real main line, or where a field is still confused. TraceMind is built around a different ambition: let AI follow literature over time, accumulate evidence, organize a direction into research nodes, and act as a loyal, rigorous assistant that helps a person truly see the shape of a field.
 
-Instead of treating every question as a fresh chat, TraceMind turns a topic into a long-lived research space. It helps you discover papers, screen what matters, extract figures and formulas from PDFs, build research nodes, make evidence-backed judgments, and keep follow-up conversations grounded in the material you have already accumulated.
+## What TraceMind is
 
-## Project overview
+TraceMind is an AI personal research workbench.
 
-TraceMind is an AI personal research workbench. It is designed for students, independent researchers, engineers, technical leads, analysts, and curious builders who need to turn a growing pile of papers into a coherent view of a field.
+It is not just a chat UI, not just a paper list, and not just another summary generator. It is a workspace for turning a growing set of papers, figures, formulas, citations, notes, and follow-up questions into a more stable research understanding.
 
-At a glance:
+It is designed for:
+- students working through a thesis or literature review
+- independent researchers building a long-running view of a topic
+- engineers and technical leads tracking a fast-moving technical direction
+- analysts who need evidence-backed notes rather than opinionated summaries
+- open-source builders trying to understand whether a method is real progress or just fashionable packaging
 
-| If you are dealing with | TraceMind helps with |
+## The problem it is trying to solve
+
+Most research workflows do not collapse because information is unavailable. They collapse because understanding does not compound fast enough.
+
+A very familiar pattern looks like this:
+- you read a paper that feels important
+- a few days later you find a contradictory result
+- two weeks later you remember the claim but not the figure that justified it
+- one month later the whole direction is split across chats, tabs, bookmarks, and unfinished notes
+
+Generic AI tools are excellent at replying in the moment. They are much weaker at preserving:
+- why a judgment was made
+- what evidence supports it
+- which papers are actually central and which are merely adjacent
+- what is still unresolved
+- how the field moved from one stage to another
+
+TraceMind is built so that research does not have to restart from zero every time you return to a topic.
+
+## What the product is optimizing for
+
+TraceMind is not trying to maximize output volume. Its north star is harder than that:
+
+> When a researcher makes an important judgment, they should be able to return to the papers, evidence, and reasoning path that produced it.
+
+That changes product behavior in concrete ways:
+- new topics stay light and only grow when real material arrives
+- stage views reflect actual research accumulation instead of speculative planning
+- node pages are designed as fast understanding surfaces, not generic article pages
+- uncertainty is visible rather than hidden
+- follow-up questions stay grounded in topic memory and evidence
+
+## What TraceMind feels like in practice
+
+You can think of the product as moving through five user-facing surfaces:
+
+| Surface | What it should answer quickly |
 | --- | --- |
-| Too many papers and no clear main line | topic maps, node graphs, key paper sets, and stage-by-stage progress |
-| AI answers that sound smooth but forget the source | evidence-backed outputs tied to papers, PDFs, figures, formulas, and citations |
-| Great research questions scattered across chats and notes | a topic workbench with memory, follow-up, and exportable research artifacts |
-| Trend chasing with weak accumulation | long-lived topics that grow from real material instead of one-off summaries |
+| Home | What topics am I actively following right now? |
+| Topic page | How far has this direction progressed, what stages exist, what nodes matter, and which papers anchor the story? |
+| Node research view | What is the real question here, which papers matter most, what evidence supports the current judgment, and what is still contested? |
+| Workbench conversation | What happens if I push back on the current understanding or ask a narrower follow-up question? |
+| Export artifacts | How do I turn this into notes, briefs, review material, or a report draft? |
 
-## Why TraceMind exists
+## Why topic pages matter
 
-Research rarely fails because information is unavailable. It fails because understanding does not compound fast enough.
+A topic is not meant to be a decorative container. It is the long-lived object that holds a research direction together.
 
-A typical workflow looks like this:
-- you read a paper that seems important
-- three days later you find a contradictory result
-- two weeks later you remember the conclusion but not the figure that justified it
-- one month later the entire conversation has dissolved into tabs, bookmarks, and half-finished notes
+A good topic page should let a user see, almost immediately:
+- what the topic is actually about
+- whether the topic is still mostly exploratory or already structurally rich
+- which stages came from real research progress
+- which nodes carry the main explanatory load
+- which papers are key rather than merely present
+- what progress has happened recently
 
-General chat tools are excellent at replying. They are much weaker at preserving why a judgment was made, what evidence supports it, what still feels uncertain, and how a direction changes over time.
+TraceMind intentionally does not start a topic by creating a fake `research planning` stage. A topic begins as a light shell, then grows from real paper discovery, evidence extraction, node formation, and later-stage judgments.
 
-TraceMind is built around four commitments:
-- `evidence before vibe`: every strong judgment should be traceable back to material
-- `memory before chat`: the workbench should remember topics, nodes, and prior reasoning
-- `structure before dumping`: papers should become research nodes, not just a longer reading list
-- `human judgment at the center`: AI assists; it does not replace the researcher
+## Why node research views matter
 
-## Highlights
+A node page is not supposed to feel like a single-paper page.
 
-- `Topic pages show real progress`: stages, node graph, key papers, and current research progress come from actual accumulated material rather than a fake planning phase.
-- `Research nodes become fast understanding surfaces`: a node page is not just a paper page. It is a structured research brief with core question, key papers, evidence chain, methods, findings, limitations, disputes, and a readable judgment.
-- `Evidence stays visible`: TraceMind keeps papers, PDFs, figures, formulas, citations, and extracted fragments close to the final answer.
-- `Answers stay grounded`: follow-up questions are asked inside the topic context instead of starting from zero in a generic chat box.
-- `Self-hosted by design`: you can control model providers, credentials, and research data in your own environment.
-- `Built for long arcs`: the product is designed for weeks and months of accumulation, not just a single polished output.
+When a user opens a node, the experience should feel closer to:
+
+> “My research assistant already read a meaningful slice of this area and prepared a structured brief for me.”
+
+A strong node research view should organize at least these questions:
+- what is the core problem inside this node
+- which papers define it
+- how the evidence chain supports the current conclusion
+- what methods, findings, and limitations matter most
+- where disagreement, controversy, or ambiguity remains
+- what judgment currently seems justified
+
+This is one of TraceMind’s most important product bets: helping users recover the main line without re-reading dozens of papers from scratch.
+
+## What you can do with TraceMind today
+
+- discover papers across academic sources and build a candidate pool
+- screen papers into what belongs, what is adjacent, and what should be rejected for the current topic
+- extract text, figures, formulas, tables, and citation structure from PDFs
+- organize a direction into research nodes instead of leaving it as a flat reading list
+- generate structured node briefs that surface evidence, limitations, and disagreements
+- ask follow-up questions that inherit topic and node context
+- export research artifacts for later writing, review, or reporting
+
+## A simple mental model
+
+These product objects help make the rest of the README easier to understand:
+
+| Object | Meaning |
+| --- | --- |
+| Topic | a long-running research direction you want to keep returning to |
+| Paper | a source document plus metadata, PDF structure, citations, and extracted assets |
+| Evidence | reusable research material such as text fragments, figures, tables, formulas, and source references |
+| Node | a structured research unit, often about a problem, method, mechanism, limitation, controversy, or turning point |
+| Judgment | the current best reading of what the evidence supports and what remains weak |
+| Memory | the accumulated context that keeps later follow-up grounded |
+| Artifact | something you can export, such as node notes, a brief, or report material |
 
 ## Quick start
 
 Prerequisites:
 - Node.js `18+`
 - npm `9+`
-- Python `3.10+` for PDF extraction scripts
-- one model provider key for local use
+- Python `3.10+`
+- at least one model-provider key for local use
 
 Run the backend:
 
@@ -99,18 +171,42 @@ Docker option:
 docker compose up --build
 ```
 
-## First 15 minutes
+## Your first hour in TraceMind
 
-1. Start the backend and frontend.
-2. Open the app and configure at least one model provider in settings.
-3. Create a topic you actually care about, not a throwaway demo keyword.
-4. Run paper discovery and review the candidate set instead of accepting everything.
-5. Admit the papers that truly belong to the topic and reject the ones that only look related.
-6. Open a node research view and read the structured brief before reading dozens of raw abstracts.
-7. Ask a follow-up question that tests the node, such as `What is the weakest evidence in this branch?`
-8. Export the result or keep growing the topic with new papers and new judgments.
+1. Start backend and frontend, then open the app.
+2. Configure at least one model provider in settings.
+3. Create a topic you genuinely care about. Do not waste the first pass on a throwaway demo keyword.
+4. Run paper discovery and read the candidate pool with skepticism.
+5. Admit only the papers that actually belong to the direction you are trying to understand.
+6. Open a node research view before diving into raw paper reading.
+7. Use the workbench to ask a pressure-test question, such as `What is the weakest evidence in this branch?`
+8. Export a note or summary, then keep growing the topic with new papers and new judgments.
 
-## How the research loop works
+By the end of a good first hour, you should already feel a difference between:
+- having many papers
+- and having a topic that has started to become legible
+
+## A concrete example
+
+Suppose you are following `end-to-end autonomous driving`.
+
+Without a structured workspace, the direction often becomes a fog of:
+- benchmark claims
+- architecture diagrams
+- simulation-heavy evaluation
+- scattered safety arguments
+- repeated hype around “foundation models for driving”
+
+In TraceMind, the same direction can start to become a clearer map:
+- one node for interpretability and safety boundaries
+- one node for perception-to-planning interfaces
+- one node for simulation versus real-world evaluation credibility
+- one node for data loops and long-tail handling
+- one node for where large-model reasoning actually helps and where it is mostly aesthetic packaging
+
+That is the difference the product cares about: not simply seeing more material, but seeing the direction more clearly.
+
+## The research loop
 
 ```mermaid
 flowchart LR
@@ -127,16 +223,16 @@ flowchart LR
 
 What each step means:
 - `Discover papers`: search across academic sources and build a candidate pool.
-- `Screen and admit`: decide which papers belong in the working topic and which do not.
-- `Extract evidence`: pull text, figures, formulas, tables, and citations into reusable evidence objects.
+- `Screen and admit`: decide which papers belong to the working topic and which do not.
+- `Extract evidence`: pull text, figures, formulas, tables, and citations into reusable research objects.
 - `Build nodes`: organize the topic by problem, method, mechanism, limitation, disagreement, or turning point.
-- `Form judgments`: write what the evidence currently supports, what is still weak, and what needs to be challenged next.
-- `Keep following up`: let AI answer from the topic context you have already built.
-- `Export artifacts`: turn the work into readable node briefs, research notes, or report material.
+- `Form judgments`: state what the evidence currently supports, what is still weak, and what must be challenged next.
+- `Keep following up`: let AI answer from the topic you already built rather than from an empty context.
+- `Export artifacts`: turn the work into readable notes, structured briefs, or report material.
 
 ## What makes TraceMind different
 
-TraceMind is not trying to replace every tool around research. It sits in the gap between them.
+TraceMind does not try to replace every tool around research. It sits in the gap between them.
 
 | Tool | Great at | Where TraceMind fits |
 | --- | --- | --- |
@@ -147,17 +243,28 @@ TraceMind is not trying to replace every tool around research. It sits in the ga
 | Obsidian or Notion | notes and personal organization | adds literature tracking, grounded AI, and evidence-aware research views |
 | ChatGPT or Claude | reasoning, drafting, and conversation | gives the model a research room instead of an empty chat window |
 
-## What the product is trying to optimize for
+## What TraceMind is not
 
-TraceMind does not chase `more output` as its north star. It optimizes for a harder outcome:
+It is worth being explicit here.
 
-> When a researcher makes an important judgment, they should be able to return to the papers, the evidence, and the reasoning path that produced it.
+TraceMind is not:
+- a promise that AI can replace expert judgment
+- a guarantee that extracted evidence is always perfect
+- a generic enterprise knowledge base
+- a trend-tracking feed optimized for speed over depth
+- a system that should hide uncertainty behind polished prose
 
-That leads to specific product choices:
-- new topics stay lightweight and grow from real material
-- stage views reflect actual research progress instead of speculative planning
-- node pages privilege clarity and structure over volume
-- uncertainty is part of the product, not an embarrassment to hide
+This project becomes more useful when users are willing to inspect, challenge, and refine its outputs.
+
+## Architecture at a glance
+
+| Part | Role |
+| --- | --- |
+| `frontend/` | React + Vite research workbench UI |
+| `skills-backend/` | Express + Prisma API, orchestration, topic and research services |
+| `model-runtime/` | model connectors and runtime glue |
+| `generated-data/` | curated demo and runtime data used by the app |
+| `assets/` | public branding assets such as the TraceMind SVG logo |
 
 ## Open-source foundations and references
 
@@ -169,24 +276,54 @@ Technical foundations:
 - `SQLite`, with `PostgreSQL` and `Redis` available for fuller deployments
 - `PyMuPDF` and local scripts for PDF extraction
 - `OpenAI`, `Anthropic`, and `Google` compatible model access through the backend runtime
-- `arXiv`, `OpenAlex`, `Crossref`, `Semantic Scholar`, and `Zotero` adjacent workflows for literature discovery and management
+- `arXiv`, `OpenAlex`, `Crossref`, `Semantic Scholar`, and Zotero-adjacent workflows for literature discovery and management
 
-Documentation and product-writing taste was shaped by public open-source projects such as `Supabase`, `Dify`, `LangChain`, `Immich`, `Next.js`, `Visual Studio Code`, `Excalidraw`, and `Open WebUI`. The goal is not to copy their positioning, but to learn from their clarity: explain what the project is, why it matters, how to run it, where it stops, and what a user should do next.
+The documentation tone and public project structure were also shaped by excellent open-source examples such as `Supabase`, `Dify`, `LangChain`, `Immich`, `Next.js`, `Visual Studio Code`, `Excalidraw`, and `Open WebUI`. The goal is not to copy their positioning, but to borrow their clarity: explain what the project is, why it exists, how to run it, where it stops, and what a user should do next.
 
-## Who TraceMind is for
+## Current boundaries
+
+TraceMind is strongest when used as a serious assistant inside a human-led research process.
+
+It still has important boundaries:
+- model outputs can still be wrong
+- PDF extraction is useful but not infallible
+- the product can structure evidence, but it cannot substitute for domain expertise
+- self-hosting gives control, but it also means you are responsible for keys, data, and deployment hygiene
+
+Those are not embarrassing footnotes. They are part of the trust model.
+
+## Who should try it
 
 TraceMind is a strong fit if you are:
 - following a research direction over weeks or months
-- trying to compare papers instead of just collecting them
+- comparing papers instead of only collecting them
 - writing literature reviews, technical memos, or research briefs
-- self-hosting your tools and keeping control over model keys and research data
-- using AI as an assistant, but still wanting to own the final judgment
+- self-hosting tools and keeping control over model keys and research data
+- using AI as an assistant while still wanting to own the final judgment
 
-TraceMind is not the right tool if you only need:
+TraceMind is probably not the right tool if you only need:
 - a quick factual lookup
 - a polished answer with no interest in the evidence path
-- a generic enterprise knowledge base instead of a research workbench
+- a generic enterprise knowledge base
 - a system that replaces expert judgment rather than supporting it
+
+## FAQ
+
+### Why not just use ChatGPT or Claude with a long prompt?
+
+Because a long prompt is not the same thing as a research workspace. A real workspace keeps topic memory, evidence objects, node structure, stage progress, and reusable artifacts together over time.
+
+### Why not just use Zotero?
+
+Zotero is excellent at collecting and citing literature. TraceMind tries to solve a different layer: how papers become structured research understanding with grounded AI assistance.
+
+### Why does TraceMind care so much about node pages?
+
+Because a user should be able to enter a node and recover the main line quickly. If the node page cannot help a person orient themselves, the product becomes just another archive.
+
+### Why avoid a fake planning stage when a topic is created?
+
+Because a planned stage can look tidy while saying nothing true about the research. TraceMind wants stages to emerge from evidence, discovery, screening, and accumulation.
 
 ## Contributing, security, and license
 

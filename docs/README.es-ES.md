@@ -7,7 +7,7 @@
 <h1 align="center">TraceMind</h1>
 
 <p align="center">
-  <strong>Un banco personal de investigación con IA para quienes quieren entender una dirección de trabajo, no solo recibir una respuesta rápida.</strong>
+  <strong>Un banco personal de investigación con IA para quienes quieren entender una dirección de trabajo, no solo acumular respuestas rápidas.</strong>
 </p>
 
 <p align="center">
@@ -17,44 +17,74 @@
   <img alt="i18n" src="https://img.shields.io/badge/i18n-8_languages-2563eb">
 </p>
 
-TraceMind nace de una realidad sencilla: un solo avance de investigación casi nunca permite ver con claridad la trayectoria completa de un campo.
+## En una idea
 
-La investigación en IA actual es rápida, ruidosa y muy impulsada por tendencias. Los resúmenes aparecen enseguida, pero la comprensión profunda se acumula mucho más despacio. Por eso TraceMind propone otra idea: que la IA siga la literatura, acumule evidencia y responda desde esa base para convertirse en un asistente de investigación fiel y riguroso.
+Una sola novedad rara vez basta para ver con claridad la trayectoria de un campo. En la investigación de IA abundan la velocidad, el ruido y el seguimiento de tendencias, pero no necesariamente la comprensión acumulada. TraceMind quiere ayudar a que la IA siga la literatura, acumule evidencia y responda desde esa base para que el usuario vea mejor la forma real de una dirección de investigación.
 
-## Introducción al proyecto
+## Qué es TraceMind
 
-TraceMind es un banco personal de investigación con IA. Está pensado para estudiantes, investigadores independientes, ingenieros, responsables técnicos y analistas que necesitan convertir muchas lecturas en una visión coherente.
+TraceMind es un banco personal de investigación con IA.
 
-| Problema habitual | Cómo ayuda TraceMind |
-| --- | --- |
-| Demasiados artículos y ninguna línea principal clara | mapas de temas, grafos de nodos, artículos clave y progreso real |
-| Respuestas de IA fluidas pero poco trazables | respuestas conectadas con artículos, PDF, figuras, fórmulas y citas |
-| Buenas preguntas dispersas entre chats y notas | un espacio temático con memoria y exportación |
-| Mucho seguimiento de modas y poca acumulación | temas que crecen desde material real |
+No es solo un chat ni solo una biblioteca de artículos. Reúne artículos, PDF, figuras, fórmulas, citas, nodos de investigación, juicios y preguntas de seguimiento en un mismo espacio de trabajo.
 
-## Motivación
+Está pensado para:
+- estudiantes que preparan tesis o revisiones
+- investigadores independientes
+- ingenieros y responsables técnicos
+- analistas que necesitan notas con fundamento
 
-La investigación suele fallar no por falta de información, sino porque la comprensión no llega a consolidarse.
+## Por qué hace falta
+
+La investigación no se atasca solo por falta de información. A menudo se atasca porque la comprensión no llega a consolidarse.
 
 Las herramientas de chat general responden bien, pero conservan mal:
 - por qué se formuló un juicio
 - qué evidencia lo sostiene
-- qué partes siguen siendo inciertas
-- cómo cambia una dirección con el tiempo
+- qué partes siguen inciertas
+- cómo cambia un campo con el tiempo
 
-TraceMind se apoya en cuatro principios:
+TraceMind se apoya en cuatro ideas:
 - `evidencia antes que impresión`
 - `memoria antes que chat`
 - `estructura antes que acumulación`
 - `juicio humano en el centro`
 
-## Puntos fuertes
+## Cómo leer el producto
 
-- `Las páginas de tema muestran progreso real` y no una fase de planificación artificial.
-- `Las páginas de nodo son vistas de investigación estructuradas` con pregunta central, artículos clave, cadena de evidencia, métodos, hallazgos, límites y juicio.
-- `La evidencia permanece visible` cerca del resultado final.
-- `Las preguntas de seguimiento conservan el contexto` del tema y del nodo.
-- `Está pensado para autoalojarse` y mantener bajo control modelos, credenciales y datos.
+| Superficie | Qué debería dejar claro enseguida |
+| --- | --- |
+| Home | qué temas estás siguiendo ahora |
+| Topic page | cuánto ha avanzado el tema y qué nodos o artículos importan |
+| Node research view | cuál es la pregunta central y qué cadena de evidencia sostiene la lectura actual |
+| Workbench | qué pregunta conviene hacer después |
+| Export | cómo convertir el trabajo en notas o material de informe |
+
+## Por qué importan los topics y los nodes
+
+TraceMind no crea una fase artificial de `plan de investigación` al abrir un tema. Las etapas deben crecer a partir de descubrimiento real, selección real y evidencia real.
+
+Tampoco trata la página de nodo como una página de artículo aislada. La idea es que el usuario recupere rápido la línea principal de un subproblema.
+
+## Qué puedes hacer hoy
+
+- descubrir artículos desde varias fuentes académicas
+- seleccionar qué trabajos sí pertenecen al tema
+- extraer texto, figuras, tablas, fórmulas y citas desde PDF
+- organizar una dirección en nodos de investigación
+- construir briefs de nodo estructurados
+- hacer preguntas de seguimiento conservando el contexto del tema
+- exportar notas o materiales de informe
+
+## Modelo mental simple
+
+| Objeto | Significado |
+| --- | --- |
+| Topic | una dirección de investigación a la que volverás muchas veces |
+| Paper | artículo, PDF, metadatos, citas y activos extraídos |
+| Evidence | fragmentos, figuras, tablas, fórmulas y referencias reutilizables |
+| Node | unidad estructurada alrededor de un problema, método o controversia |
+| Judgment | lectura actual de lo que la evidencia respalda |
+| Memory | contexto acumulado para futuras preguntas |
 
 ## Inicio rápido
 
@@ -82,74 +112,58 @@ npm install
 npm run dev
 ```
 
-Direcciones locales por defecto:
+Direcciones por defecto:
 - frontend: `http://localhost:5173`
 - backend health: `http://localhost:3303/health`
 
-Docker:
+## La primera hora
 
-```bash
-docker compose up --build
+1. Inicia la aplicación y configura un proveedor de modelos.
+2. Crea un tema que realmente quieras seguir durante semanas o meses.
+3. Ejecuta la búsqueda de artículos y revisa los candidatos con criterio.
+4. Conserva solo los artículos que de verdad pertenecen a la línea central.
+5. Abre una vista de nodo para recuperar la estructura del problema.
+6. Haz una pregunta de prueba como `¿Cuál es la evidencia más débil de esta rama?`
+7. Exporta el resultado o sigue enriqueciendo el tema.
+
+## Bucle de investigación
+
+```mermaid
+flowchart LR
+    A["Aparece una pregunta"] --> B["Descubrir artículos"]
+    B --> C["Filtrar candidatos"]
+    C --> D["Extraer evidencia de los PDF"]
+    D --> E["Construir nodos de investigación"]
+    E --> F["Formular juicios por etapas"]
+    F --> G["Hacer preguntas de seguimiento"]
+    G --> H["Exportar notas e informes"]
+    H --> I["Volver a la memoria del tema"]
 ```
-
-## Los primeros 15 minutos
-
-1. Inicia backend y frontend.
-2. Configura al menos un proveedor de modelos.
-3. Crea un tema que de verdad quieras seguir durante semanas o meses.
-4. Ejecuta el descubrimiento de artículos y revisa los candidatos.
-5. Acepta solo los trabajos que realmente pertenecen a la línea central.
-6. Abre una vista de nodo y lee primero el resumen estructurado.
-7. Haz una pregunta de prueba como `¿Cuál es la evidencia más débil de esta rama?`
-8. Exporta el resultado o sigue ampliando el tema.
-
-## Cómo funciona el flujo
-
-TraceMind organiza la investigación como un ciclo:
-- descubrir artículos
-- filtrar y admitir candidatos
-- extraer evidencia desde los PDF
-- construir nodos de investigación
-- formular juicios por etapas
-- hacer preguntas de seguimiento con contexto
-- exportar notas e informes
-- devolver todo a la memoria del tema
 
 ## Comparación
 
 | Herramienta | Destaca en | Papel de TraceMind |
 | --- | --- | --- |
-| Zotero | recopilar, anotar y citar | convierte la literatura en nodos, evidencia y juicios |
-| NotebookLM | preguntar sobre un conjunto dado de fuentes | mantiene esas preguntas dentro de un tema vivo |
-| Elicit | búsqueda y revisiones | se orienta más a la acumulación personal continua |
+| Zotero | recopilar y citar | conecta la literatura con nodos, evidencia y juicios |
+| NotebookLM | preguntas sobre un corpus dado | mantiene esas preguntas dentro de un tema duradero |
+| Elicit | búsqueda y revisiones | se orienta más a la acumulación continua |
 | Perplexity | respuestas rápidas con fuentes | convierte una respuesta puntual en memoria de tema |
-| Obsidian / Notion | notas y organización personal | añade seguimiento bibliográfico e IA fundamentada |
-| ChatGPT / Claude | razonamiento y redacción | da al modelo una sala de investigación en vez de un chat vacío |
+| ChatGPT / Claude | razonamiento y redacción | ofrece un espacio de investigación, no un chat vacío |
 
-## Base open source y referencias
+## Límites
 
-TraceMind se apoya en componentes maduros:
-- `React`, `Vite`
-- `Express`, `Prisma`
-- `SQLite`, `PostgreSQL`, `Redis`
-- `PyMuPDF`
-- `OpenAI`, `Anthropic`, `Google`
-- `arXiv`, `OpenAlex`, `Crossref`, `Semantic Scholar`
+TraceMind no promete:
+- respuestas perfectas del modelo
+- extracción PDF sin errores
+- reemplazar el juicio experto humano
 
-En la forma de explicar el proyecto y organizar la documentación pública, también aprendimos de la claridad de `Supabase`, `Dify`, `LangChain`, `Immich`, `Next.js`, `Visual Studio Code`, `Excalidraw` y `Open WebUI`.
+Se vuelve más valioso cuando el usuario quiere inspeccionar, cuestionar y corregir los resultados.
 
-## Para quién es
+## Base técnica e inspiraciones
 
-TraceMind encaja bien si:
-- sigues una línea de investigación durante semanas o meses
-- necesitas comparar artículos, no solo guardarlos
-- escribes revisiones, notas técnicas o informes de investigación
-- quieres controlar tus datos y tus modelos
+TraceMind se apoya en `React`, `Vite`, `Express`, `Prisma`, `PyMuPDF`, `OpenAI`, `Anthropic`, `Google`, `arXiv`, `OpenAlex`, `Crossref` y `Semantic Scholar`.
 
-No es la mejor opción si solo buscas:
-- una consulta factual rápida
-- una respuesta elegante sin volver a la evidencia
-- una base de conocimiento corporativa genérica
+Para claridad documental y presentación pública, también se aprendió de proyectos como `Supabase`, `Dify`, `LangChain`, `Immich`, `Next.js`, `Visual Studio Code`, `Excalidraw` y `Open WebUI`.
 
 ## Contribución, seguridad y licencia
 
@@ -159,6 +173,6 @@ No es la mejor opción si solo buscas:
 
 ## Cierre
 
-Es difícil entender una dirección de investigación a partir de una sola novedad, y todavía más en un entorno que premia la velocidad, la moda y la novedad superficial.
+Es difícil ver una dirección de investigación a partir de una sola novedad, y más aún en un entorno que recompensa la velocidad y la moda.
 
-TraceMind intenta que la IA siga la literatura, acumule evidencia y sostenga preguntas posteriores sobre esa base. No para hablar más alto que la propia investigación, sino para ayudarte a ver su forma con mayor claridad.
+TraceMind intenta convertir la IA en un asistente que sigue la literatura, acumula evidencia y ayuda a formular mejores preguntas. No para hablar más alto que la investigación, sino para ayudar a verla con mayor claridad.
