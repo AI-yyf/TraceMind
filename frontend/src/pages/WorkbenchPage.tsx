@@ -259,11 +259,12 @@ export function WorkbenchPage() {
     () => topics.find((t) => t.id === selectedTopicId) || null,
     [topics, selectedTopicId],
   )
+  const workbenchLabel = t('nav.workbench', '工作台')
 
   useDocumentTitle(
     selectedTopic
-      ? `${t('workbench.title', 'Workbench')} - ${selectedTopic.title}`
-      : t('workbench.title', 'Workbench'),
+      ? `${workbenchLabel} - ${selectedTopic.title}`
+      : workbenchLabel,
   )
 
   // Loading state for topics
@@ -282,7 +283,7 @@ export function WorkbenchPage() {
               </Link>
               <div className="h-5 w-px bg-black/12" />
               <h1 className="text-sm font-semibold text-black/72">
-                {t('workbench.title', 'Workbench')}
+                {workbenchLabel}
               </h1>
             </div>
             <TopicSelectorSkeleton />
@@ -363,7 +364,7 @@ export function WorkbenchPage() {
             <div className="flex items-center gap-2">
               <Layers className="h-4 w-4 text-amber-600" />
               <h1 className="text-sm font-semibold text-black">
-                {t('workbench.title', 'Workbench')}
+                {workbenchLabel}
               </h1>
             </div>
           </div>

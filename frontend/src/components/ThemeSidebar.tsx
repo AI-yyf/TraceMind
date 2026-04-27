@@ -267,10 +267,10 @@ export function ThemeSidebar({ onSearchClick }: ThemeSidebarProps) {
               type="button"
               onClick={() => window.dispatchEvent(new CustomEvent(TOPIC_WORKBENCH_OPEN_EVENT))}
               className="flex w-full flex-col items-center gap-1 rounded-[18px] px-2 py-3 text-[10px] text-black/52 transition-all duration-200 hover:bg-amber-50 hover:text-amber-700 hover:shadow-sm"
-              title={navText('nav.chat', 'Chat')}
+              title={t('workbench.drawerButton', '打开工作台')}
             >
               <MessageSquare className="h-4 w-4 transition-transform duration-200 hover:scale-110" />
-              <span className="font-medium">{navText('nav.chat', 'Chat')}</span>
+              <span className="font-medium">{t('nav.workbench', '工作台')}</span>
             </button>
             <button
               type="button"
@@ -450,4 +450,5 @@ export function ThemeSidebar({ onSearchClick }: ThemeSidebarProps) {
     </>
   )
 }
+
 
