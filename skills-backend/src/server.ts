@@ -35,6 +35,7 @@ import { logger } from './utils/logger'
 import { initializeWebSocketServer } from './websocket/server'
 import { startPaperMonitorCron } from './services/topics/paper-monitor-cron'
 import { ensureConfiguredTopicsMaterialized } from './services/topics/topic-config-sync'
+import { startStorageRetentionCron } from './services/storage-retention'
 
 // Initialize i18n dictionaries
 initializeAllDictionaries()
@@ -223,6 +224,7 @@ export function startServer(port = Number(process.env.PORT || 3303)) {
 
       // 启动论文监控定时任务（每日凌晨3点）
       startPaperMonitorCron()
+      startStorageRetentionCron()
       if (shouldMaterializeTopicsOnStartup()) {
         void ensureConfiguredTopicsMaterialized().catch((error) => {
           logger.warn('Configured topics could not be materialized during server startup.', {

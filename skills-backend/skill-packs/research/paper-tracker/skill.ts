@@ -39,6 +39,7 @@ export const paperTrackerSkill: SkillDefinition = {
     outputSchema: {
       discoveryPlan: 'object',
       discoverySummary: 'object',
+      candidatePoolSummary: 'object',
       admittedCandidates: [
         {
           paperId: 'string',

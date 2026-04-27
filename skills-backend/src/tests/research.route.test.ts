@@ -358,3 +358,136 @@ test('research sessions accept at most five topics and duration-only full mode',
     assert.equal(discoverOnlyResponse.status, 400)
   })
 })
+
+test('research candidate-pool route returns stage-scoped recall entries with summary counts', async () => {
+  const topicId = `candidate-pool-topic-${Date.now()}`
+
+  await prisma.topics.create({
+    data: {
+      id: topicId,
+      nameZh: 'Candidate Pool Topic',
+      nameEn: 'Candidate Pool Topic',
+      language: 'en',
+      status: 'active',
+      updatedAt: new Date(),
+    },
+  })
+
+  await prisma.paper_candidate_pool.createMany({
+    data: [
+      {
+        id: `${topicId}-entry-admitted`,
+        topicId,
+        sourcePaperId: 'arxiv:2504.00001',
+        title: 'Admitted stage paper',
+        status: 'admitted',
+        confidence: 0.91,
+        stageIndex: 2,
+        stageLabel: 'Stage 2',
+        downloadStatus: 'pending',
+        retentionTier: 'core',
+      },
+      {
+        id: `${topicId}-entry-candidate`,
+        topicId,
+        sourcePaperId: 'arxiv:2504.00002',
+        title: 'Candidate stage paper',
+        status: 'candidate',
+        confidence: 0.63,
+        stageIndex: 2,
+        stageLabel: 'Stage 2',
+        downloadStatus: 'missing-pdf-url',
+        retentionTier: 'compact',
+      },
+    ],
+  })
+
+  try {
+    await withServer(async (origin) => {
+      const response = await fetch(`${origin}/api/research/topics/${topicId}/stages/2/candidate-pool`)
+      assert.equal(response.status, 200)
+
+      const payload = (await response.json()) as {
+        success: boolean
+        data: {
+          entries: Array<{ id: string }>
+          summary: {
+            total: number
+            admitted: number
+            candidate: number
+            rejected: number
+            readyForDownload: number
+            missingPdf: number
+          }
+        }
+      }
+
+      assert.equal(payload.success, true)
+      assert.equal(payload.data.entries.length, 2)
+      assert.equal(payload.data.summary.total, 2)
+      assert.equal(payload.data.summary.admitted, 1)
+      assert.equal(payload.data.summary.candidate, 1)
+      assert.equal(payload.data.summary.readyForDownload, 1)
+      assert.equal(payload.data.summary.missingPdf, 1)
+    })
+  } finally {
+    await prisma.paper_candidate_pool.deleteMany({ where: { topicId } })
+    await prisma.topics.delete({ where: { id: topicId } })
+  }
+})
+
+test('research candidate-pool grounding marks entries without usable pdf URLs as missing', async () => {
+  const topicId = `candidate-pool-ground-${Date.now()}`
+
+  await prisma.topics.create({
+    data: {
+      id: topicId,
+      nameZh: 'Candidate Ground Topic',
+      nameEn: 'Candidate Ground Topic',
+      language: 'en',
+      status: 'active',
+      updatedAt: new Date(),
+    },
+  })
+
+  await prisma.paper_candidate_pool.create({
+    data: {
+      id: `${topicId}-entry`,
+      topicId,
+      sourcePaperId: 'openalex:W123',
+      title: 'Ungrounded candidate stage paper',
+      status: 'candidate',
+      confidence: 0.51,
+      stageIndex: 3,
+      stageLabel: 'Stage 3',
+      downloadStatus: 'pending',
+      retentionTier: 'compact',
+    },
+  })
+
+  try {
+    await withServer(async (origin) => {
+      const response = await fetch(`${origin}/api/research/topics/${topicId}/stages/3/candidate-pool/ground`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 10 }),
+      })
+
+      assert.equal(response.status, 200)
+      const payload = (await response.json()) as {
+        success: boolean
+        data: {
+          entries: Array<{ status: string }>
+          summary: { missingPdf: number }
+        }
+      }
+
+      assert.equal(payload.success, true)
+      assert.equal(payload.data.entries[0]?.status, 'missing-pdf-url')
+      assert.equal(payload.data.summary.missingPdf, 1)
+    })
+  } finally {
+    await prisma.paper_candidate_pool.deleteMany({ where: { topicId } })
+    await prisma.topics.delete({ where: { id: topicId } })
+  }
+})

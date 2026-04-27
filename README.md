@@ -194,6 +194,32 @@ The loop matters because TraceMind is not trying to jump directly from `question
 - Python `3.10+`
 - at least one usable model API key
 
+### One-click startup (Windows)
+
+Use the root launcher if you want TraceMind to come up in one step:
+
+```powershell
+.\start-tracemind.bat
+```
+
+It will:
+
+- install backend/frontend dependencies if they are missing
+- start the backend dev server first and wait for `/health`
+- start the frontend dev server with `VITE_API_BASE_URL=http://127.0.0.1:3303/api`
+- open TraceMind in your browser
+
+You can also call the PowerShell entry directly:
+
+```powershell
+.\start-tracemind.ps1
+```
+
+Optional flags:
+
+- `-SkipInstall`
+- `-NoBrowser`
+
 ### Start the backend
 
 ```bash

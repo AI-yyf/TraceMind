@@ -32,6 +32,12 @@ import {
   noteSourceRateLimit,
   noteSourceSuccess,
 } from '../../../src/services/search/source-health'
+import {
+  buildStageCandidatePoolSummary,
+  buildStageQuerySetHash,
+  syncStageCandidatePoolPaperLinks,
+  upsertStageCandidatePoolEntries,
+} from '../../../src/services/stage-candidate-pool'
 
 type PaperTrackerDurationResearchAngle = {
   id?: string
@@ -4406,6 +4412,84 @@ async function evaluateCandidates(args: {
   return candidates
 }
 
+function buildDeferredCandidatePoolCandidates(args: {
+  papers: ArxivPaper[]
+  topic: NonNullable<TopicRecord>
+  topicDef: TopicDefinitionLike
+  queries: string[]
+  evaluatedCandidates: PaperCandidate[]
+  targetStageIndex: number
+  windowMonths?: number
+  bootstrapMode?: boolean
+  admissionContext?: TopicAdmissionContext
+  maxDeferredCandidates?: number
+}) {
+  const existingKeys = buildExistingPaperKeySet(args.topic)
+  const evaluatedKeys = new Set(
+    args.evaluatedCandidates.flatMap((candidate) =>
+      collectDiscoveryIdentityKeys({
+        id: candidate.sourcePaperId ?? candidate.paperId,
+        title: candidate.title,
+        titleZh: candidate.titleZh,
+        arxivUrl: candidate.arxivData?.arxivUrl,
+      }),
+    ),
+  )
+
+  return args.papers
+    .filter(
+      (paper) =>
+        !existingKeys.has(paper.id) &&
+        !existingKeys.has(paper.title) &&
+        !existingKeys.has(paper.titleZh || ''),
+    )
+    .map((paper) => ({
+      paper,
+      confidence: calculateSimpleRelevance(
+        paper,
+        args.topicDef,
+        args.queries,
+        args.admissionContext,
+      ),
+      queryHits: collectMatchedQueries(paper, args.queries),
+    }))
+    .filter((seed) => {
+      const identityKeys = collectDiscoveryIdentityKeys({
+        id: seed.paper.id,
+        title: seed.paper.title,
+        titleZh: seed.paper.titleZh,
+        arxivUrl: seed.paper.arxivUrl,
+      })
+      return !identityKeys.some((key) => evaluatedKeys.has(key))
+    })
+    .sort((left, right) => right.confidence - left.confidence)
+    .slice(0, Math.max(0, Math.min(args.maxDeferredCandidates ?? args.papers.length, 600)))
+    .map((seed) => {
+      const heuristic = buildHeuristicCandidate({
+        paper: seed.paper,
+        confidence: seed.confidence,
+        queryHits: seed.queryHits,
+        stageIndex: args.targetStageIndex,
+        windowMonths: args.windowMonths,
+        bootstrapMode: args.bootstrapMode,
+        topicDef: args.topicDef,
+        queries: args.queries,
+        admissionContext: args.admissionContext,
+      })
+
+      return {
+        ...heuristic,
+        status: 'candidate' as const,
+        why: clipText(
+          `Deferred into the stage candidate pool because the recall set exceeded the current LLM admission budget (confidence=${seed.confidence.toFixed(2)}).`,
+          220,
+        ),
+        rejectReason: 'recall_overflow',
+        rejectFilter: 'recall-overflow',
+      }
+    })
+}
+
 function determineBranchAction(candidates: PaperCandidate[], allowMerge = true) {
   const admittedCount = candidates.filter((candidate) => candidate.status === 'admitted').length
   if (allowMerge && admittedCount >= 8) {
@@ -5064,7 +5148,6 @@ export async function executePaperTracker(
       stageMode: params.stageMode,
       bootstrapWindowDays: topicDef.defaults.bootstrapWindowDays,
     })
-    const currentStageIndex = temporalStageWindow.currentStageIndex
     const targetStageIndex = temporalStageWindow.targetStageIndex
     const admissionContext: TopicAdmissionContext = {
       topicId: params.topicId,
@@ -5114,6 +5197,23 @@ export async function executePaperTracker(
           )
         : { candidates: evaluatedCandidates, anchorWindow: null as BootstrapAnchorWindow | null }
     const candidates = bootstrapConstraint.candidates
+    const deferredCandidatePoolCandidates = buildDeferredCandidatePoolCandidates({
+      papers: discoveredPapers,
+      topic,
+      topicDef,
+      queries: discoveryPlan.queries,
+      evaluatedCandidates: candidates,
+      targetStageIndex,
+      windowMonths: discoveryPlan.windowMonths,
+      bootstrapMode: temporalStageWindow.bootstrapMode,
+      admissionContext,
+      maxDeferredCandidates: Math.max(
+        researchConfig.targetCandidatesBeforeAdmission,
+        Math.min(discoveredPapers.length, effectiveResearchSettings.maxCandidatesPerStage * 2),
+      ),
+    })
+    const recallRunId = `${params.topicId}:stage-${targetStageIndex}:${Date.now()}`
+    const querySetHash = buildStageQuerySetHash(discoveryPlan.queries)
     const admittedCandidates = candidates.filter((candidate) => candidate.status === 'admitted')
     const groundedAdmittedCandidates = admittedCandidates.filter(
       (candidate) => Boolean(resolveCandidatePdfUrl(candidate)),
@@ -5133,6 +5233,32 @@ export async function executePaperTracker(
       skippedCount: number
       groundedPaperIds: string[]
     } | null = null
+    let candidatePoolSummary = {
+      topicId: params.topicId,
+      stageIndex: targetStageIndex,
+      total: candidates.length + deferredCandidatePoolCandidates.length,
+      admitted: admittedCandidates.length,
+      candidate:
+        candidates.filter((candidate) => candidate.status === 'candidate').length +
+        deferredCandidatePoolCandidates.length,
+      rejected: candidates.filter((candidate) => candidate.status === 'rejected').length,
+      grounded: 0,
+      readyForDownload: groundedAdmittedCandidates.length,
+      missingPdf: 0,
+    }
+
+    if (params.mode !== 'dry-run' && params.mode !== 'inspect') {
+      candidatePoolSummary = await upsertStageCandidatePoolEntries({
+        topicId: params.topicId,
+        stageIndex: targetStageIndex,
+        stageLabel: discoveryPlan.stageLabel,
+        stageStartDate: discoveryPlan.startDate,
+        stageEndDateExclusive: discoveryPlan.endDateExclusive,
+        recallRunId,
+        querySetHash,
+        candidates: [...candidates, ...deferredCandidatePoolCandidates],
+      })
+    }
 
 if (params.mode !== 'dry-run' && params.mode !== 'inspect' && finalCandidates.length > 0) {
 
@@ -5148,6 +5274,15 @@ if (params.mode !== 'dry-run' && params.mode !== 'inspect' && finalCandidates.le
       )
 
       if (successfullyPersistedCandidates.length > 0) {
+        await syncStageCandidatePoolPaperLinks({
+          topicId: params.topicId,
+          stageIndex: targetStageIndex,
+          mappings: successfullyPersistedCandidates.map((candidate) => ({
+            sourcePaperId: candidate.sourcePaperId ?? candidate.paperId,
+            title: candidate.title,
+            linkedPaperId: candidate.paperId,
+          })),
+        })
         pdfGroundingSummary = await groundPersistedCandidatesFromPdf({
           candidates: successfullyPersistedCandidates,
           context,
@@ -5180,11 +5315,17 @@ if (params.mode !== 'dry-run' && params.mode !== 'inspect' && finalCandidates.le
         // Log if all candidates failed persistence
         context.logger.warn('All admitted candidates failed persistence, skipping downstream operations')
       }
+
+      candidatePoolSummary = await buildStageCandidatePoolSummary({
+        topicId: params.topicId,
+        stageIndex: targetStageIndex,
+      })
     }
 
     console.log(`[PaperTracker] Admission funnel for topic ${params.topicId}:`, {
       discovered: discoveredPapers.length,
       afterEvaluation: evaluatedCandidates.length,
+      deferredToPool: deferredCandidatePoolCandidates.length,
       admitted: admittedCandidates.length,
       withPdfUrls: groundedAdmittedCandidates.length,
       finalAfterCap: finalCandidates.length,
@@ -5205,6 +5346,7 @@ if (params.mode !== 'dry-run' && params.mode !== 'inspect' && finalCandidates.le
           end: new Date(discoveryPlan.endDateExclusive.getTime() - 1).toISOString(),
         },
       },
+      candidatePoolSummary,
       admittedCandidates: finalCandidates, // Hard cap enforced - maxCandidatesPerStage
       candidates,
       recommendations: finalCandidates.slice(0, 5).map((candidate) => ({

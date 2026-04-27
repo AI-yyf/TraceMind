@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { v4 as uuidv4 } from 'uuid'
+import { z } from 'zod'
 
 import { prisma } from '../lib/prisma'
 import { deleteSession, getAllSessions, getSession, setSession } from '../lib/redis'
@@ -13,6 +14,10 @@ import {
   STAGE_DURATION_DAYS_MIN,
 } from '../services/enhanced-scheduler'
 import { computeDurationProgress } from '../services/scheduler-utils'
+import {
+  groundStageCandidatePoolEntries,
+  listStageCandidatePoolEntries,
+} from '../services/stage-candidate-pool'
 
 const router = Router()
 
@@ -130,6 +135,77 @@ router.get(
     }
 
     res.json(response)
+  }),
+)
+
+const stageCandidatePoolQuerySchema = z.object({
+  status: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) =>
+      value
+        ? value
+            .split(',')
+            .map((item) => item.trim())
+            .filter(Boolean) as Array<'admitted' | 'candidate' | 'rejected'>
+        : undefined,
+    ),
+  limit: z.coerce.number().int().positive().max(1000).default(200),
+})
+
+const stageCandidatePoolGroundSchema = z.object({
+  statuses: z
+    .array(z.enum(['admitted', 'candidate', 'rejected']))
+    .optional(),
+  limit: z.coerce.number().int().positive().max(200).default(50),
+  force: z.coerce.boolean().optional().default(false),
+})
+
+router.get(
+  '/topics/:topicId/stages/:stageIndex/candidate-pool',
+  asyncHandler(async (req, res) => {
+    const query = stageCandidatePoolQuerySchema.parse(req.query)
+    const stageIndex = Number.parseInt(req.params.stageIndex, 10)
+    if (!Number.isFinite(stageIndex) || stageIndex <= 0) {
+      throw new AppError(400, 'stageIndex must be a positive integer.')
+    }
+
+    const data = await listStageCandidatePoolEntries({
+      topicId: req.params.topicId,
+      stageIndex,
+      statuses: query.status,
+      limit: query.limit,
+    })
+
+    res.json({
+      success: true,
+      data,
+    })
+  }),
+)
+
+router.post(
+  '/topics/:topicId/stages/:stageIndex/candidate-pool/ground',
+  asyncHandler(async (req, res) => {
+    const body = stageCandidatePoolGroundSchema.parse(req.body)
+    const stageIndex = Number.parseInt(req.params.stageIndex, 10)
+    if (!Number.isFinite(stageIndex) || stageIndex <= 0) {
+      throw new AppError(400, 'stageIndex must be a positive integer.')
+    }
+
+    const data = await groundStageCandidatePoolEntries({
+      topicId: req.params.topicId,
+      stageIndex,
+      statuses: body.statuses,
+      limit: body.limit,
+      force: body.force,
+    })
+
+    res.json({
+      success: true,
+      data,
+    })
   }),
 )
 

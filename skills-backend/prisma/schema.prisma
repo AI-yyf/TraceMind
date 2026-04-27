@@ -94,6 +94,7 @@ model paper_candidate_pool {
   id                String    @id
   topicId           String
   paperId           String?
+  sourcePaperId     String?
   title             String
   authors           String?
   published         DateTime?
@@ -102,12 +103,28 @@ model paper_candidate_pool {
   pdfUrl            String?
   openAlexId        String?
   semanticScholarId String?
+  branchId          String?
+  stageIndex        Int?
+  stageLabel        String?
+  stageStartDate    DateTime?
+  stageEndDateExclusive DateTime?
+  recallRunId       String?
+  querySetHash      String?
   status            String    @default("candidate")
   confidence        Float     @default(0.5)
   candidateType     String?
   discoverySource   String?
   discoveryChannels String?
   queryHits         String?
+  downloadStatus    String    @default("pending")
+  downloadError     String?
+  downloadAttemptedAt DateTime?
+  groundedAt        DateTime?
+  evidenceCount     Int       @default(0)
+  hasStructuredEvidence Boolean @default(false)
+  retentionTier     String    @default("compact")
+  retentionExpiresAt DateTime?
+  lastSeenAt        DateTime  @default(now())
   rejectReason      String?
   rejectFilter      String?
   rejectScore       Float?
@@ -124,7 +141,10 @@ model paper_candidate_pool {
   @@index([createdAt])
   @@index([discoverySource])
   @@index([confidence])
+  @@index([retentionExpiresAt])
   @@index([status])
+  @@index([topicId, stageIndex])
+  @@index([topicId, stageIndex, status])
   @@index([topicId])
 }
 
