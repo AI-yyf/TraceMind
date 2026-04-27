@@ -1,25 +1,23 @@
-# 数据库与部署迁移说明
+# Database and deployment migration notes
 
-## 当前默认状态
+## Current default
 
-溯知当前默认开发路径仍然是：
-
+The repository currently defaults to:
 - Prisma
-- SQLite
-- 后端端口 `3303`
+- SQLite for lightweight local development
+- backend port `3303`
 
-也就是说，**PostgreSQL 不是这份仓库当前的默认本地开发前提**。
+That means `PostgreSQL` is available, but it is not the mandatory day-one local setup for this repository.
 
-## 什么时候需要 PostgreSQL / Redis
+## When PostgreSQL or Redis becomes worth it
 
-以下场景才建议切到更重的部署形态：
+Move to a heavier deployment shape when you actually need one of these:
+- a shared multi-user environment
+- persistent queues or more complex job orchestration
+- stronger concurrency, backup, or service deployment requirements
+- the full stack defined in the root `docker-compose.yml`
 
-- 多人共享环境
-- 持久化队列或更复杂的任务编排
-- 需要更强的并发、备份或服务化部署能力
-- 想直接使用 `docker-compose.yml` 中的完整环境
-
-## 本地默认开发
+## Default local development path
 
 ```bash
 cd skills-backend
@@ -27,24 +25,24 @@ npm install
 npm run dev
 ```
 
-默认数据库由 `prisma/schema.prisma` 和本地 `DATABASE_URL` 决定；当前仓库与测试都仍兼容 SQLite 开发。
+The effective database is controlled by `prisma/schema.prisma` and your local `DATABASE_URL`. The current repository and test flow still support SQLite-based development.
 
-## 如果要迁移到 PostgreSQL
+## If you migrate to PostgreSQL
 
-请把它当作**显式架构决策**，而不是日常步骤：
+Treat it as an explicit architecture decision rather than a casual local step:
 
-1. 修改 `prisma/schema.prisma` 的 datasource provider
-2. 更新 `DATABASE_URL`
-3. 重新生成 Prisma Client
-4. 执行迁移或 `db push`
-5. 验证后端路由、调度、研究任务与模型配置链路
+1. Update the datasource provider in `prisma/schema.prisma`.
+2. Update `DATABASE_URL`.
+3. Regenerate the Prisma client.
+4. Run the migration or `db push`.
+5. Re-verify backend routes, schedulers, research jobs, and model configuration flows.
 
-## Docker 路径
+## Docker path
 
-根目录 `docker-compose.yml` 已提供 PostgreSQL、Redis 与应用服务编排。若使用这条路径，请以 compose 配置中的端口和服务名为准，而不是历史文档中的 `3001` 或旧项目命名。
+The root `docker-compose.yml` already provides a fuller environment with PostgreSQL, Redis, and application services. If you use that path, trust the ports and service names defined in compose instead of older historical notes.
 
-## 当前建议
+## Current recommendation
 
-- 想跑本地开发：优先 SQLite
-- 想跑完整服务编排：使用根目录 `docker-compose.yml`
-- 想做正式迁移：先在 `docs/implementation-roadmap.md` 记录理由，再实施
+- For fast local development, prefer SQLite.
+- For a fuller orchestrated stack, use the root `docker-compose.yml`.
+- For a formal database migration, record the reason clearly in the PR description or an issue before implementation.

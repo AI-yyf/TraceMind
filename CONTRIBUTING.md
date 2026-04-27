@@ -11,7 +11,7 @@ TraceMind is not trying to be a generic AI demo. Contributions should strengthen
 3. Run `npm run db:generate` in `skills-backend/`.
 4. Start backend and frontend in separate terminals.
 
-See [Getting Started](docs/getting-started.md) for full commands.
+See [README.md](README.md) for the full public project overview and startup commands.
 
 ## Before Opening a Pull Request
 
@@ -54,7 +54,7 @@ Public documentation should be practical and user-facing. A good TraceMind doc s
 - How does evidence move through the system?
 - What are the current limits and risks?
 
-Avoid committing temporary plans, local execution logs, one-off debugging notes, private screenshots, or agent instructions. If a change affects the public workflow, update the README or the relevant file under `docs/`.
+Avoid committing temporary plans, local execution logs, one-off debugging notes, private screenshots, or agent instructions. If a change affects the public workflow, update `README.md` and any translated README files under `docs/` that need to stay aligned.
 
 ## Good First Contribution Areas
 
