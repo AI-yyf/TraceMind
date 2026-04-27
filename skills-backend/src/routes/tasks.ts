@@ -8,12 +8,14 @@ import { TaskConfigBodySchema, TaskToggleSchema, TaskRunSchema, TaskJumpSchema }
 import { enhancedTaskScheduler } from '../services/enhanced-scheduler'
 import { type TaskConfig } from '../services/scheduler'
 import { getStageLocalization, getTopicLocalization, getTopicLocalizationMap } from '../services/topics/localization'
+import { filterVisibleTopics } from '../services/topics/topic-visibility'
 
 const router = Router()
 
 router.get('/topics', async (_req, res) => {
   try {
-    const topics = await prisma.topics.findMany({
+    const topics = filterVisibleTopics(
+      await prisma.topics.findMany({
       select: {
         id: true,
         nameZh: true,
@@ -21,7 +23,8 @@ router.get('/topics', async (_req, res) => {
         language: true,
       },
       orderBy: { createdAt: 'desc' },
-    })
+    }),
+    )
 
     const localizationMap = await getTopicLocalizationMap(topics.map((topic) => topic.id))
 

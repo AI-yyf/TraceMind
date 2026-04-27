@@ -46,6 +46,7 @@ import {
   assertTopicDashboardContract,
   assertTopicResearchBriefContract,
 } from '../services/topics/topic-contracts'
+import { filterVisibleTopics } from '../services/topics/topic-visibility'
 import { logger } from '../utils/logger'
 
 const router = Router()
@@ -291,7 +292,8 @@ function buildResearchBriefSessionSummary(args: {
 router.get(
   '/',
   asyncHandler(async (_req, res) => {
-    const topics = await prisma.topics.findMany({
+    const topics = filterVisibleTopics(
+      await prisma.topics.findMany({
       include: {
         _count: {
           select: {
@@ -302,7 +304,8 @@ router.get(
         },
       },
       orderBy: { updatedAt: 'desc' },
-    })
+    }),
+    )
     const topicIds = topics.map((topic) => topic.id)
 
     const [localizationMap, stageConfigMap] = await Promise.all([

@@ -14,7 +14,7 @@ import {
   assertTopicStageConfigResponseContract,
 } from '@/utils/contracts'
 import { getTopicLocalizedPair } from '@/utils/topicLocalization'
-import { isRegressionSeedTopic } from '@/utils/topicPresentation'
+import { dedupeTopicPresentation } from '@/utils/topicPresentation'
 
 type ManagedTopic = {
   id: string
@@ -125,7 +125,7 @@ export function TopicManagerPage() {
 
         assertTopicManagerTopicCollectionContract(payload)
 
-        const nextTopics = payload.filter((topic) => !isRegressionSeedTopic(topic))
+        const nextTopics = dedupeTopicPresentation(payload)
         setTopics(nextTopics)
         setStageWindowDrafts(
           Object.fromEntries(
@@ -157,8 +157,8 @@ export function TopicManagerPage() {
   async function removeTopic(id: string) {
     setConfirmState({
       isOpen: true,
-      title: t('manage.deleteConfirmTitle', '删除确认'),
-      message: t('manage.deleteConfirmMessage', '确定要删除这个主题吗？此操作无法撤销。'),
+      title: t('manage.deleteConfirmTitle', 'Delete topic'),
+      message: t('manage.deleteConfirmMessage', 'Delete this topic and its local research data? This cannot be undone.'),
       onConfirm: async () => {
         setConfirmState((prev) => ({ ...prev, isOpen: false }))
         await fetch(buildApiUrl(`/api/topics/${id}`), {
@@ -458,3 +458,4 @@ export function TopicManagerPage() {
 }
 
 export default TopicManagerPage
+

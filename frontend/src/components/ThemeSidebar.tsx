@@ -317,7 +317,7 @@ export function ThemeSidebar({ onSearchClick }: ThemeSidebarProps) {
             {/* Dropdown Panel - Smooth Animation */}
             {langExpanded && (
               <div
-                className="lang-panel-animate absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-[20px] border border-black/[0.06] bg-white/[0.98] shadow-[0_12px_40px_rgba(15,23,42,0.14)] backdrop-blur-md"
+                className="lang-panel-animate absolute bottom-0 left-full ml-3 w-[280px] max-h-[70vh] overflow-y-auto rounded-[20px] border border-black/[0.06] bg-white/[0.98] shadow-[0_12px_40px_rgba(15,23,42,0.14)] backdrop-blur-md"
                 role="menu"
                 aria-label={t('language.switchLabel', 'Interface language')}
               >
@@ -401,7 +401,7 @@ export function ThemeSidebar({ onSearchClick }: ThemeSidebarProps) {
 
                 {/* Keyboard Hint */}
                 <div className="border-t border-black/[0.06] px-3 py-2 text-[9px] text-black/32 flex items-center justify-between">
-                  <span>{t('language.keyboardHint', 'â†‘â†“ Navigate â€¢ Enter Select â€¢ Esc Close')}</span>
+                  <span>{t('language.keyboardHint', 'Up/Down navigate ¡¤ Enter select ¡¤ Esc close')}</span>
                 </div>
               </div>
             )}
@@ -450,3 +450,4 @@ export function ThemeSidebar({ onSearchClick }: ThemeSidebarProps) {
     </>
   )
 }
+

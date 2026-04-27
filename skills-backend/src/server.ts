@@ -36,6 +36,7 @@ import { initializeWebSocketServer } from './websocket/server'
 import { startPaperMonitorCron } from './services/topics/paper-monitor-cron'
 import { ensureConfiguredTopicsMaterialized } from './services/topics/topic-config-sync'
 import { startStorageRetentionCron } from './services/storage-retention'
+import { purgeSyntheticTopics } from './services/topics/topic-visibility'
 
 // Initialize i18n dictionaries
 initializeAllDictionaries()
@@ -223,6 +224,11 @@ export function startServer(port = Number(process.env.PORT || 3303)) {
       logger.info('WebSocket server ready at /ws')
 
       // 启动论文监控定时任务（每日凌晨3点）
+      void purgeSyntheticTopics().catch((error) => {
+        logger.warn('Synthetic topic purge failed during server startup.', {
+          error,
+        })
+      })
       startPaperMonitorCron()
       startStorageRetentionCron()
       if (shouldMaterializeTopicsOnStartup()) {

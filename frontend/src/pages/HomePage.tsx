@@ -12,6 +12,7 @@ import {
   type BackendTopicListItem,
 } from '@/utils/contracts'
 import { getTopicLocalizedPair } from '@/utils/topicLocalization'
+import { dedupeTopicPresentation } from '@/utils/topicPresentation'
 
 type TopicCard = {
   id: string
@@ -39,7 +40,7 @@ export function HomePage() {
     try {
       const data = await apiGet<unknown>('/api/topics')
       assertBackendTopicCollectionContract(data)
-      setTopics(data)
+      setTopics(dedupeTopicPresentation(data))
     } catch (nextError) {
       const message =
         nextError instanceof ApiError

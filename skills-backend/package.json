@@ -16,6 +16,7 @@
     "topic:generate": "tsx src/scripts/topic-generate.ts",
     "topic:reset": "tsx src/scripts/reset-topics.ts",
     "topic:clear-runtime": "tsx src/scripts/clear-topic-runtime.ts",
+    "topic:purge-synthetic": "tsx src/scripts/purge-synthetic-topics.ts",
     "suzhi:prepare-runtime": "tsx src/scripts/prepare-suzhi-runtime.ts",
     "clean:content": "tsx scripts/clean-generated-content.ts",
     "topic:extract-pdfs": "tsx src/scripts/extract-topic-pdfs.ts",

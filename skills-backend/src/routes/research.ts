@@ -18,6 +18,7 @@ import {
   groundStageCandidatePoolEntries,
   listStageCandidatePoolEntries,
 } from '../services/stage-candidate-pool'
+import { filterVisibleTopics } from '../services/topics/topic-visibility'
 
 const router = Router()
 
@@ -55,7 +56,8 @@ interface TopicsOverviewResponse {
 router.get(
   '/topics/overview',
   asyncHandler(async (_req, res) => {
-    const topics = await prisma.topics.findMany({
+    const topics = filterVisibleTopics(
+      await prisma.topics.findMany({
       select: {
         id: true,
         nameZh: true,
@@ -72,7 +74,8 @@ router.get(
         },
       },
       orderBy: { updatedAt: 'desc' },
-    })
+    }),
+    )
 
     const overview: TopicResearchOverviewItem[] = await Promise.all(
       topics.map(async (topic) => {

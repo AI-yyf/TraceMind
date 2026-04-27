@@ -149,11 +149,16 @@ function buildTopicSignature(topic: TopicPresentationLike) {
 }
 
 export function isRegressionSeedTopic(topic: TopicPresentationLike) {
-  const text = `${topic.nameZh ?? ''} ${topic.title ?? ''} ${topic.summary ?? ''}`.toLowerCase()
+  const id = collapseWhitespace(topic.id).toLowerCase()
+  const text = `${topic.nameZh ?? ''} ${topic.nameEn ?? ''} ${topic.title ?? ''} ${topic.summary ?? ''}`.toLowerCase()
   return (
+    id.startsWith('topic-alpha-route-') ||
+    id.startsWith('prompt-templates-route-') ||
     text.includes('create a regression topic') ||
     text.includes('create a regres') ||
-    text.includes('seeded for regression coverage')
+    text.includes('seeded for regression coverage') ||
+    text.includes('external agent route test topic') ||
+    text.includes('外部代理测试主题')
   )
 }
 

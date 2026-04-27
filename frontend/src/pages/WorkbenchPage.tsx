@@ -12,6 +12,7 @@ import {
   assertTopicViewModelContract,
 } from '@/utils/contracts'
 import { getTopicLocalizedPair } from '@/utils/topicLocalization'
+import { dedupeTopicPresentation } from '@/utils/topicPresentation'
 
 type TopicOption = {
   id: string
@@ -125,7 +126,8 @@ export function WorkbenchPage() {
       const data = await apiGet<unknown>('/api/topics')
       assertBackendTopicCollectionContract(data)
 
-      const topicOptions: TopicOption[] = data.map((topic) => {
+      const visibleTopics = dedupeTopicPresentation(data)
+      const topicOptions: TopicOption[] = visibleTopics.map((topic) => {
         const localizedTitle = getTopicLocalizedPair(
           topic.localization,
           'name',
@@ -153,7 +155,9 @@ export function WorkbenchPage() {
       setTopics(topicOptions)
 
       // Auto-select first topic if none selected
-      if (!selectedTopicId && topicOptions.length > 0) {
+      const selectedStillVisible = topicOptions.some((topic) => topic.id === selectedTopicId)
+
+      if ((!selectedTopicId || !selectedStillVisible) && topicOptions.length > 0) {
         const firstTopicId = topicOptions[0].id
         setSelectedTopicId(firstTopicId)
         setSearchParams({ topicId: firstTopicId }, { replace: true })
