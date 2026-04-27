@@ -37,14 +37,12 @@ function Start-ServiceWindow {
     [string]$Command
   )
 
-  $escapedDirectory = $WorkingDirectory.Replace("'", "''")
-  $escapedCommand = $Command.Replace("'", "''")
-  Start-Process powershell.exe `
+  $escapedDirectory = $WorkingDirectory.Replace('"', '\"')
+  $composedCommand = "title $Title && cd /d `"$escapedDirectory`" && $Command"
+  Start-Process cmd.exe `
     -ArgumentList @(
-      '-NoExit',
-      '-ExecutionPolicy', 'Bypass',
-      '-Command',
-      "`$Host.UI.RawUI.WindowTitle = '$Title'; Set-Location '$escapedDirectory'; $escapedCommand"
+      '/k',
+      $composedCommand
     ) `
     -WorkingDirectory $WorkingDirectory | Out-Null
 }
@@ -87,7 +85,7 @@ Write-Host '[TraceMind] Starting frontend on http://127.0.0.1:5173 ...'
 Start-ServiceWindow `
   -Title 'TraceMind Frontend' `
   -WorkingDirectory $frontendDir `
-  -Command '$env:VITE_API_BASE_URL = ''http://127.0.0.1:3303/api''; npm run dev'
+  -Command 'set "VITE_DEV_PROXY_TARGET=http://127.0.0.1:3303" && npm run dev -- --host 127.0.0.1 --strictPort'
 
 Write-Host ''
 Write-Host '[TraceMind] Ready.'

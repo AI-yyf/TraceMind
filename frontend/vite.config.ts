@@ -4,11 +4,16 @@ import path from 'path'
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, __dirname, '')
-  const processProxyTarget = process.env.VITE_DEV_PROXY_TARGET || process.env.VITE_API_BASE_URL
+  const normalizeProxyTarget = (value: string | undefined) =>
+    (value ?? '').trim().replace(/\/+$/u, '').replace(/\/api$/iu, '')
+
+  const processProxyTarget = normalizeProxyTarget(
+    process.env.VITE_DEV_PROXY_TARGET || process.env.VITE_API_BASE_URL,
+  )
   const proxyTarget =
     processProxyTarget ||
-    env.VITE_DEV_PROXY_TARGET ||
-    env.VITE_API_BASE_URL ||
+    normalizeProxyTarget(env.VITE_DEV_PROXY_TARGET) ||
+    normalizeProxyTarget(env.VITE_API_BASE_URL) ||
     'http://127.0.0.1:3303'
   const wsTarget = proxyTarget.replace(/^http/iu, 'ws')
 

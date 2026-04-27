@@ -1,6 +1,12 @@
 import { APP_STATE_STORAGE_KEYS, readLocalStorageItem } from './appStateStorage'
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/u, '')
+export function normalizeApiBase(value: string | undefined) {
+  const normalized = (value ?? '').trim().replace(/\/+$/u, '')
+  if (!normalized) return ''
+  return normalized.replace(/\/api$/iu, '')
+}
+
+const API_BASE = normalizeApiBase(import.meta.env.VITE_API_BASE_URL)
 
 // 默认用户ID（单用户系统）
 const DEFAULT_USER_ID = 'default'
@@ -64,7 +70,13 @@ export function getApiBaseUrl() {
 }
 
 export function buildApiUrl(path: string) {
-  return `${API_BASE}${normalizePath(path)}`
+  const normalizedPath = normalizePath(path)
+
+  if (API_BASE) {
+    return `${API_BASE}${normalizedPath}`
+  }
+
+  return normalizedPath
 }
 
 export function buildWsUrl(path = '/ws') {

@@ -206,7 +206,7 @@ It will:
 
 - install backend/frontend dependencies if they are missing
 - start the backend dev server first and wait for `/health`
-- start the frontend dev server with `VITE_API_BASE_URL=http://127.0.0.1:3303/api`
+- start the frontend dev server with a local proxy target of `http://127.0.0.1:3303`
 - open TraceMind in your browser
 
 You can also call the PowerShell entry directly:
